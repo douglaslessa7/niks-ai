@@ -76,9 +76,7 @@ function PhoneMockup() {
             <View style={{ width: 2, backgroundColor: '#FB7B6B' }} />
             <View style={{ flex: 1, paddingHorizontal: 8, paddingVertical: 6 }}>
               <View className="flex-row items-center gap-1 mb-1">
-                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: 'rgba(251,123,107,0.1)', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 5 }}>☀️</Text>
-                </View>
+                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#FB7B6B' }} />
                 <Text style={{ fontSize: 6, fontWeight: '700', color: '#1D3A44' }}>Rotina da Manhã</Text>
                 <Text style={{ fontSize: 6, fontWeight: '700', color: '#1D3A44', marginLeft: 'auto' }}>2/5</Text>
               </View>
@@ -93,9 +91,7 @@ function PhoneMockup() {
           {/* Mini food card — Análise Alimentar */}
           <View style={{ marginHorizontal: 12, backgroundColor: 'white', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <View style={{ width: 14, height: 14, borderRadius: 4, backgroundColor: 'rgba(184,169,201,0.15)', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 6 }}>📷</Text>
-              </View>
+              <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#7CB69D' }} />
               <Text style={{ fontSize: 6, fontWeight: '700', color: '#1D3A44' }}>Análise Alimentar</Text>
             </View>
           </View>

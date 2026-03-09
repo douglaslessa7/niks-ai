@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
-import { Flame } from 'lucide-react-native';
+import { Flame, Star, Gem, FlaskConical } from 'lucide-react-native';
 import Svg, { Polyline } from 'react-native-svg';
 
 type TimeFilter = '7D' | '1M' | '3M' | '6M' | 'Tudo';
@@ -54,11 +54,11 @@ export default function Evolucao() {
   const heatmapRows = buildRows(heatmapData, 7);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }} edges={['top']}>
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 96 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
         <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 48 }}>
 
@@ -302,7 +302,7 @@ export default function Evolucao() {
                     elevation: 2,
                   }}
                 >
-                  <Text style={{ fontSize: 28 }}>🔥</Text>
+                  <Flame size={28} color="#FFFFFF" fill="#FFFFFF" />
                 </View>
                 <Text style={{ fontSize: 11, color: '#1D3A44', textAlign: 'center' }}>7 Dias</Text>
               </View>
@@ -324,7 +324,7 @@ export default function Evolucao() {
                     elevation: 2,
                   }}
                 >
-                  <Text style={{ fontSize: 28 }}>⭐</Text>
+                  <Star size={28} color="#FFFFFF" fill="#FFFFFF" />
                 </View>
                 <Text style={{ fontSize: 11, color: '#1D3A44', textAlign: 'center' }}>30 Dias</Text>
               </View>
@@ -332,14 +332,14 @@ export default function Evolucao() {
               {/* Locked badges */}
               <View style={{ alignItems: 'center', minWidth: 64, opacity: 0.4 }}>
                 <View style={{ width: 64, height: 64, borderRadius: 999, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 28 }}>💎</Text>
+                  <Gem size={28} color="#8A8A8E" />
                 </View>
                 <Text style={{ fontSize: 11, color: '#8A8A8E', textAlign: 'center' }}>Pele Nota 10</Text>
               </View>
 
               <View style={{ alignItems: 'center', minWidth: 64, opacity: 0.4 }}>
                 <View style={{ width: 64, height: 64, borderRadius: 999, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 28 }}>🧪</Text>
+                  <FlaskConical size={28} color="#8A8A8E" />
                 </View>
                 <Text style={{ fontSize: 11, color: '#8A8A8E', textAlign: 'center' }}>Expert</Text>
               </View>

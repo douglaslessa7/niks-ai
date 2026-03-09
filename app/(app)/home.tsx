@@ -2,8 +2,8 @@ import { View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
-import { Sun, Moon, Flame, Bell, ChevronRight, Check } from 'lucide-react-native';
-import Svg, { Circle } from 'react-native-svg';
+import { Sun, Moon, Flame, Bell, ChevronRight, Check, Droplet } from 'lucide-react-native';
+import Svg, { Circle, G, Path } from 'react-native-svg';
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -12,12 +12,6 @@ function getGreeting() {
   return 'Boa noite';
 }
 
-function getGreetingEmoji() {
-  const h = new Date().getHours();
-  if (h < 12) return '☀️';
-  if (h < 18) return '🌤️';
-  return '🌙';
-}
 
 function getWeekDays() {
   const today = new Date();
@@ -36,6 +30,33 @@ function getWeekDays() {
     });
   }
   return days;
+}
+
+function NiksLogo({ size = 32 }: { size?: number }) {
+  return (
+    <Svg viewBox="0 0 120 120" width={size} height={size}>
+      <G stroke="#1D3A44" strokeWidth={5.5} strokeLinecap="round" strokeLinejoin="round" fill="none">
+        <Path d="M 20 42 L 20 32 A 12 12 0 0 1 32 20 L 42 20" />
+        <Path d="M 100 42 L 100 32 A 12 12 0 0 0 88 20 L 78 20" />
+        <Path d="M 20 78 L 20 88 A 12 12 0 0 0 32 100 L 42 100" />
+        <Path d="M 100 78 L 100 88 A 12 12 0 0 1 88 100 L 78 100" />
+      </G>
+      <Path
+        d="M 60 26 C 74 26, 82 37, 84 50 C 88 50, 90 52, 90 55 C 90 58, 88 60, 84 60 C 82 76, 72 90, 60 94 C 48 90, 38 76, 36 60 C 32 60, 30 58, 30 55 C 30 52, 32 50, 36 50 C 38 37, 46 26, 60 26 Z"
+        fill="none" stroke="#1D3A44" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round"
+      />
+      <Path d="M 42 46 Q 47 44 52 46" fill="none" stroke="#1D3A44" strokeWidth={2.5} strokeLinecap="round" />
+      <Path d="M 78 46 Q 73 44 68 46" fill="none" stroke="#1D3A44" strokeWidth={2.5} strokeLinecap="round" />
+      <Path d="M 53 77 Q 60 80 67 77" fill="none" stroke="#1D3A44" strokeWidth={2.5} strokeLinecap="round" />
+      <G fill="#1D3A44">
+        <Circle cx={60} cy={36} r={2.5} />
+        <Circle cx={50} cy={38} r={1.5} />
+        <Circle cx={70} cy={38} r={1.5} />
+        <Circle cx={44} cy={62} r={2.5} />
+        <Circle cx={76} cy={62} r={2.5} />
+      </G>
+    </Svg>
+  );
 }
 
 function SkinScoreRing({ score, size = 70 }: { score: number; size?: number }) {
@@ -146,7 +167,7 @@ function FoodItem({
               paddingVertical: 2,
             }}
           >
-            <Text style={{ fontSize: 8 }}>{isBoost ? '🟢' : '🟡'}</Text>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isBoost ? '#7CB69D' : '#D4A017' }} />
             <Text style={{ fontSize: 10, fontWeight: '700', color: isBoost ? '#7CB69D' : '#B8860B' }}>
               {isBoost ? 'Skin Boost' : 'Neutro'}
             </Text>
@@ -172,19 +193,19 @@ export default function Home() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }} edges={['top']}>
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 96 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
         <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
           {/* === 1. TOP BAR === */}
           <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#1D3A44', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>N</Text>
+              <View style={{ width: 32, height: 32, borderRadius: 8, overflow: 'hidden', backgroundColor: '#F6F4EE' }}>
+                <NiksLogo size={32} />
               </View>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
             </View>
@@ -295,7 +316,7 @@ export default function Home() {
           {/* === 4. GREETING + CONTEXT === */}
           <View style={{ paddingHorizontal: 20, marginBottom: 8 }}>
             <Text style={{ fontSize: 16, fontWeight: '700', color: '#1D3A44', lineHeight: 21 }}>
-              {getGreeting()}, Maria {getGreetingEmoji()}
+              {getGreeting()}, Maria
             </Text>
             <Text style={{ fontSize: 13, color: '#8A8A8E', lineHeight: 18 }}>
               {isAfternoon ? 'Sua rotina da noite tem 4 passos hoje' : 'Sua rotina da manhã tem 5 passos hoje'}
@@ -343,7 +364,7 @@ export default function Home() {
                 {/* Next step */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <View style={{ width: 32, height: 32, borderRadius: 999, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 14 }}>💧</Text>
+                    <Droplet size={14} color="#7CB69D" fill="#7CB69D" />
                   </View>
                   <Text style={{ fontSize: 13, color: '#1D3A44', flex: 1 }}>
                     Próximo:{' '}

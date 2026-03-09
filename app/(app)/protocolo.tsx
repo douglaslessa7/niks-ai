@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
-import { Timer, Check } from 'lucide-react-native';
+import { Timer, Check, Sun, Moon } from 'lucide-react-native';
 
 interface Step {
   id: number;
@@ -104,11 +104,11 @@ export default function Protocolo() {
   const allDone = completedCount === totalSteps;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }} edges={['top']}>
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 96 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
         <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 48 }}>
 
@@ -127,13 +127,17 @@ export default function Protocolo() {
                 paddingVertical: 12,
                 borderRadius: 999,
                 alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 6,
                 backgroundColor: period === 'morning' ? '#FB7B6B' : '#FFFFFF',
                 borderWidth: period === 'morning' ? 0 : 1,
                 borderColor: '#1D3A44',
               }}
             >
+              <Sun size={15} color={period === 'morning' ? '#FFFFFF' : '#1D3A44'} strokeWidth={2} />
               <Text style={{ fontSize: 15, fontWeight: '600', color: period === 'morning' ? '#FFFFFF' : '#1D3A44' }}>
-                Manhã ☀️
+                Manhã
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -144,13 +148,17 @@ export default function Protocolo() {
                 paddingVertical: 12,
                 borderRadius: 999,
                 alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 6,
                 backgroundColor: period === 'night' ? '#FB7B6B' : '#FFFFFF',
                 borderWidth: period === 'night' ? 0 : 1,
                 borderColor: '#1D3A44',
               }}
             >
+              <Moon size={15} color={period === 'night' ? '#FFFFFF' : '#1D3A44'} strokeWidth={2} />
               <Text style={{ fontSize: 15, fontWeight: '600', color: period === 'night' ? '#FFFFFF' : '#1D3A44' }}>
-                Noite 🌙
+                Noite
               </Text>
             </TouchableOpacity>
           </View>

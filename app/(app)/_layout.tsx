@@ -1,10 +1,9 @@
-import { Tabs, useRouter } from 'expo-router';
-import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
+import { Tabs, usePathname, useRouter } from 'expo-router';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useState } from 'react';
 import { Home, Droplet, TrendingUp, User, Plus } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScanModal } from '../../components/scan/ScanModal';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const TAB_ACTIVE = '#1D3A44';
 const TAB_INACTIVE = '#8A8A8E';
@@ -18,28 +17,36 @@ const tabs = [
   { name: 'perfil', label: 'Perfil', Icon: User },
 ];
 
-function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+function CustomTabBar() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const pathname = usePathname();
   const [scanOpen, setScanOpen] = useState(false);
-
-  // Only show tabs that match our 4 visible tabs
-  const visibleTabs = tabs;
 
   return (
     <>
-      <View style={[styles.barContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 }]}>
+      <View
+        style={[
+          styles.barContainer,
+          {
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          },
+        ]}
+      >
         {/* Pill com 4 tabs */}
         <View style={styles.pill}>
-          {visibleTabs.map((tab) => {
-            const routeIndex = state.routes.findIndex((r) => r.name === tab.name);
-            const isActive = state.index === routeIndex;
+          {tabs.map((tab) => {
+            const isActive = pathname === `/${tab.name}` || pathname.includes(tab.name);
             const { Icon } = tab;
 
             return (
               <TouchableOpacity
                 key={tab.name}
-                onPress={() => navigation.navigate(tab.name)}
+                onPress={() => router.push(`/${tab.name}` as any)}
                 activeOpacity={0.8}
                 style={styles.tabItem}
               >
@@ -79,16 +86,21 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
 export default function AppLayout() {
   return (
-    <Tabs
-      tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={{ headerShown: false }}
-    >
-      <Tabs.Screen name="home" />
-      <Tabs.Screen name="protocolo" />
-      <Tabs.Screen name="analise" options={{ href: null }} />
-      <Tabs.Screen name="evolucao" />
-      <Tabs.Screen name="perfil" />
-    </Tabs>
+    <View style={{ flex: 1 }}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: { display: 'none' },
+        }}
+      >
+        <Tabs.Screen name="home" />
+        <Tabs.Screen name="protocolo" />
+        <Tabs.Screen name="analise" options={{ href: null }} />
+        <Tabs.Screen name="evolucao" />
+        <Tabs.Screen name="perfil" />
+      </Tabs>
+      <CustomTabBar />
+    </View>
   );
 }
 
@@ -99,7 +111,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 12,
-    backgroundColor: 'transparent',
   },
   pill: {
     flex: 1,

@@ -1,5 +1,7 @@
 import { View, Text, ScrollView, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Colors } from '../../constants/colors';
+import { Canvas, Circle as SkiaCircle, BlurMask } from '@shopify/react-native-skia';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { Lock } from 'lucide-react-native';
@@ -22,6 +24,9 @@ const metrics = [
   { name: 'Elasticidade', score: 80, color: '#06B6D4' },
 ];
 
+const CANVAS_W = 160;
+const CANVAS_H = 60;
+
 function MetricCard({ metric }: { metric: (typeof metrics)[0] }) {
   return (
     <View
@@ -30,45 +35,46 @@ function MetricCard({ metric }: { metric: (typeof metrics)[0] }) {
         borderRadius: 16,
         backgroundColor: 'rgba(255,255,255,0.05)',
         padding: 16,
-        justifyContent: 'space-between',
-        minHeight: 108,
+        minHeight: 120,
         overflow: 'hidden',
       }}
     >
-      {/* Título — nítido, exatamente como no Figma */}
-      <Text style={{ fontSize: 14, fontWeight: '600', color: 'white' }}>
+      {/* Título */}
+      <Text style={{ fontSize: 14, fontWeight: '600', color: 'white', marginBottom: 12 }}>
         {metric.name}
       </Text>
 
-      {/* Número "blur-md": oval branca simulando filter:blur(12px) no texto */}
+      {/* Score pill — simula blur-md do Figma */}
       <View
         style={{
           width: 50,
           height: 24,
           backgroundColor: 'rgba(255,255,255,0.38)',
           borderRadius: 12,
+          marginBottom: 8,
         }}
       />
 
-      {/* Barra "blur-sm": track + fill colorido mais alto simulando filter:blur(4px) */}
-      <View
+      {/* Skia glow blob — BlurMask gaussiano real */}
+      <Canvas
         style={{
-          height: 10,
-          backgroundColor: 'rgba(255,255,255,0.15)',
-          borderRadius: 5,
-          overflow: 'hidden',
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: CANVAS_H,
         }}
       >
-        <View
-          style={{
-            height: '100%',
-            width: `${metric.score}%`,
-            backgroundColor: metric.color,
-            opacity: 0.7,
-            borderRadius: 5,
-          }}
-        />
-      </View>
+        <SkiaCircle
+          cx={CANVAS_W / 2}
+          cy={CANVAS_H}
+          r={40}
+          color={metric.color}
+          opacity={0.55}
+        >
+          <BlurMask blur={18} style="normal" />
+        </SkiaCircle>
+      </Canvas>
     </View>
   );
 }
@@ -152,71 +158,26 @@ export default function Results() {
 
           {/* Locked cards */}
           <View className="gap-3 mb-8">
-            {/* Protocolo — fundo #F5F5F7 limpo com overlay branco/60 */}
-            <View
-              style={{
-                backgroundColor: '#F5F5F7',
-                borderRadius: 16,
-                height: 96,
-                overflow: 'hidden',
-              }}
-            >
-              {/* Linhas borradas simulando conteúdo escondido */}
-              <View style={{ padding: 16, gap: 8 }}>
-                <View style={{ height: 10, backgroundColor: 'rgba(26,26,26,0.12)', borderRadius: 4, width: '75%' }} />
-                <View style={{ height: 10, backgroundColor: 'rgba(156,163,175,0.12)', borderRadius: 4, width: '50%' }} />
-                <View style={{ height: 10, backgroundColor: 'rgba(26,26,26,0.12)', borderRadius: 4, width: '66%' }} />
-              </View>
-              {/* Overlay branco translúcido + lock */}
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: 'rgba(255,255,255,0.82)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'row',
-                  gap: 8,
-                }}
-              >
-                <Lock size={18} color="#1A1A1A" />
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1A1A1A' }}>
-                  Seu Protocolo Personalizado
-                </Text>
-              </View>
+            {/* Protocolo — fundo limpo sem skeleton */}
+            <View className="bg-niks-light rounded-card h-24 flex-row items-center justify-center gap-2 overflow-hidden">
+              <Lock size={16} color="#1A1A1A" />
+              <Text className="text-[15px] font-semibold text-niks-black">
+                Seu Protocolo Personalizado
+              </Text>
             </View>
 
-            {/* Análise Alimentar — gradiente laranja→verde→rosa (from-orange-200 via-green-200 to-red-200) com overlay */}
-            <View
-              style={{
-                borderRadius: 16,
-                height: 96,
-                overflow: 'hidden',
-              }}
-            >
-              {/* Gradiente de fundo simulando blur-lg do Figma */}
+            {/* Análise Alimentar — gradiente Figma Make (orange-200 → green-200 → red-200) + overlay */}
+            <View className="rounded-card h-24 overflow-hidden">
               <LinearGradient
                 colors={['#fed7aa', '#bbf7d0', '#fecaca']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
               />
-              {/* Overlay branco translúcido + lock */}
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: 'rgba(255,255,255,0.72)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'row',
-                  gap: 8,
-                  paddingHorizontal: 16,
-                }}
-              >
-                <Lock size={18} color="#1A1A1A" />
-                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1A1A1A', textAlign: 'center' }}>
-                  Analise Alimentar
+              <View className="absolute inset-0 bg-white/60 flex-row items-center justify-center gap-2 px-4">
+                <Lock size={16} color="#1A1A1A" />
+                <Text className="text-[15px] font-semibold text-niks-black text-center">
+                  Análise Alimentar
                 </Text>
               </View>
             </View>

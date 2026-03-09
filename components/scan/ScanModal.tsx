@@ -29,7 +29,7 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
 
   const handleScanFood = () => {
     onClose();
-    router.push('/(scan)/camera?mode=food' as any);
+    router.push('/(scan)/food-scan-intro' as any);
   };
 
   const handleScanFace = () => {
