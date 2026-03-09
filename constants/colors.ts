@@ -1,0 +1,20 @@
+// Cores exatas do NIKS AI — extraídas do Figma Make
+export const Colors = {
+  black: '#1A1A1A',
+  white: '#FFFFFF',
+  gray: '#9CA3AF',
+  lightGray: '#F5F5F7',
+  disabled: '#D1D5DB',
+  border: 'rgba(0,0,0,0.1)',
+  muted: '#717182',
+  inputBg: '#F3F3F5',
+  destructive: '#D4183D',
+  accent: '#FF9B8A',
+  tabBarBg: '#EDEDEE',
+  tabActive: '#1D3A44',
+  tabInactive: '#8A8A8E',
+  scanBtn: '#FB7B6B',
+  scanBtnShadow: 'rgba(251,123,107,0.4)',
+  cardBg: '#F6F4EE',
+  gold: '#FFD700',
+} as const;
