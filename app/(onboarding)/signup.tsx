@@ -72,7 +72,7 @@ export default function Signup() {
       if (session?.user?.id) {
         await saveToSupabase(session.user.id);
       }
-      router.push('/(onboarding)/paywall-soft');
+      router.push('/(onboarding)/protocol-loading');
     } catch (error: any) {
       Alert.alert('Erro ao criar conta', error?.message ?? 'Tente novamente.');
     }
@@ -84,7 +84,7 @@ export default function Signup() {
       if (session?.user?.id) {
         await saveToSupabase(session.user.id);
       }
-      router.push('/(onboarding)/paywall-soft');
+      router.push('/(onboarding)/protocol-loading');
     } catch (error: any) {
       Alert.alert('Erro', JSON.stringify(error));
     }

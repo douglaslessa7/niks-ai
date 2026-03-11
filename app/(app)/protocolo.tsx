@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
 import { Timer, Check, Sun, Moon } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
-import { useAppStore } from '../../store/onboarding';
+import { useAppStore, ProtocolResult } from '../../store/onboarding';
 
 interface Step {
   id: number;
@@ -28,7 +28,7 @@ interface Protocol {
 }
 
 export default function Protocolo() {
-  const { scanResult, onboarding } = useAppStore();
+  const { scanResult, onboarding, protocolResult: cachedProtocol, setProtocolResult } = useAppStore();
   const [period, setPeriod] = useState<'morning' | 'night'>('morning');
   const [protocol, setProtocol] = useState<Protocol | null>(null);
   const [morningSteps, setMorningSteps] = useState<Step[]>([]);
@@ -45,19 +45,79 @@ export default function Protocolo() {
       setLoading(true);
       setError(null);
 
+      // 1. Tentar carregar do cache do store (gerado na protocol-loading)
+      if (cachedProtocol) {
+        const withCompleted: Protocol = {
+          ...cachedProtocol,
+          morning: cachedProtocol.morning.map((s: Step) => ({ ...s, completed: false })),
+          night: cachedProtocol.night.map((s: Step) => ({ ...s, completed: false })),
+        };
+        setProtocol(withCompleted);
+        setMorningSteps(withCompleted.morning);
+        setNightSteps(withCompleted.night);
+        return;
+      }
+
+      // 2. Tentar buscar do Supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id) {
+        const { data: saved } = await supabase
+          .from('protocolos')
+          .select('rotina_am, rotina_pm, dicas')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (saved?.rotina_am && saved?.rotina_pm) {
+          const fromDb: Protocol = {
+            morning: saved.rotina_am,
+            night: saved.rotina_pm,
+            introduction_warnings: saved.dicas?.[0] ?? null,
+            expected_timeline: {
+              two_weeks: saved.dicas?.[1] ?? '',
+              one_month: saved.dicas?.[2] ?? '',
+              three_months: saved.dicas?.[3] ?? '',
+            },
+          };
+          setProtocolResult(fromDb as ProtocolResult);
+          const withCompleted: Protocol = {
+            ...fromDb,
+            morning: fromDb.morning.map((s: Step) => ({ ...s, completed: false })),
+            night: fromDb.night.map((s: Step) => ({ ...s, completed: false })),
+          };
+          setProtocol(withCompleted);
+          setMorningSteps(withCompleted.morning);
+          setNightSteps(withCompleted.night);
+          return;
+        }
+      }
+
+      // 3. Fallback: regenerar via Edge Function
       if (!scanResult) {
         setError('Faça um scan de pele primeiro para gerar seu protocolo personalizado.');
         return;
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke('generate-protocol', {
-        body: {
-          scanResult,
-          onboardingData: onboarding,
-        },
-      });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch(
+        'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/generate-protocol',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(sessionData.session?.access_token
+              ? { Authorization: `Bearer ${sessionData.session.access_token}` }
+              : {}),
+          },
+          body: JSON.stringify({ scanResult, onboardingData: onboarding }),
+        }
+      );
 
-      if (fnError) throw fnError;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const data: ProtocolResult = await response.json();
+      setProtocolResult(data);
 
       const withCompleted: Protocol = {
         ...data,

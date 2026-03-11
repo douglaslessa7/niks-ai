@@ -25,6 +25,27 @@ export type ScanResult = {
   disclaimer: string
 }
 
+export type ProtocolStep = {
+  id: number
+  name: string
+  ingredient: string
+  instruction: string
+  color: string
+  waitTime?: string | null
+  product_suggestions?: string[]
+}
+
+export type ProtocolResult = {
+  morning: ProtocolStep[]
+  night: ProtocolStep[]
+  introduction_warnings: string | null
+  expected_timeline: {
+    two_weeks: string
+    one_month: string
+    three_months: string
+  }
+}
+
 export type OnboardingData = {
   concerns: string[]
   genero: string | null
@@ -52,6 +73,9 @@ type AppStore = {
   skinImageBase64: string | null
   skinImageUri: string | null
   setSkinImage: (base64: string, uri: string) => void
+  skinScanId: string | null
+  protocolResult: ProtocolResult | null
+  setProtocolResult: (result: ProtocolResult) => void
   saveToSupabase: (userId: string) => Promise<void>
   reset: () => void
 }
@@ -79,6 +103,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   foodImageMimeType: null,
   skinImageBase64: null,
   skinImageUri: null,
+  skinScanId: null,
+  protocolResult: null,
 
   setOnboardingField: (key, value) =>
     set((state) => ({
@@ -94,6 +120,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri }),
+
+  setProtocolResult: (result) => set({ protocolResult: result }),
 
   saveToSupabase: async (userId: string) => {
     const { onboarding, scanResult, scanImageUri } = get()
@@ -127,19 +155,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (userError) throw userError
 
     if (scanResult) {
-      const { error: scanError } = await supabase.from('skin_scans').insert({
-        user_id: userId,
-        foto_url: scanImageUri ?? '',
-        skin_score: scanResult.skin_score,
-        tipo_pele: scanResult.skin_type_detected,
-        metricas: scanResult.metrics,
-        areas_atencao: scanResult.top_concerns,
-        resumo: scanResult.headline,
-      })
+      const { data: scanData, error: scanError } = await supabase
+        .from('skin_scans')
+        .insert({
+          user_id: userId,
+          foto_url: scanImageUri ?? '',
+          skin_score: scanResult.skin_score,
+          tipo_pele: scanResult.skin_type_detected,
+          metricas: scanResult.metrics,
+          areas_atencao: scanResult.top_concerns,
+          resumo: scanResult.headline,
+        })
+        .select('id')
+        .single()
 
       if (scanError) throw scanError
+      if (scanData?.id) set({ skinScanId: scanData.id })
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, skinImageBase64: null, skinImageUri: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, skinImageBase64: null, skinImageUri: null, skinScanId: null, protocolResult: null }),
 }))
