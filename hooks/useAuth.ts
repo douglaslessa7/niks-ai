@@ -52,6 +52,36 @@ export function useAuth() {
     }
   }
 
+  const signInWithEmail = async (email: string, password: string): Promise<Session> => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
+      if (!data.session) throw new Error('Sessão não retornada pelo Supabase')
+      return data.session
+    } catch (error) {
+      console.error('Erro no login com e-mail:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const signUpWithEmail = async (email: string, password: string): Promise<Session> => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase.auth.signUp({ email, password })
+      if (error) throw error
+      if (!data.session) throw new Error('Sessão não retornada pelo Supabase')
+      return data.session
+    } catch (error) {
+      console.error('Erro no cadastro com e-mail:', error)
+      throw error
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const signOut = async () => {
     try {
       await GoogleSignin.signOut()
@@ -66,6 +96,8 @@ export function useAuth() {
     user: session?.user ?? null,
     loading,
     signInWithGoogle,
+    signInWithEmail,
+    signUpWithEmail,
     signOut,
   }
 }

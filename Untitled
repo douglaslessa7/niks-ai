@@ -80,9 +80,6 @@ npx expo start --clear   # pressionar 's' depois 'i'
 
 ### Paths corretos das telas
 ```
-file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Welcome.tsx
-file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Login.tsx
-file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Signup.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Home.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Protocolo.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Analise.tsx
@@ -194,10 +191,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - **Google Sign In:** ✅ funcionando
   - iOS Client ID: `436683236946-36te4gp3c6eid9frheokli00j0pnocd4.apps.googleusercontent.com`
   - Skip nonce checks ativado no Supabase (obrigatório para iOS)
-- **Apple Sign In:** 🟠 pendente — Apple Developer Program adquirido, configuração pendente (botão placeholder já existe em `signup.tsx` e `login.tsx`)
-- **E-mail + Senha:** ✅ funcionando — `signInWithEmail` e `signUpWithEmail` em `hooks/useAuth.ts`
-  - Confirmação de e-mail: **desativada** (fase de testes) — reativar no Supabase Dashboard em produção
-  - ⚠️ Usuários criados com confirmação ativa ficam em estado "não confirmado" — confirmar manualmente no Dashboard ou deletar e recriar
+- **Apple Sign In:** 🟠 pendente — Apple Developer Program adquirido, configuração pendente
 
 ---
 
@@ -279,9 +273,6 @@ Os scores de hidratação, oleosidade etc. são **intencionalmente** ocultados �
 **Telas — Onboarding (19 telas):**
 `concerns` → `gender` → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `commitment` → `goal` → `final-loading` → `trust` → `plan-preview` → `signup` → `paywall-soft` → `paywall-detailed` → `notifications`
 
-**Tela de Login (acesso direto da Welcome):**
-`login` — standalone, sem QuizLayout, acessada pelo botão "Entrar" na Welcome screen
-
 **Telas — Scan flow (5 telas):**
 `scan-prep` → `camera` → `loading` → `results` → `food-report`
 
@@ -293,7 +284,6 @@ Os scores de hidratação, oleosidade etc. são **intencionalmente** ocultados �
 - `hooks/useAuth.ts` ✅
 - `store/onboarding.ts` ✅
 - Supabase Auth (Google Sign In) ✅
-- Supabase Auth (E-mail + Senha) ✅
 - Banco de dados + RLS + trigger ✅
 - Edge Functions (analyze-skin, analyze-food, generate-protocol) ✅
 - `app/(scan)/food-camera.tsx` ✅
@@ -306,7 +296,7 @@ Os scores de hidratação, oleosidade etc. são **intencionalmente** ocultados �
 #### 🔴 1. Apple Sign In
 - Apple Developer Program já adquirido
 - Configurar no Xcode + Supabase Dashboard
-- Botão placeholder já existe em `signup.tsx` e `login.tsx` — só falta conectar a lógica real
+- Adicionar botão "Continuar com Apple" em `signup.tsx`
 
 #### 🟡 2. RevenueCat — Paywall
 - Instalar `react-native-purchases`
@@ -330,47 +320,15 @@ Os scores de hidratação, oleosidade etc. são **intencionalmente** ocultados �
 
 ```
 Welcome
-  → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
-    → scan-prep → camera (setSkinImage) → loading (analyze-skin) → results
-    → goal → plan-preview (skin_score real do store)
-    → signup (Google / Apple / E-mail+Senha → saveToSupabase) → paywall-soft → paywall-detailed → notifications
-    → App principal (tabs)
-
-  → [botão "Entrar"] Login
-    → E-mail + Senha: signInWithEmail → home
-    → Google: signInWithGoogle → home
-    → Apple: placeholder → home (configuração pendente)
+  → Onboarding (19 telas) — setOnboardingField() em cada tela
+  → scan-prep → camera (setSkinImage) → loading (analyze-skin) → results
+  → goal → plan-preview (skin_score real do store)
+  → signup (Google Sign In → saveToSupabase) → paywall-soft → paywall-detailed → notifications
+  → App principal (tabs)
 
 Fluxo de comida (dentro do app principal):
   analise.tsx → food-camera (setFoodImage) → food-report (analyze-food) → protocolo (generate-protocol)
 ```
-
-### Valores de progresso do onboarding (ProgressBar)
-
-O scan flow é inserido entre `commitment` e `goal` — não no final do onboarding.
-
-| Tela | Progress | Observação |
-|---|---|---|
-| concerns | 8% | |
-| gender | 16% | |
-| birthday | 24% | |
-| skin-type | 32% | |
-| frequency | 36% | |
-| sun-exposure | 40% | |
-| hydration-sleep | 44% | |
-| sunscreen | 52% | |
-| social-proof | 56% | |
-| food-analysis | 60% | |
-| commitment | 64% | |
-| **→ SCAN FLOW ENTRA AQUI** | — | scan-prep → camera → loading → results |
-| goal | 80% | |
-| trust | 88% | |
-| plan-preview | 92% | |
-| signup | 96% | |
-| final-loading | sem progress bar | |
-| paywall-soft | sem progress bar | |
-| paywall-detailed | sem progress bar | |
-| notifications | sem progress bar | |
 
 ---
 
@@ -398,8 +356,7 @@ niks-ai/
 │   │   ├── final-loading.tsx      ✅
 │   │   ├── trust.tsx              ✅
 │   │   ├── plan-preview.tsx       ✅
-│   │   ├── signup.tsx             ✅ fluxo dois passos (e-mail/senha + Google/Apple)
-│   │   ├── login.tsx              ✅ fluxo dois passos (e-mail/senha + Google/Apple)
+│   │   ├── signup.tsx             ✅
 │   │   ├── paywall-soft.tsx       ✅
 │   │   ├── paywall-detailed.tsx   ✅
 │   │   └── notifications.tsx      ✅
@@ -473,5 +430,5 @@ react-native-reanimated
 
 ---
 
-*Última atualização: Sessão 4 — Março 2026*
-*Status: MVP — todas as telas concluídas + Login/Signup com e-mail/senha. Apple Sign In + RevenueCat + Mixpanel pendentes*
+*Última atualização: Sessão 3 — Março 2026*
+*Status: MVP — todas as telas concluídas, Apple Sign In + RevenueCat + Mixpanel pendentes*

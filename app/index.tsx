@@ -96,7 +96,7 @@ export default function Welcome() {
             <CTAButton text="Começar" to="/(onboarding)/concerns" />
             <View className="items-center flex-row justify-center gap-1">
               <Text className="text-[#9CA3AF] text-[15px]">Já tem conta? </Text>
-              <TouchableOpacity onPress={() => {}}>
+              <TouchableOpacity onPress={() => router.push('/(onboarding)/login')}>
                 <Text className="text-[#1A1A1A] text-[15px] font-semibold">Entrar</Text>
               </TouchableOpacity>
             </View>
