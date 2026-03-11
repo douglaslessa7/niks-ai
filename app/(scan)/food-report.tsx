@@ -1,98 +1,126 @@
-import { View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, Sparkles, Info, Shield, Droplet, Leaf, AlertTriangle, Fish, Zap, type LucideIcon } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { ChevronLeft, Sparkles, Info, AlertTriangle, CheckCircle, Zap } from 'lucide-react-native';
+import { supabase } from '../../lib/supabase';
+import { useAppStore } from '../../store/onboarding';
 
-interface NutrientInfo {
+type FoodItem = {
   name: string;
-  effect: string;
-  Icon: LucideIcon;
-  iconColor: string;
-}
+  impact: 'positivo' | 'neutro' | 'negativo';
+  evidence: string;
+  mechanism: string;
+  relevance_to_skin: string;
+  substitution: string | null;
+};
 
-interface FoodEntry {
-  name: string;
-  image: string;
-  impact: 'boost' | 'neutral' | 'trigger';
-  calories: number;
-  time: string;
-  ingredients: string[];
-  keyNutrients: NutrientInfo[];
-  explanation: string;
-  recommendation: string;
-}
+type FoodAnalysisResult = {
+  meal_score: 'Ótimo' | 'Bom' | 'Moderado' | 'Atenção';
+  meal_summary: string;
+  foods: FoodItem[];
+  highlights: string[];
+  watch_out: string[];
+  science_note: string;
+  disclaimer: string;
+};
 
-const foodDatabase: Record<string, FoodEntry> = {
-  'salada-mediterranea': {
-    name: 'Salada mediterrânea',
-    image: 'https://images.unsplash.com/photo-1649531794884-b8bb1de72e68?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400',
-    impact: 'boost',
-    calories: 245,
-    time: '12:47',
-    ingredients: ['Folhas verdes (espinafre, alface)', 'Tomate cereja', 'Pepino', 'Azeite de oliva extra virgem', 'Azeitonas pretas', 'Queijo feta'],
-    keyNutrients: [
-      { name: 'Vitamina E', effect: 'Antioxidante poderoso que protege a pele dos radicais livres e promove regeneração celular.', Icon: Shield, iconColor: '#7CB69D' },
-      { name: 'Ômega-3', effect: 'Propriedades anti-inflamatórias que reduzem vermelhidão e acne. Mantém a pele hidratada.', Icon: Droplet, iconColor: '#3B82F6' },
-      { name: 'Vitamina C', effect: 'Estimula produção de colágeno, uniformiza o tom da pele e previne manchas.', Icon: Sparkles, iconColor: '#FB7B6B' },
-    ],
-    explanation: 'Esta salada é excelente para sua pele! Rica em antioxidantes, vitaminas e gorduras saudáveis do azeite, ela combate inflamação e promove regeneração celular.',
-    recommendation: 'Continue incluindo este tipo de refeição regularmente. Ideal consumir no almoço para máxima absorção de nutrientes.',
-  },
-  'torrada-abacate': {
-    name: 'Torrada de abacate',
-    image: 'https://images.unsplash.com/photo-1609158087148-3bae840bcfda?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400',
-    impact: 'neutral',
-    calories: 320,
-    time: '08:15',
-    ingredients: ['Pão integral', 'Abacate fresco', 'Sal marinho', 'Pimenta preta', 'Azeite'],
-    keyNutrients: [
-      { name: 'Gorduras Saudáveis', effect: 'O abacate fornece gorduras monoinsaturadas que mantêm a pele macia e hidratada.', Icon: Leaf, iconColor: '#7CB69D' },
-      { name: 'Vitamina E', effect: 'Proteção antioxidante contra danos ambientais e envelhecimento precoce.', Icon: Shield, iconColor: '#7CB69D' },
-      { name: 'Carboidratos', effect: 'O pão integral pode causar picos de insulina em algumas pessoas, afetando a pele.', Icon: AlertTriangle, iconColor: '#D4A017' },
-    ],
-    explanation: 'Esta refeição tem aspectos positivos e neutros. O abacate é excelente com suas gorduras saudáveis, porém o pão integral pode causar leve inflamação.',
-    recommendation: 'Monitore como sua pele reage. Se notar mais oleosidade, considere substituir o pão por uma opção sem glúten.',
-  },
-  'salmao-grelhado': {
-    name: 'Salmão grelhado',
-    image: 'https://images.unsplash.com/photo-1580959375944-abd7e991f971?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=400',
-    impact: 'boost',
-    calories: 380,
-    time: 'Ontem',
-    ingredients: ['Filé de salmão selvagem', 'Limão', 'Ervas frescas', 'Alho', 'Azeite'],
-    keyNutrients: [
-      { name: 'Ômega-3 (EPA/DHA)', effect: 'Os ácidos graxos mais anti-inflamatórios! Reduzem acne, vermelhidão e promovem cicatrização.', Icon: Fish, iconColor: '#3B82F6' },
-      { name: 'Proteína de Alta Qualidade', effect: 'Fornece aminoácidos essenciais para produção de colágeno e elastina.', Icon: Zap, iconColor: '#FB7B6B' },
-      { name: 'Astaxantina', effect: 'Antioxidante exclusivo do salmão que protege contra raios UV e melhora elasticidade.', Icon: Sparkles, iconColor: '#FB7B6B' },
-    ],
-    explanation: 'O salmão é um dos melhores alimentos para a pele! Rico em ômega-3, ele combate inflamação sistêmica, reduz acne e promove uma pele radiante.',
-    recommendation: 'Perfeito! Tente consumir salmão ou outros peixes gordos 2-3x por semana para melhores resultados na pele.',
-  },
+const scoreConfig = {
+  'Ótimo':    { color: '#7CB69D', bgColor: 'rgba(124,182,157,0.1)' },
+  'Bom':      { color: '#7CB69D', bgColor: 'rgba(124,182,157,0.1)' },
+  'Moderado': { color: '#D4A017', bgColor: 'rgba(212,160,23,0.1)' },
+  'Atenção':  { color: '#FB7B6B', bgColor: 'rgba(251,123,107,0.1)' },
 };
 
 const impactConfig = {
-  boost: { label: 'Skin Boost', color: '#7CB69D', bgColor: 'rgba(124,182,157,0.1)', dotColor: '#7CB69D', description: 'Este alimento é excelente para sua pele' },
-  neutral: { label: 'Neutro', color: '#B8860B', bgColor: 'rgba(255,215,0,0.1)', dotColor: '#D4A017', description: 'Este alimento tem efeito moderado na pele' },
-  trigger: { label: 'Possível Gatilho', color: '#FB7B6B', bgColor: 'rgba(251,123,107,0.1)', dotColor: '#FB7B6B', description: 'Este alimento pode afetar negativamente sua pele' },
+  positivo: { label: 'Positivo', color: '#7CB69D', bgColor: 'rgba(124,182,157,0.1)' },
+  neutro:   { label: 'Neutro',   color: '#D4A017', bgColor: 'rgba(212,160,23,0.1)'   },
+  negativo: { label: 'Negativo', color: '#FB7B6B', bgColor: 'rgba(251,123,107,0.1)'  },
 };
 
 export default function FoodReport() {
   const router = useRouter();
-  const { foodId } = useLocalSearchParams<{ foodId: string }>();
-  const food = foodDatabase[foodId ?? 'salada-mediterranea'];
-  const impact = impactConfig[food?.impact ?? 'boost'];
+  const { foodImageBase64, foodImageMimeType, onboarding } = useAppStore();
+  const [result, setResult] = useState<FoodAnalysisResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!food) {
+  useEffect(() => {
+    analyzeFood();
+  }, []);
+
+  const analyzeFood = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('foodImageBase64 size KB:', Math.round(((foodImageBase64?.length ?? 0) * 0.75) / 1024));
+      console.log('foodImageMimeType:', foodImageMimeType);
+
+      const response = await fetch(
+        'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/analyze-food',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          },
+          body: JSON.stringify({
+            imageBase64: foodImageBase64,
+            mimeType: foodImageMimeType ?? 'image/jpeg',
+            skinProfile: {
+              skin_type: onboarding.skin_type,
+              concerns: onboarding.concerns,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errBody = await response.json();
+        throw new Error(JSON.stringify(errBody));
+      }
+
+      const data = await response.json();
+      setResult(data);
+    } catch (err: any) {
+      console.error('Erro ao analisar refeição:', String(err));
+      setError('Não foi possível analisar a refeição. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#1A1A1A' }}>Alimento não encontrado</Text>
+        <ActivityIndicator size="large" color="#FB7B6B" />
+        <Text style={{ marginTop: 16, color: '#5A5A5C', fontSize: 15 }}>Analisando sua refeição...</Text>
       </SafeAreaView>
     );
   }
 
+  if (error || !result) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <Text style={{ color: '#1A1A1A', fontSize: 16, fontWeight: '600', textAlign: 'center', marginBottom: 16 }}>
+          {error ?? 'Erro inesperado'}
+        </Text>
+        <TouchableOpacity
+          onPress={analyzeFood}
+          style={{ backgroundColor: '#FB7B6B', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+        >
+          <Text style={{ color: 'white', fontWeight: '600' }}>Tentar novamente</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  const score = scoreConfig[result.meal_score] ?? scoreConfig['Bom'];
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }}>
       <ScrollView showsVerticalScrollIndicator={false}>
+
         {/* Header */}
         <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <TouchableOpacity
@@ -105,89 +133,99 @@ export default function FoodReport() {
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#1D3A44' }}>Relatório de Impacto</Text>
         </View>
 
-        {/* Food image */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
-          <View style={{ width: '100%', height: 200, borderRadius: 16, overflow: 'hidden' }}>
-            <Image
-              source={{ uri: food.image }}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
-            <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 100, backgroundColor: 'rgba(0,0,0,0.4)' }} />
-            <View style={{ position: 'absolute', bottom: 12, left: 12, right: 12 }}>
-              <Text style={{ color: 'white', fontSize: 20, fontWeight: '700', marginBottom: 8 }}>{food.name}</Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <View style={{ backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: impact.dotColor }} />
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: impact.color }}>{impact.label}</Text>
-                </View>
-                <View style={{ backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#1D3A44' }}>{food.calories} cal</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
         <View style={{ paddingHorizontal: 20, gap: 12, paddingBottom: 32 }}>
-          {/* Impact explanation */}
-          <View style={{ backgroundColor: 'white', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
-              <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: impact.bgColor, alignItems: 'center', justifyContent: 'center' }}>
-                <Sparkles size={18} color={impact.color} strokeWidth={2} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44', marginBottom: 4 }}>{impact.description}</Text>
-                <Text style={{ fontSize: 13, color: '#5A5A5C', lineHeight: 20 }}>{food.explanation}</Text>
-              </View>
-            </View>
+
+          {/* Score geral */}
+          <View style={{ backgroundColor: score.bgColor, borderRadius: 16, padding: 20, borderWidth: 1.5, borderColor: score.color + '30', alignItems: 'center' }}>
+            <Text style={{ fontSize: 42, fontWeight: '800', color: score.color }}>{result.meal_score}</Text>
+            <Text style={{ fontSize: 14, color: '#5A5A5C', textAlign: 'center', marginTop: 8, lineHeight: 20 }}>{result.meal_summary}</Text>
           </View>
 
-          {/* Key nutrients */}
+          {/* Alimentos identificados */}
           <View style={{ backgroundColor: 'white', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44', marginBottom: 12 }}>Nutrientes chave</Text>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44', marginBottom: 12 }}>Alimentos identificados</Text>
             <View style={{ gap: 12 }}>
-              {food.keyNutrients.map((nutrient, index) => {
-                const { Icon, iconColor } = nutrient;
+              {result.foods.map((food, index) => {
+                const cfg = impactConfig[food.impact] ?? impactConfig.neutro;
                 return (
-                  <View key={index} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: iconColor + '18', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Icon size={18} color={iconColor} strokeWidth={2} />
+                  <View key={index} style={{ borderRadius: 12, backgroundColor: cfg.bgColor, padding: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>{food.name}</Text>
+                      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, backgroundColor: cfg.color + '20' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: cfg.color }}>{cfg.label}</Text>
+                      </View>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#1D3A44', marginBottom: 2 }}>{nutrient.name}</Text>
-                      <Text style={{ fontSize: 12, color: '#5A5A5C', lineHeight: 18 }}>{nutrient.effect}</Text>
-                    </View>
+                    <Text style={{ fontSize: 12, color: '#5A5A5C', lineHeight: 18, marginBottom: 4 }}>{food.mechanism}</Text>
+                    {food.substitution && (
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: 4 }}>
+                        <Sparkles size={12} color={cfg.color} strokeWidth={2} style={{ marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 12, color: cfg.color, fontWeight: '600' }}>
+                          Substitua por: {food.substitution}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 );
               })}
             </View>
           </View>
 
-          {/* Ingredients */}
-          <View style={{ backgroundColor: 'white', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44', marginBottom: 12 }}>Ingredientes identificados</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {food.ingredients.map((ingredient, index) => (
-                <View key={index} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 99, backgroundColor: '#F6F4EE' }}>
-                  <Text style={{ fontSize: 11, fontWeight: '500', color: '#1D3A44' }}>{ingredient}</Text>
-                </View>
-              ))}
+          {/* Destaques */}
+          {result.highlights.length > 0 && (
+            <View style={{ backgroundColor: 'white', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                <CheckCircle size={16} color="#7CB69D" strokeWidth={2} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>Pontos positivos</Text>
+              </View>
+              <View style={{ gap: 8 }}>
+                {result.highlights.map((h, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                    <CheckCircle size={16} color="#7CB69D" strokeWidth={2} style={{ marginTop: 2 }} />
+                    <Text style={{ flex: 1, fontSize: 13, color: '#5A5A5C', lineHeight: 18 }}>{h}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-          </View>
+          )}
 
-          {/* Recommendation */}
-          <View style={{ borderRadius: 14, padding: 16, backgroundColor: impact.bgColor, borderWidth: 1.5, borderColor: impact.color + '20' }}>
+          {/* Atenção */}
+          {result.watch_out.length > 0 && (
+            <View style={{ backgroundColor: 'white', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                <AlertTriangle size={16} color="#D4A017" strokeWidth={2} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>Fique atento</Text>
+              </View>
+              <View style={{ gap: 8 }}>
+                {result.watch_out.map((w, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                    <AlertTriangle size={16} color="#D4A017" strokeWidth={2} style={{ marginTop: 2 }} />
+                    <Text style={{ flex: 1, fontSize: 13, color: '#5A5A5C', lineHeight: 18 }}>{w}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Science note */}
+          <View style={{ borderRadius: 14, padding: 16, backgroundColor: 'rgba(251,123,107,0.08)', borderWidth: 1.5, borderColor: '#FB7B6B30' }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-              <Info size={18} color={impact.color} strokeWidth={2} style={{ marginTop: 2 }} />
+              <Zap size={18} color="#FB7B6B" strokeWidth={2} style={{ marginTop: 2 }} />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: impact.color, marginBottom: 4 }}>Recomendação personalizada</Text>
-                <Text style={{ fontSize: 12, color: '#1D3A44', lineHeight: 18 }}>{food.recommendation}</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#FB7B6B', marginBottom: 4 }}>Você sabia?</Text>
+                <Text style={{ fontSize: 13, color: '#1D3A44', lineHeight: 20 }}>{result.science_note}</Text>
               </View>
             </View>
           </View>
+
+          {/* Disclaimer */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 4 }}>
+            <Info size={13} color="#9CA3AF" strokeWidth={2} style={{ marginTop: 2 }} />
+            <Text style={{ flex: 1, fontSize: 11, color: '#9CA3AF', lineHeight: 16 }}>{result.disclaimer}</Text>
+          </View>
+
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+

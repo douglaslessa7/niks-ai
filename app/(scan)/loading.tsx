@@ -1,45 +1,76 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, Animated } from 'react-native';
+import { View, Text, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '../../lib/supabase';
+import { useAppStore } from '../../store/onboarding';
 
 const steps = [
   { label: 'Textura e poros', delay: 500 },
-  { label: 'Hidratação', delay: 1000 },
-  { label: 'Oleosidade', delay: 1500 },
-  { label: 'Manchas e pigmentação', delay: 2000 },
-  { label: 'Sinais de envelhecimento', delay: 2500 },
-  { label: 'Score geral da pele', delay: 3000 },
+  { label: 'Hidratação', delay: 1500 },
+  { label: 'Oleosidade', delay: 2500 },
+  { label: 'Manchas e pigmentação', delay: 3500 },
+  { label: 'Sinais de envelhecimento', delay: 4500 },
+  { label: 'Score geral da pele', delay: 5500 },
 ];
 
 export default function Loading() {
   const router = useRouter();
+  const { skinImageBase64, skinImageUri, onboarding, setScanResult } = useAppStore();
+
   const [percentage, setPercentage] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Progresso visual — dura ~7s
     const percentInterval = setInterval(() => {
       setPercentage((prev) => {
-        if (prev >= 100) {
-          clearInterval(percentInterval);
-          return 100;
-        }
+        if (prev >= 95) { clearInterval(percentInterval); return 95; }
         return prev + 1;
       });
-    }, 35);
+    }, 70);
 
     steps.forEach((step, index) => {
-      setTimeout(() => {
-        setCurrentStep(index + 1);
-      }, step.delay);
+      setTimeout(() => setCurrentStep(index + 1), step.delay);
     });
 
-    setTimeout(() => {
-      router.push('/(scan)/results');
-    }, 3800);
+    // Chama a Edge Function
+    const analyze = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('analyze-skin', {
+          body: {
+            imageBase64: skinImageBase64,
+            skinProfile: {
+              skin_type: onboarding.skin_type,
+              concerns: onboarding.concerns,
+            },
+          },
+        });
+
+        if (error) throw error;
+
+        setScanResult(data, skinImageUri ?? '');
+        setPercentage(100);
+
+        setTimeout(() => {
+          router.push('/(scan)/results');
+        }, 500);
+      } catch (err) {
+        console.error('Erro na análise:', err);
+        Alert.alert(
+          'Erro na análise',
+          'Não foi possível analisar sua pele. Tente novamente.',
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+      } finally {
+        clearInterval(percentInterval);
+      }
+    };
+
+    analyze();
 
     return () => clearInterval(percentInterval);
   }, []);
@@ -60,41 +91,28 @@ export default function Loading() {
   return (
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1 px-6 justify-center">
-        {/* Percentage */}
         <Text className="text-[64px] font-bold text-[#1A1A1A] text-center tracking-tight mb-4">
           {percentage}%
         </Text>
-
-        {/* Status text */}
         <Text className="text-[20px] font-semibold text-[#1A1A1A] text-center mb-8">
           Analisando sua pele...
         </Text>
-
-        {/* Gradient progress bar */}
         <View className="mb-12 h-1 bg-[#E5E7EB] rounded-full overflow-hidden">
           <Animated.View style={{ width: widthInterp, height: '100%' }}>
             <LinearGradient
               colors={['#EF4444', '#3B82F6', '#9CA3AF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={{ flex: 1, borderRadius: 99 }}
             />
           </Animated.View>
         </View>
-
-        {/* Checklist */}
         <View className="gap-4">
           {steps.map((step, index) => {
             const isCompleted = currentStep > index;
             const isInProgress = currentStep === index;
             const isPending = currentStep < index;
-
             return (
-              <View
-                key={index}
-                className="flex-row items-center gap-3"
-                style={{ opacity: isPending ? 0.4 : 1 }}
-              >
+              <View key={index} className="flex-row items-center gap-3" style={{ opacity: isPending ? 0.4 : 1 }}>
                 <View className="w-6 h-6 items-center justify-center flex-shrink-0">
                   {isCompleted ? (
                     <Check size={20} color="#1A1A1A" />
@@ -102,13 +120,7 @@ export default function Loading() {
                     <Text style={{ fontSize: 18, color: '#1A1A1A' }}>→</Text>
                   ) : null}
                 </View>
-                <Text
-                  className={`text-[17px] ${
-                    isCompleted || isInProgress
-                      ? 'text-[#1A1A1A] font-medium'
-                      : 'text-[#9CA3AF]'
-                  }`}
-                >
+                <Text className={`text-[17px] ${isCompleted || isInProgress ? 'text-[#1A1A1A] font-medium' : 'text-[#9CA3AF]'}`}>
                   {step.label}
                 </Text>
               </View>

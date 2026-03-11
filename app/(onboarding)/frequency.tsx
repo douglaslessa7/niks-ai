@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
+import { useAppStore } from '../../store/onboarding';
 
 const frequencies = [
   { range: '0–1', label: 'De vez em quando', dots: 1 },
@@ -28,6 +29,7 @@ function DotsIcon({ count, selected }: { count: number; selected: boolean }) {
 
 export default function Frequency() {
   const [selected, setSelected] = useState<string | null>(null);
+  const { setOnboardingField } = useAppStore();
 
   return (
     <QuizLayout progress={36}>
@@ -44,7 +46,7 @@ export default function Frequency() {
             <OptionCard
               key={option.range}
               selected={selected === option.range}
-              onPress={() => setSelected(option.range)}
+              onPress={() => { setSelected(option.range); setOnboardingField('frequency', option.range); }}
               icon={<DotsIcon count={option.dots} selected={selected === option.range} />}
               subtitle={option.label}
             >

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
+import { useAppStore } from '../../store/onboarding';
 
 const waterOptions = ['Menos de 1L', '1-2L', '2-3L', '3L+'];
 const sleepOptions = ['4-5', '6', '7', '8', '9+'];
@@ -23,6 +24,7 @@ function Chip({ selected, onPress, children }: { selected: boolean; onPress: () 
 export default function HydrationSleep() {
   const [water, setWater] = useState<string | null>(null);
   const [sleep, setSleep] = useState<string | null>(null);
+  const { setOnboardingField } = useAppStore();
 
   return (
     <QuizLayout progress={44}>
@@ -42,7 +44,7 @@ export default function HydrationSleep() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View className="flex-row">
               {waterOptions.map((option) => (
-                <Chip key={option} selected={water === option} onPress={() => setWater(option)}>
+                <Chip key={option} selected={water === option} onPress={() => { setWater(option); setOnboardingField('hydration', option); }}>
                   {option}
                 </Chip>
               ))}
@@ -58,7 +60,7 @@ export default function HydrationSleep() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View className="flex-row">
               {sleepOptions.map((option) => (
-                <Chip key={option} selected={sleep === option} onPress={() => setSleep(option)}>
+                <Chip key={option} selected={sleep === option} onPress={() => { setSleep(option); setOnboardingField('sleep', option); }}>
                   {option}
                 </Chip>
               ))}

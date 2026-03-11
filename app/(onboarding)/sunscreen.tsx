@@ -3,11 +3,13 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
+import { useAppStore } from '../../store/onboarding';
 
 const sunscreenOptions = ['Sim, sempre', 'Na maioria dos dias', 'Raramente', 'Nunca'];
 
 export default function Sunscreen() {
   const [selected, setSelected] = useState<string | null>(null);
+  const { setOnboardingField } = useAppStore();
 
   return (
     <QuizLayout progress={52}>
@@ -26,7 +28,7 @@ export default function Sunscreen() {
             <OptionCard
               key={option}
               selected={selected === option}
-              onPress={() => setSelected(option)}
+              onPress={() => { setSelected(option); setOnboardingField('sunscreen', option); }}
             >
               {option}
             </OptionCard>

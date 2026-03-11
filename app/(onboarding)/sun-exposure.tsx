@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
+import { useAppStore } from '../../store/onboarding';
 
 const exposureOptions = [
   'Quase nenhuma',
@@ -13,6 +14,7 @@ const exposureOptions = [
 
 export default function SunExposure() {
   const [selected, setSelected] = useState<string | null>(null);
+  const { setOnboardingField } = useAppStore();
 
   return (
     <QuizLayout progress={40}>
@@ -29,7 +31,7 @@ export default function SunExposure() {
             <OptionCard
               key={option}
               selected={selected === option}
-              onPress={() => setSelected(option)}
+              onPress={() => { setSelected(option); setOnboardingField('sun_exposure', option); }}
             >
               {option}
             </OptionCard>

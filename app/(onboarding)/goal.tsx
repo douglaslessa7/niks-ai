@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
+import { useAppStore } from '../../store/onboarding';
 
 const goals = [
   'Pele mais jovem',
@@ -14,6 +15,7 @@ const goals = [
 
 export default function Goal() {
   const [selected, setSelected] = useState<string | null>(null);
+  const { setOnboardingField } = useAppStore();
 
   return (
     <QuizLayout progress={80}>
@@ -32,7 +34,7 @@ export default function Goal() {
             <OptionCard
               key={goal}
               selected={selected === goal}
-              onPress={() => setSelected(goal)}
+              onPress={() => { setSelected(goal); setOnboardingField('objetivo', goal); }}
             >
               {goal}
             </OptionCard>

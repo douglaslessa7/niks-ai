@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
+import { useAppStore } from '../../store/onboarding';
 
 const skinTypes = [
   { label: 'Oleosa', subtitle: 'Brilho excessivo, poros dilatados' },
@@ -14,6 +15,7 @@ const skinTypes = [
 
 export default function SkinType() {
   const [selected, setSelected] = useState<string | null>(null);
+  const { setOnboardingField } = useAppStore();
 
   return (
     <QuizLayout progress={32}>
@@ -29,7 +31,7 @@ export default function SkinType() {
             <OptionCard
               key={label}
               selected={selected === label}
-              onPress={() => setSelected(label)}
+              onPress={() => { setSelected(label); setOnboardingField('skin_type', label); }}
               subtitle={subtitle}
             >
               {label}

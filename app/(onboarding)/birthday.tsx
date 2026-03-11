@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { IOSWheelPicker } from '../../components/ui/IOSWheelPicker';
+import { useAppStore } from '../../store/onboarding';
 
 const months = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -15,6 +16,13 @@ export default function Birthday() {
   const [selectedDay, setSelectedDay] = useState('18');
   const [selectedMonth, setSelectedMonth] = useState('Junho');
   const [selectedYear, setSelectedYear] = useState('2007');
+  const { setOnboardingField } = useAppStore();
+
+  const saveBirthday = (day: string, month: string, year: string) => {
+    const monthIndex = String(months.indexOf(month) + 1).padStart(2, '0');
+    const paddedDay = day.padStart(2, '0');
+    setOnboardingField('birthday', `${paddedDay}/${monthIndex}/${year}`);
+  };
 
   return (
     <QuizLayout progress={24}>
@@ -35,19 +43,19 @@ export default function Birthday() {
           <IOSWheelPicker
             values={days}
             selectedValue={selectedDay}
-            onChange={setSelectedDay}
+            onChange={(v) => { setSelectedDay(v); saveBirthday(v, selectedMonth, selectedYear); }}
             width={80}
           />
           <IOSWheelPicker
             values={months}
             selectedValue={selectedMonth}
-            onChange={setSelectedMonth}
+            onChange={(v) => { setSelectedMonth(v); saveBirthday(selectedDay, v, selectedYear); }}
             width={140}
           />
           <IOSWheelPicker
             values={years}
             selectedValue={selectedYear}
-            onChange={setSelectedYear}
+            onChange={(v) => { setSelectedYear(v); saveBirthday(selectedDay, selectedMonth, v); }}
             width={100}
           />
         </View>

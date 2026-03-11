@@ -1,7 +1,9 @@
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Timer, Check, Sun, Moon } from 'lucide-react-native';
+import { supabase } from '../../lib/supabase';
+import { useAppStore } from '../../store/onboarding';
 
 interface Step {
   id: number;
@@ -9,99 +11,125 @@ interface Step {
   ingredient: string;
   instruction: string;
   color: string;
-  waitTime?: string;
+  waitTime?: string | null;
+  product_suggestions?: string[];
   completed: boolean;
 }
 
-const morningSteps: Step[] = [
-  {
-    id: 1,
-    name: 'Gel de Limpeza',
-    ingredient: 'Ácido Salicílico 2%',
-    instruction: 'Aplique no rosto úmido, massageie 60s',
-    color: '#3B82F6',
-    completed: true,
-  },
-  {
-    id: 2,
-    name: 'Sérum Vitamina C',
-    ingredient: 'Ácido Ascórbico 15%',
-    instruction: '3-4 gotas, espalhe com palmas',
-    color: '#7CB69D',
-    waitTime: '2 min',
-    completed: true,
-  },
-  {
-    id: 3,
-    name: 'Hidratante',
-    ingredient: 'Niacinamida 5%',
-    instruction: 'Aplique em todo o rosto e pescoço',
-    color: '#FBBF24',
-    completed: false,
-  },
-  {
-    id: 4,
-    name: 'Protetor Solar',
-    ingredient: 'FPS 50+',
-    instruction: 'Quantidade de 2 dedos, reaplique a cada 2h',
-    color: '#FB7B6B',
-    completed: false,
-  },
-];
-
-const nightSteps: Step[] = [
-  {
-    id: 1,
-    name: 'Gel de Limpeza',
-    ingredient: 'Ácido Salicílico 2%',
-    instruction: 'Aplique no rosto úmido, massageie 60s',
-    color: '#3B82F6',
-    completed: false,
-  },
-  {
-    id: 2,
-    name: 'Sérum Retinol',
-    ingredient: 'Retinol 0.5%',
-    instruction: 'Comece com tamanho de ervilha',
-    color: '#9333EA',
-    waitTime: '3 min',
-    completed: false,
-  },
-  {
-    id: 3,
-    name: 'Hidratante',
-    ingredient: 'Ceramidas',
-    instruction: 'Aplique camada generosa',
-    color: '#FBBF24',
-    completed: false,
-  },
-];
+interface Protocol {
+  morning: Step[];
+  night: Step[];
+  introduction_warnings: string | null;
+  expected_timeline: {
+    two_weeks: string;
+    one_month: string;
+    three_months: string;
+  };
+}
 
 export default function Protocolo() {
+  const { scanResult, onboarding } = useAppStore();
   const [period, setPeriod] = useState<'morning' | 'night'>('morning');
-  const [steps, setSteps] = useState<Step[]>(morningSteps);
+  const [protocol, setProtocol] = useState<Protocol | null>(null);
+  const [morningSteps, setMorningSteps] = useState<Step[]>([]);
+  const [nightSteps, setNightSteps] = useState<Step[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    generateProtocol();
+  }, []);
+
+  const generateProtocol = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      if (!scanResult) {
+        setError('Faça um scan de pele primeiro para gerar seu protocolo personalizado.');
+        return;
+      }
+
+      const { data, error: fnError } = await supabase.functions.invoke('generate-protocol', {
+        body: {
+          scanResult,
+          onboardingData: onboarding,
+        },
+      });
+
+      if (fnError) throw fnError;
+
+      const withCompleted: Protocol = {
+        ...data,
+        morning: data.morning.map((s: Step) => ({ ...s, completed: false })),
+        night: data.night.map((s: Step) => ({ ...s, completed: false })),
+      };
+
+      setProtocol(withCompleted);
+      setMorningSteps(withCompleted.morning);
+      setNightSteps(withCompleted.night);
+    } catch (err) {
+      console.error('Erro ao gerar protocolo:', err);
+      setError('Não foi possível gerar seu protocolo. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleTogglePeriod = (newPeriod: 'morning' | 'night') => {
     setPeriod(newPeriod);
-    setSteps(newPeriod === 'morning' ? morningSteps : nightSteps);
   };
 
   const toggleStepCompletion = (stepId: number) => {
-    setSteps((prev) =>
-      prev.map((step) =>
-        step.id === stepId ? { ...step, completed: !step.completed } : step
-      )
-    );
+    if (period === 'morning') {
+      setMorningSteps((prev) =>
+        prev.map((step) => step.id === stepId ? { ...step, completed: !step.completed } : step)
+      );
+    } else {
+      setNightSteps((prev) =>
+        prev.map((step) => step.id === stepId ? { ...step, completed: !step.completed } : step)
+      );
+    }
   };
 
   const markAllComplete = () => {
-    setSteps((prev) => prev.map((step) => ({ ...step, completed: true })));
+    if (period === 'morning') {
+      setMorningSteps((prev) => prev.map((step) => ({ ...step, completed: true })));
+    } else {
+      setNightSteps((prev) => prev.map((step) => ({ ...step, completed: true })));
+    }
   };
 
+  const steps = period === 'morning' ? morningSteps : nightSteps;
   const completedCount = steps.filter((s) => s.completed).length;
   const totalSteps = steps.length;
-  const progressPercent = Math.round((completedCount / totalSteps) * 100);
-  const allDone = completedCount === totalSteps;
+  const progressPercent = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
+  const allDone = completedCount === totalSteps && totalSteps > 0;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center' }} edges={['top']}>
+        <ActivityIndicator size="large" color="#FB7B6B" />
+        <Text style={{ marginTop: 16, color: '#8A8A8E', fontSize: 15 }}>Gerando seu protocolo personalizado...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }} edges={['top']}>
+        <Text style={{ color: '#1A1A1A', fontSize: 16, fontWeight: '600', textAlign: 'center', marginBottom: 16 }}>{error}</Text>
+        {scanResult && (
+          <TouchableOpacity
+            onPress={generateProtocol}
+            style={{ backgroundColor: '#FB7B6B', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+          >
+            <Text style={{ color: 'white', fontWeight: '600' }}>Tentar novamente</Text>
+          </TouchableOpacity>
+        )}
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }} edges={['top']}>
@@ -163,15 +191,21 @@ export default function Protocolo() {
             </TouchableOpacity>
           </View>
 
-          {/* Date and Badge */}
+          {/* Badge */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
-            <Text style={{ fontSize: 13, color: '#8A8A8E' }}>Domingo, 8 de março</Text>
             <View style={{ backgroundColor: '#7CB69D', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4 }}>
               <Text style={{ fontSize: 13, fontWeight: '500', color: '#FFFFFF' }}>
-                {totalSteps} passos hoje
+                {totalSteps} passos
               </Text>
             </View>
           </View>
+
+          {/* Warning */}
+          {protocol?.introduction_warnings && (
+            <View style={{ backgroundColor: 'rgba(251,123,107,0.1)', borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(251,123,107,0.3)' }}>
+              <Text style={{ fontSize: 13, color: '#FB7B6B', lineHeight: 18 }}>{protocol.introduction_warnings}</Text>
+            </View>
+          )}
 
           {/* Step Cards */}
           <View style={{ gap: 12, marginBottom: 24 }}>
@@ -212,6 +246,11 @@ export default function Protocolo() {
                     )}
                   </View>
                   <Text style={{ fontSize: 13, color: '#8A8A8E' }}>{step.instruction}</Text>
+                  {step.product_suggestions && step.product_suggestions.length > 0 && (
+                    <Text style={{ fontSize: 11, color: '#FB7B6B', marginTop: 4 }}>
+                      {step.product_suggestions[0]}
+                    </Text>
+                  )}
                 </View>
 
                 {/* Checkbox */}
@@ -267,7 +306,7 @@ export default function Protocolo() {
             }}
           >
             <Text style={{ fontSize: 17, fontWeight: '600', color: allDone ? '#8A8A8E' : '#FFFFFF' }}>
-              Marcar Rotina Completa ✓
+              Marcar Rotina Completa
             </Text>
           </TouchableOpacity>
           <Text style={{ fontSize: 13, color: '#8A8A8E', textAlign: 'center' }}>
@@ -279,3 +318,4 @@ export default function Protocolo() {
     </SafeAreaView>
   );
 }
+

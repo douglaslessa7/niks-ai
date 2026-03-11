@@ -3,11 +3,18 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
+import { useAppStore } from '../../store/onboarding'; // 👈 adicionar
 
 const genders = ['Masculino', 'Feminino', 'Outro'];
 
 export default function Gender() {
   const [selected, setSelected] = useState<string | null>(null);
+  const { setOnboardingField } = useAppStore(); // 👈 adicionar
+
+  const handleSelect = (gender: string) => {
+    setSelected(gender);
+    setOnboardingField('genero', gender); // 👈 adicionar
+  };
 
   return (
     <QuizLayout progress={16}>
@@ -23,7 +30,7 @@ export default function Gender() {
             <OptionCard
               key={gender}
               selected={selected === gender}
-              onPress={() => setSelected(gender)}
+              onPress={() => handleSelect(gender)} // 👈 trocar
             >
               {gender}
             </OptionCard>

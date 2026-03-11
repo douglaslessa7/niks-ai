@@ -32,7 +32,7 @@ export default function Signup() {
 
       router.push('/(onboarding)/paywall-soft');
     } catch (error) {
-      Alert.alert('Erro', JSON.stringify(error));
+      Alert.alert('Erro', 'Não foi possível entrar com o Google. Tente novamente.');
     }
   };
 
@@ -84,4 +84,3 @@ export default function Signup() {
     </QuizLayout>
   );
 }
-

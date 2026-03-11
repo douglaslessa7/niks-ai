@@ -3,6 +3,7 @@ import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { Check, Camera, Utensils, Sun, TrendingUp } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { useAppStore } from '../../store/onboarding';
 
 const features = [
   { Icon: Camera, text: 'Use seu Skin Score para acompanhar a evolução' },
@@ -11,12 +12,14 @@ const features = [
   { Icon: TrendingUp, text: 'Acompanhe seu progresso semana a semana' },
 ];
 
-const score = 72;
 const r = 28;
 const circ = 2 * Math.PI * r;
-const offset = circ * (1 - score / 100);
 
 export default function PlanPreview() {
+  const scanResult = useAppStore((s) => s.scanResult);
+  const score = scanResult?.skin_score ?? 0;
+  const offset = circ * (1 - score / 100);
+
   return (
     <QuizLayout progress={92}>
       <View className="pt-8 flex-1">
@@ -59,7 +62,7 @@ export default function PlanPreview() {
         <View className="gap-4 mb-8">
           {features.map(({ Icon, text }, i) => (
             <View key={i} className="flex-row items-start gap-3">
-              <View className="w-10 h-10 rounded-full bg-[#F5F5F7] items-center justify-center">
+              <View key={i} className="w-10 h-10 rounded-full bg-[#F5F5F7] items-center justify-center">
                 <Icon size={20} color="#1A1A1A" />
               </View>
               <Text className="text-[15px] text-[#1A1A1A] leading-relaxed flex-1 pt-2">{text}</Text>

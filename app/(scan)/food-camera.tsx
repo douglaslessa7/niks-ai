@@ -1,8 +1,11 @@
-import { View, Text, TouchableOpacity, Animated, Easing, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, Easing, useWindowDimensions, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAppStore } from '../../store/onboarding';
 import { useEffect, useRef, useState } from 'react';
 import { X, Zap, ZapOff, Image as ImageIcon } from 'lucide-react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 type ZoomLevel = 0.5 | 1 | 2;
 
@@ -23,11 +26,13 @@ function FoodScanIcon({ size = 28, color = '#1A1A1A' }: { size?: number; color?:
 
 export default function FoodCamera() {
   const router = useRouter();
+  const { setFoodImage } = useAppStore();
   const { width } = useWindowDimensions();
   const FRAME_SIZE = Math.round(width * 0.88);
   const SCAN_TRAVEL = FRAME_SIZE - 16;
   const [zoom, setZoom] = useState<ZoomLevel>(1);
   const [flash, setFlash] = useState(false);
+  const [picking, setPicking] = useState(false);
   const scanAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -49,8 +54,55 @@ export default function FoodCamera() {
     ).start();
   }, []);
 
-  const handleCapture = () => {
-    router.push('/(scan)/loading' as any);
+  const pickAndAnalyze = async () => {
+    try {
+      setPicking(true);
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+        base64: true,
+        exif: false,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      const asset = result.assets[0];
+
+      console.log('asset uri:', asset.uri);
+      console.log('asset mimeType:', asset.mimeType);
+
+      let manipulated;
+      try {
+        manipulated = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: 512 } }],
+          { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+        console.log('manipulated ok, base64 length:', manipulated.base64?.length);
+      } catch (e) {
+        console.error('manipulateAsync falhou:', e);
+      }
+      const base64 = manipulated?.base64;
+
+      if (!base64) {
+        Alert.alert('Erro', 'Não foi possível processar a imagem.');
+        return;
+      }
+
+      console.log('base64 size KB:', Math.round((base64.length * 0.75) / 1024));
+
+      setFoodImage(base64, 'image/jpeg');
+      router.push('/(scan)/food-report' as any);
+
+    } catch (error) {
+      console.error('Erro ao selecionar imagem:', error);
+      Alert.alert('Erro', 'Não foi possível selecionar a imagem.');
+    } finally {
+      setPicking(false);
+    }
   };
 
   const zoomLevels: ZoomLevel[] = [0.5, 1, 2];
@@ -103,7 +155,7 @@ export default function FoodCamera() {
         </TouchableOpacity>
       </View>
 
-      {/* ===== SCANNING FRAME (center) ===== */}
+      {/* ===== SCANNING FRAME ===== */}
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 112, paddingBottom: 266 }}>
         <View style={{ position: 'relative', width: FRAME_SIZE, height: FRAME_SIZE }}>
           {/* Corner brackets — top-left */}
@@ -156,7 +208,7 @@ export default function FoodCamera() {
             }}
           />
 
-          {/* Instruction text below frame */}
+          {/* Instruction text */}
           <View style={{ position: 'absolute', bottom: -36, left: 0, right: 0, alignItems: 'center' }}>
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center' }}>
               Posicione o alimento no centro
@@ -183,20 +235,14 @@ export default function FoodCamera() {
                 backgroundColor: zoom === z ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.45)',
               }}
             >
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: '600',
-                  color: zoom === z ? '#1A1A1A' : 'rgba(255,255,255,0.85)',
-                }}
-              >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: zoom === z ? '#1A1A1A' : 'rgba(255,255,255,0.85)' }}>
                 {z}x
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Mode selector — food only */}
+        {/* Mode selector */}
         <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 24 }}>
           <View
             style={{
@@ -217,14 +263,7 @@ export default function FoodCamera() {
         </View>
 
         {/* Camera controls row: flash | shutter | gallery */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 48,
-          }}
-        >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 48 }}>
           {/* Flash toggle */}
           <TouchableOpacity
             onPress={() => setFlash(!flash)}
@@ -245,9 +284,10 @@ export default function FoodCamera() {
             )}
           </TouchableOpacity>
 
-          {/* Shutter button */}
+          {/* Shutter — abre galeria no simulador */}
           <TouchableOpacity
-            onPress={handleCapture}
+            onPress={pickAndAnalyze}
+            disabled={picking}
             activeOpacity={0.9}
             style={{
               width: 72,
@@ -257,21 +297,16 @@ export default function FoodCamera() {
               borderColor: 'rgba(255,255,255,0.85)',
               alignItems: 'center',
               justifyContent: 'center',
+              opacity: picking ? 0.5 : 1,
             }}
           >
-            <View
-              style={{
-                width: 58,
-                height: 58,
-                borderRadius: 29,
-                backgroundColor: 'rgba(255,255,255,0.92)',
-              }}
-            />
+            <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(255,255,255,0.92)' }} />
           </TouchableOpacity>
 
           {/* Gallery button */}
           <TouchableOpacity
-            onPress={handleCapture}
+            onPress={pickAndAnalyze}
+            disabled={picking}
             activeOpacity={0.8}
             style={{
               width: 44,
@@ -282,6 +317,7 @@ export default function FoodCamera() {
               borderColor: 'rgba(255,255,255,0.2)',
               alignItems: 'center',
               justifyContent: 'center',
+              opacity: picking ? 0.5 : 1,
             }}
           >
             <ImageIcon size={20} color="rgba(255,255,255,0.8)" strokeWidth={1.8} />
@@ -291,3 +327,4 @@ export default function FoodCamera() {
     </View>
   );
 }
+

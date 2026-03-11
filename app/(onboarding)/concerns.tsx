@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { Pill } from '../../components/ui/Pill';
+import { useAppStore } from '../../store/onboarding';
 
 const concerns = [
   'Acne', 'Manchas', 'Oleosidade', 'Rugas',
@@ -11,11 +12,14 @@ const concerns = [
 
 export default function Concerns() {
   const [selected, setSelected] = useState<string[]>([]);
+  const { setOnboardingField } = useAppStore();
 
   const toggle = (item: string) => {
-    setSelected((prev) =>
-      prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
-    );
+    setSelected((prev) => {
+      const next = prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item];
+      setOnboardingField('concerns', next);
+      return next;
+    });
   };
 
   return (
