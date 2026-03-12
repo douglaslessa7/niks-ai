@@ -5,6 +5,9 @@ import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
+
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 import { useAppStore } from '../../store/onboarding';
 
 const steps = [
@@ -40,20 +43,66 @@ export default function Loading() {
     // Chama a Edge Function
     const analyze = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('analyze-skin', {
-          body: {
-            imageBase64: skinImageBase64,
-            skinProfile: {
-              skin_type: onboarding.skin_type,
-              concerns: onboarding.concerns,
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token ?? SUPABASE_ANON_KEY;
+        const response = await fetch(
+          `${SUPABASE_URL}/functions/v1/analyze-skin`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
             },
-          },
-        });
-
-        if (error) throw error;
+            body: JSON.stringify({
+              imageBase64: skinImageBase64,
+              skinProfile: {
+                skin_type: onboarding.skin_type,
+                concerns: onboarding.concerns,
+              },
+            }),
+          }
+        );
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(JSON.stringify(errBody));
+        }
+        const data = await response.json();
 
         setScanResult(data, skinImageUri ?? '');
         setPercentage(100);
+
+        // Salvar scan no banco ANTES de navegar (garantia de persistência)
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { skinImageBase64: b64 } = useAppStore.getState();
+            let fotoUrl = '';
+            if (b64) {
+              const path = `${user.id}/${Date.now()}.jpg`;
+              const binaryStr = atob(b64);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+              const { error: upErr } = await supabase.storage
+                .from('scans').upload(path, bytes.buffer, { contentType: 'image/jpeg', upsert: false });
+              if (!upErr) {
+                const { data: signed } = await supabase.storage.from('scans').createSignedUrl(path, 31536000);
+                fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl;
+              }
+            }
+            await supabase.from('skin_scans').insert({
+              user_id: user.id,
+              foto_url: fotoUrl,
+              skin_score: data.skin_score,
+              tipo_pele: data.skin_type_detected,
+              metricas: data.metrics,
+              areas_atencao: data.top_concerns,
+              resumo: data.headline,
+              full_result: data,
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to save scan to DB:', e);
+        }
 
         setTimeout(() => {
           router.push('/(scan)/results');

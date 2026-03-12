@@ -29,7 +29,9 @@ Analise a foto da refeição fornecida e retorne APENAS um JSON válido, sem tex
 
 O JSON deve seguir exatamente esta estrutura:
 {
-  "meal_score": <"Ótimo" | "Bom" | "Moderado" | "Atenção">,
+  "meal_name": <string: nome curto e descritivo da refeição, ex: "Salada mediterrânea", "Bowl de proteína", "Omelete com legumes">,
+  "meal_score": <integer: pontuação de 0 a 100 indicando o benefício da refeição para a pele, onde 100 é excelente e 0 é muito prejudicial>,
+  "meal_label": <"Ótimo" | "Bom" | "Moderado" | "Atenção">,
   "meal_summary": <string: resumo de 1-2 frases sobre o impacto geral da refeição na pele>,
   "foods": [
     {

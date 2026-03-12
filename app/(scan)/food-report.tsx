@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Sparkles, Info, AlertTriangle, CheckCircle, Zap } from 'lucide-react-native';
+import { ChevronLeft, ArrowLeft, Sparkles, Info, AlertTriangle, CheckCircle, Zap } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 
@@ -16,7 +16,9 @@ type FoodItem = {
 };
 
 type FoodAnalysisResult = {
-  meal_score: 'Ótimo' | 'Bom' | 'Moderado' | 'Atenção';
+  meal_name: string;
+  meal_score: number;
+  meal_label: 'Ótimo' | 'Bom' | 'Moderado' | 'Atenção';
   meal_summary: string;
   foods: FoodItem[];
   highlights: string[];
@@ -40,13 +42,18 @@ const impactConfig = {
 
 export default function FoodReport() {
   const router = useRouter();
-  const { foodImageBase64, foodImageMimeType, onboarding } = useAppStore();
+  const { foodImageBase64, foodImageMimeType, onboarding, selectedFoodResult, setSelectedFoodResult } = useAppStore();
   const [result, setResult] = useState<FoodAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    analyzeFood();
+    if (selectedFoodResult) {
+      setResult(selectedFoodResult as FoodAnalysisResult);
+      setLoading(false);
+    } else {
+      analyzeFood();
+    }
   }, []);
 
   const analyzeFood = async () => {
@@ -82,6 +89,47 @@ export default function FoodReport() {
 
       const data = await response.json();
       setResult(data);
+
+      // Salvar na tabela food_scans para aparecer na home
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // Upload da foto para o Storage
+          let imageUrl: string | null = null;
+          if (foodImageBase64) {
+            try {
+              const ext = (foodImageMimeType ?? 'image/jpeg').includes('png') ? 'png' : 'jpg';
+              const path = `${user.id}/food_${Date.now()}.${ext}`;
+              const binaryStr = atob(foodImageBase64);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+              const { error: upErr } = await supabase.storage
+                .from('scans').upload(path, bytes.buffer, { contentType: foodImageMimeType ?? 'image/jpeg', upsert: false });
+              if (!upErr) {
+                const { data: signed } = await supabase.storage.from('scans').createSignedUrl(path, 31536000);
+                imageUrl = signed?.signedUrl ?? null;
+              }
+            } catch (upEx) {
+              console.warn('Falha ao fazer upload da foto de comida:', upEx);
+            }
+          }
+
+          const { error: insertErr } = await supabase.from('food_scans').insert({
+            user_id: user.id,
+            meal_name: data.meal_name,
+            meal_score: data.meal_score,
+            meal_label: data.meal_label,
+            meal_summary: data.meal_summary,
+            image_url: imageUrl,
+            full_result: data,
+          });
+          if (insertErr) console.warn('Falha ao salvar food_scan:', JSON.stringify(insertErr));
+        } else {
+          console.warn('food_scan não salvo: usuário não autenticado');
+        }
+      } catch (saveErr) {
+        console.warn('Falha ao salvar food_scan (exception):', saveErr);
+      }
     } catch (err: any) {
       console.error('Erro ao analisar refeição:', String(err));
       setError('Não foi possível analisar a refeição. Tente novamente.');
@@ -115,7 +163,7 @@ export default function FoodReport() {
     );
   }
 
-  const score = scoreConfig[result.meal_score] ?? scoreConfig['Bom'];
+  const score = scoreConfig[result.meal_label] ?? scoreConfig['Bom'];
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }}>
@@ -124,7 +172,7 @@ export default function FoodReport() {
         {/* Header */}
         <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => { setSelectedFoodResult(null); router.back(); }}
             activeOpacity={0.8}
             style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 }}
           >
@@ -137,8 +185,14 @@ export default function FoodReport() {
 
           {/* Score geral */}
           <View style={{ backgroundColor: score.bgColor, borderRadius: 16, padding: 20, borderWidth: 1.5, borderColor: score.color + '30', alignItems: 'center' }}>
-            <Text style={{ fontSize: 42, fontWeight: '800', color: score.color }}>{result.meal_score}</Text>
-            <Text style={{ fontSize: 14, color: '#5A5A5C', textAlign: 'center', marginTop: 8, lineHeight: 20 }}>{result.meal_summary}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+              <Text style={{ fontSize: 56, fontWeight: '800', color: score.color, lineHeight: 60 }}>{result.meal_score}</Text>
+              <Text style={{ fontSize: 16, color: '#8A8A8E', marginBottom: 8 }}>/100</Text>
+            </View>
+            <View style={{ paddingHorizontal: 14, paddingVertical: 5, borderRadius: 99, backgroundColor: score.color + '20', marginTop: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: score.color }}>{result.meal_label}</Text>
+            </View>
+            <Text style={{ fontSize: 14, color: '#5A5A5C', textAlign: 'center', marginTop: 12, lineHeight: 20 }}>{result.meal_summary}</Text>
           </View>
 
           {/* Alimentos identificados */}
@@ -149,9 +203,9 @@ export default function FoodReport() {
                 const cfg = impactConfig[food.impact] ?? impactConfig.neutro;
                 return (
                   <View key={index} style={{ borderRadius: 12, backgroundColor: cfg.bgColor, padding: 12 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>{food.name}</Text>
-                      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, backgroundColor: cfg.color + '20' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                      <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: '#1D3A44', flexWrap: 'wrap' }}>{food.name}</Text>
+                      <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, backgroundColor: cfg.color + '20', flexShrink: 0 }}>
                         <Text style={{ fontSize: 11, fontWeight: '700', color: cfg.color }}>{cfg.label}</Text>
                       </View>
                     </View>
@@ -222,6 +276,30 @@ export default function FoodReport() {
             <Info size={13} color="#9CA3AF" strokeWidth={2} style={{ marginTop: 2 }} />
             <Text style={{ flex: 1, fontSize: 11, color: '#9CA3AF', lineHeight: 16 }}>{result.disclaimer}</Text>
           </View>
+
+          {/* Botão Voltar para tela inicial */}
+          <TouchableOpacity
+            onPress={() => { setSelectedFoodResult(null); router.replace('/(app)/home' as any); }}
+            activeOpacity={0.85}
+            style={{
+              height: 56,
+              borderRadius: 999,
+              backgroundColor: '#FB7B6B',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              marginTop: 8,
+              shadowColor: '#FB7B6B',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.35,
+              shadowRadius: 20,
+              elevation: 6,
+            }}
+          >
+            <ArrowLeft size={20} color="white" strokeWidth={2.5} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>Voltar para tela inicial</Text>
+          </TouchableOpacity>
 
         </View>
       </ScrollView>

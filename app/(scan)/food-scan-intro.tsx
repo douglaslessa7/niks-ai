@@ -3,9 +3,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { ArrowLeft } from 'lucide-react-native';
+import { useAppStore } from '../../store/onboarding';
 
 export default function FoodScanIntro() {
   const router = useRouter();
+  const { setSelectedFoodResult } = useAppStore();
   const scanAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -123,7 +125,7 @@ export default function FoodScanIntro() {
         {/* CTA Button */}
         <View style={{ paddingBottom: 40 }}>
           <TouchableOpacity
-            onPress={() => router.push('/(scan)/food-camera' as any)}
+            onPress={() => { setSelectedFoodResult(null); router.push('/(scan)/food-camera' as any); }}
             activeOpacity={0.9}
             style={{
               width: '100%',

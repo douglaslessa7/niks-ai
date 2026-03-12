@@ -1,12 +1,13 @@
-import { View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, FlatList, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Settings, Plus, ChevronRight } from 'lucide-react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useState, useCallback, useRef } from 'react';
+import { Plus, ChevronRight, Utensils } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { G, Path, Circle } from 'react-native-svg';
-import { useAppStore } from '../../store/onboarding';
+import { useAppStore, ScanResult } from '../../store/onboarding';
 import { ScanModal } from '../../components/scan/ScanModal';
+import { supabase } from '../../lib/supabase';
 
 function NiksLogo({ size = 32 }: { size?: number }) {
   return (
@@ -39,29 +40,180 @@ function NiksLogo({ size = 32 }: { size?: number }) {
   );
 }
 
-const MOCK_MEALS = [
-  {
-    id: 'salada-mediterranea',
-    name: 'Salada mediterrânea',
-    time: '12:47',
-    score: 92,
-    imageUri:
-      'https://images.unsplash.com/photo-1649531794884-b8bb1de72e68?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=400',
-  },
-  {
-    id: 'bowl-de-frutas',
-    name: 'Bowl de frutas',
-    time: '08:23',
-    score: 85,
-    imageUri:
-      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=400',
-  },
-];
+type FoodScan = {
+  id: string;
+  meal_name: string;
+  meal_score: number;
+  meal_label: string;
+  created_at: string;
+  image_url: string | null;
+  full_result: any | null;
+};
+
+function getTodayStart(): Date {
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setHours(2, 30, 0, 0);
+  if (now < cutoff) {
+    cutoff.setDate(cutoff.getDate() - 1);
+  }
+  return cutoff;
+}
+
+type ScanSlide = {
+  id: string;
+  foto_url: string;
+  full_result: ScanResult;
+  created_at: string;
+};
+
+function ScanSlideItem({
+  item,
+  cardWidth,
+  scans,
+  activeIndex,
+  onVerResultado,
+}: {
+  item: ScanSlide;
+  cardWidth: number;
+  scans: ScanSlide[];
+  activeIndex: number;
+  onVerResultado: () => void;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const isValidUrl = item.foto_url.startsWith('http');
+
+  return (
+    <View
+      style={{
+        width: cardWidth,
+        height: 280,
+        borderRadius: 20,
+        overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 16,
+        elevation: 4,
+      }}
+    >
+      {isValidUrl && !imgError ? (
+        <Image
+          source={{ uri: item.foto_url }}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <View style={{ width: '100%', height: '100%', backgroundColor: '#C8C0B8' }} />
+      )}
+
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.65)']}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 200 }}
+      />
+
+      <View style={{ position: 'absolute', top: 16, left: 16 }}>
+        <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>
+          {new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+        </Text>
+      </View>
+
+      <View style={{ position: 'absolute', top: 16, right: 16, backgroundColor: '#FB7B6B', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
+        <Text style={{ fontSize: 15, fontWeight: '800', color: 'white' }}>{item.full_result.skin_score}</Text>
+      </View>
+
+      <View style={{ position: 'absolute', bottom: 58, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+        {scans.map((_, i) => (
+          <View
+            key={i}
+            style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: i === activeIndex ? '#FFFFFF' : 'rgba(255,255,255,0.3)' }}
+          />
+        ))}
+      </View>
+
+      <View style={{ position: 'absolute', bottom: 14, left: 20, right: 20 }}>
+        <TouchableOpacity
+          onPress={onVerResultado}
+          activeOpacity={0.85}
+          style={{ height: 36, borderRadius: 999, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1D3A44' }}>Ver resultado</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
 
 export default function Home() {
   const router = useRouter();
-  const { scanImageUri, scanResult } = useAppStore();
+  const { setSelectedScan, setSelectedFoodResult } = useAppStore();
   const [scanOpen, setScanOpen] = useState(false);
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const CARD_WIDTH = Math.min(SCREEN_WIDTH, 393) - 48;
+
+  const [meals, setMeals] = useState<FoodScan[]>([]);
+  const [scans, setScans] = useState<ScanSlide[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user || !active) return;
+          // Buscar refeições do dia (reset às 2h30)
+          const todayStart = getTodayStart().toISOString();
+          const { data: foodData } = await supabase
+            .from('food_scans')
+            .select('id, meal_name, meal_score, meal_label, created_at, image_url, full_result')
+            .eq('user_id', user.id)
+            .gte('created_at', todayStart)
+            .order('created_at', { ascending: false });
+          if (active && foodData) setMeals(foodData as FoodScan[]);
+
+          const { data } = await supabase
+            .from('skin_scans')
+            .select('id, foto_url, full_result, created_at')
+            .eq('user_id', user.id)
+            .not('full_result', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          if (active && data) {
+            const fetchedScans = data as ScanSlide[];
+            setScans(fetchedScans);
+
+            // Reparar scan do onboarding com foto_url local inválido (uma única vez)
+            const { skinScanId, skinImageBase64: b64 } = useAppStore.getState();
+            const brokenScan = fetchedScans.find(
+              (s) => s.id === skinScanId && !s.foto_url.startsWith('http')
+            );
+            if (brokenScan && b64) {
+              try {
+                const path = `${user.id}/${Date.now()}.jpg`;
+                const binaryStr = atob(b64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+                const { error: upErr } = await supabase.storage
+                  .from('scans').upload(path, bytes.buffer, { contentType: 'image/jpeg', upsert: false });
+                if (!upErr) {
+                  const { data: signed } = await supabase.storage.from('scans').createSignedUrl(path, 31536000);
+                  const fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl;
+                  await supabase.from('skin_scans').update({ foto_url: fotoUrl }).eq('id', brokenScan.id);
+                  if (active) setScans((prev) => prev.map((s) => s.id === brokenScan.id ? { ...s, foto_url: fotoUrl } : s));
+                }
+              } catch (e) { console.warn('Failed to repair scan photo:', e); }
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch scan history:', e);
+        }
+      })();
+      return () => { active = false; };
+    }, [])
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }} edges={['top']}>
@@ -87,55 +239,104 @@ export default function Home() {
               <NiksLogo size={32} />
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
             </View>
-            <TouchableOpacity activeOpacity={0.7} style={{ padding: 8 }}>
-              <Settings size={24} color="#8A8A8E" strokeWidth={1.8} />
-            </TouchableOpacity>
           </View>
 
           {/* === SEÇÃO "HOJE" (ÚLTIMAS REFEIÇÕES) === */}
           <View style={{ paddingHorizontal: 24, marginTop: 16 }}>
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#1D3A44', marginBottom: 12 }}>Hoje</Text>
 
-            <View style={{ gap: 10 }}>
-              {MOCK_MEALS.map((meal) => (
-                <TouchableOpacity
-                  key={meal.id}
-                  onPress={() =>
-                    router.push({ pathname: '/(scan)/food-report', params: { foodId: meal.id } } as any)
-                  }
-                  activeOpacity={0.85}
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 16,
-                    padding: 14,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.06,
-                    shadowRadius: 8,
-                    elevation: 2,
-                  }}
-                >
-                  <Image
-                    source={{ uri: meal.imageUri }}
-                    style={{ width: 56, height: 56, borderRadius: 12 }}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '600', color: '#1D3A44' }}>{meal.name}</Text>
-                    <Text style={{ fontSize: 13, color: '#8A8A8E', marginTop: 2 }}>{meal.time}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 20, fontWeight: '800', color: '#7CB69D' }}>{meal.score}</Text>
-                      <Text style={{ fontSize: 11, color: '#8A8A8E' }}>/100</Text>
+            {meals.length === 0 ? (
+              /* Empty State */
+              <View style={{
+                backgroundColor: '#FDFDFD',
+                borderRadius: 24,
+                borderWidth: 1,
+                borderColor: '#F0F0F0',
+                minHeight: 180,
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 24,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.02,
+                shadowRadius: 10,
+                elevation: 1,
+              }}>
+                {/* Stacked cards illustration */}
+                <View style={{ width: 200, height: 72, marginBottom: 24, alignItems: 'center' }}>
+                  {/* Back card */}
+                  <View style={{ position: 'absolute', bottom: -8, width: '85%', height: '100%', backgroundColor: 'white', borderRadius: 16, borderWidth: 1, borderColor: '#F5F5F5', opacity: 0.5 }} />
+                  {/* Middle card */}
+                  <View style={{ position: 'absolute', bottom: -4, width: '92%', height: '100%', backgroundColor: 'white', borderRadius: 16, borderWidth: 1, borderColor: '#F5F5F5', opacity: 0.8 }} />
+                  {/* Front card */}
+                  <View style={{ position: 'absolute', bottom: 0, width: '100%', height: '100%', backgroundColor: 'white', borderRadius: 16, borderWidth: 1, borderColor: '#F0F0F0', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 12 }}>
+                    <View style={{ width: 40, height: 40, borderRadius: 20, overflow: 'hidden' }}>
+                      <Image
+                        source={{ uri: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200&q=80' }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
                     </View>
-                    <ChevronRight size={20} color="#8A8A8E" strokeWidth={1.8} />
+                    <View style={{ flex: 1, gap: 8 }}>
+                      <View style={{ height: 10, backgroundColor: '#F2F2F2', borderRadius: 99, width: '85%' }} />
+                      <View style={{ height: 10, backgroundColor: '#F2F2F2', borderRadius: 99, width: '60%' }} />
+                    </View>
                   </View>
-                </TouchableOpacity>
-              ))}
-            </View>
+                </View>
+                <Text style={{ fontSize: 14, color: '#8A8A8E', textAlign: 'center', maxWidth: 240, lineHeight: 20 }}>
+                  <Text style={{ color: '#1D3A44', fontWeight: '600' }}>Escaneie sua refeição{'\n'}</Text>
+                  e veja o efeito real dela na sua pele.
+                </Text>
+              </View>
+            ) : (
+              /* Lista de refeições do dia */
+              <View style={{ gap: 10 }}>
+                {meals.map((meal) => (
+                  <TouchableOpacity
+                    key={meal.id}
+                    onPress={() => {
+                      if (meal.full_result) setSelectedFoodResult(meal.full_result);
+                      router.push('/(scan)/food-report' as any);
+                    }}
+                    activeOpacity={0.85}
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 16,
+                      padding: 14,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.06,
+                      shadowRadius: 8,
+                      elevation: 2,
+                    }}
+                  >
+                    {meal.image_url ? (
+                      <Image source={{ uri: meal.image_url }} style={{ width: 56, height: 56, borderRadius: 12 }} />
+                    ) : (
+                      <View style={{ width: 56, height: 56, borderRadius: 12, backgroundColor: '#F3F3F5', alignItems: 'center', justifyContent: 'center' }}>
+                        <Utensils size={22} color="#8A8A8E" strokeWidth={1.8} />
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: '#1D3A44' }}>{meal.meal_name}</Text>
+                      <Text style={{ fontSize: 13, color: '#8A8A8E', marginTop: 2 }}>
+                        {new Date(meal.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={{ fontSize: 20, fontWeight: '800', color: '#7CB69D' }}>{meal.meal_score}</Text>
+                        <Text style={{ fontSize: 11, color: '#8A8A8E' }}>/100</Text>
+                      </View>
+                      <ChevronRight size={20} color="#8A8A8E" strokeWidth={1.8} />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* === BOTÃO SCANEAR === */}
@@ -163,78 +364,60 @@ export default function Home() {
             </TouchableOpacity>
           </View>
 
-          {/* === SKIN SCORE CARD (foto da última análise) === */}
-          <View style={{ paddingHorizontal: 24, marginTop: 24 }}>
-            <View
-              style={{
-                height: 280,
-                borderRadius: 20,
-                overflow: 'hidden',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.12,
-                shadowRadius: 16,
-                elevation: 4,
-              }}
-            >
-              {scanImageUri ? (
-                <Image
-                  source={{ uri: scanImageUri }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={{ width: '100%', height: '100%', backgroundColor: '#C8C0B8' }} />
-              )}
-
-              {/* Gradiente overlay */}
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.65)']}
-                style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 200 }}
-              />
-
-              {/* "Última análise feita" */}
-              <View style={{ position: 'absolute', top: 16, left: 16 }}>
-                <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>Última análise feita</Text>
-              </View>
-
-              {/* Pagination dots */}
-              <View
-                style={{
-                  position: 'absolute',
-                  bottom: 58,
-                  left: 0,
-                  right: 0,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                }}
-              >
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFFFFF' }} />
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.3)' }} />
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.3)' }} />
-              </View>
-
-              {/* Botão "Ver resultado" */}
-              <View style={{ position: 'absolute', bottom: 14, left: 20, right: 20 }}>
-                <TouchableOpacity
-                  onPress={() => {
-                    if (scanResult) router.push('/(scan)/results' as any);
-                  }}
-                  activeOpacity={0.85}
+          {/* === CARROSSEL DE SCANS === */}
+          <View style={{ marginTop: 24 }}>
+            {scans.length === 0 ? (
+              <View style={{ paddingHorizontal: 24 }}>
+                <View
                   style={{
-                    height: 36,
-                    borderRadius: 999,
-                    backgroundColor: '#FFFFFF',
+                    height: 280,
+                    borderRadius: 20,
+                    backgroundColor: '#C8C0B8',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.12,
+                    shadowRadius: 16,
+                    elevation: 4,
                   }}
                 >
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#1D3A44' }}>Ver resultado</Text>
-                </TouchableOpacity>
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>
+                    Nenhuma análise ainda
+                  </Text>
+                </View>
               </View>
-            </View>
+            ) : (
+              <FlatList
+                ref={flatListRef}
+                data={scans}
+                keyExtractor={(item) => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={CARD_WIDTH + 16}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                contentContainerStyle={{ paddingHorizontal: 24, gap: 16 }}
+                onMomentumScrollEnd={(e) => {
+                  const newIndex = Math.round(
+                    e.nativeEvent.contentOffset.x / (CARD_WIDTH + 16)
+                  );
+                  setActiveIndex(newIndex);
+                }}
+                renderItem={({ item }) => (
+                  <ScanSlideItem
+                    item={item}
+                    cardWidth={CARD_WIDTH}
+                    scans={scans}
+                    activeIndex={activeIndex}
+                    onVerResultado={() => {
+                      setSelectedScan({ result: item.full_result, imageUri: item.foto_url });
+                      router.push('/(app)/skin-result' as any);
+                    }}
+                  />
+                )}
+              />
+            )}
           </View>
 
         </View>

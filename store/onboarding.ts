@@ -1,6 +1,24 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 
+async function uploadScanPhoto(userId: string, base64: string): Promise<string> {
+  const path = `${userId}/${Date.now()}.jpg`;
+  const binaryStr = atob(base64);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  const { error } = await supabase.storage
+    .from('scans')
+    .upload(path, bytes.buffer, { contentType: 'image/jpeg', upsert: false });
+  if (error) throw error;
+  // Signed URL com 1 ano de validade (bucket privado)
+  const { data: signed } = await supabase.storage
+    .from('scans')
+    .createSignedUrl(path, 31536000);
+  if (signed?.signedUrl) return signed.signedUrl;
+  // Fallback para bucket público
+  return supabase.storage.from('scans').getPublicUrl(path).data.publicUrl;
+}
+
 export type SkinMetric = {
   score: number
   label: string
@@ -46,6 +64,25 @@ export type ProtocolResult = {
   }
 }
 
+export type FoodReportResult = {
+  meal_name: string;
+  meal_score: number;
+  meal_label: string;
+  meal_summary: string;
+  foods: Array<{
+    name: string;
+    impact: 'positivo' | 'neutro' | 'negativo';
+    evidence: string;
+    mechanism: string;
+    relevance_to_skin: string;
+    substitution: string | null;
+  }>;
+  highlights: string[];
+  watch_out: string[];
+  science_note: string;
+  disclaimer: string;
+}
+
 export type OnboardingData = {
   concerns: string[]
   genero: string | null
@@ -76,6 +113,10 @@ type AppStore = {
   skinScanId: string | null
   protocolResult: ProtocolResult | null
   setProtocolResult: (result: ProtocolResult) => void
+  selectedScan: { result: ScanResult; imageUri: string } | null
+  setSelectedScan: (scan: { result: ScanResult; imageUri: string } | null) => void
+  selectedFoodResult: FoodReportResult | null
+  setSelectedFoodResult: (result: FoodReportResult | null) => void
   saveToSupabase: (userId: string) => Promise<void>
   reset: () => void
 }
@@ -105,6 +146,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   skinImageUri: null,
   skinScanId: null,
   protocolResult: null,
+  selectedScan: null,
+  selectedFoodResult: null,
 
   setOnboardingField: (key, value) =>
     set((state) => ({
@@ -123,8 +166,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setProtocolResult: (result) => set({ protocolResult: result }),
 
+  setSelectedScan: (scan) => set({ selectedScan: scan }),
+
+  setSelectedFoodResult: (result) => set({ selectedFoodResult: result }),
+
   saveToSupabase: async (userId: string) => {
-    const { onboarding, scanResult, scanImageUri } = get()
+    const { onboarding, scanResult, scanImageUri, skinImageBase64 } = get()
 
     let idade: number | null = null
     if (onboarding.birthday) {
@@ -155,16 +202,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (userError) throw userError
 
     if (scanResult) {
+      let fotoUrl = scanImageUri ?? '';
+      if (skinImageBase64) {
+        try { fotoUrl = await uploadScanPhoto(userId, skinImageBase64); }
+        catch (e) { console.warn('Photo upload failed, using local URI', e); }
+      }
+
       const { data: scanData, error: scanError } = await supabase
         .from('skin_scans')
         .insert({
           user_id: userId,
-          foto_url: scanImageUri ?? '',
+          foto_url: fotoUrl,
           skin_score: scanResult.skin_score,
           tipo_pele: scanResult.skin_type_detected,
           metricas: scanResult.metrics,
           areas_atencao: scanResult.top_concerns,
           resumo: scanResult.headline,
+          full_result: scanResult,
         })
         .select('id')
         .single()
@@ -174,5 +228,5 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, skinImageBase64: null, skinImageUri: null, skinScanId: null, protocolResult: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, skinImageBase64: null, skinImageUri: null, skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null }),
 }))

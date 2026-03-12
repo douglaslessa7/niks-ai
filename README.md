@@ -70,15 +70,20 @@ npx expo start --clear   # pressionar 's' depois 'i'
 
 ## COMO ACESSAR O FIGMA MAKE
 
-### File ID
-`XrX2xnE32aNLOaFw5ayPM0`
-
 ### Método correto (IMPORTANTE)
 **NÃO use `get_metadata`** — retorna erro para arquivos Make.
 
-**Use `get_design_context` com qualquer nodeId** para obter o índice de todos os arquivos. O retorno lista todos os Resource Links com os caminhos corretos.
+**Use `get_design_context` com `nodeId: "0:1"`** para obter o índice de todos os arquivos. O retorno lista todos os Resource Links com os caminhos corretos.
 
-### Paths corretos das telas
+### Projetos Figma Make ativos
+
+| Projeto | File Key | Conteúdo |
+|---|---|---|
+| Onboarding / auth original | `XrX2xnE32aNLOaFw5ayPM0` | Welcome, Login, Signup, telas de onboarding |
+| Home Screen + ScanModal | `sxih7FXdLGWu1lKovpOjIa` | `home.tsx` (tela principal), ScanModal bottom sheet |
+| Tab Bar + Home v2 | `cFsFcVSjOMkTdHIJpHgSDk` | Tab bar inferior, menu "scanear/protocolo/perfil" |
+
+### Paths do projeto principal (XrX2xnE32aNLOaFw5ayPM0)
 ```
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Welcome.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Login.tsx
@@ -86,12 +91,22 @@ file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Signup.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Home.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Protocolo.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Analise.tsx
-file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Evolucao.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/screens/Perfil.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/components/TabBar.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/app/routes.tsx
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/src/styles/theme.css
 file://figma/make/source/XrX2xnE32aNLOaFw5ayPM0/package.json
+```
+
+### Paths do projeto Home Screen (sxih7FXdLGWu1lKovpOjIa)
+```
+file://figma/make/source/sxih7FXdLGWu1lKovpOjIa/src/app/components/home.tsx
+file://figma/make/source/sxih7FXdLGWu1lKovpOjIa/src/app/components/comparison.tsx
+```
+
+### Paths do projeto Tab Bar v2 (cFsFcVSjOMkTdHIJpHgSDk)
+```
+file://figma/make/source/cFsFcVSjOMkTdHIJpHgSDk/src/app/components/home.tsx
 ```
 
 ### Padrão de nomeação (CRÍTICO)
@@ -190,7 +205,20 @@ frequency text, sun_exposure text, hydration text,
 sleep text, sunscreen text, birthday text
 ```
 
-**Storage bucket:** `scans` — com policies de upload/leitura por `user_id`.
+**Colunas extras na tabela `skin_scans`:**
+```sql
+full_result jsonb  -- objeto ScanResult completo retornado pela analyze-skin
+```
+Migration aplicada: `ALTER TABLE skin_scans ADD COLUMN IF NOT EXISTS full_result jsonb;`
+
+**Colunas extras na tabela `food_scans`:**
+```sql
+meal_name text, meal_score int4, meal_label text, meal_summary text, image_url text,
+full_result jsonb  -- objeto FoodAnalysisResult completo retornado pela analyze-food
+```
+Migration aplicada: `ALTER TABLE food_scans ADD COLUMN IF NOT EXISTS full_result jsonb;`
+
+**Storage bucket:** `scans` — **PRIVADO** — com policies de upload/leitura por `user_id`.
 
 ### Edge Functions deployadas
 
@@ -224,7 +252,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 
 Exporta `useAppStore` (não `useOnboardingStore`).
 
-**Tipos exportados:** `SkinMetric`, `ScanResult`, `ProtocolStep`, `ProtocolResult`, `OnboardingData`
+**Tipos exportados:** `SkinMetric`, `ScanResult`, `ProtocolStep`, `ProtocolResult`, `OnboardingData`, `FoodReportResult`
 
 **Campos de onboarding:** `genero`, `birthday`, `skin_type`, `concerns[]`, `frequency`, `sun_exposure`, `hydration`, `sleep`, `sunscreen`, `objetivo`
 
@@ -239,6 +267,8 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `scanImageUri: string | null`
 - `skinScanId: string | null` — ID do registro inserido em `skin_scans` (para linkar ao protocolo)
 - `protocolResult: ProtocolResult | null` — protocolo gerado, cacheado em memória
+- `selectedScan: { result: ScanResult; imageUri: string } | null` — scan selecionado no carrossel da home; limpo automaticamente ao sair de `skin-result.tsx`
+- `selectedFoodResult: FoodReportResult | null` — resultado salvo de food scan selecionado na home; exibido sem re-análise em `food-report.tsx`; limpo ao sair da tela ou iniciar novo scan
 
 **Métodos:**
 - `setOnboardingField(field, value)`
@@ -246,7 +276,9 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `setSkinImage(base64, uri)`
 - `setScanResult(result, imageUri)`
 - `setProtocolResult(result)` — armazena protocolo gerado para uso na aba `(app)/protocolo.tsx`
-- `saveToSupabase(userId)` — salva `users` + `skin_scans`; captura e armazena o `skinScanId` retornado
+- `setSelectedScan(scan | null)` — define qual scan do carrossel abrir em `skin-result.tsx`
+- `setSelectedFoodResult(result | null)` — define/limpa o food scan selecionado para visualização em `food-report.tsx`
+- `saveToSupabase(userId)` — salva `users` + `skin_scans` (com upload para Storage + `full_result`); captura e armazena o `skinScanId` retornado
 
 ---
 
@@ -299,6 +331,31 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 
 **NUNCA usar `supabase.functions.invoke` para `generate-protocol`** — trunca payloads. Sempre `fetch` direto com Bearer token.
 
+### 8. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
+
+O bucket `scans` é privado. `getPublicUrl()` retorna uma URL que responde 403. **Sempre usar `createSignedUrl(path, 31536000)`** (TTL de 1 ano) para gerar a URL que vai para `foto_url` no banco.
+
+```typescript
+const { data: signed } = await supabase.storage.from('scans').createSignedUrl(path, 31536000);
+fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl; // fallback só se bucket for público
+```
+
+Isso se aplica em: `store/onboarding.ts` (`uploadScanPhoto`), `app/(scan)/loading.tsx`, e `app/(app)/home.tsx` (repair de foto do onboarding).
+
+---
+
+### 7. Cooldown de 7 dias para scan de rosto
+O botão "Scanear Rosto" no `ScanModal` consulta `skin_scans` (campo `created_at`) para calcular quanto tempo falta desde o último scan do usuário. A lógica vive inteiramente no frontend — nenhuma coluna extra no Supabase foi necessária.
+
+**Régua de exibição:**
+- > 48h restantes → "próxima análise em X dias"
+- ≤ 48h restantes → "próxima análise em Xh"
+- 0 → disponível normalmente
+
+Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPress` desabilitado. A contagem é individual por usuário pois usa o `created_at` do próprio registro.
+
+**Import:** usar caminho relativo `../../lib/supabase` — o alias `@/` não resolve dentro de `components/scan/`.
+
 ---
 
 ## STATUS DO PROJETO
@@ -315,7 +372,8 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 - `components/ui/Pill.tsx`
 - `components/ui/IOSWheelPicker.tsx`
 - `components/layouts/QuizLayout.tsx`
-- `components/scan/ScanModal.tsx`
+- `components/scan/ScanModal.tsx` — cooldown de 7 dias para scan de rosto (consulta `skin_scans` no Supabase; exibe contagem regressiva em dias ou horas; bloqueia navegação quando indisponível)
+
 
 **Telas — Onboarding (20 telas):**
 `concerns` → `gender` → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `commitment` → `goal` → `final-loading` → `trust` → `plan-preview` → `signup` → `protocol-loading` → `paywall-soft` → `paywall-detailed` → `notifications`
@@ -323,11 +381,15 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 **Tela de Login (acesso direto da Welcome):**
 `login` — standalone, sem QuizLayout, acessada pelo botão "Entrar" na Welcome screen
 
-**Telas — Scan flow (5 telas):**
-`scan-prep` → `camera` → `loading` → `results` → `food-report`
+**Telas — Scan flow (6 telas):**
+`scan-prep` → `camera` → `loading` → `results` → `food-scan-intro` → `food-camera` → `food-report`
 
-**Telas — App principal (6 arquivos):**
-`(app)/_layout.tsx` (tab bar com FAB laranja), `home.tsx`, `protocolo.tsx`, `analise.tsx`, `evolucao.tsx`, `perfil.tsx`
+**`food-report.tsx` — modo duplo:**
+- **Nova análise** (`selectedFoodResult === null`): chama `analyze-food`, salva resultado em `food_scans` (incluindo `full_result` jsonb + foto no Storage), exibe resultado
+- **Visualização salva** (`selectedFoodResult !== null`): exibe `full_result` do store instantaneamente, sem chamada à IA; botão "Voltar para tela inicial" (coral, ArrowLeft) via `router.replace`
+
+**Telas — App principal (7 arquivos):**
+`(app)/_layout.tsx` (tab bar sem FAB), `home.tsx`, `skin-result.tsx` (resultado da análise facial in-app), `protocolo.tsx`, `analise.tsx`, `evolucao.tsx` (oculta), `perfil.tsx`
 
 **Integrações:**
 - `lib/supabase.ts` ✅
@@ -354,7 +416,8 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 - Instalar `react-native-purchases`
 - Criar `lib/revenuecat.ts`
 - Ativar paywall em `paywall-soft.tsx` e `paywall-detailed.tsx`
-- Desbloquear métricas borradas em `results.tsx` para assinantes
+- Desbloquear métricas borradas em `results.tsx` (onboarding) para assinantes
+- `skin-result.tsx` (app) já exibe métricas reais — sem necessidade de alteração
 
 #### 🟠 3. Mixpanel — Analytics
 - Instalar `mixpanel-react-native`
@@ -447,11 +510,12 @@ niks-ai/
 │   │   ├── paywall-detailed.tsx   ✅
 │   │   └── notifications.tsx      ✅
 │   ├── (app)/
-│   │   ├── _layout.tsx            ✅ Tab bar com FAB laranja
-│   │   ├── home.tsx               ✅
+│   │   ├── _layout.tsx            ✅ Tab bar: scanear/protocolo/perfil (sem FAB, sem evolução)
+│   │   ├── home.tsx               ✅ Novo design: Hoje + Scanear + Skin Card; "Ver resultado" → skin-result
+│   │   ├── skin-result.tsx        ✅ Tela de resultado da análise facial (in-app, métricas reais)
 │   │   ├── protocolo.tsx          ✅
 │   │   ├── analise.tsx            ✅
-│   │   ├── evolucao.tsx           ✅
+│   │   ├── evolucao.tsx           🚫 oculta (href: null) — removida da tab bar
 │   │   └── perfil.tsx             ✅
 │   └── (scan)/
 │       ├── scan-prep.tsx          ✅
@@ -516,5 +580,48 @@ react-native-reanimated
 
 ---
 
-*Última atualização: Sessão 5 — Março 2026*
-*Status: MVP — todas as telas concluídas + geração e persistência do protocolo no Supabase. Apple Sign In + RevenueCat + Mixpanel pendentes*
+---
+
+## DESIGN SYSTEM — HOME SCREEN (Sessão 6)
+
+### Tela Home (`app/(app)/home.tsx`)
+Redesenhada com base no Figma Make `sxih7FXdLGWu1lKovpOjIa`. Layout (de cima para baixo):
+1. **Top Bar** — Logo NIKS AI (sem ícone de configurações)
+2. **Seção "Hoje"** — Cards de refeições reais do Supabase (`food_scans`, filtrado por dia com reset às 2h30); empty state com ilustração de cards empilhados quando não há refeições. Ao clicar: carrega `full_result` do banco → abre `food-report.tsx` instantaneamente sem chamar a IA
+3. **Botão "Scanear"** — Full-width coral (`#FB7B6B`), abre `ScanModal`
+4. **Carrossel de Scans** — `FlatList` horizontal com os últimos 5 scans do usuário (buscados via `useFocusEffect` da tabela `skin_scans`). Cada slide: foto (280px, gradient overlay), data, badge com score, dots de paginação dinâmicos, botão "Ver resultado". Estado vazio: card cinza "Nenhuma análise ainda".
+
+### ScanModal (`components/scan/ScanModal.tsx`)
+Redesenhado com base no Figma Make `sxih7FXdLGWu1lKovpOjIa`. Bottom sheet vertical com:
+- Handle + Título "Escolha o tipo de scan" + Subtítulo
+- Card **"Scanear Alimento"** (Utensils coral + badge verde "⭐ MAIS USADO" + chevron)
+- Card **"Scanear Rosto"** (Camera coral + chevron) — bloqueado durante cooldown (ícone `Lock` lucide)
+- Botão **"Cancelar"** (card branco)
+- Animação: `Animated.spring` translateY (slide up)
+
+### Tela de Resultado Facial — App (`app/(app)/skin-result.tsx`)
+Tela dedicada acessada via "Ver resultado" na home (substitui o redirecionamento para a tela de onboarding). Estrutura:
+1. **Header** — back button circular + título "Análise Facial"
+2. **Card Hero** — foto do rosto (280px, `resizeMode="cover"`), badge coral com skin score, tipo de pele + mini score ring no rodapé
+3. **Headline da IA** — card branco com ícone `Sparkles` coral + texto `headline`
+4. **Métricas detalhadas** — 6 `MetricCard` empilhados: ponto colorido + nome, score real (`XX/100`) na cor da métrica, barra de progresso colorida, insight gerado pela IA
+5. **Principais preocupações** — card branco com `AlertTriangle` amarelo + lista de `top_concerns`
+6. **Pontos positivos** — card branco com `CheckCircle` verde + lista de `positive_highlights`
+7. **Disclaimer** — texto pequeno cinza com ícone `Info`
+
+**Dados lidos do Zustand:** `selectedScan` (quando aberto via carrossel) com fallback para `scanResult`/`scanImageUri` (quando aberto direto do scan flow). `selectedScan` é limpo no `useEffect` de desmontagem.
+**Métricas:** exibidas com scores reais (sem blur) — esta tela é exclusiva do app, não do onboarding
+
+### Tab Bar (`app/(app)/_layout.tsx`)
+Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`:
+- **Container**: branco, `borderRadius: 20`, borda `#F0F0F0` (não mais pílula cinza)
+- **3 tabs**: `Scan` "scanear" · `Droplet` "protocolo" · `User` "perfil" (labels em minúsculo)
+- **Ativo**: coral `#FB7B6B` · **Inativo**: `#8A8A8E`
+- **Ícone**: tamanho 28, `strokeWidth: 1.5`, sem `fill`
+- FAB laranja (`+`) **removido definitivamente**
+- Tab "evolução" **oculta** (`href: null`) — arquivo preservado mas não acessível
+
+---
+
+*Última atualização: Sessão 9 — Março 2026*
+*Status: MVP — food scans salvos com `full_result` jsonb + foto no Storage; visualização de relatório salvo sem re-análise; carrossel de histórico de scans na home; Apple Sign In + RevenueCat + Mixpanel pendentes.*
