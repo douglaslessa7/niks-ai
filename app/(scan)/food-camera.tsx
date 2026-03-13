@@ -6,6 +6,8 @@ import { X, Zap, ZapOff, Image as ImageIcon } from 'lucide-react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Device from 'expo-device';
 
 type ZoomLevel = 0.5 | 1 | 2;
 
@@ -34,6 +36,11 @@ export default function FoodCamera() {
   const [flash, setFlash] = useState(false);
   const [picking, setPicking] = useState(false);
   const scanAnim = useRef(new Animated.Value(0)).current;
+  const cameraRef = useRef<CameraView>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+
+  // Verdadeiro apenas no simulador (sem câmera real)
+  const isSimulator = !Device.isDevice;
 
   useEffect(() => {
     Animated.loop(
@@ -54,6 +61,45 @@ export default function FoodCamera() {
     ).start();
   }, []);
 
+  const processAndNavigate = async (uri: string) => {
+    let manipulated;
+    try {
+      manipulated = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 512 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+    } catch (e) {
+      console.error('manipulateAsync falhou:', e);
+    }
+
+    const base64 = manipulated?.base64;
+    if (!base64) {
+      Alert.alert('Erro', 'Não foi possível processar a imagem.');
+      return;
+    }
+
+    console.log('base64 size KB:', Math.round((base64.length * 0.75) / 1024));
+    setFoodImage(base64, 'image/jpeg');
+    router.push('/(scan)/food-report' as any);
+  };
+
+  // Captura via câmera real
+  const handleCapture = async () => {
+    if (!cameraRef.current) return;
+    try {
+      setPicking(true);
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.7, base64: false });
+      if (!photo?.uri) throw new Error('Falha ao capturar');
+      await processAndNavigate(photo.uri);
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível capturar a foto. Tente novamente.');
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  // Abre galeria (simulador ou botão de galeria no celular real)
   const pickAndAnalyze = async () => {
     try {
       setPicking(true);
@@ -63,40 +109,13 @@ export default function FoodCamera() {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.6,
-        base64: true,
+        base64: false,
         exif: false,
       });
 
       if (result.canceled || !result.assets[0]) return;
 
-      const asset = result.assets[0];
-
-      console.log('asset uri:', asset.uri);
-      console.log('asset mimeType:', asset.mimeType);
-
-      let manipulated;
-      try {
-        manipulated = await ImageManipulator.manipulateAsync(
-          asset.uri,
-          [{ resize: { width: 512 } }],
-          { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-        );
-        console.log('manipulated ok, base64 length:', manipulated.base64?.length);
-      } catch (e) {
-        console.error('manipulateAsync falhou:', e);
-      }
-      const base64 = manipulated?.base64;
-
-      if (!base64) {
-        Alert.alert('Erro', 'Não foi possível processar a imagem.');
-        return;
-      }
-
-      console.log('base64 size KB:', Math.round((base64.length * 0.75) / 1024));
-
-      setFoodImage(base64, 'image/jpeg');
-      router.push('/(scan)/food-report' as any);
-
+      await processAndNavigate(result.assets[0].uri);
     } catch (error) {
       console.error('Erro ao selecionar imagem:', error);
       Alert.alert('Erro', 'Não foi possível selecionar a imagem.');
@@ -107,8 +126,36 @@ export default function FoodCamera() {
 
   const zoomLevels: ZoomLevel[] = [0.5, 1, 2];
 
+  // Tela de permissão (apenas no celular real)
+  if (!isSimulator && !permission?.granted) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#111111', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <Text style={{ color: 'white', fontSize: 17, textAlign: 'center', marginBottom: 24 }}>
+          O NIKS AI precisa da câmera para analisar sua refeição.
+        </Text>
+        <TouchableOpacity
+          onPress={requestPermission}
+          style={{ backgroundColor: 'white', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+        >
+          <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1A1A' }}>Permitir câmera</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: '#111111' }}>
+      {/* Camera real (dispositivo físico) */}
+      {!isSimulator && permission?.granted && (
+        <CameraView
+          ref={cameraRef}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          facing="back"
+          zoom={zoom === 0.5 ? 0 : zoom === 1 ? 0 : 0.5}
+          enableTorch={flash}
+        />
+      )}
+
       {/* ===== TOP CONTROLS ===== */}
       <View
         style={{
@@ -284,9 +331,9 @@ export default function FoodCamera() {
             )}
           </TouchableOpacity>
 
-          {/* Shutter — abre galeria no simulador */}
+          {/* Shutter — câmera real no celular, galeria no simulador */}
           <TouchableOpacity
-            onPress={pickAndAnalyze}
+            onPress={isSimulator ? pickAndAnalyze : handleCapture}
             disabled={picking}
             activeOpacity={0.9}
             style={{
@@ -303,7 +350,7 @@ export default function FoodCamera() {
             <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(255,255,255,0.92)' }} />
           </TouchableOpacity>
 
-          {/* Gallery button */}
+          {/* Gallery button — sempre visível */}
           <TouchableOpacity
             onPress={pickAndAnalyze}
             disabled={picking}
@@ -327,4 +374,3 @@ export default function FoodCamera() {
     </View>
   );
 }
-

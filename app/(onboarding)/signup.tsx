@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
+  KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { useRouter } from 'expo-router';
@@ -96,7 +97,15 @@ export default function Signup() {
 
   return (
     <QuizLayout progress={96} showBack>
-      <View className="pt-8 flex-1">
+      <KeyboardAvoidingView
+        style={{ flex: 1, paddingTop: 32 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Heading */}
         <View className="mb-8">
           <Text className="text-[28px] font-bold text-[#1A1A1A] leading-tight tracking-tight">
@@ -283,8 +292,8 @@ export default function Signup() {
           </Text>
         </View>
 
-        <View className="pb-2" />
-      </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </QuizLayout>
   );
 }

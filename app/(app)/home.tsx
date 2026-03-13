@@ -328,7 +328,7 @@ export default function Home() {
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{ fontSize: 20, fontWeight: '800', color: '#7CB69D' }}>{meal.meal_score}</Text>
+                        <Text style={{ fontSize: 20, fontWeight: '800', color: '#FB7B6B' }}>{meal.meal_score}</Text>
                         <Text style={{ fontSize: 11, color: '#8A8A8E' }}>/100</Text>
                       </View>
                       <ChevronRight size={20} color="#8A8A8E" strokeWidth={1.8} />

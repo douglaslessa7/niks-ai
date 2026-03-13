@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
+  KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -100,7 +101,15 @@ export default function Login() {
         </View>
 
         {/* Content */}
-        <View className="flex-1 px-6 justify-between py-10">
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Heading */}
           <View>
             <Text
@@ -114,6 +123,9 @@ export default function Login() {
               {' '}para continuar sua jornada.
             </Text>
           </View>
+
+          {/* Spacer */}
+          <View style={{ flex: 1 }} />
 
           {/* Form + Buttons */}
           <View className="gap-3">
@@ -291,7 +303,8 @@ export default function Login() {
               .
             </Text>
           </View>
-        </View>
+        </ScrollView>
+        </KeyboardAvoidingView>
       </View>
     </SafeAreaView>
   );

@@ -689,7 +689,7 @@ Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`. Layout (de cima par
    - Subtítulo "seu nome e usuário" + ChevronRight
 3. **Seção "Assinatura"** — "Gerenciar assinatura" com ícone Crown coral
 4. **Seção "Seu e-mail"** — card branco exibindo `email` buscado via `supabase.auth.getUser()`
-5. **Seção "Notificações"** — "Ative as Notificações"
+5. **Seção "Notificações"** — "Ative as Notificações" — `onPress` chama `requestPushPermission()`: se já tem permissão, abre Ajustes via `Linking.openURL("app-settings:")`; se não tem, pede permissão e salva token via `savePushToken()`; se recusar, direciona para Ajustes
 6. **Seção "Suporte"** — "Fale conosco" (Alert + mailto:suporte@niksai.com.br) + "Avaliar o app"
 7. **Sair da conta** (vermelho, `signOut`) + versão
 

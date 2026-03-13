@@ -11,8 +11,10 @@ import {
   LogOut,
   Mail,
 } from 'lucide-react-native';
+import * as Notifications from 'expo-notifications';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
+import { requestPushPermission, savePushToken } from '../../lib/notifications';
 
 export default function Perfil() {
   const router = useRouter();
@@ -38,6 +40,42 @@ export default function Perfil() {
       });
     }, [])
   );
+
+  const handleNotifications = async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+
+    if (status === 'granted') {
+      // Já tem permissão — abre Ajustes para o usuário gerenciar
+      Alert.alert(
+        'Notificações ativas',
+        'Suas notificações já estão ativadas. Para gerenciá-las, acesse os Ajustes do seu iPhone.',
+        [
+          { text: 'Fechar', style: 'cancel' },
+          { text: 'Abrir Ajustes', onPress: () => Linking.openURL('app-settings:') },
+        ]
+      );
+      return;
+    }
+
+    // Ainda não tem permissão — pede e salva o token
+    const token = await requestPushPermission();
+
+    if (token) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) await savePushToken(user.id, token);
+      Alert.alert('Notificações ativadas!', 'Você receberá lembretes da sua rotina de skincare.');
+    } else {
+      // Usuário recusou — direciona para Ajustes
+      Alert.alert(
+        'Permissão necessária',
+        'Para receber notificações, ative-as nos Ajustes do seu iPhone.',
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Abrir Ajustes', onPress: () => Linking.openURL('app-settings:') },
+        ]
+      );
+    }
+  };
 
   const initial = nome ? nome[0].toUpperCase() : '?';
 
@@ -219,6 +257,7 @@ export default function Perfil() {
               >
                 <TouchableOpacity
                   activeOpacity={0.8}
+                  onPress={handleNotifications}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -257,12 +296,12 @@ export default function Perfil() {
                   onPress={() =>
                     Alert.alert(
                       'Fale conosco',
-                      'Mande a sua pergunta ou feedback para o nosso e-mail suporte@niksai.com.br',
+                      'Mande a sua pergunta ou feedback para o nosso e-mail support@niksaiapp.com',
                       [
                         { text: 'Fechar', style: 'cancel' },
                         {
                           text: 'Enviar e-mail',
-                          onPress: () => Linking.openURL('mailto:suporte@niksai.com.br'),
+                          onPress: () => Linking.openURL('mailto:support@niksaiapp.com'),
                         },
                       ]
                     )
@@ -298,7 +337,7 @@ export default function Perfil() {
 
             {/* Sign Out + Version */}
             <View style={{ alignItems: 'center', gap: 12, paddingVertical: 24 }}>
-              <TouchableOpacity activeOpacity={0.8} onPress={signOut}>
+              <TouchableOpacity activeOpacity={0.8} onPress={async () => { await signOut(); router.replace('/'); }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <LogOut size={18} color="#D4183D" />
                   <Text style={{ fontSize: 16, fontWeight: '500', color: '#D4183D' }}>Sair da conta</Text>
