@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
 // Configura como as notificações aparecem quando o app está aberto
@@ -13,34 +13,9 @@ Notifications.setNotificationHandler({
 
 /**
  * Pede permissão de notificação ao usuário e retorna o Expo Push Token.
- * Retorna null se o usuário recusar ou se estiver no simulador.
+ * Retorna null se o usuário recusar.
  */
 export async function requestPushPermission(): Promise<string | null> {
-  // Simulador iOS não tem token real — retorna null sem erro
-  if (Platform.OS === 'ios' && __DEV__) {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      return null;
-    }
-
-    // No simulador, o token não é válido para push real, mas retornamos um placeholder
-    // para o fluxo funcionar em dev
-    try {
-      const tokenData = await Notifications.getExpoPushTokenAsync();
-      return tokenData.data;
-    } catch {
-      return 'simulator-token';
-    }
-  }
-
-  // Dispositivo real
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -50,11 +25,28 @@ export async function requestPushPermission(): Promise<string | null> {
   }
 
   if (finalStatus !== 'granted') {
+    console.log('[notifications] Permissão negada pelo usuário.');
     return null;
   }
 
-  const tokenData = await Notifications.getExpoPushTokenAsync();
-  return tokenData.data;
+  // Obtém o projectId do app.json / EAS
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    Constants.easConfig?.projectId;
+
+  if (!projectId) {
+    console.error('[notifications] projectId não encontrado. Verifique app.json ou eas.json.');
+    return null;
+  }
+
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    console.log('[notifications] Token obtido:', tokenData.data);
+    return tokenData.data;
+  } catch (error) {
+    console.error('[notifications] Erro ao obter token:', error);
+    return null;
+  }
 }
 
 /**

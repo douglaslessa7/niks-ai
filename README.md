@@ -209,7 +209,8 @@ updated_at timestamptz DEFAULT now()
 genero text, idade int4, tipo_pele text,
 concerns text[] DEFAULT '{}', objetivo text,
 frequency text, sun_exposure text, hydration text,
-sleep text, sunscreen text, birthday text
+sleep text, sunscreen text, birthday text,
+push_token text  -- token Expo Push Notifications (salvo na tela notifications.tsx)
 ```
 
 **Colunas extras na tabela `skin_scans`:**
@@ -239,6 +240,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 | `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns } }` | `{ skin_score, skin_type_detected, headline, acne: { score, label, insight }, skin_age, pontos_fortes: string[2], pontos_fracos: string[3], disclaimer }` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
 | `generate-protocol` | ✅ | `{ baseProtocol, scanResult, onboardingData }` — `baseProtocol` **obrigatório** | `{ morning[], night[], introduction_warnings, expected_timeline }` |
+| `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'scan_available' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API. `scan_available` filtra automaticamente usuários cujo último scan foi há 7+ dias |
 
 **Correções críticas já aplicadas no `analyze-food`:**
 - `max_tokens` = **2048** (evita truncamento do JSON)
@@ -248,6 +250,18 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - `max_tokens` = **4096** (protocolo completo é grande — 2000 truncava o JSON)
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
 - Recebe `baseProtocol` (templates de `constants/protocols.ts`) — a IA ajusta, não cria do zero
+
+### Push Notifications (`pg_cron`)
+
+3 jobs agendados no Supabase via `pg_cron` + `pg_net`. Todos chamam a Edge Function `send-notifications`:
+
+| Job | Schedule (UTC) | Horário Brasília | Comportamento |
+|---|---|---|---|
+| `morning-routine` | `0 10 * * *` | Todo dia às 7h | Envia para todos os usuários com `push_token` |
+| `night-routine` | `0 0 * * *` | Todo dia às 21h | Envia para todos os usuários com `push_token` |
+| `scan-available` | `0 13 * * *` | Todo dia às 10h | Envia apenas para usuários cujo último scan foi há 7+ dias |
+
+**⚠️ Pendência:** `push_token` real só é gerado em dispositivo físico com Apple Developer Program ativo. O entitlement `aps-environment: development` já está configurado no `app.json`. Ao ativar o Developer Program, recompilar com `npx expo run:ios --device --localhost`.
 
 ### Autenticação
 - **Google Sign In:** ✅ funcionando
@@ -377,7 +391,7 @@ O bucket `scans` é privado. `getPublicUrl()` retorna uma URL que responde 403. 
 
 ```typescript
 const { data: signed } = await supabase.storage.from('scans').createSignedUrl(path, 31536000);
-fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl; // fallback só se bucket for público
+fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl;
 ```
 
 Isso se aplica em: `store/onboarding.ts` (`uploadScanPhoto`), `app/(scan)/loading.tsx`, e `app/(app)/home.tsx` (repair de foto do onboarding).
@@ -438,10 +452,11 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 - Supabase Auth (Google Sign In) ✅
 - Supabase Auth (E-mail + Senha) ✅
 - Banco de dados + RLS + trigger ✅
-- Edge Functions (analyze-skin, analyze-food, generate-protocol) ✅
+- Edge Functions (analyze-skin, analyze-food, generate-protocol, send-notifications) ✅
 - `app/(scan)/food-camera.tsx` ✅
 - `app/(onboarding)/protocol-loading.tsx` ✅ — gera protocolo + salva em `protocolos`
 - `(app)/protocolo.tsx` ✅ — carrega do cache/Supabase antes de regenerar
+- Push Notifications ✅ — `lib/notifications.ts` + `notifications.tsx` + Edge Function `send-notifications` + 3 jobs `pg_cron`. **Pendente:** token real exige Apple Developer Program ativo + recompilação
 
 ---
 
@@ -451,6 +466,7 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 - Apple Developer Program já adquirido
 - Configurar no Xcode + Supabase Dashboard
 - Botão placeholder já existe em `signup.tsx` e `login.tsx` — só falta conectar a lógica real
+- **Ao ativar:** recompilar com `npx expo run:ios --device --localhost` — o `push_token` real também será gerado nessa recompilação (entitlement `aps-environment` já configurado no `app.json`)
 
 #### 🟡 2. RevenueCat — Paywall
 - Instalar `react-native-purchases`
@@ -467,7 +483,6 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 #### 🟢 4. Melhorias futuras
 - Salvar histórico completo nos `food_scans`
 - Tela de histórico no perfil
-- Push notifications com lembretes da rotina
 
 ---
 
@@ -548,7 +563,7 @@ niks-ai/
 │   │   ├── protocol-loading.tsx   ✅ gera protocolo + salva no Supabase
 │   │   ├── paywall-soft.tsx       ✅
 │   │   ├── paywall-detailed.tsx   ✅
-│   │   └── notifications.tsx      ✅
+│   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase
 │   ├── (app)/
 │   │   ├── _layout.tsx            ✅ Tab bar: scanear/protocolo/perfil (sem FAB, sem evolução)
 │   │   ├── home.tsx               ✅ Novo design: Hoje + Scanear + Skin Card; "Ver resultado" → skin-result
@@ -582,6 +597,7 @@ niks-ai/
 ├── constants/protocols.ts         ✅ templates base por tipo de pele (normal/seca/oleosa/mista) — IA ajusta
 ├── store/onboarding.ts            ✅
 ├── lib/supabase.ts                ✅
+├── lib/notifications.ts           ✅ requestPushPermission() + savePushToken() — requer Apple Developer Program para token real
 ├── hooks/useAuth.ts               ✅
 ├── assets/trust-hands.png         ✅ ilustração de palmas (Figma Make kcw7wez680I06tnIMm1ZEz)
 ├── lib/revenuecat.ts              ⏳
@@ -615,13 +631,12 @@ zustand
 expo-image-manipulator
 expo-camera
 expo-image-picker
+expo-notifications
 react-native-svg
 expo-linear-gradient
 lucide-react-native
 react-native-reanimated
 ```
-
----
 
 ---
 
@@ -706,5 +721,5 @@ Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout
 
 ---
 
-*Última atualização: Sessão 12 — Março 2026*
-*Status: MVP — analyze-skin simplificado (acne + skin_age + pontos_fortes/fracos); generate-protocol usa template base (constants/protocols.ts); protocolo.tsx redesenhado conforme Figma Make gZ5sSJErlJ3lcBTaqzwgjN; Apple Sign In + RevenueCat + Mixpanel pendentes.*
+*Última atualização: Sessão 13 — Março 2026*
+*Status: MVP — Push notifications implementadas (lib/notifications.ts + Edge Function send-notifications + pg_cron); token real pendente até ativação do Apple Developer Program. Apple Sign In + RevenueCat + Mixpanel pendentes.*
