@@ -82,6 +82,8 @@ npx expo start --clear   # pressionar 's' depois 'i'
 | Onboarding / auth original | `XrX2xnE32aNLOaFw5ayPM0` | Welcome, Login, Signup, telas de onboarding |
 | Home Screen + ScanModal | `sxih7FXdLGWu1lKovpOjIa` | `home.tsx` (tela principal), ScanModal bottom sheet |
 | Tab Bar + Home v2 | `cFsFcVSjOMkTdHIJpHgSDk` | Tab bar inferior, menu "scanear/protocolo/perfil" |
+| Onboarding quiz screens design | `kcw7wez680I06tnIMm1ZEz` | Trust, PlanPreview, Goal, Results (onboarding) e outras telas do quiz |
+| App principal v2 — Protocolo/Perfil | `gZ5sSJErlJ3lcBTaqzwgjN` | `protocolo.tsx` (redesign Sessão 12), perfil, home v3 — tudo em `home.tsx` |
 
 ### Paths do projeto principal (XrX2xnE32aNLOaFw5ayPM0)
 ```
@@ -107,6 +109,11 @@ file://figma/make/source/sxih7FXdLGWu1lKovpOjIa/src/app/components/comparison.ts
 ### Paths do projeto Tab Bar v2 (cFsFcVSjOMkTdHIJpHgSDk)
 ```
 file://figma/make/source/cFsFcVSjOMkTdHIJpHgSDk/src/app/components/home.tsx
+```
+
+### Paths do projeto App principal v2 (gZ5sSJErlJ3lcBTaqzwgjN)
+```
+file://figma/make/source/gZ5sSJErlJ3lcBTaqzwgjN/src/app/components/home.tsx   ← contém: home, protocolo, perfil, set-name (tudo em um arquivo)
 ```
 
 ### Padrão de nomeação (CRÍTICO)
@@ -229,13 +236,18 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 
 | Função | Status | Entrada | Saída |
 |---|---|---|---|
-| `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns } }` | `{ skin_score, skin_type_detected, headline, metrics, zones, top_concerns, positive_highlights, disclaimer }` |
+| `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns } }` | `{ skin_score, skin_type_detected, headline, acne: { score, label, insight }, skin_age, pontos_fortes: string[2], pontos_fracos: string[3], disclaimer }` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
-| `generate-protocol` | ✅ | `scanResult + onboardingData` | `{ morning[], night[], introduction_warnings, expected_timeline }` |
+| `generate-protocol` | ✅ | `{ baseProtocol, scanResult, onboardingData }` — `baseProtocol` **obrigatório** | `{ morning[], night[], introduction_warnings, expected_timeline }` |
 
 **Correções críticas já aplicadas no `analyze-food`:**
 - `max_tokens` = **2048** (evita truncamento do JSON)
 - Regex: `rawText.match(/\{[\s\S]*\}/)` (robusto a markdown extra)
+
+**Correções críticas já aplicadas no `generate-protocol`:**
+- `max_tokens` = **4096** (protocolo completo é grande — 2000 truncava o JSON)
+- Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
+- Recebe `baseProtocol` (templates de `constants/protocols.ts`) — a IA ajusta, não cria do zero
 
 ### Autenticação
 - **Google Sign In:** ✅ funcionando
@@ -253,6 +265,21 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 Exporta `useAppStore` (não `useOnboardingStore`).
 
 **Tipos exportados:** `SkinMetric`, `ScanResult`, `ProtocolStep`, `ProtocolResult`, `OnboardingData`, `FoodReportResult`
+
+**Tipo `ScanResult` (schema atual — Sessão 11):**
+```typescript
+{
+  skin_score: number
+  skin_type_detected: 'seca' | 'oleosa' | 'mista' | 'normal'
+  headline: string
+  acne: SkinMetric          // { score, label, insight }
+  skin_age: number          // idade aparente da pele em anos
+  pontos_fortes: string[]   // 2 destaques positivos
+  pontos_fracos: string[]   // 3 áreas de atenção
+  disclaimer: string
+  // ATENÇÃO: scans antigos têm 'metrics', 'top_concerns', 'positive_highlights' — usar ?. ao acessar
+}
+```
 
 **Campos de onboarding:** `genero`, `birthday`, `skin_type`, `concerns[]`, `frequency`, `sun_exposure`, `hydration`, `sleep`, `sunscreen`, `objetivo`
 
@@ -293,9 +320,17 @@ food-camera.tsx → setFoodImage(base64, mimeType) → navega → food-report.ts
 camera.tsx → setSkinImage(base64, uri) → navega → loading.tsx lê do store
 ```
 
-### 2. `fetch` direto em vez de `supabase.functions.invoke`
-`supabase.functions.invoke` truncava payloads grandes. Usar `fetch` direto:
+### 2. `fetch` direto vs `supabase.functions.invoke`
 
+| Função | Método | Motivo |
+|---|---|---|
+| `analyze-skin` | `fetch` direto | payload contém imageBase64 grande |
+| `analyze-food` | `fetch` direto | payload contém imageBase64 grande |
+| `generate-protocol` | `supabase.functions.invoke` ✅ | funciona após deploy com `--no-verify-jwt` |
+
+**NUNCA usar `supabase.functions.invoke` para `analyze-skin` e `analyze-food`** — trunca o base64 da imagem. Para `generate-protocol`, o `supabase.functions.invoke` é preferido pois gerencia o JWT automaticamente.
+
+Exemplo para funções com imagem (`fetch` direto):
 ```typescript
 const response = await fetch(
   'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/analyze-food',
@@ -310,6 +345,13 @@ const response = await fetch(
 )
 ```
 
+Exemplo para `generate-protocol` (`supabase.functions.invoke`):
+```typescript
+const { data, error } = await supabase.functions.invoke('generate-protocol', {
+  body: { baseProtocol, scanResult, onboardingData },
+});
+```
+
 ### 3. Simulador iOS
 Não tem câmera real. `camera.tsx` detecta via `Platform.OS === 'ios' && __DEV__` e mostra botão de galeria.
 
@@ -320,16 +362,14 @@ Redimensionada para 512px + compress 0.5 via `expo-image-manipulator` antes de s
 Os scores de hidratação, oleosidade etc. são **intencionalmente** ocultados — só desbloqueados para assinantes (integração RevenueCat pendente).
 
 ### 6. Geração e cache do protocolo personalizado
-O protocolo é gerado **uma única vez** na tela `protocol-loading` (logo após o signup) e salvo em dois lugares:
+O protocolo é gerado **uma única vez** na tela `protocol-loading` (logo após o signup) usando um **template base** de `constants/protocols.ts` que a IA ajusta conforme o scan. Salvo em dois lugares:
 1. **Zustand store** (`protocolResult`) — para acesso imediato sem nova chamada à API
 2. **Supabase `protocolos`** — para persistência entre sessões
 
 A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 1. Store cache (se ainda estiver na sessão)
 2. Supabase (busca o registro mais recente por `user_id`)
-3. Fallback: chama `generate-protocol` novamente via `fetch` direto
-
-**NUNCA usar `supabase.functions.invoke` para `generate-protocol`** — trunca payloads. Sempre `fetch` direto com Bearer token.
+3. Fallback: chama `generate-protocol` novamente via `supabase.functions.invoke`
 
 ### 8. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
 
@@ -388,8 +428,8 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 - **Nova análise** (`selectedFoodResult === null`): chama `analyze-food`, salva resultado em `food_scans` (incluindo `full_result` jsonb + foto no Storage), exibe resultado
 - **Visualização salva** (`selectedFoodResult !== null`): exibe `full_result` do store instantaneamente, sem chamada à IA; botão "Voltar para tela inicial" (coral, ArrowLeft) via `router.replace`
 
-**Telas — App principal (7 arquivos):**
-`(app)/_layout.tsx` (tab bar sem FAB), `home.tsx`, `skin-result.tsx` (resultado da análise facial in-app), `protocolo.tsx`, `analise.tsx`, `evolucao.tsx` (oculta), `perfil.tsx`
+**Telas — App principal (8 arquivos):**
+`(app)/_layout.tsx` (tab bar sem FAB), `home.tsx`, `skin-result.tsx` (resultado da análise facial in-app), `protocolo.tsx`, `analise.tsx`, `evolucao.tsx` (oculta), `perfil.tsx`, `set-name.tsx` (definir nome do usuário)
 
 **Integrações:**
 - `lib/supabase.ts` ✅
@@ -516,7 +556,8 @@ niks-ai/
 │   │   ├── protocolo.tsx          ✅
 │   │   ├── analise.tsx            ✅
 │   │   ├── evolucao.tsx           🚫 oculta (href: null) — removida da tab bar
-│   │   └── perfil.tsx             ✅
+│   │   ├── perfil.tsx             ✅ redesenhado (Figma cFsFcVSjOMkTdHIJpHgSDk): nome dinâmico, email, notificações, suporte
+│   │   └── set-name.tsx           ✅ definir nome/sobrenome → salva em users.nome no Supabase
 │   └── (scan)/
 │       ├── scan-prep.tsx          ✅
 │       ├── camera.tsx             ✅
@@ -538,9 +579,11 @@ niks-ai/
 │   └── scan/
 │       └── ScanModal.tsx          ✅
 ├── constants/colors.ts            ✅
+├── constants/protocols.ts         ✅ templates base por tipo de pele (normal/seca/oleosa/mista) — IA ajusta
 ├── store/onboarding.ts            ✅
 ├── lib/supabase.ts                ✅
 ├── hooks/useAuth.ts               ✅
+├── assets/trust-hands.png         ✅ ilustração de palmas (Figma Make kcw7wez680I06tnIMm1ZEz)
 ├── lib/revenuecat.ts              ⏳
 ├── lib/mixpanel.ts                ⏳
 └── hooks/useSubscription.ts       ⏳
@@ -619,9 +662,49 @@ Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`:
 - **Ativo**: coral `#FB7B6B` · **Inativo**: `#8A8A8E`
 - **Ícone**: tamanho 28, `strokeWidth: 1.5`, sem `fill`
 - FAB laranja (`+`) **removido definitivamente**
-- Tab "evolução" **oculta** (`href: null`) — arquivo preservado mas não acessível
+- Telas ocultas (`href: null`): `evolucao`, `set-name`, `skin-result`
+
+### Tela de Perfil (`app/(app)/perfil.tsx`)
+Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`. Layout (de cima para baixo):
+1. **Top Bar** — "NIKS AI" + ícone Settings
+2. **Profile Header Card** (clicável → `set-name.tsx`):
+   - Avatar coral 60×60 com inicial do nome (ou `?` se não definido)
+   - Badge Crown dourado + "Premium"
+   - Nome do Supabase (`users.nome`) ou "Toque para definir" se vazio
+   - Subtítulo "seu nome e usuário" + ChevronRight
+3. **Seção "Assinatura"** — "Gerenciar assinatura" com ícone Crown coral
+4. **Seção "Seu e-mail"** — card branco exibindo `email` buscado via `supabase.auth.getUser()`
+5. **Seção "Notificações"** — "Ative as Notificações"
+6. **Seção "Suporte"** — "Fale conosco" (Alert + mailto:suporte@niksai.com.br) + "Avaliar o app"
+7. **Sair da conta** (vermelho, `signOut`) + versão
+
+**Dados dinâmicos:** carregados via `useFocusEffect` + `supabase.auth.getUser()` a cada foco da aba.
+
+### Tela Definir Nome (`app/(app)/set-name.tsx`)
+Nova tela acessada ao tocar no Profile Header Card do perfil:
+- Back button circular branco
+- Título "Qual é o seu nome?" + subtítulo
+- 2 `TextInput` com floating label animado: "Nome" e "Sobrenome"
+- Pré-popula com o `users.nome` existente (split por primeiro espaço)
+- Botão "Continuar" coral quando preenchido; salva `nome` concatenado em `users.nome` via `UPDATE`
+- `paddingBottom` do botão = `useSafeAreaInsets().bottom + 80` para não ser coberto pela tab bar
+
+### Tela de Protocolo (`app/(app)/protocolo.tsx`)
+Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout:
+1. **Header** — "Seu Protocolo" (28px, font-800, `#1D3A44`)
+2. **Tab Toggle** — 2 botões pill com `Sun`/`Moon` (48px). Ativo: coral `#FB7B6B` sólido; Inativo: outline `#1D3A44`
+3. **Cards de passo** — card branco `borderRadius: 16`, borda `#F0F0F0`:
+   - Círculo numerado 40×40 (coral manhã / `#1D3A44` noite) + nome + tag de dias opcional + ingredient + instruction
+   - Checkbox circular 24×24 por passo (cor do acento conforme período ao marcar)
+   - Botão "Ver passo a passo" (`#F0F9F5`, texto `#7CB69D`, ícone `Info`)
+4. **Modal "Ver passo a passo"** — `Modal` nativo (`transparent + animationType: 'slide'`), handle + instrução dividida em sub-passos numerados + botão "Entendi" coral
+5. **Nota de Observação** (aba noite) — card `#FDFDFD` exibindo `protocol.introduction_warnings`
+
+**Tag de dias da semana:** helper `getDayTag(step)` detecta padrões de dias em `ingredient` (ex: `(Seg/Qua/Sex)`) e `waitTime` via regex. Se detectado, exibe badge coral `#FFF5F4` ao lado do nome. `isTimeWait()` separa tempos reais (ex: "5 min") de schedules de dias para exibição correta.
+
+**Overflow prevention:** `flex: 1, minWidth: 0` no container + `flexWrap: 'wrap'` na linha nome+tag + `flexShrink: 1` em todos os `Text` — nenhum texto gerado pela IA vaza fora do card branco.
 
 ---
 
-*Última atualização: Sessão 9 — Março 2026*
-*Status: MVP — food scans salvos com `full_result` jsonb + foto no Storage; visualização de relatório salvo sem re-análise; carrossel de histórico de scans na home; Apple Sign In + RevenueCat + Mixpanel pendentes.*
+*Última atualização: Sessão 12 — Março 2026*
+*Status: MVP — analyze-skin simplificado (acne + skin_age + pontos_fortes/fracos); generate-protocol usa template base (constants/protocols.ts); protocolo.tsx redesenhado conforme Figma Make gZ5sSJErlJ3lcBTaqzwgjN; Apple Sign In + RevenueCat + Mixpanel pendentes.*

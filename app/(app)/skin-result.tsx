@@ -17,20 +17,23 @@ const metricColors: Record<string, string> = {
   acne: '#8B5CF6',
   dark_spots: '#EF4444',
   sensitivity: '#06B6D4',
+  skin_age: '#EC4899',
 };
 
 const metricLabels: Record<string, string> = {
   hydration: 'Hidratação',
   oiliness: 'Oleosidade',
   texture: 'Textura',
-  acne: 'Poros',
+  acne: 'Acne',
   dark_spots: 'Manchas',
   sensitivity: 'Elasticidade',
+  skin_age: 'Idade da Pele',
 };
 
 function MetricCard({ name, metric }: { name: string; metric: SkinMetric }) {
   const color = metricColors[name] ?? '#FB7B6B';
-  const pct = Math.min(100, Math.max(0, metric.score));
+  const isSkinAge = name === 'skin_age';
+  const pct = isSkinAge ? 0 : Math.min(100, Math.max(0, metric.score));
   return (
     <View
       style={{
@@ -52,25 +55,44 @@ function MetricCard({ name, metric }: { name: string; metric: SkinMetric }) {
             {metricLabels[name] ?? name}
           </Text>
         </View>
-        <Text style={{ fontSize: 15, fontWeight: '800', color }}>
-          {pct}<Text style={{ fontSize: 11, fontWeight: '600', color: '#9CA3AF' }}>/100</Text>
-        </Text>
+        {isSkinAge ? (
+          <Text style={{ fontSize: 15, fontWeight: '800', color }}>
+            {metric.label}<Text style={{ fontSize: 11, fontWeight: '600', color: '#9CA3AF' }}> anos</Text>
+          </Text>
+        ) : (
+          <Text style={{ fontSize: 15, fontWeight: '800', color }}>
+            {pct}<Text style={{ fontSize: 11, fontWeight: '600', color: '#9CA3AF' }}>/100</Text>
+          </Text>
+        )}
       </View>
 
-      {/* Barra de progresso */}
-      <View style={{ height: 4, borderRadius: 2, backgroundColor: '#F0F0F2' }}>
-        <View
-          style={{
-            width: `${pct}%`,
-            height: '100%',
-            borderRadius: 2,
-            backgroundColor: color,
-          }}
-        />
-      </View>
+      {/* Label badge (ex: "Leve", "Moderada") — apenas para métricas não skin_age */}
+      {!isSkinAge && metric.label ? (
+        <View style={{ flexDirection: 'row' }}>
+          <View style={{ backgroundColor: `${color}18`, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color }}>{metric.label}</Text>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Barra de progresso — apenas para métricas de score */}
+      {!isSkinAge && (
+        <View style={{ height: 4, borderRadius: 2, backgroundColor: '#F0F0F2' }}>
+          <View
+            style={{
+              width: `${pct}%`,
+              height: '100%',
+              borderRadius: 2,
+              backgroundColor: color,
+            }}
+          />
+        </View>
+      )}
 
       {/* Insight */}
-      <Text style={{ fontSize: 12, color: '#5A5A5C', lineHeight: 17 }}>{metric.insight}</Text>
+      {metric.insight ? (
+        <Text style={{ fontSize: 12, color: '#5A5A5C', lineHeight: 17 }}>{metric.insight}</Text>
+      ) : null}
     </View>
   );
 }
@@ -88,7 +110,14 @@ export default function SkinResult() {
 
   const score = result?.skin_score ?? 0;
   const offset = circ * (1 - score / 100);
-  const metrics = result?.metrics ? Object.entries(result.metrics) : [];
+  // New schema: acne + skin_age. Fallback to legacy metrics for old scans.
+  const metricsToShow: [string, SkinMetric][] = []
+  if (result?.acne) metricsToShow.push(['acne', result.acne])
+  if (result?.skin_age != null) metricsToShow.push(['skin_age', { score: 0, label: String(result.skin_age), insight: '' }])
+  if (metricsToShow.length === 0 && result?.metrics) {
+    metricsToShow.push(...(Object.entries(result.metrics) as [string, SkinMetric][]))
+  }
+  const metrics = metricsToShow;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }}>
@@ -239,7 +268,7 @@ export default function SkinResult() {
           )}
 
           {/* Principais preocupações */}
-          {(result?.top_concerns?.length ?? 0) > 0 && (
+          {((result?.pontos_fracos ?? result?.top_concerns)?.length ?? 0) > 0 && (
             <View
               style={{
                 backgroundColor: 'white',
@@ -256,7 +285,7 @@ export default function SkinResult() {
                 <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>Principais preocupações</Text>
               </View>
               <View style={{ gap: 8 }}>
-                {result!.top_concerns.map((concern, i) => (
+                {(result?.pontos_fracos ?? result?.top_concerns ?? []).map((concern, i) => (
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
                     <AlertTriangle size={14} color="#D4A017" strokeWidth={2} style={{ marginTop: 2 }} />
                     <Text style={{ flex: 1, fontSize: 13, color: '#5A5A5C', lineHeight: 18 }}>{concern}</Text>
@@ -267,7 +296,7 @@ export default function SkinResult() {
           )}
 
           {/* Pontos positivos */}
-          {(result?.positive_highlights?.length ?? 0) > 0 && (
+          {((result?.pontos_fortes ?? result?.positive_highlights)?.length ?? 0) > 0 && (
             <View
               style={{
                 backgroundColor: 'white',
@@ -284,7 +313,7 @@ export default function SkinResult() {
                 <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>Pontos positivos</Text>
               </View>
               <View style={{ gap: 8 }}>
-                {result!.positive_highlights.map((h, i) => (
+                {(result?.pontos_fortes ?? result?.positive_highlights ?? []).map((h, i) => (
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
                     <CheckCircle size={14} color="#7CB69D" strokeWidth={2} style={{ marginTop: 2 }} />
                     <Text style={{ flex: 1, fontSize: 13, color: '#5A5A5C', lineHeight: 18 }}>{h}</Text>

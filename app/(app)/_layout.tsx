@@ -77,6 +77,8 @@ export default function AppLayout() {
         <Tabs.Screen name="analise" options={{ href: null }} />
         <Tabs.Screen name="evolucao" options={{ href: null }} />
         <Tabs.Screen name="perfil" />
+        <Tabs.Screen name="set-name" options={{ href: null }} />
+        <Tabs.Screen name="skin-result" options={{ href: null }} />
       </Tabs>
       <CustomTabBar />
     </View>

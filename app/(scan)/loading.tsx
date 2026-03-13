@@ -94,8 +94,8 @@ export default function Loading() {
               foto_url: fotoUrl,
               skin_score: data.skin_score,
               tipo_pele: data.skin_type_detected,
-              metricas: data.metrics,
-              areas_atencao: data.top_concerns,
+              metricas: { acne: data.acne, skin_age: data.skin_age },
+              areas_atencao: data.pontos_fracos,
               resumo: data.headline,
               full_result: data,
             });

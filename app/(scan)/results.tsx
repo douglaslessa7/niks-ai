@@ -1,5 +1,4 @@
 import { View, Text, ScrollView, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Canvas, Circle as SkiaCircle, BlurMask } from '@shopify/react-native-skia';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -20,18 +19,20 @@ const metricColors: Record<string, string> = {
   acne: '#8B5CF6',
   dark_spots: '#EF4444',
   sensitivity: '#06B6D4',
+  skin_age: '#EC4899',
 };
 
 const metricLabels: Record<string, string> = {
   hydration: 'Hidratação',
   oiliness: 'Oleosidade',
   texture: 'Textura',
-  acne: 'Poros',
+  acne: 'Acne',
   dark_spots: 'Manchas',
   sensitivity: 'Elasticidade',
+  skin_age: 'Idade da Pele',
 };
 
-function MetricCard({ name, metric }: { name: string; metric: SkinMetric }) {
+function MetricCard({ name, metric: _metric }: { name: string; metric: SkinMetric }) {
   const color = metricColors[name] ?? '#9CA3AF';
   return (
     <View
@@ -85,9 +86,16 @@ export default function Results() {
   const score = scanResult?.skin_score ?? 0;
   const offset = circ * (1 - score / 100);
 
-  const metrics = scanResult?.metrics
-    ? Object.entries(scanResult.metrics)
-    : [];
+  // Sempre mostrar 6 cards borrados como preview — os valores são ocultos de qualquer forma
+  const dummy: SkinMetric = { score: 0, label: '', insight: '' }
+  const metrics: [string, SkinMetric][] = [
+    ['acne',        scanResult?.acne ?? dummy],
+    ['skin_age',    { score: 0, label: String(scanResult?.skin_age ?? 0), insight: '' }],
+    ['hydration',   scanResult?.metrics?.hydration ?? dummy],
+    ['oiliness',    scanResult?.metrics?.oiliness  ?? dummy],
+    ['dark_spots',  scanResult?.metrics?.dark_spots ?? dummy],
+    ['texture',     scanResult?.metrics?.texture    ?? dummy],
+  ];
 
   return (
     <QuizLayout progress={76} showBack>
@@ -181,21 +189,6 @@ export default function Results() {
               <Text className="text-[15px] font-semibold text-niks-black">
                 Seu Protocolo Personalizado
               </Text>
-            </View>
-
-            <View className="rounded-card h-24 overflow-hidden">
-              <LinearGradient
-                colors={['#fed7aa', '#bbf7d0', '#fecaca']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-              />
-              <View className="absolute inset-0 bg-white/60 flex-row items-center justify-center gap-2 px-4">
-                <Lock size={16} color="#1A1A1A" />
-                <Text className="text-[15px] font-semibold text-niks-black text-center">
-                  Análise Alimentar
-                </Text>
-              </View>
             </View>
           </View>
 

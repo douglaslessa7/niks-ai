@@ -1,12 +1,41 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Bell } from 'lucide-react-native';
+import { supabase } from '../../lib/supabase';
+import { requestPushPermission, savePushToken } from '../../lib/notifications';
 
 export default function Notifications() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
-  const goHome = () => router.push('/(app)/home');
+  const handleActivate = async () => {
+    setLoading(true);
+    try {
+      // 1. Pede permissão ao iOS e obtém o token
+      const token = await requestPushPermission();
+
+      if (token) {
+        // 2. Busca o usuário autenticado
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (user) {
+          // 3. Salva o token no Supabase
+          await savePushToken(user.id, token);
+        }
+      }
+    } catch (error) {
+      console.error('[Notifications] Erro:', error);
+    } finally {
+      setLoading(false);
+      router.push('/(app)/home');
+    }
+  };
+
+  const handleSkip = () => {
+    router.push('/(app)/home');
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -57,14 +86,24 @@ export default function Notifications() {
         {/* Botões */}
         <View className="gap-4 pb-8">
           <TouchableOpacity
-            onPress={goHome}
+            onPress={handleActivate}
+            disabled={loading}
             activeOpacity={0.85}
             className="w-full bg-[#1A1A1A] rounded-[12px] h-[56px] items-center justify-center"
           >
-            <Text className="text-white text-[17px] font-semibold">Ativar notificações</Text>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text className="text-white text-[17px] font-semibold">Ativar notificações</Text>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={goHome} activeOpacity={0.7} className="w-full py-2 items-center">
+          <TouchableOpacity
+            onPress={handleSkip}
+            disabled={loading}
+            activeOpacity={0.7}
+            className="w-full py-2 items-center"
+          >
             <Text className="text-[#9CA3AF] text-[17px]">Agora não</Text>
           </TouchableOpacity>
         </View>

@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { scanResult, onboardingData } = await req.json()
+    const { baseProtocol, scanResult, onboardingData } = await req.json()
 
     if (!scanResult) {
       return new Response(JSON.stringify({ error: 'scanResult é obrigatório' }), {
@@ -24,59 +24,52 @@ Deno.serve(async (req) => {
       })
     }
 
-    const systemPrompt = `Você é um dermatologista especializado em criar rotinas de skincare personalizadas para o mercado brasileiro.
-Com base nos dados do scan de pele fornecidos, crie uma rotina AM e PM personalizada.
-Retorne APENAS um JSON válido, sem texto adicional, sem markdown, sem explicações.
+    if (!baseProtocol) {
+      return new Response(JSON.stringify({ error: 'baseProtocol é obrigatório' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
-O JSON deve seguir exatamente esta estrutura:
+    const systemPrompt = `Você é um dermatologista especializado em skincare para o mercado brasileiro.
+Você receberá um PROTOCOLO BASE para o tipo de pele do usuário e os RESULTADOS de um scan de pele com métricas individuais.
+
+Sua tarefa é AJUSTAR o protocolo base conforme as métricas, NÃO criar do zero.
+
+Ajustes permitidos:
+- Trocar o ativo/ingrediente de um passo se as métricas indicarem (ex: se acne > 70, priorizar ácido salicílico)
+- Adicionar no MÁXIMO 1 passo extra se necessário
+- Remover 1 passo se desnecessário para esse perfil
+- Ajustar as instruções com base nos concerns específicos
+- Sugerir product_suggestions com produtos brasileiros reais (farmácias: Drogasil, Droga Raia, Ultrafarma, Panvel)
+
+Ajustes NÃO permitidos:
+- Mudar a ORDEM dos passos base (limpeza sempre primeiro, protetor solar sempre último de manhã)
+- Remover limpeza, hidratante ou protetor solar
+- Ultrapassar 5 passos pela manhã ou 5 à noite
+- Inventar categorias de produto que não existem no template
+
+Retorne APENAS um JSON válido, sem texto, sem markdown.
+O JSON deve manter a mesma estrutura dos passos:
 {
-  "morning": [
-    {
-      "id": <número inteiro sequencial>,
-      "name": <string: nome do produto, ex: "Gel de Limpeza">,
-      "ingredient": <string: ativo principal, ex: "Ácido Salicílico 2%">,
-      "instruction": <string: instrução de uso curta>,
-      "color": <string: cor hex para o ícone — use cores variadas e bonitas>,
-      "waitTime": <string | null: tempo de espera antes do próximo passo, ex: "2 min", null se não precisar>,
-      "product_suggestions": [<string: nome de produto brasileiro real e acessível>]
-    }
-  ],
-  "night": [
-    {
-      "id": <número inteiro sequencial>,
-      "name": <string>,
-      "ingredient": <string>,
-      "instruction": <string>,
-      "color": <string: cor hex>,
-      "waitTime": <string | null>,
-      "product_suggestions": [<string>]
-    }
-  ],
-  "introduction_warnings": <string | null: aviso importante se tiver retinol ou ativo forte, null caso contrário>,
-  "expected_timeline": {
-    "two_weeks": <string: o que esperar em 2 semanas>,
-    "one_month": <string: o que esperar em 1 mês>,
-    "three_months": <string: o que esperar em 3 meses>
-  }
+  "morning": [{ "id": number, "name": string, "ingredient": string, "instruction": string, "color": string hex, "waitTime": string|null, "product_suggestions": [string] }],
+  "night": [mesma estrutura],
+  "introduction_warnings": string|null,
+  "expected_timeline": { "two_weeks": string, "one_month": string, "three_months": string }
 }
 
-REGRAS:
-- Máximo 5 passos pela manhã, 4 à noite
-- Sempre inclua limpeza, hidratante e protetor solar pela manhã
-- Sempre inclua limpeza e hidratante à noite
-- Produtos devem ser encontráveis em farmácias brasileiras (Raia, Droga Raia, Ultrafarma)
-- Nunca use a palavra "diagnóstico"
-- Nunca use emojis em nenhum campo do JSON
-- Seja específico para o tipo de pele e concerns do usuário
-- Responda em português brasileiro`
+Nunca use a palavra diagnóstico. Nunca use emojis. Responda em português brasileiro.`
 
-    const userMessage = `Dados do scan de pele:
+    const userMessage = `PROTOCOLO BASE:
+${JSON.stringify(baseProtocol, null, 2)}
+
+RESULTADOS DO SCAN DE PELE:
 - Skin Score: ${scanResult.skin_score}
 - Tipo de pele detectado: ${scanResult.skin_type_detected}
-- Principais preocupações: ${scanResult.top_concerns?.join(', ')}
-- Métricas: hidratação ${scanResult.metrics?.hydration?.score}/100, oleosidade ${scanResult.metrics?.oiliness?.score}/100, acne ${scanResult.metrics?.acne?.score}/100, manchas ${scanResult.metrics?.dark_spots?.score}/100, textura ${scanResult.metrics?.texture?.score}/100
+- Principais preocupações: ${scanResult.pontos_fracos?.join(', ')}
+- Métricas: acne ${scanResult.acne?.score}/100
 
-${onboardingData ? `Dados do perfil:
+${onboardingData ? `DADOS DO PERFIL:
 - Tipo de pele declarado: ${onboardingData.skin_type || 'não informado'}
 - Preocupações declaradas: ${onboardingData.concerns?.join(', ') || 'não informadas'}
 - Protetor solar: ${onboardingData.sunscreen || 'não informado'}
@@ -84,7 +77,7 @@ ${onboardingData ? `Dados do perfil:
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 2000,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: [
         {

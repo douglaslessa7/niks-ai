@@ -1,39 +1,30 @@
-import { View, Text } from 'react-native';
+import { View, Text, Image } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { Lock } from 'lucide-react-native';
-import Svg, { Ellipse, Path, Circle } from 'react-native-svg';
-
-function FaceIllustration() {
-  return (
-    <Svg width={200} height={200} viewBox="0 0 200 200" fill="none">
-      <Ellipse cx={100} cy={100} rx={50} ry={60} stroke="#1A1A1A" strokeWidth={2} fill="none" />
-      <Path d="M 40 80 Q 45 70 55 75 L 60 85" stroke="#1A1A1A" strokeWidth={2} fill="none" strokeLinecap="round" />
-      <Path d="M 160 80 Q 155 70 145 75 L 140 85" stroke="#1A1A1A" strokeWidth={2} fill="none" strokeLinecap="round" />
-      <Circle cx={75} cy={60} r={2} fill="#1A1A1A" />
-      <Circle cx={125} cy={60} r={2} fill="#1A1A1A" />
-      <Circle cx={100} cy={50} r={2} fill="#1A1A1A" />
-      <Circle cx={70} cy={130} r={2} fill="#1A1A1A" />
-      <Circle cx={130} cy={130} r={2} fill="#1A1A1A" />
-    </Svg>
-  );
-}
 
 export default function Trust() {
   return (
     <QuizLayout progress={88}>
-      <View className="flex-1 justify-center items-center">
+      <View className="flex-1 items-center px-6 pt-10">
         {/* Illustration */}
-        <View className="mb-12 relative">
+        <View className="mb-10 relative items-center justify-center">
+          {/* Subtle circle behind */}
           <View
-            className="absolute items-center justify-center"
-            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
-          >
-            <View style={{ width: 192, height: 192, borderRadius: 96, backgroundColor: 'rgba(204,251,241,0.4)' }} />
-          </View>
-          <View style={{ zIndex: 1 }}>
-            <FaceIllustration />
-          </View>
+            style={{
+              position: 'absolute',
+              width: 192,
+              height: 192,
+              borderRadius: 96,
+              backgroundColor: 'rgba(204,251,241,0.4)',
+            }}
+          />
+          {/* Hands image */}
+          <Image
+            source={require('../../assets/trust-hands.png')}
+            style={{ width: 200, height: 200, borderRadius: 100 }}
+            resizeMode="cover"
+          />
         </View>
 
         {/* Main Text */}

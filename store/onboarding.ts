@@ -29,17 +29,15 @@ export type ScanResult = {
   skin_score: number
   skin_type_detected: string
   headline: string
-  metrics: {
-    hydration: SkinMetric
-    oiliness: SkinMetric
-    acne: SkinMetric
-    dark_spots: SkinMetric
-    texture: SkinMetric
-    sensitivity: SkinMetric
-  }
-  zones: Record<string, { concern: string; severity: string }>
-  top_concerns: string[]
-  positive_highlights: string[]
+  // New schema fields
+  acne?: SkinMetric
+  skin_age?: number
+  pontos_fortes?: string[]
+  pontos_fracos?: string[]
+  // Legacy fields (old stored scans)
+  metrics?: Record<string, SkinMetric>
+  top_concerns?: string[]
+  positive_highlights?: string[]
   disclaimer: string
 }
 
@@ -215,8 +213,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           foto_url: fotoUrl,
           skin_score: scanResult.skin_score,
           tipo_pele: scanResult.skin_type_detected,
-          metricas: scanResult.metrics,
-          areas_atencao: scanResult.top_concerns,
+          metricas: scanResult.acne ? { acne: scanResult.acne, skin_age: scanResult.skin_age } : scanResult.metrics,
+          areas_atencao: scanResult.pontos_fracos ?? scanResult.top_concerns,
           resumo: scanResult.headline,
           full_result: scanResult,
         })

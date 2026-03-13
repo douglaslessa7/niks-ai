@@ -6,6 +6,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Check } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult } from '../../store/onboarding';
+import { BASE_PROTOCOLS } from '../../constants/protocols';
+
 
 const steps = [
   { label: 'Salvando seus dados de análise', delay: 600 },
@@ -103,27 +105,18 @@ export default function ProtocolLoading() {
     try {
       if (!scanResult) return;
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
+      const skinType = scanResult.skin_type_detected ?? 'normal'
+      const baseProtocol = BASE_PROTOCOLS[skinType] ?? BASE_PROTOCOLS['normal']
 
-      const response = await fetch(
-        'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/generate-protocol',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          },
-          body: JSON.stringify({ scanResult, onboardingData: onboarding }),
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('generate-protocol', {
+        body: { baseProtocol, scanResult, onboardingData: onboarding },
+      });
 
-      if (!response.ok) {
-        console.error('generate-protocol error:', response.status);
+      if (error) {
+        const body = await (error as any).context?.json?.().catch(() => null);
+        console.error('generate-protocol error:', error.message, body ? JSON.stringify(body) : '');
         return;
       }
-
-      const data: ProtocolResult = await response.json();
 
       // Salvar no store para a aba Protocolo usar sem regenerar
       setProtocolResult(data);
@@ -139,7 +132,7 @@ export default function ProtocolLoading() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) return;
 
-      const { error } = await supabase.from('protocolos').insert({
+      const { error: insertError } = await supabase.from('protocolos').insert({
         user_id: user.id,
         skin_scan_id: skinScanId ?? null,
         rotina_am: data.morning,
@@ -147,7 +140,7 @@ export default function ProtocolLoading() {
         dicas,
       });
 
-      if (error) console.error('Erro ao salvar protocolo:', error);
+      if (insertError) console.error('Erro ao salvar protocolo:', insertError);
     } catch (err) {
       console.error('Erro em generateAndSaveProtocol:', err);
     } finally {

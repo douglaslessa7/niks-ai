@@ -1,7 +1,7 @@
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
-import { Timer, Check, Sun, Moon } from 'lucide-react-native';
+import { Check, Sun, Moon, Info } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult } from '../../store/onboarding';
 
@@ -35,6 +35,8 @@ export default function Protocolo() {
   const [nightSteps, setNightSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedStep, setSelectedStep] = useState<Step | null>(null);
+  const [showStepDetail, setShowStepDetail] = useState(false);
 
   useEffect(() => {
     generateProtocol();
@@ -49,8 +51,8 @@ export default function Protocolo() {
       if (cachedProtocol) {
         const withCompleted: Protocol = {
           ...cachedProtocol,
-          morning: cachedProtocol.morning.map((s: Step) => ({ ...s, completed: false })),
-          night: cachedProtocol.night.map((s: Step) => ({ ...s, completed: false })),
+          morning: (cachedProtocol.morning as any[]).map((s) => ({ ...s, completed: false })),
+          night: (cachedProtocol.night as any[]).map((s) => ({ ...s, completed: false })),
         };
         setProtocol(withCompleted);
         setMorningSteps(withCompleted.morning);
@@ -83,8 +85,8 @@ export default function Protocolo() {
           setProtocolResult(fromDb as ProtocolResult);
           const withCompleted: Protocol = {
             ...fromDb,
-            morning: fromDb.morning.map((s: Step) => ({ ...s, completed: false })),
-            night: fromDb.night.map((s: Step) => ({ ...s, completed: false })),
+            morning: (fromDb.morning as any[]).map((s) => ({ ...s, completed: false })),
+            night: (fromDb.night as any[]).map((s) => ({ ...s, completed: false })),
           };
           setProtocol(withCompleted);
           setMorningSteps(withCompleted.morning);
@@ -121,8 +123,8 @@ export default function Protocolo() {
 
       const withCompleted: Protocol = {
         ...data,
-        morning: data.morning.map((s: Step) => ({ ...s, completed: false })),
-        night: data.night.map((s: Step) => ({ ...s, completed: false })),
+        morning: (data.morning as any[]).map((s) => ({ ...s, completed: false })),
+        night: (data.night as any[]).map((s) => ({ ...s, completed: false })),
       };
 
       setProtocol(withCompleted);
@@ -134,10 +136,6 @@ export default function Protocolo() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleTogglePeriod = (newPeriod: 'morning' | 'night') => {
-    setPeriod(newPeriod);
   };
 
   const toggleStepCompletion = (stepId: number) => {
@@ -152,19 +150,50 @@ export default function Protocolo() {
     }
   };
 
-  const markAllComplete = () => {
-    if (period === 'morning') {
-      setMorningSteps((prev) => prev.map((step) => ({ ...step, completed: true })));
-    } else {
-      setNightSteps((prev) => prev.map((step) => ({ ...step, completed: true })));
+  const steps = period === 'morning' ? morningSteps : nightSteps;
+  const isMorning = period === 'morning';
+  const accentColor = isMorning ? '#FB7B6B' : '#1D3A44';
+
+  // Detecta se o texto contém info de dias da semana
+  const DAY_REGEX = /(?:Seg|Ter|Qua|Qui|Sex|S[aá]b|Dom|segunda|terça|quarta|quinta|sexta|s[aá]bado|domingo)/i;
+
+  const getDayTag = (step: Step): string | null => {
+    // 1. waitTime com dias (ex: "Seg/Qua/Sex")
+    if (step.waitTime && DAY_REGEX.test(step.waitTime)) {
+      return step.waitTime;
     }
+    // 2. ingredient com padrão entre parênteses: "(Seg/Qua/Sex)"
+    if (step.ingredient) {
+      const match = step.ingredient.match(/\(([^)]*(?:Seg|Ter|Qua|Qui|Sex|S[aá]b|Dom)[^)]*)\)/i);
+      if (match) return match[1];
+    }
+    // 3. instruction com dias
+    if (step.instruction && DAY_REGEX.test(step.instruction)) {
+      const match = step.instruction.match(/\(([^)]*(?:Seg|Ter|Qua|Qui|Sex|S[aá]b|Dom)[^)]*)\)/i);
+      if (match) return match[1];
+    }
+    return null;
   };
 
-  const steps = period === 'morning' ? morningSteps : nightSteps;
-  const completedCount = steps.filter((s) => s.completed).length;
-  const totalSteps = steps.length;
-  const progressPercent = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
-  const allDone = completedCount === totalSteps && totalSteps > 0;
+  // waitTime é tempo real (ex: "5 min") — não é dia da semana
+  const isTimeWait = (wt: string | null | undefined): boolean => {
+    if (!wt) return false;
+    if (DAY_REGEX.test(wt)) return false;
+    return /\d/.test(wt);
+  };
+
+  // Split instruction into numbered sub-steps for modal
+  const getSubSteps = (step: Step): string[] => {
+    if (step.instruction) {
+      const parts = step.instruction
+        .split(/\.\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .map((s) => (s.endsWith('.') ? s : `${s}.`));
+      if (parts.length > 1) return parts;
+    }
+    return step.instruction ? [step.instruction] : ['Siga as instruções do fabricante.'];
+  };
 
   if (loading) {
     return (
@@ -198,87 +227,70 @@ export default function Protocolo() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
       >
-        <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 48 }}>
+        <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 24 }}>
 
           {/* Header */}
-          <Text style={{ fontSize: 32, fontWeight: '700', color: '#1D3A44', marginBottom: 24 }}>
+          <Text style={{ fontSize: 28, fontWeight: '800', color: '#1D3A44', marginBottom: 24 }}>
             Seu Protocolo
           </Text>
 
-          {/* Toggle Switcher */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+          {/* Tab Toggle */}
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 24 }}>
             <TouchableOpacity
-              onPress={() => handleTogglePeriod('morning')}
+              onPress={() => setPeriod('morning')}
               activeOpacity={0.8}
               style={{
                 flex: 1,
-                paddingVertical: 12,
+                height: 48,
                 borderRadius: 999,
                 alignItems: 'center',
                 flexDirection: 'row',
                 justifyContent: 'center',
-                gap: 6,
-                backgroundColor: period === 'morning' ? '#FB7B6B' : '#FFFFFF',
-                borderWidth: period === 'morning' ? 0 : 1,
-                borderColor: '#1D3A44',
+                gap: 8,
+                backgroundColor: isMorning ? '#FB7B6B' : 'transparent',
+                borderWidth: 1,
+                borderColor: isMorning ? '#FB7B6B' : '#1D3A44',
               }}
             >
-              <Sun size={15} color={period === 'morning' ? '#FFFFFF' : '#1D3A44'} strokeWidth={2} />
-              <Text style={{ fontSize: 15, fontWeight: '600', color: period === 'morning' ? '#FFFFFF' : '#1D3A44' }}>
+              <Sun size={20} color={isMorning ? '#FFFFFF' : '#1D3A44'} strokeWidth={2} />
+              <Text style={{ fontSize: 15, fontWeight: '600', color: isMorning ? '#FFFFFF' : '#1D3A44' }}>
                 Manhã
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => handleTogglePeriod('night')}
+              onPress={() => setPeriod('night')}
               activeOpacity={0.8}
               style={{
                 flex: 1,
-                paddingVertical: 12,
+                height: 48,
                 borderRadius: 999,
                 alignItems: 'center',
                 flexDirection: 'row',
                 justifyContent: 'center',
-                gap: 6,
-                backgroundColor: period === 'night' ? '#FB7B6B' : '#FFFFFF',
-                borderWidth: period === 'night' ? 0 : 1,
-                borderColor: '#1D3A44',
+                gap: 8,
+                backgroundColor: !isMorning ? '#FB7B6B' : 'transparent',
+                borderWidth: 1,
+                borderColor: !isMorning ? '#FB7B6B' : '#1D3A44',
               }}
             >
-              <Moon size={15} color={period === 'night' ? '#FFFFFF' : '#1D3A44'} strokeWidth={2} />
-              <Text style={{ fontSize: 15, fontWeight: '600', color: period === 'night' ? '#FFFFFF' : '#1D3A44' }}>
+              <Moon size={20} color={!isMorning ? '#FFFFFF' : '#1D3A44'} strokeWidth={2} />
+              <Text style={{ fontSize: 15, fontWeight: '600', color: !isMorning ? '#FFFFFF' : '#1D3A44' }}>
                 Noite
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Badge */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
-            <View style={{ backgroundColor: '#7CB69D', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4 }}>
-              <Text style={{ fontSize: 13, fontWeight: '500', color: '#FFFFFF' }}>
-                {totalSteps} passos
-              </Text>
-            </View>
-          </View>
-
-          {/* Warning */}
-          {protocol?.introduction_warnings && (
-            <View style={{ backgroundColor: 'rgba(251,123,107,0.1)', borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(251,123,107,0.3)' }}>
-              <Text style={{ fontSize: 13, color: '#FB7B6B', lineHeight: 18 }}>{protocol.introduction_warnings}</Text>
-            </View>
-          )}
-
           {/* Step Cards */}
-          <View style={{ gap: 12, marginBottom: 24 }}>
-            {steps.map((step) => (
+          <View style={{ gap: 12 }}>
+            {steps.map((step, index) => (
               <View
                 key={step.id}
                 style={{
-                  backgroundColor: '#FFFFFF',
                   borderRadius: 16,
                   padding: 16,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
+                  backgroundColor: '#FFFFFF',
+                  borderWidth: 1,
+                  borderColor: '#F0F0F0',
                   shadowColor: '#000',
                   shadowOffset: { width: 0, height: 1 },
                   shadowOpacity: 0.05,
@@ -286,96 +298,269 @@ export default function Protocolo() {
                   elevation: 1,
                 }}
               >
-                {/* Color dot */}
-                <View style={{ width: 48, height: 48, borderRadius: 999, backgroundColor: step.color, flexShrink: 0 }} />
-
-                {/* Info */}
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 17, fontWeight: '700', color: '#1D3A44', marginBottom: 4 }}>
-                    {step.name}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <View style={{ backgroundColor: 'rgba(124,182,157,0.2)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-                      <Text style={{ fontSize: 11, fontWeight: '500', color: '#7CB69D' }}>{step.ingredient}</Text>
-                    </View>
-                    {step.waitTime && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <Timer size={12} color="#8A8A8E" />
-                        <Text style={{ fontSize: 11, color: '#8A8A8E' }}>{step.waitTime}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={{ fontSize: 13, color: '#8A8A8E' }}>{step.instruction}</Text>
-                  {step.product_suggestions && step.product_suggestions.length > 0 && (
-                    <Text style={{ fontSize: 11, color: '#FB7B6B', marginTop: 4 }}>
-                      {step.product_suggestions[0]}
+                {/* Top row */}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                  {/* Number circle */}
+                  <View
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 999,
+                      backgroundColor: accentColor,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      shadowColor: accentColor,
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 8,
+                      elevation: 3,
+                    }}
+                  >
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                      {index + 1}
                     </Text>
-                  )}
+                  </View>
+
+                  {/* Text info */}
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    {/* Name + day tag row — wraps se necessário */}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#1D3A44', flexShrink: 1 }}>
+                        {step.name}
+                      </Text>
+                      {(() => {
+                        const dayTag = getDayTag(step);
+                        if (dayTag) {
+                          return (
+                            <View
+                              style={{
+                                paddingHorizontal: 8,
+                                paddingVertical: 2,
+                                borderRadius: 999,
+                                backgroundColor: '#FFF5F4',
+                                borderWidth: 1,
+                                borderColor: '#FDE8E6',
+                                flexShrink: 0,
+                                alignSelf: 'flex-start',
+                              }}
+                            >
+                              <Text style={{ fontSize: 10, fontWeight: '600', color: '#FB7B6B' }}>
+                                {dayTag}
+                              </Text>
+                            </View>
+                          );
+                        }
+                        // waitTime normal (ex: "5 min") — não é dia
+                        if (isTimeWait(step.waitTime)) {
+                          return (
+                            <View
+                              style={{
+                                paddingHorizontal: 8,
+                                paddingVertical: 2,
+                                borderRadius: 999,
+                                backgroundColor: '#F3F3F5',
+                                flexShrink: 0,
+                                alignSelf: 'flex-start',
+                              }}
+                            >
+                              <Text style={{ fontSize: 10, fontWeight: '600', color: '#8A8A8E' }}>
+                                {step.waitTime}
+                              </Text>
+                            </View>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </View>
+                    {/* Ingredient — wrap automático */}
+                    <Text style={{ fontSize: 13, color: '#8A8A8E', marginBottom: 4, flexShrink: 1 }}>
+                      {step.ingredient}
+                    </Text>
+                    {/* Instruction — wrap automático */}
+                    <Text style={{ fontSize: 12, color: '#A0A0A8', lineHeight: 18, flexShrink: 1 }}>
+                      {step.instruction}
+                    </Text>
+                  </View>
+
+                  {/* Checkbox */}
+                  <TouchableOpacity
+                    onPress={() => toggleStepCompletion(step.id)}
+                    activeOpacity={0.8}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 999,
+                      backgroundColor: step.completed ? accentColor : 'transparent',
+                      borderWidth: 1,
+                      borderColor: step.completed ? accentColor : '#D1D5DB',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      shadowColor: step.completed ? accentColor : 'transparent',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: step.completed ? 0.25 : 0,
+                      shadowRadius: 8,
+                    }}
+                  >
+                    {step.completed && (
+                      <Check size={14} color="#FFFFFF" strokeWidth={3} />
+                    )}
+                  </TouchableOpacity>
                 </View>
 
-                {/* Checkbox */}
+                {/* "Ver passo a passo" button */}
                 <TouchableOpacity
-                  onPress={() => toggleStepCompletion(step.id)}
+                  onPress={() => {
+                    setSelectedStep(step);
+                    setShowStepDetail(true);
+                  }}
                   activeOpacity={0.8}
-                  style={{ flexShrink: 0 }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    paddingVertical: 10,
+                    borderRadius: 10,
+                    backgroundColor: '#F0F9F5',
+                  }}
                 >
-                  {step.completed ? (
-                    <View style={{ width: 32, height: 32, borderRadius: 999, backgroundColor: '#7CB69D', alignItems: 'center', justifyContent: 'center' }}>
-                      <Check size={16} color="#FFFFFF" strokeWidth={2.5} />
-                    </View>
-                  ) : (
-                    <View style={{ width: 32, height: 32, borderRadius: 999, borderWidth: 2, borderColor: '#E5E7EB' }} />
-                  )}
+                  <Info size={14} color="#7CB69D" strokeWidth={2} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#7CB69D' }}>
+                    Ver passo a passo
+                  </Text>
                 </TouchableOpacity>
               </View>
             ))}
-          </View>
 
-          {/* Progress Bar */}
-          <View style={{ marginBottom: 16 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ fontSize: 13, color: '#8A8A8E' }}>
-                {completedCount} de {totalSteps} passos
-              </Text>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: '#7CB69D' }}>{progressPercent}%</Text>
-            </View>
-            <View style={{ width: '100%', height: 8, backgroundColor: '#E5E7EB', borderRadius: 999, overflow: 'hidden' }}>
+            {/* Observação noturna */}
+            {!isMorning && protocol?.introduction_warnings && (
               <View
                 style={{
-                  height: '100%',
-                  width: `${progressPercent}%`,
-                  backgroundColor: '#7CB69D',
-                  borderRadius: 999,
+                  borderRadius: 12,
+                  padding: 16,
+                  backgroundColor: '#FDFDFD',
+                  borderWidth: 1,
+                  borderColor: '#F0F0F0',
+                  marginTop: 4,
                 }}
-              />
-            </View>
+              >
+                <Text style={{ fontSize: 13, color: '#8A8A8E', lineHeight: 20 }}>
+                  <Text style={{ fontWeight: '700', color: '#1D3A44' }}>Observação: </Text>
+                  {protocol.introduction_warnings}
+                </Text>
+              </View>
+            )}
           </View>
-
-          {/* CTA Button */}
-          <TouchableOpacity
-            onPress={markAllComplete}
-            disabled={allDone}
-            activeOpacity={0.85}
-            style={{
-              width: '100%',
-              paddingVertical: 16,
-              borderRadius: 999,
-              alignItems: 'center',
-              backgroundColor: allDone ? '#E5E7EB' : '#FB7B6B',
-              marginBottom: 8,
-            }}
-          >
-            <Text style={{ fontSize: 17, fontWeight: '600', color: allDone ? '#8A8A8E' : '#FFFFFF' }}>
-              Marcar Rotina Completa
-            </Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 13, color: '#8A8A8E', textAlign: 'center' }}>
-            Toque em cada passo ou marque tudo de uma vez
-          </Text>
 
         </View>
       </ScrollView>
+
+      {/* Step Detail Modal */}
+      <Modal
+        visible={showStepDetail}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStepDetail(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <TouchableOpacity
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            activeOpacity={1}
+            onPress={() => setShowStepDetail(false)}
+          />
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 24,
+              maxHeight: '80%',
+            }}
+          >
+            {/* Handle */}
+            <View
+              style={{
+                width: 40,
+                height: 4,
+                backgroundColor: '#D1D5DB',
+                borderRadius: 999,
+                alignSelf: 'center',
+                marginBottom: 24,
+              }}
+            />
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {selectedStep && (
+                <>
+                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#1D3A44', marginBottom: 8 }}>
+                    {selectedStep.name}
+                  </Text>
+                  <Text style={{ fontSize: 14, color: '#8A8A8E', marginBottom: 24, lineHeight: 20 }}>
+                    {selectedStep.instruction}
+                  </Text>
+
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#1D3A44', marginBottom: 16 }}>
+                    Passo a passo:
+                  </Text>
+
+                  <View style={{ gap: 16, marginBottom: 24 }}>
+                    {getSubSteps(selectedStep).map((subStep, index) => (
+                      <View key={index} style={{ flexDirection: 'row', gap: 12 }}>
+                        <View
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 999,
+                            backgroundColor: '#FB7B6B',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            shadowColor: '#FB7B6B',
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.25,
+                            shadowRadius: 8,
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>
+                            {index + 1}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 14, color: '#1D3A44', lineHeight: 22, flex: 1, paddingTop: 3 }}>
+                          {subStep}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => setShowStepDetail(false)}
+                    activeOpacity={0.85}
+                    style={{
+                      height: 52,
+                      borderRadius: 999,
+                      backgroundColor: '#FB7B6B',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      shadowColor: '#FB7B6B',
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.4,
+                      shadowRadius: 24,
+                      elevation: 6,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                      Entendi
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
-

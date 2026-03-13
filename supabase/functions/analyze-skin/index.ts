@@ -24,38 +24,35 @@ Deno.serve(async (req) => {
       })
     }
 
-    const systemPrompt = `Você é um especialista em dermatologia estética e análise de pele por imagem. 
+    const systemPrompt = `Você é um especialista em dermatologia estética e análise de pele por imagem.
 Analise a foto do rosto fornecida e retorne APENAS um JSON válido, sem texto adicional, sem markdown, sem explicações.
 
 O JSON deve seguir exatamente esta estrutura:
 {
   "skin_score": <número inteiro de 0 a 100>,
-  "skin_type_detected": <"seca" | "oleosa" | "mista" | "normal" | "sensível">,
+  "skin_type_detected": <"seca" | "oleosa" | "mista" | "normal">,
   "headline": <string curta e pessoal, ex: "Sua pele está quase lá!">,
-  "metrics": {
-    "hydration": { "score": <0-100>, "label": <"Baixa"|"Média"|"Boa"|"Ótima">, "insight": <string curta> },
-    "oiliness": { "score": <0-100>, "label": <"Baixa"|"Média"|"Alta"|"Muito Alta">, "insight": <string curta> },
-    "acne": { "score": <0-100>, "label": <"Limpa"|"Leve"|"Moderada"|"Intensa">, "insight": <string curta> },
-    "dark_spots": { "score": <0-100>, "label": <"Nenhuma"|"Leves"|"Moderadas"|"Intensas">, "insight": <string curta> },
-    "texture": { "score": <0-100>, "label": <"Lisa"|"Boa"|"Irregular"|"Muito Irregular">, "insight": <string curta> },
-    "sensitivity": { "score": <0-100>, "label": <"Baixa"|"Média"|"Alta"|"Muito Alta">, "insight": <string curta> }
+  "acne": {
+    "score": <0-100>,
+    "label": <"Limpa" | "Leve" | "Moderada" | "Intensa">,
+    "insight": <string curta e pessoal sobre a acne do usuário>
   },
-  "zones": {
-    "testa": { "concern": <string>, "severity": <"baixa"|"média"|"alta"> },
-    "nariz_zona_t": { "concern": <string>, "severity": <"baixa"|"média"|"alta"> },
-    "bochecha_esquerda": { "concern": <string>, "severity": <"baixa"|"média"|"alta"> },
-    "bochecha_direita": { "concern": <string>, "severity": <"baixa"|"média"|"alta"> },
-    "queixo": { "concern": <string>, "severity": <"baixa"|"média"|"alta"> }
-  },
-  "top_concerns": [<string>, <string>, <string>],
-  "positive_highlights": [<string>, <string>],
-  "disclaimer": "Esta é uma análise estética por IA, não um diagnóstico médico."
+  "skin_age": <número inteiro em anos — idade aparente da pele>,
+  "pontos_fortes": [<string>, <string>],
+  "pontos_fracos": [<string>, <string>, <string>],
+  "disclaimer": "Esta é uma análise estética por IA, não substitui consulta dermatológica."
 }
 
-IMPORTANTE: 
+IMPORTANTE:
+- skin_score é o score geral da pele de 0 a 100
+- acne.score: 0 = pele limpa sem acne, 100 = acne intensa
+- skin_type_detected: APENAS 4 opções (seca, oleosa, mista, normal). Nunca use "sensível"
+- skin_age: nunca estime mais de 5 anos ACIMA da idade real. Se a pele está boa, estime ABAIXO da idade real
+- pontos_fortes: exatamente 2 destaques positivos da pele (ex: "Boa uniformidade de tom", "Textura suave nas bochechas")
+- pontos_fracos: exatamente 3 áreas de atenção (ex: "Oleosidade elevada na zona T", "Acne leve no queixo")
+- headline: frase curta, pessoal e motivadora em português brasileiro
 - Nunca use a palavra "diagnóstico" — sempre "análise" ou "avaliação"
 - Seja específico e pessoal, como se estivesse falando diretamente com o usuário
-- skin_score é calculado assim: média ponderada de hydration(25%) + texture(20%) + oiliness_inverso(20%) + acne_inverso(15%) + dark_spots_inverso(10%) + sensitivity_inverso(10%)
 - Responda em português brasileiro`
 
     const userMessage = skinProfile
