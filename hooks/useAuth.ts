@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { Session } from '@supabase/supabase-js'
+import * as AppleAuthentication from 'expo-apple-authentication'
+import * as Crypto from 'expo-crypto'
 
 // Client ID iOS gerado no Google Cloud Console
 GoogleSignin.configure({
@@ -52,6 +54,52 @@ export function useAuth() {
     }
   }
 
+  const signInWithApple = async (): Promise<{ user: { id: string } } | null> => {
+    try {
+      setLoading(true)
+
+      const rawNonce = Math.random().toString(36).substring(2)
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce
+      )
+
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      })
+
+      if (!credential.identityToken) throw new Error('Sem identity token da Apple')
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+        nonce: rawNonce,
+      })
+
+      if (error) throw error
+
+      // Apple só retorna o nome no PRIMEIRO login — capturar aqui
+      if (credential.fullName?.givenName && data.user) {
+        const nome = [credential.fullName.givenName, credential.fullName.familyName]
+          .filter(Boolean)
+          .join(' ')
+        await supabase.from('users').update({ nome }).eq('id', data.user.id)
+      }
+
+      return data
+    } catch (e: any) {
+      if (e.code === 'ERR_REQUEST_CANCELED') return null
+      console.error('Erro no Apple Sign In:', e)
+      throw e
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const signInWithEmail = async (email: string, password: string): Promise<Session> => {
     try {
       setLoading(true)
@@ -96,6 +144,7 @@ export function useAuth() {
     user: session?.user ?? null,
     loading,
     signInWithGoogle,
+    signInWithApple,
     signInWithEmail,
     signUpWithEmail,
     signOut,

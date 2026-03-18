@@ -1,8 +1,11 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { restorePurchases, isSubscribed } from '../../lib/revenuecat';
+
 
 function PhoneMockup() {
   const ringSize = 36;
@@ -103,6 +106,23 @@ function PhoneMockup() {
 
 export default function PaywallSoft() {
   const router = useRouter();
+  const [restoring, setRestoring] = useState(false);
+
+  async function handleRestore() {
+    setRestoring(true);
+    try {
+      const info = await restorePurchases();
+      if (isSubscribed(info)) {
+        router.replace('/(app)/home');
+      } else {
+        Alert.alert('Nenhuma assinatura encontrada', 'Não encontramos uma assinatura ativa para restaurar.');
+      }
+    } catch {
+      Alert.alert('Erro', 'Não foi possível restaurar. Tente novamente.');
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -113,8 +133,11 @@ export default function PaywallSoft() {
 
         {/* Restaurar link — z-index acima do mockup */}
         <View className="px-6 pt-4 pb-2 items-end" style={{ zIndex: 10 }}>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text className="text-[14px] text-[#9CA3AF] underline">Restaurar</Text>
+          <TouchableOpacity onPress={handleRestore} disabled={restoring} activeOpacity={0.7}>
+            {restoring
+              ? <ActivityIndicator size="small" color="#9CA3AF" />
+              : <Text className="text-[14px] text-[#9CA3AF] underline">Restaurar</Text>
+            }
           </TouchableOpacity>
         </View>
 
@@ -153,7 +176,7 @@ export default function PaywallSoft() {
               <Text className="text-white text-[17px] font-semibold">Testar por R$0,00</Text>
             </TouchableOpacity>
             <Text className="text-center text-[13px] text-[#9CA3AF] mt-3">
-              R$35,90/mês ou R$238,80/ano (R$19,90/mês)
+              R$29,90/mês ou R$179,90/ano (R$14,99/mês)
             </Text>
           </View>
         </View>

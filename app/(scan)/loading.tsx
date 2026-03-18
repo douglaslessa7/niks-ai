@@ -105,7 +105,7 @@ export default function Loading() {
         }
 
         setTimeout(() => {
-          router.push('/(scan)/results');
+          router.push('/(scan)/rate-us');
         }, 500);
       } catch (err) {
         console.error('Erro na análise:', err);

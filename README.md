@@ -17,7 +17,7 @@ App mobile de análise de pele por IA.
 - Food Analysis: semáforo científico por alimento com motivo biológico
 - Inspirado no playbook do Cal AI aplicado ao skincare
 
-**Monetização:** Freemium — R$8,90/semana, R$32,90/mês, R$339,90/ano via RevenueCat. Trial de 3 dias.
+**Monetização:** Freemium — R$29,90/mês, R$179,90/ano via RevenueCat. Trial de 3 dias (plano anual).
 
 **Regulação importante:**
 - Nunca usar a palavra "diagnóstico" — sempre "análise" ou "avaliação"
@@ -36,7 +36,7 @@ App mobile de análise de pele por IA.
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
 | IA | Claude claude-sonnet-4-5 via Supabase Edge Functions |
 | Pagamentos | RevenueCat |
-| Analytics | Mixpanel |
+| Analytics | — (Mixpanel removido) |
 | Camera | expo-camera + expo-image-picker |
 | Estado global | Zustand (`useAppStore` em `store/onboarding.ts`) |
 
@@ -44,10 +44,12 @@ App mobile de análise de pele por IA.
 
 **Para rodar:**
 ```bash
-cd ~/Desktop/niks-ai
-npx expo run:ios
-# ou sem rebuild nativo:
-npx expo start --clear   # pressionar 's' depois 'i'
+# Mudanças nativas (app.json, plugins, novas dependências) — rebuilda e instala no device:
+cd ~/Desktop/niks-ai && npx expo run:ios --device
+
+# Mudanças só em código JS/TS — inicia Metro com tunnel (device físico via USB):
+cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
+# → Abre o app no iPhone → "Enter URL manually" → digita a URL https://... que aparecer no terminal
 ```
 
 ---
@@ -261,13 +263,15 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 | `night-routine` | `0 0 * * *` | Todo dia às 21h | Envia para todos os usuários com `push_token` |
 | `scan-available` | `0 13 * * *` | Todo dia às 10h | Envia apenas para usuários cujo último scan foi há 7+ dias |
 
-**⚠️ Pendência:** `push_token` real só é gerado em dispositivo físico com Apple Developer Program ativo. O entitlement `aps-environment: development` já está configurado no `app.json`. Ao ativar o Developer Program, recompilar com `npx expo run:ios --device --localhost`.
+**⚠️ Pendência:** `push_token` real só é gerado após build no TestFlight/produção. O entitlement `aps-environment: production` está configurado no `app.json`.
 
 ### Autenticação
 - **Google Sign In:** ✅ funcionando
   - iOS Client ID: `436683236946-36te4gp3c6eid9frheokli00j0pnocd4.apps.googleusercontent.com`
   - Skip nonce checks ativado no Supabase (obrigatório para iOS)
-- **Apple Sign In:** 🟠 pendente — Apple Developer Program adquirido, configuração pendente (botão placeholder já existe em `signup.tsx` e `login.tsx`)
+- **Apple Sign In:** ✅ funcionando — `signInWithApple` em `hooks/useAuth.ts` (com nonce via `expo-crypto`); `signup.tsx` e `login.tsx` conectados
+  - Team ID: `FZRSWCG9BR` | Key ID: `CM6P7WPAP2`
+  - ⚠️ **JWT secret key expira em setembro/2026** — regenerar com o script do README e atualizar no Supabase Dashboard (Authentication → Providers → Apple → Secret Key)
 - **E-mail + Senha:** ✅ funcionando — `signInWithEmail` e `signUpWithEmail` em `hooks/useAuth.ts`
   - Confirmação de e-mail: **desativada** (fase de testes) — reativar no Supabase Dashboard em produção
   - ⚠️ Usuários criados com confirmação ativa ficam em estado "não confirmado" — confirmar manualmente no Dashboard ou deletar e recriar
@@ -435,8 +439,8 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 **Tela de Login (acesso direto da Welcome):**
 `login` — standalone, sem QuizLayout, acessada pelo botão "Entrar" na Welcome screen
 
-**Telas — Scan flow (6 telas):**
-`scan-prep` → `camera` → `loading` → `results` → `food-scan-intro` → `food-camera` → `food-report`
+**Telas — Scan flow (7 telas):**
+`scan-prep` → `camera` → `loading` → `rate-us` → `results` → `food-scan-intro` → `food-camera` → `food-report`
 
 **`food-report.tsx` — modo duplo:**
 - **Nova análise** (`selectedFoodResult === null`): chama `analyze-food`, salva resultado em `food_scans` (incluindo `full_result` jsonb + foto no Storage), exibe resultado
@@ -462,25 +466,14 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 
 ### ⏳ PENDENTE (em ordem de prioridade)
 
-#### 🔴 1. Apple Sign In
-- Apple Developer Program já adquirido
-- Configurar no Xcode + Supabase Dashboard
-- Botão placeholder já existe em `signup.tsx` e `login.tsx` — só falta conectar a lógica real
-- **Ao ativar:** recompilar com `npx expo run:ios --device --localhost` — o `push_token` real também será gerado nessa recompilação (entitlement `aps-environment` já configurado no `app.json`)
+#### 🟡 1. RevenueCat — Paywall
+- `react-native-purchases` instalado, `lib/revenuecat.ts` e `hooks/useSubscription.ts` criados ✅
+- `paywall-soft.tsx` e `paywall-detailed.tsx` conectados (compra real + restaurar + preços dinâmicos) ✅
+- Entitlement ID: `premium` | Produtos: `br.com.niksai.app.mensal`, `br.com.niksai.app.anual`
+- **Pendente:** criar produtos no App Store Connect + configurar Entitlement/Offering no RevenueCat Dashboard
+- **Pendente:** desbloquear métricas borradas em `results.tsx` para assinantes
 
-#### 🟡 2. RevenueCat — Paywall
-- Instalar `react-native-purchases`
-- Criar `lib/revenuecat.ts`
-- Ativar paywall em `paywall-soft.tsx` e `paywall-detailed.tsx`
-- Desbloquear métricas borradas em `results.tsx` (onboarding) para assinantes
-- `skin-result.tsx` (app) já exibe métricas reais — sem necessidade de alteração
-
-#### 🟠 3. Mixpanel — Analytics
-- Instalar `mixpanel-react-native`
-- Criar `lib/mixpanel.ts`
-- Eventos principais: `scan_started`, `scan_completed`, `paywall_shown`, `purchase_started`, `signup_completed`
-
-#### 🟢 4. Melhorias futuras
+#### 🟢 3. Melhorias futuras
 - Salvar histórico completo nos `food_scans`
 - Tela de histórico no perfil
 
@@ -491,7 +484,7 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 ```
 Welcome
   → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
-    → scan-prep → camera (setSkinImage) → loading (analyze-skin) → results
+    → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results
     → goal → plan-preview (skin_score real do store)
     → signup (Google / Apple / E-mail+Senha → saveToSupabase) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft → paywall-detailed → notifications
     → App principal (tabs)
@@ -499,7 +492,7 @@ Welcome
   → [botão "Entrar"] Login
     → E-mail + Senha: signInWithEmail → home
     → Google: signInWithGoogle → home
-    → Apple: placeholder → home (configuração pendente)
+    → Apple: signInWithApple → home
 
 Fluxo de comida (dentro do app principal):
   analise.tsx → food-camera (setFoodImage) → food-report (analyze-food) → protocolo (generate-protocol)
@@ -578,6 +571,7 @@ niks-ai/
 │       ├── camera.tsx             ✅
 │       ├── food-camera.tsx        ✅
 │       ├── loading.tsx            ✅
+│       ├── rate-us.tsx            ✅ tela de avaliação (entre loading e results)
 │       ├── results.tsx            ✅
 │       ├── food-report.tsx        ✅
 │       └── protocolo.tsx          ✅
@@ -600,9 +594,8 @@ niks-ai/
 ├── lib/notifications.ts           ✅ requestPushPermission() + savePushToken() — requer Apple Developer Program para token real
 ├── hooks/useAuth.ts               ✅
 ├── assets/trust-hands.png         ✅ ilustração de palmas (Figma Make kcw7wez680I06tnIMm1ZEz)
-├── lib/revenuecat.ts              ⏳
-├── lib/mixpanel.ts                ⏳
-└── hooks/useSubscription.ts       ⏳
+├── lib/revenuecat.ts              ✅ initRevenueCat, getPackages, purchasePackage, restorePurchases, isSubscribed
+└── hooks/useSubscription.ts       ✅ useSubscription() — checa entitlement `premium` em tempo real
 ```
 
 ---
@@ -722,4 +715,4 @@ Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout
 ---
 
 *Última atualização: Sessão 13 — Março 2026*
-*Status: MVP — Push notifications implementadas (lib/notifications.ts + Edge Function send-notifications + pg_cron); token real pendente até ativação do Apple Developer Program. Apple Sign In + RevenueCat + Mixpanel pendentes.*
+*Status: MVP — Push notifications implementadas (lib/notifications.ts + Edge Function send-notifications + pg_cron); token real pendente até ativação do Apple Developer Program. Apple Sign In + RevenueCat pendentes.*

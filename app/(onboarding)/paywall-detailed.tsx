@@ -1,11 +1,21 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check, Unlock, Bell, Crown } from 'lucide-react-native';
 import { BackButton } from '../../components/ui/BackButton';
+import {
+  restorePurchases,
+  isSubscribed,
+} from '../../lib/revenuecat';
 
 type Plan = 'monthly' | 'annual';
+
+const trialEndDate = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 3);
+  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+})();
 
 const timelineSteps = [
   {
@@ -24,13 +34,38 @@ const timelineSteps = [
     Icon: Crown,
     color: '#1A1A1A',
     title: 'Em 3 dias',
-    description: 'Cobrança inicia em 11 de Março',
+    description: `Cobrança inicia em ${trialEndDate}`,
   },
 ];
 
 export default function PaywallDetailed() {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<Plan>('annual');
+  const [restoring, setRestoring] = useState(false);
+
+  function handlePurchase() {
+    router.push('/(onboarding)/notifications');
+  }
+
+  async function handleRestore() {
+    setRestoring(true);
+    try {
+      const info = await restorePurchases();
+      if (isSubscribed(info)) {
+        router.replace('/(app)/home');
+      } else {
+        Alert.alert('Nenhuma assinatura encontrada', 'Não encontramos uma assinatura ativa para restaurar.');
+      }
+    } catch {
+      Alert.alert('Erro', 'Não foi possível restaurar. Tente novamente.');
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  const mensalPrice = 'R$29,90';
+  const anualPrice = 'R$179,90';
+  const anualMonthly = 'R$14,99';
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -38,8 +73,11 @@ export default function PaywallDetailed() {
         {/* Header */}
         <View className="flex-row items-center justify-between px-6 pt-4 pb-4">
           <BackButton />
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text className="text-[15px] text-[#9CA3AF] underline">Restaurar</Text>
+          <TouchableOpacity onPress={handleRestore} disabled={restoring} activeOpacity={0.7}>
+            {restoring
+              ? <ActivityIndicator size="small" color="#9CA3AF" />
+              : <Text className="text-[15px] text-[#9CA3AF] underline">Restaurar</Text>
+            }
           </TouchableOpacity>
         </View>
 
@@ -53,7 +91,6 @@ export default function PaywallDetailed() {
 
           {/* Timeline */}
           <View className="mb-8">
-            {/* Linha vertical */}
             <View
               style={{
                 position: 'absolute',
@@ -64,21 +101,17 @@ export default function PaywallDetailed() {
                 backgroundColor: '#E5E7EB',
               }}
             />
-
             <View className="gap-6">
               {timelineSteps.map((step, index) => {
                 const Icon = step.Icon;
                 return (
                   <View key={index} className="flex-row items-start gap-4">
-                    {/* Icon Circle */}
                     <View
                       className="w-10 h-10 rounded-full bg-[#F5F5F7] items-center justify-center flex-shrink-0"
                       style={{ zIndex: 1 }}
                     >
                       <Icon size={20} color={step.color} />
                     </View>
-
-                    {/* Content */}
                     <View className="pt-1.5 flex-1">
                       <Text className="text-[15px] font-semibold text-[#1A1A1A] mb-1">
                         {step.title}
@@ -122,7 +155,8 @@ export default function PaywallDetailed() {
                 </View>
                 <Text className="text-[15px] font-semibold text-[#1A1A1A] mb-1">Mensal</Text>
                 <Text className="text-[20px] font-bold text-[#1A1A1A]">
-                  R$35,90<Text className="text-[14px] font-normal text-[#9CA3AF]">/mês</Text>
+                  {mensalPrice}
+                  <Text className="text-[14px] font-normal text-[#9CA3AF]">/mês</Text>
                 </Text>
               </TouchableOpacity>
 
@@ -173,7 +207,8 @@ export default function PaywallDetailed() {
                   </View>
                   <Text className="text-[15px] font-semibold text-[#1A1A1A] mb-1">Anual</Text>
                   <Text className="text-[20px] font-bold text-[#1A1A1A]">
-                    R$19,90<Text className="text-[14px] font-normal text-[#9CA3AF]">/mês</Text>
+                    {anualMonthly}
+                    <Text className="text-[14px] font-normal text-[#9CA3AF]">/mês</Text>
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -189,19 +224,22 @@ export default function PaywallDetailed() {
           {/* CTA */}
           <View className="mb-4">
             <TouchableOpacity
-              onPress={() => router.push('/(onboarding)/notifications')}
+              onPress={handlePurchase}
               activeOpacity={0.85}
               className="w-full py-4 rounded-[14px] items-center justify-center bg-[#1A1A1A]"
             >
               <Text className="text-white text-[17px] font-semibold">
-                Iniciar meu teste grátis de 3 dias
+                {selectedPlan === 'annual' ? 'Iniciar meu teste grátis de 3 dias' : `Assinar por ${mensalPrice}/mês`}
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Fine print */}
           <Text className="text-center text-[13px] text-[#9CA3AF] leading-relaxed">
-            3 dias grátis, depois R$238,80/ano (R$19,90/mês)
+            {selectedPlan === 'annual'
+              ? `3 dias grátis, depois ${anualPrice}/ano (${anualMonthly}/mês)`
+              : `${mensalPrice}/mês, cancele quando quiser`
+            }
           </Text>
         </View>
       </ScrollView>
