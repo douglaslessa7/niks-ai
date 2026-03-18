@@ -29,12 +29,12 @@ export default function Notifications() {
       console.error('[Notifications] Erro:', error);
     } finally {
       setLoading(false);
-      router.push('/(app)/home');
+      router.replace('/(app)/home');
     }
   };
 
   const handleSkip = () => {
-    router.push('/(app)/home');
+    router.replace('/(app)/home');
   };
 
   return (

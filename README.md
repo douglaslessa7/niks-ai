@@ -34,7 +34,7 @@ App mobile de análise de pele por IA.
 | Estilo | NativeWind v4 + Tailwind CSS (sempre `className`, nunca `StyleSheet`) |
 | Navegação | Expo Router v3 (`useRouter`, `router.push`, `router.back`) |
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
-| IA | Claude claude-sonnet-4-5 via Supabase Edge Functions |
+| IA | Gemini 2.5 Pro via Supabase Edge Functions |
 | Pagamentos | RevenueCat |
 | Analytics | — (Mixpanel removido) |
 | Camera | expo-camera + expo-image-picker |
@@ -60,7 +60,7 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 - **Expo Router** para navegação — `useRouter()`, `router.push()`, `router.back()`
 - **TypeScript** em tudo — nunca JavaScript puro
 - **Nunca inventar cores** — usar sempre `constants/colors.ts`
-- **NUNCA chamar API da Anthropic diretamente no app** — sempre via Supabase Edge Function
+- **NUNCA chamar APIs de IA diretamente no app** — sempre via Supabase Edge Function
 - **SafeAreaView** em todas as telas — respeitar notch e home indicator do iPhone
 - **Portrait only** — nunca landscape
 - **Max width 393px** — iPhone 14 Pro
@@ -180,6 +180,16 @@ export const Colors = {
 | Project Ref | utpljvwmeyeqwrfulbfr |
 | Docker | NÃO necessário (deploy de functions funciona sem ele) |
 
+### SQL Functions criadas
+
+**`delete_user()`** — necessária para o botão "Apagar minha conta" em `perfil.tsx`:
+```sql
+CREATE OR REPLACE FUNCTION delete_user()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER
+AS $$ BEGIN DELETE FROM auth.users WHERE id = auth.uid(); END; $$;
+```
+Chamada via `supabase.rpc('delete_user')` no client. O `SECURITY DEFINER` permite que o usuário autenticado delete a própria conta sem expor a service role key no app.
+
 ### Tabelas criadas
 - `users` — criada automaticamente no signup via trigger `handle_new_user()`
 - `skin_scans` — histórico de análises de pele
@@ -244,14 +254,15 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 | `generate-protocol` | ✅ | `{ baseProtocol, scanResult, onboardingData }` — `baseProtocol` **obrigatório** | `{ morning[], night[], introduction_warnings, expected_timeline }` |
 | `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'scan_available' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API. `scan_available` filtra automaticamente usuários cujo último scan foi há 7+ dias |
 
-**Correções críticas já aplicadas no `analyze-food`:**
-- `max_tokens` = **2048** (evita truncamento do JSON)
-- Regex: `rawText.match(/\{[\s\S]*\}/)` (robusto a markdown extra)
+**Modelo de IA:** `gemini-2.5-pro-preview-03-25` — secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → Edge Functions → Secrets).
 
-**Correções críticas já aplicadas no `generate-protocol`:**
-- `max_tokens` = **4096** (protocolo completo é grande — 2000 truncava o JSON)
+**Configuração Gemini nas Edge Functions:**
+- `maxOutputTokens`: 2048 para `analyze-skin` e `analyze-food`; 4096 para `generate-protocol`
+- `system_instruction` separa o system prompt do user message (equivalente ao `system` do Claude)
+- Imagens enviadas via `inlineData: { mimeType, data: base64 }` (não via URL)
+- JSON parsing robusto via `rawText.match(/\{[\s\S]*\}/)` obrigatório — Gemini pode retornar markdown com ` ```json `
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
-- Recebe `baseProtocol` (templates de `constants/protocols.ts`) — a IA ajusta, não cria do zero
+- `generate-protocol` recebe `baseProtocol` (templates de `constants/protocols.ts`) — a IA ajusta, não cria do zero
 
 ### Push Notifications (`pg_cron`)
 
@@ -272,6 +283,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - **Apple Sign In:** ✅ funcionando — `signInWithApple` em `hooks/useAuth.ts` (com nonce via `expo-crypto`); `signup.tsx` e `login.tsx` conectados
   - Team ID: `FZRSWCG9BR` | Key ID: `CM6P7WPAP2`
   - ⚠️ **JWT secret key expira em setembro/2026** — regenerar com o script do README e atualizar no Supabase Dashboard (Authentication → Providers → Apple → Secret Key)
+- **Exclusão de conta:** `deleteAccount` em `hooks/useAuth.ts` — chama `supabase.rpc('delete_user')` + signOut do Google + `supabase.auth.signOut()`. Requer a SQL function `delete_user()` deployada no Supabase.
 - **E-mail + Senha:** ✅ funcionando — `signInWithEmail` e `signUpWithEmail` em `hooks/useAuth.ts`
   - Confirmação de e-mail: **desativada** (fase de testes) — reativar no Supabase Dashboard em produção
   - ⚠️ Usuários criados com confirmação ativa ficam em estado "não confirmado" — confirmar manualmente no Dashboard ou deletar e recriar
@@ -482,6 +494,8 @@ Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPres
 ## FLUXO COMPLETO DO APP
 
 ```
+→ [app aberto com sessão ativa] → spinner → direto para home (onboarding bloqueado para usuários autenticados via guard em (onboarding)/_layout.tsx)
+
 Welcome
   → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
     → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results
@@ -681,7 +695,7 @@ Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`. Layout (de cima par
    - Nome do Supabase (`users.nome`) ou "Toque para definir" se vazio
    - Subtítulo "seu nome e usuário" + ChevronRight
 3. **Seção "Assinatura"** — "Gerenciar assinatura" com ícone Crown coral
-4. **Seção "Seu e-mail"** — card branco exibindo `email` buscado via `supabase.auth.getUser()`
+4. **Seção "Seu e-mail"** — card com dois itens: email (estático) + botão "Apagar minha conta" (ícone `Trash2` vermelho). `onPress` exibe Alert de confirmação; confirmado → `deleteAccount()` + `router.replace('/')`
 5. **Seção "Notificações"** — "Ative as Notificações" — `onPress` chama `requestPushPermission()`: se já tem permissão, abre Ajustes via `Linking.openURL("app-settings:")`; se não tem, pede permissão e salva token via `savePushToken()`; se recusar, direciona para Ajustes
 6. **Seção "Suporte"** — "Fale conosco" (Alert + mailto:suporte@niksai.com.br) + "Avaliar o app"
 7. **Sair da conta** (vermelho, `signOut`) + versão
@@ -714,5 +728,5 @@ Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout
 
 ---
 
-*Última atualização: Sessão 13 — Março 2026*
-*Status: MVP — Push notifications implementadas (lib/notifications.ts + Edge Function send-notifications + pg_cron); token real pendente até ativação do Apple Developer Program. Apple Sign In + RevenueCat pendentes.*
+*Última atualização: Sessão 14 — Março 2026*
+*Status: MVP — IA migrada para Gemini 2.5 Pro; exclusão de conta implementada (Apple Store compliance); proteção de rotas para usuários autenticados. Push notifications: token real pendente até Apple Developer Program ativo. RevenueCat pendente.*

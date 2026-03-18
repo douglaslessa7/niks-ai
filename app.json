@@ -13,6 +13,7 @@
       "backgroundColor": "#1A1A1A"
     },
     "ios": {
+      "buildNumber": "2",
       "icon": "./assets/icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "br.com.niksai.app",

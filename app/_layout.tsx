@@ -9,16 +9,15 @@ import { initRevenueCat } from '../lib/revenuecat';
 
 export default function RootLayout() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
+  const [checkDone, setCheckDone] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
 
   useEffect(() => {
     initRevenueCat();
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        router.replace('/(app)/home');
-      }
-      setIsLoading(false);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setHasSession(true);
+      setCheckDone(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {});
@@ -26,7 +25,15 @@ export default function RootLayout() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (isLoading) {
+  // Redireciona APÓS o Stack estar montado (segundo ciclo de render)
+  useEffect(() => {
+    if (checkDone && hasSession) {
+      router.replace('/(app)/home');
+    }
+  }, [checkDone, hasSession]);
+
+  // Mantém spinner enquanto verifica OU enquanto aguarda o redirect para home
+  if (!checkDone || hasSession) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View className="flex-1 items-center justify-center bg-white">
@@ -39,7 +46,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <Stack screenOptions={{ headerShown: false }} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+        </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

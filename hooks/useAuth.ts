@@ -139,6 +139,12 @@ export function useAuth() {
     }
   }
 
+  const deleteAccount = async () => {
+    await supabase.rpc('delete_user')
+    try { await GoogleSignin.signOut() } catch {}
+    await supabase.auth.signOut()
+  }
+
   return {
     session,
     user: session?.user ?? null,
@@ -148,5 +154,6 @@ export function useAuth() {
     signInWithEmail,
     signUpWithEmail,
     signOut,
+    deleteAccount,
   }
 }

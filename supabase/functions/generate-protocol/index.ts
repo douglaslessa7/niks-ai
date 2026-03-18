@@ -1,9 +1,3 @@
-import Anthropic from 'npm:@anthropic-ai/sdk'
-
-const client = new Anthropic({
-  apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
-})
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -75,21 +69,26 @@ ${onboardingData ? `DADOS DO PERFIL:
 - Protetor solar: ${onboardingData.sunscreen || 'não informado'}
 - Frequência atual de cuidados: ${onboardingData.frequency || 'não informada'}` : ''}`
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
+
+    const response = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+        generationConfig: { maxOutputTokens: 4096 },
+      }),
     })
 
-    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
-    const cleanJson = rawText.replace(/```json|```/g, '').trim()
-    const result = JSON.parse(cleanJson)
+    const data = await response.json()
+    const rawText = data.candidates[0].content.parts[0].text
+
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('Resposta da IA não contém JSON válido')
+    }
+    const result = JSON.parse(jsonMatch[0])
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

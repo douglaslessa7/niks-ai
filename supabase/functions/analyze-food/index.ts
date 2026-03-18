@@ -1,9 +1,3 @@
-import Anthropic from 'npm:@anthropic-ai/sdk'
-
-const client = new Anthropic({
-  apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
-})
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -74,32 +68,26 @@ REGRAS FINAIS:
       ? `Analise esta foto de refeição. Contexto da pele do usuário: tipo de pele: ${skinProfile.skin_type || 'não informado'}, preocupações principais: ${skinProfile.concerns?.join(', ') || 'não informadas'}.`
       : 'Analise esta foto de refeição e retorne o JSON.'
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: [
-        {
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
+
+    const response = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{
           role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: (mimeType ?? 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                data: imageBase64,
-              },
-            },
-            {
-              type: 'text',
-              text: userMessage,
-            },
+          parts: [
+            { inlineData: { mimeType: mimeType ?? 'image/jpeg', data: imageBase64 } },
+            { text: userMessage },
           ],
-        },
-      ],
+        }],
+        generationConfig: { maxOutputTokens: 2048 },
+      }),
     })
 
-    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+    const data = await response.json()
+    const rawText = data.candidates[0].content.parts[0].text
 
     // Extrai JSON mesmo se vier com markdown ou texto extra
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)
