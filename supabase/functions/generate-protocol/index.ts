@@ -69,7 +69,7 @@ ${onboardingData ? `DADOS DO PERFIL:
 - Protetor solar: ${onboardingData.sunscreen || 'não informado'}
 - Frequência atual de cuidados: ${onboardingData.frequency || 'não informada'}` : ''}`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
 
     const response = await fetch(geminiUrl, {
       method: 'POST',

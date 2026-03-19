@@ -3,7 +3,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
-  Settings,
   ChevronRight,
   Crown,
   Bell,
@@ -107,13 +106,8 @@ export default function Perfil() {
         <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
           {/* Top Bar */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
-            </View>
-            <TouchableOpacity style={{ padding: 8 }}>
-              <Settings size={24} color="#8A8A8E" />
-            </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
           </View>
 
           <View style={{ paddingHorizontal: 24 }}>

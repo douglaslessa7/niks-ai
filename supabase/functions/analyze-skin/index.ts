@@ -70,7 +70,7 @@ REGRAS FINAIS:
       ? `Analise o rosto nesta foto seguindo as etapas do sistema. Contexto declarado pelo usuário: tipo de pele: ${skinProfile.skin_type || 'não informado'}, preocupações: ${skinProfile.concerns?.join(', ') || 'não informadas'}. Use o contexto apenas como referência secundária — o que importa é o que você vê na imagem.`
       : 'Analise o rosto nesta foto seguindo as etapas do sistema e retorne o JSON.'
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
 
     const response = await fetch(geminiUrl, {
       method: 'POST',

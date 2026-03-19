@@ -4,6 +4,8 @@ import { Camera, Utensils, ChevronRight, Star, Clock, Lock } from 'lucide-react-
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { AIConsentModal } from '../ui/AIConsentModal';
+import { useAIConsent } from '../../hooks/useAIConsent';
 
 interface ScanModalProps {
   isOpen: boolean;
@@ -50,6 +52,7 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
   const opacity = useRef(new Animated.Value(0)).current;
 
   const [cooldownMsg, setCooldownMsg] = useState<string | null>(null);
+  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
 
   // ── Busca o último scan quando o modal abre ──────────────────────────────────
   useEffect(() => {
@@ -109,19 +112,24 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
   }, [isOpen]);
 
   const handleScanFood = () => {
-    onClose();
-    router.push('/(scan)/food-scan-intro' as any);
+    requestConsent(() => {
+      onClose();
+      router.push('/(scan)/food-scan-intro' as any);
+    });
   };
 
   const handleScanFace = () => {
     if (cooldownMsg) return; // Bloqueado — não navega
-    onClose();
-    router.push('/(scan)/scan-prep' as any);
+    requestConsent(() => {
+      onClose();
+      router.push('/(scan)/scan-prep' as any);
+    });
   };
 
   const faceDisponivel = !cooldownMsg;
 
   return (
+    <>
     <Modal transparent visible={isOpen} animationType="none" onRequestClose={onClose}>
       {/* Backdrop */}
       <Animated.View style={{ flex: 1, opacity }}>
@@ -331,6 +339,14 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
           <Text style={{ fontSize: 15, fontWeight: '500', color: '#8A8A8E' }}>Cancelar</Text>
         </TouchableOpacity>
       </Animated.View>
+
     </Modal>
+
+    <AIConsentModal
+      visible={consentModalVisible}
+      onAccept={handleAccept}
+      onDecline={handleDecline}
+    />
+  </>
   );
 }

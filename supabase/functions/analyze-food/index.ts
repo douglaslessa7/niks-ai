@@ -68,7 +68,7 @@ REGRAS FINAIS:
       ? `Analise esta foto de refeição. Contexto da pele do usuário: tipo de pele: ${skinProfile.skin_type || 'não informado'}, preocupações principais: ${skinProfile.concerns?.join(', ') || 'não informadas'}.`
       : 'Analise esta foto de refeição e retorne o JSON.'
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-03-25:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
 
     const response = await fetch(geminiUrl, {
       method: 'POST',

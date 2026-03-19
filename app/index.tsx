@@ -1,10 +1,34 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CTAButton } from '../components/ui/CTAButton';
+import { supabase } from '../lib/supabase';
 
 export default function Welcome() {
   const router = useRouter();
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION') {
+        if (session) {
+          router.replace('/(app)/home');
+        } else {
+          setChecking(false);
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (checking) {
+    return (
+      <View style={StyleSheet.absoluteFill} className="items-center justify-center bg-white">
+        <ActivityIndicator color="#FB7B6B" />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-white">
