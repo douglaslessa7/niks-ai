@@ -148,7 +148,7 @@ file://figma/make/source/gZ5sSJErlJ3lcBTaqzwgjN/src/app/components/home.tsx   �
 ## ADICIONAR/ATUALIZAR GITHUB
 
   1. git add .
-  2. git commit -m "sua mensagem sobre as alteracoes"
+  2. git commit -m "Remove o botão de settings da tela de perfil e adicionamos um modal antes do primeiro scan com IA do usuário no app para que haja o consentimento explícito para envio de dados à IA."
   3. git push
 
 ---
@@ -237,7 +237,7 @@ push_token text  -- token Expo Push Notifications (salvo na tela notifications.t
 ```sql
 full_result jsonb  -- objeto ScanResult completo retornado pela analyze-skin
 ```
-Migration aplicada: `ALTER TABLE skin_scans ADD COLUMN IF NOT EXISTS full_result jsonb;`
+Migration aplicada: `ALTER TABLE skin_scans ADD COLUMN IF NOT EXISTS full_result jsonb;` 
 
 **Colunas extras na tabela `food_scans`:**
 ```sql
@@ -259,18 +259,19 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 |---|---|---|---|
 | `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns } }` | `{ skin_score, skin_type_detected, headline, acne: { score, label, insight }, skin_age, pontos_fortes: string[2], pontos_fracos: string[3], disclaimer }` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
-| `generate-protocol` | ✅ | `{ baseProtocol, scanResult, onboardingData }` — `baseProtocol` **obrigatório** | `{ morning[], night[], introduction_warnings, expected_timeline }` |
+| `generate-protocol` | ✅ | `{ baseProtocol?, scanResult, onboardingData }` — `baseProtocol` **opcional**: se omitido, a função usa os protocolos base embutidos em si mesma com base no `skin_type_detected` | `{ morning[], night[], introduction_warnings, expected_timeline }` |
 | `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'scan_available' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API. `scan_available` filtra automaticamente usuários cujo último scan foi há 7+ dias |
 
 **Modelo de IA:** `gemini-2.5-pro-preview-03-25` — secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → Edge Functions → Secrets).
 
 **Configuração Gemini nas Edge Functions:**
-- `maxOutputTokens`: 2048 para `analyze-skin` e `analyze-food`; 4096 para `generate-protocol`
+- `maxOutputTokens`: 2048 para `analyze-skin`; 4096 para `analyze-food`; 8192 para `generate-protocol`
 - `system_instruction` separa o system prompt do user message (equivalente ao `system` do Claude)
 - Imagens enviadas via `inlineData: { mimeType, data: base64 }` (não via URL)
-- JSON parsing robusto via `rawText.match(/\{[\s\S]*\}/)` obrigatório — Gemini pode retornar markdown com ` ```json `
+- `safetySettings` com `BLOCK_NONE` em todas as categorias — obrigatório em `analyze-food`, senão o Gemini pode bloquear análises de refeições com itens processados ou conteúdo considerado "perigoso"
+- JSON parsing: tenta extrair bloco ` ```json ``` ` primeiro, depois fallback para `\{[\s\S]*\}` — Gemini pode retornar markdown em vez de JSON puro
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
-- `generate-protocol` recebe `baseProtocol` (templates de `constants/protocols.ts`) — a IA ajusta, não cria do zero
+- `generate-protocol` tem os protocolos base (`BASE_PROTOCOLS` para os 4 tipos de pele) embutidos diretamente na Edge Function — `baseProtocol` no body é opcional; se omitido, a função seleciona o protocolo correto pelo `skin_type_detected`. A IA ajusta o protocolo, não cria do zero
 
 ### Push Notifications (`pg_cron`)
 
@@ -407,7 +408,7 @@ O protocolo é gerado **uma única vez** na tela `protocol-loading` (logo após 
 A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 1. Store cache (se ainda estiver na sessão)
 2. Supabase (busca o registro mais recente por `user_id`)
-3. Fallback: chama `generate-protocol` novamente via `supabase.functions.invoke`
+3. Fallback: chama `generate-protocol` novamente via `fetch` direto (com JWT manual) — envia `baseProtocol` derivado de `constants/protocols.ts` + `scanResult` + `onboardingData`
 
 ### 8. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
 

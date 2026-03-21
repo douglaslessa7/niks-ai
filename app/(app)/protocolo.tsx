@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Check, Sun, Moon, Info } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult } from '../../store/onboarding';
+import { BASE_PROTOCOLS } from '../../constants/protocols';
 
 interface Step {
   id: number;
@@ -101,6 +102,9 @@ export default function Protocolo() {
         return;
       }
 
+      const skinType = scanResult.skin_type_detected ?? 'normal';
+      const baseProtocol = BASE_PROTOCOLS[skinType] ?? BASE_PROTOCOLS['normal'];
+
       const { data: sessionData } = await supabase.auth.getSession();
       const response = await fetch(
         'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/generate-protocol',
@@ -112,7 +116,7 @@ export default function Protocolo() {
               ? { Authorization: `Bearer ${sessionData.session.access_token}` }
               : {}),
           },
-          body: JSON.stringify({ scanResult, onboardingData: onboarding }),
+          body: JSON.stringify({ baseProtocol, scanResult, onboardingData: onboarding }),
         }
       );
 

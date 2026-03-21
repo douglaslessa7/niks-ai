@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, ArrowLeft, Sparkles, Info, AlertTriangle, CheckCircle, Zap } from 'lucide-react-native';
@@ -46,6 +46,30 @@ export default function FoodReport() {
   const [result, setResult] = useState<FoodAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const apiDoneRef = useRef(false);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const TOTAL_DURATION = 10000;
+    const increment = 90 / (TOTAL_DURATION / 50);
+
+    progressIntervalRef.current = setInterval(() => {
+      if (apiDoneRef.current) {
+        clearInterval(progressIntervalRef.current!);
+        return;
+      }
+      setProgress((prev) => {
+        if (prev >= 98) return 98;
+        if (prev >= 90) return prev + 0.03;
+        return Math.min(prev + increment, 90);
+      });
+    }, 50);
+
+    return () => {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (selectedFoodResult) {
@@ -134,15 +158,29 @@ export default function FoodReport() {
       console.error('Erro ao analisar refeição:', String(err));
       setError('Não foi possível analisar a refeição. Tente novamente.');
     } finally {
+      apiDoneRef.current = true;
+      setProgress(100);
+      await new Promise((r) => setTimeout(r, 400));
       setLoading(false);
     }
   };
 
   if (loading) {
+    const displayProgress = Math.floor(progress);
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#FB7B6B" />
-        <Text style={{ marginTop: 16, color: '#5A5A5C', fontSize: 15 }}>Analisando sua refeição...</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+        <Text style={{ fontSize: 64, fontWeight: '800', color: '#FB7B6B', lineHeight: 72 }}>
+          {displayProgress}%
+        </Text>
+        <View style={{ width: '100%', height: 6, backgroundColor: '#E8E0D8', borderRadius: 99, marginTop: 16, overflow: 'hidden' }}>
+          <View style={{ height: 6, width: `${displayProgress}%`, backgroundColor: '#FB7B6B', borderRadius: 99 }} />
+        </View>
+        <Text style={{ marginTop: 20, color: '#1D3A44', fontSize: 16, fontWeight: '600', textAlign: 'center' }}>
+          Analisando sua refeição...
+        </Text>
+        <Text style={{ marginTop: 6, color: '#8A8A8E', fontSize: 13, textAlign: 'center', lineHeight: 18 }}>
+          Identificando o impacto de cada alimento na sua pele
+        </Text>
       </SafeAreaView>
     );
   }

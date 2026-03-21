@@ -82,19 +82,32 @@ REGRAS FINAIS:
             { text: userMessage },
           ],
         }],
-        generationConfig: { maxOutputTokens: 2048 },
+        generationConfig: { maxOutputTokens: 4096 },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+        ],
       }),
     })
 
     const data = await response.json()
+    if (!data.candidates || data.candidates.length === 0) {
+      console.error('Gemini sem candidates:', JSON.stringify(data))
+      throw new Error('Gemini bloqueou a resposta: ' + JSON.stringify(data?.promptFeedback ?? data?.error ?? 'resposta vazia'))
+    }
     const rawText = data.candidates[0].content.parts[0].text
 
-    // Extrai JSON mesmo se vier com markdown ou texto extra
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('Resposta da IA não contém JSON válido')
+    // Tenta extrair JSON de múltiplas formas
+    let jsonStr = rawText.match(/```json\s*([\s\S]*?)\s*```/)?.[1]
+               || rawText.match(/\{[\s\S]*\}/)?.[0];
+
+    if (!jsonStr) {
+      console.error('Raw text that failed parsing:', rawText);
+      throw new Error('Resposta da IA não contém JSON válido');
     }
-    const result = JSON.parse(jsonMatch[0])
+    const result = JSON.parse(jsonStr)
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
