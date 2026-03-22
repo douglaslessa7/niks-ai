@@ -1,6 +1,6 @@
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { Scan, Droplet, User } from 'lucide-react-native';
+import { Scan, Droplet, User, TrendingUp } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TAB_ACTIVE = '#FB7B6B';
@@ -9,6 +9,7 @@ const TAB_INACTIVE = '#8A8A8E';
 const tabs = [
   { name: 'home', label: 'scanear', Icon: Scan },
   { name: 'protocolo', label: 'protocolo', Icon: Droplet },
+  { name: 'evolucao', label: 'evolução', Icon: TrendingUp },
   { name: 'perfil', label: 'perfil', Icon: User },
 ];
 
@@ -75,7 +76,7 @@ export default function AppLayout() {
         <Tabs.Screen name="home" />
         <Tabs.Screen name="protocolo" />
         <Tabs.Screen name="analise" options={{ href: null }} />
-        <Tabs.Screen name="evolucao" options={{ href: null }} />
+        <Tabs.Screen name="evolucao" />
         <Tabs.Screen name="perfil" />
         <Tabs.Screen name="set-name" options={{ href: null }} />
         <Tabs.Screen name="skin-result" options={{ href: null }} />
