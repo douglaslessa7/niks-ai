@@ -176,7 +176,7 @@ export default function PaywallSoft() {
               <Text className="text-white text-[17px] font-semibold">Testar por R$0,00</Text>
             </TouchableOpacity>
             <Text className="text-center text-[13px] text-[#9CA3AF] mt-3">
-              R$35,90/mês ou R$238,80/ano (R$19,90/mês)
+              R$29,90/mês ou R$179,90/ano (R$14,99/mês)
             </Text>
           </View>
         </View>

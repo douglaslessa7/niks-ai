@@ -35,8 +35,9 @@ export default function PaywallDetailed() {
   const [selectedPlan, setSelectedPlan] = useState<Plan>('annual');
   const [monthlyPkg, setMonthlyPkg] = useState<PurchasesPackage | null>(null);
   const [annualPkg, setAnnualPkg] = useState<PurchasesPackage | null>(null);
-  const [monthlyPrice, setMonthlyPrice] = useState('R$35,90/mês');
-  const [annualPrice, setAnnualPrice] = useState('R$19,90/mês');
+  const [monthlyPrice, setMonthlyPrice] = useState('R$29,90/mês');
+  const [annualPrice, setAnnualPrice] = useState('R$14,99/mês');
+  const [annualTotal, setAnnualTotal] = useState('R$179,90/ano');
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
@@ -51,8 +52,14 @@ export default function PaywallDetailed() {
           }
           if (pkg.product.identifier === 'br.com.niksai.app.anual') {
             setAnnualPkg(pkg);
-            // Mostra preço mensal equivalente se disponível, senão o preço anual
-            setAnnualPrice(pkg.product.priceString + '/ano');
+            setAnnualTotal(pkg.product.priceString + '/ano');
+            // Calcula equivalente mensal para exibir no card
+            const monthlyEquivalent = pkg.product.price / 12;
+            const formatted = monthlyEquivalent.toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: pkg.product.currencyCode ?? 'BRL',
+            });
+            setAnnualPrice(formatted + '/mês');
           }
         }
       })
@@ -266,7 +273,7 @@ export default function PaywallDetailed() {
 
           {/* Fine print */}
           <Text className="text-center text-[13px] text-[#9CA3AF] leading-relaxed">
-            3 dias grátis, depois {selectedPlan === 'annual' ? annualPrice : monthlyPrice}
+            3 dias grátis, depois {selectedPlan === 'annual' ? annualTotal : monthlyPrice}
           </Text>
         </View>
       </ScrollView>
