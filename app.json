@@ -29,22 +29,22 @@
       "appleTeamId": "FZRSWCG9BR"
     },
     "android": {
-  "googleServicesFile": "./google-services.json",
-  "adaptiveIcon": {
-    "foregroundImage": "./assets/android-icon-foreground.png",
-    "backgroundColor": "#1A1A1A"
-  },
-  "package": "br.com.niksai.app",
-  "versionCode": 1,
-  "permissions": [
-    "android.permission.CAMERA",
-    "android.permission.READ_EXTERNAL_STORAGE",
-    "android.permission.RECORD_AUDIO",
-    "android.permission.RECEIVE_BOOT_COMPLETED",
-    "android.permission.VIBRATE",
-    "android.permission.POST_NOTIFICATIONS"
-  ]
-},
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#1A1A1A"
+      },
+      "package": "br.com.niksai.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
     "web": {
       "favicon": "./assets/favicon.png"
     },
@@ -70,7 +70,8 @@
           "iosDisplayInForeground": true
         }
       ],
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-audio"
     ],
     "scheme": "niks-ai",
     "extra": {
