@@ -5,8 +5,6 @@ import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { restorePurchases, isPremium } from '../../lib/revenuecat';
-import { restorePurchases, isSubscribed } from '../../lib/revenuecat';
-
 
 function PhoneMockup() {
   const ringSize = 36;
@@ -15,15 +13,11 @@ function PhoneMockup() {
 
   return (
     <View style={styles.phoneMockupWrapper} pointerEvents="none">
-      {/* Phone frame */}
       <View style={styles.phoneFrame}>
         <View style={styles.phoneScreen}>
-          {/* Notch */}
           <View className="flex items-center justify-center pt-3 pb-1">
             <View style={{ width: 64, height: 5, backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: 99 }} />
           </View>
-
-          {/* Mini top bar */}
           <View className="px-3 pb-1 flex-row items-center justify-between">
             <Text style={{ fontSize: 7, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
             <View style={{ backgroundColor: 'white', borderRadius: 99, paddingHorizontal: 5, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 2 }}>
@@ -31,8 +25,6 @@ function PhoneMockup() {
               <Text style={{ fontSize: 6, fontWeight: '700', color: '#FB7B6B' }}>14</Text>
             </View>
           </View>
-
-          {/* Mini calendar strip */}
           <View className="px-3 pb-1 flex-row justify-between">
             {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, i) => (
               <View key={i} className="items-center">
@@ -51,8 +43,6 @@ function PhoneMockup() {
               </View>
             ))}
           </View>
-
-          {/* Mini score card */}
           <View style={{ marginHorizontal: 12, marginBottom: 4, backgroundColor: 'white', borderRadius: 8, padding: 8, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 }}>
             <View className="flex-row items-center gap-2">
               <View style={{ width: ringSize, height: ringSize }}>
@@ -74,8 +64,6 @@ function PhoneMockup() {
               </View>
             </View>
           </View>
-
-          {/* Mini routine card */}
           <View style={{ marginHorizontal: 12, marginBottom: 4, backgroundColor: 'white', borderRadius: 8, overflow: 'hidden', flexDirection: 'row', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 }}>
             <View style={{ width: 2, backgroundColor: '#FB7B6B' }} />
             <View style={{ flex: 1, paddingHorizontal: 8, paddingVertical: 6 }}>
@@ -91,8 +79,6 @@ function PhoneMockup() {
               </View>
             </View>
           </View>
-
-          {/* Mini food card — Análise Alimentar */}
           <View style={{ marginHorizontal: 12, backgroundColor: 'white', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 3, elevation: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#7CB69D' }} />
@@ -124,30 +110,11 @@ export default function PaywallSoft() {
       setRestoring(false);
     }
   };
-  async function handleRestore() {
-    setRestoring(true);
-    try {
-      const info = await restorePurchases();
-      if (isSubscribed(info)) {
-        router.replace('/(app)/home');
-      } else {
-        Alert.alert('Nenhuma assinatura encontrada', 'Não encontramos uma assinatura ativa para restaurar.');
-      }
-    } catch {
-      Alert.alert('Erro', 'Não foi possível restaurar. Tente novamente.');
-    } finally {
-      setRestoring(false);
-    }
-  }
 
   return (
     <SafeAreaView className="flex-1 bg-white">
       <View className="flex-1 relative overflow-hidden">
-
-        {/* Phone Mockup renderizado PRIMEIRO — fica atrás do conteúdo (z-index natural do RN) */}
         <PhoneMockup />
-
-        {/* Restaurar link — z-index acima do mockup */}
         <View className="px-6 pt-4 pb-2 items-end" style={{ zIndex: 10 }}>
           <TouchableOpacity activeOpacity={0.7} onPress={handleRestore} disabled={restoring}>
             {restoring ? (
@@ -155,30 +122,16 @@ export default function PaywallSoft() {
             ) : (
               <Text className="text-[14px] text-[#9CA3AF] underline">Restaurar</Text>
             )}
-          <TouchableOpacity onPress={handleRestore} disabled={restoring} activeOpacity={0.7}>
-            {restoring
-              ? <ActivityIndicator size="small" color="#9CA3AF" />
-              : <Text className="text-[14px] text-[#9CA3AF] underline">Restaurar</Text>
-            }
           </TouchableOpacity>
         </View>
-
-        {/* Conteúdo principal — z-index acima do mockup */}
         <View className="flex-1 px-6" style={{ zIndex: 10 }}>
-          {/* Headline */}
           <View className="mt-4 mb-8">
-            <Text
-              style={{ fontSize: 30, fontWeight: '800', lineHeight: 36, color: '#1A1A1A', textAlign: 'center' }}
-            >
+            <Text style={{ fontSize: 30, fontWeight: '800', lineHeight: 36, color: '#1A1A1A', textAlign: 'center' }}>
               {'Queremos que você\nexperimente o NIKS AI\n'}
               <Text style={{ color: '#FB7B6B' }}>de graça.</Text>
             </Text>
           </View>
-
-          {/* Spacer */}
           <View className="flex-1" />
-
-          {/* Badge "Nenhum pagamento" */}
           <View className="flex-row items-center justify-center gap-2 mb-4">
             <View className="w-[22px] h-[22px] rounded-full bg-[#1A1A1A] items-center justify-center">
               <Check size={13} color="#FFFFFF" strokeWidth={3} />
@@ -187,8 +140,6 @@ export default function PaywallSoft() {
               Nenhum pagamento agora
             </Text>
           </View>
-
-          {/* CTA */}
           <View className="pb-8">
             <TouchableOpacity
               onPress={() => router.push('/(onboarding)/paywall-detailed')}

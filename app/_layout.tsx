@@ -5,7 +5,6 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initRevenueCat, loginRevenueCat } from '../lib/revenuecat';
 import { supabase } from '../lib/supabase';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { initRevenueCat } from '../lib/revenuecat';
 
 export default function RootLayout() {
   useEffect(() => {
