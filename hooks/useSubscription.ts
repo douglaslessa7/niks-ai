@@ -1,4 +1,8 @@
 import { useState, useEffect } from 'react';
+import { getCustomerInfo, isPremium } from '../lib/revenuecat';
+
+export function useSubscription() {
+  const [isSubscribed, setIsSubscribed] = useState(false);
 import Purchases, { CustomerInfo } from 'react-native-purchases';
 import { getCustomerInfo, isSubscribed } from '../lib/revenuecat';
 
@@ -8,6 +12,12 @@ export function useSubscription() {
 
   useEffect(() => {
     getCustomerInfo()
+      .then((info) => setIsSubscribed(isPremium(info)))
+      .catch(() => setIsSubscribed(false))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return { isSubscribed, loading };
       .then((info) => setSubscribed(isSubscribed(info)))
       .catch(() => setSubscribed(false))
       .finally(() => setLoading(false));
