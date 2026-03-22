@@ -1,200 +1,353 @@
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { ScrollView, View, Text, TouchableOpacity, ActivityIndicator, Image } from 'react-native'
-import { TrendingUp, Flame, Camera } from 'lucide-react-native'
-import { useRouter } from 'expo-router'
-import { useEffect, useState, useCallback } from 'react'
-import { useFocusEffect } from '@react-navigation/native'
-import { supabase } from '../../lib/supabase'
-import { Colors } from '../../constants/colors'
-import Svg, { Polyline, Circle } from 'react-native-svg'
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState } from 'react';
+import { Flame, Star, Gem, FlaskConical } from 'lucide-react-native';
+import Svg, { Polyline } from 'react-native-svg';
 
-// TIPOS
-type ScanPoint = { date: string; score: number; imageUri?: string }
-type LastScan = { score: number; skin_type: string; date: string; imageUri?: string }
+type TimeFilter = '7D' | '1M' | '3M' | '6M' | 'Tudo';
+
+function generateHeatmapData() {
+  const days: { value: 'full' | 'partial' | 'missed' | null; isToday: boolean }[] = [];
+  const daysInMonth = 31; // March
+  const startDay = 6; // March 1, 2026 is Saturday
+
+  for (let i = 0; i < startDay; i++) {
+    days.push({ value: null, isToday: false });
+  }
+
+  for (let i = 1; i <= daysInMonth; i++) {
+    const isToday = i === 8;
+    let value: 'full' | 'partial' | 'missed' | null;
+
+    if (i > 8) {
+      value = null;
+    } else if (i === 3 || i === 6) {
+      value = 'missed';
+    } else if (i === 2 || i === 7) {
+      value = 'partial';
+    } else {
+      value = 'full';
+    }
+
+    days.push({ value, isToday });
+  }
+
+  return days;
+}
+
+const heatmapData = generateHeatmapData();
+const weekDayLabels = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const filters: TimeFilter[] = ['7D', '1M', '3M', '6M', 'Tudo'];
+
+// Build heatmap rows (7 cols per row)
+function buildRows<T>(data: T[], cols: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < data.length; i += cols) {
+    rows.push(data.slice(i, i + cols));
+  }
+  return rows;
+}
 
 export default function Evolucao() {
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [streak, setStreak] = useState(0)
-  const [scans, setScans] = useState<ScanPoint[]>([])
-  const [lastScan, setLastScan] = useState<LastScan | null>(null)
+  const [selectedFilter, setSelectedFilter] = useState<TimeFilter>('1M');
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData()
-    }, [])
-  )
-
-  async function loadData() {
-    setLoading(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      // Busca últimos 5 skin scans
-      const { data: skinScans } = await supabase
-        .from('skin_scans')
-        .select('skin_score, created_at, foto_url, full_result')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5)
-
-      if (skinScans && skinScans.length > 0) {
-        const points: ScanPoint[] = skinScans.reverse().map(s => ({
-          date: new Date(s.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-          score: s.skin_score,
-          imageUri: s.foto_url,
-        }))
-        setScans(points)
-
-        const latest = skinScans[skinScans.length - 1]
-        setLastScan({
-          score: latest.skin_score,
-          skin_type: latest.full_result?.skin_type_detected ?? 'Mista',
-          date: new Date(latest.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
-          imageUri: latest.foto_url,
-        })
-      }
-
-      // Calcula streak de routine_completions
-      const { data: completions } = await supabase
-        .from('routine_completions')
-        .select('completed_at')
-        .eq('user_id', user.id)
-        .order('completed_at', { ascending: false })
-
-      if (completions && completions.length > 0) {
-        const dates = [...new Set(completions.map(c => c.completed_at))].sort().reverse()
-        let count = 0
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-
-        for (let i = 0; i < dates.length; i++) {
-          const d = new Date(dates[i])
-          d.setHours(0, 0, 0, 0)
-          const diff = Math.round((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
-          if (diff === i || diff === i + 1) {
-            count++
-          } else {
-            break
-          }
-        }
-        setStreak(count)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Sparkline SVG simples
-  function Sparkline({ points }: { points: ScanPoint[] }) {
-    if (points.length < 2) return null
-    const W = 280, H = 80, PAD = 8
-    const scores = points.map(p => p.score)
-    const min = Math.min(...scores) - 10
-    const max = Math.max(...scores) + 10
-    const xs = points.map((_, i) => PAD + (i / (points.length - 1)) * (W - PAD * 2))
-    const ys = scores.map(s => H - PAD - ((s - min) / (max - min)) * (H - PAD * 2))
-    const polyPoints = xs.map((x, i) => `${x},${ys[i]}`).join(' ')
-
-    return (
-      <Svg width={W} height={H}>
-        <Polyline points={polyPoints} fill="none" stroke={Colors.scanBtn} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-        {xs.map((x, i) => (
-          <Circle key={i} cx={x} cy={ys[i]} r={4} fill={Colors.scanBtn} />
-        ))}
-      </Svg>
-    )
-  }
-
-  if (loading) {
-    return (
-      <SafeAreaView className="flex-1 bg-white items-center justify-center">
-        <ActivityIndicator color={Colors.scanBtn} />
-      </SafeAreaView>
-    )
-  }
+  const heatmapRows = buildRows(heatmapData, 7);
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE' }} edges={['top']}>
       <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }}
+        style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
       >
-        {/* Header */}
-        <View className="pt-4 pb-6">
-          <Text style={{ fontSize: 28, fontWeight: '800', color: Colors.tabActive }}>
-            Evolução
+        <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 48 }}>
+
+          {/* Header */}
+          <Text style={{ fontSize: 32, fontWeight: '700', color: '#1D3A44', marginBottom: 24 }}>
+            Sua Evolução
           </Text>
-        </View>
 
-        {/* Card Streak */}
-        <View style={{ backgroundColor: Colors.white, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFF5F4', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-            <Flame size={24} color={Colors.scanBtn} />
-          </View>
-          <View className="flex-1">
-            <View className="flex-row items-baseline">
-              <Text style={{ fontSize: 36, fontWeight: '800', color: Colors.tabActive }}>{streak}</Text>
-              <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.tabActive, marginLeft: 6 }}>dias seguidos</Text>
-            </View>
-            <Text style={{ fontSize: 13, color: Colors.gray, marginTop: 2 }}>
-              {streak === 0 ? 'Complete sua rotina hoje para começar 🌱' : 'rotina concluída — continue assim!'}
-            </Text>
-          </View>
-        </View>
+          {/* Time Filter Chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingBottom: 2, marginBottom: 24 }}
+          >
+            {filters.map((filter) => (
+              <TouchableOpacity
+                key={filter}
+                onPress={() => setSelectedFilter(filter)}
+                activeOpacity={0.8}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: selectedFilter === filter ? '#FB7B6B' : '#FFFFFF',
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '600', color: selectedFilter === filter ? '#FFFFFF' : '#1D3A44' }}>
+                  {filter}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
-        {/* Card Gráfico */}
-        <View style={{ backgroundColor: Colors.white, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 20, marginBottom: 16 }}>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: Colors.tabActive, marginBottom: 2 }}>Seu Skin Score</Text>
-          <Text style={{ fontSize: 13, color: Colors.gray, marginBottom: 16 }}>últimas análises</Text>
-          {scans.length >= 2 ? (
-            <>
-              <Sparkline points={scans} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-                {scans.map((p, i) => (
-                  <Text key={i} style={{ fontSize: 11, color: Colors.gray }}>{p.date}</Text>
-                ))}
+          {/* Score Overview Card */}
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              padding: 24,
+              marginBottom: 24,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.05,
+              shadowRadius: 4,
+              elevation: 1,
+            }}
+          >
+            <View>
+              <Text style={{ fontSize: 48, fontWeight: '700', color: '#1D3A44', lineHeight: 52, marginBottom: 4 }}>
+                82
+              </Text>
+              <Text style={{ fontSize: 17, color: '#1D3A44', marginBottom: 4 }}>Skin Score</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 13, color: '#7CB69D' }}>↑</Text>
+                <Text style={{ fontSize: 13, color: '#7CB69D' }}>+12 desde o início</Text>
               </View>
-            </>
-          ) : (
-            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
-              <TrendingUp size={32} color={Colors.disabled} />
-              <Text style={{ fontSize: 14, color: Colors.gray, textAlign: 'center', marginTop: 12 }}>
-                Faça mais análises para{'\n'}ver sua evolução aqui
+            </View>
+
+            {/* Sparkline */}
+            <Svg width={128} height={64} viewBox="0 0 128 64">
+              <Polyline
+                points="0,50 20,45 40,42 60,35 80,30 100,20 128,10"
+                fill="none"
+                stroke="#7CB69D"
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </View>
+
+          {/* Photo Comparison Section */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 22, fontWeight: '700', color: '#1D3A44', marginBottom: 16 }}>
+              Comparação Visual
+            </Text>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 16 }}>
+              {/* Day 1 */}
+              <View style={{ alignItems: 'center' }}>
+                <View
+                  style={{
+                    width: 112,
+                    height: 112,
+                    borderRadius: 999,
+                    backgroundColor: '#D1D5DB',
+                    marginBottom: 8,
+                    opacity: 0.6,
+                  }}
+                />
+                <Text style={{ fontSize: 13, color: '#8A8A8E' }}>Dia 1</Text>
+              </View>
+
+              {/* Arrow */}
+              <Text style={{ fontSize: 24, fontWeight: '700', color: '#FB7B6B' }}>→</Text>
+
+              {/* Today */}
+              <View style={{ alignItems: 'center' }}>
+                <View
+                  style={{
+                    width: 112,
+                    height: 112,
+                    borderRadius: 999,
+                    backgroundColor: '#7CB69D',
+                    marginBottom: 8,
+                  }}
+                />
+                <Text style={{ fontSize: 13, color: '#8A8A8E' }}>Hoje</Text>
+              </View>
+            </View>
+
+            <Text style={{ fontSize: 13, color: '#8A8A8E', textAlign: 'center', marginBottom: 16 }}>
+              Deslize para comparar
+            </Text>
+
+            {/* AI Insight Card */}
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 16,
+                padding: 16,
+                borderLeftWidth: 4,
+                borderLeftColor: '#7CB69D',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 4,
+                elevation: 1,
+              }}
+            >
+              <Text style={{ fontSize: 15, color: '#1D3A44' }}>
+                <Text style={{ fontWeight: '600' }}>IA detectou: </Text>
+                Manchas reduziram 30%, hidratação melhorou 15% desde o início
               </Text>
             </View>
-          )}
-        </View>
+          </View>
 
-        {/* Card Último Scan */}
-        {lastScan && (
-          <View style={{ backgroundColor: Colors.white, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 20, marginBottom: 16 }}>
-            <Text style={{ fontSize: 18, fontWeight: '800', color: Colors.tabActive, marginBottom: 16 }}>Última Análise</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {lastScan.imageUri ? (
-                <Image source={{ uri: lastScan.imageUri }} style={{ width: 60, height: 60, borderRadius: 12 }} resizeMode="cover" />
-              ) : (
-                <View style={{ width: 60, height: 60, borderRadius: 12, backgroundColor: Colors.lightGray, alignItems: 'center', justifyContent: 'center' }}>
-                  <Camera size={24} color={Colors.gray} />
-                </View>
-              )}
-              <View style={{ marginLeft: 16, flex: 1 }}>
-                <Text style={{ fontSize: 28, fontWeight: '800', color: Colors.scanBtn }}>{lastScan.score}</Text>
-                <Text style={{ fontSize: 14, color: Colors.tabActive, fontWeight: '600', textTransform: 'capitalize' }}>Pele {lastScan.skin_type}</Text>
-                <Text style={{ fontSize: 12, color: Colors.gray }}>{lastScan.date}</Text>
+          {/* Consistency Section */}
+          <View style={{ marginBottom: 24 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Text style={{ fontSize: 22, fontWeight: '700', color: '#1D3A44' }}>Consistência</Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  backgroundColor: '#FB7B6B',
+                  borderRadius: 999,
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
+                }}
+              >
+                <Flame size={12} color="#FFFFFF" fill="#FFFFFF" />
+                <Text style={{ fontSize: 13, fontWeight: '500', color: '#FFFFFF' }}>14 dias</Text>
               </View>
             </View>
-            <TouchableOpacity
-              onPress={() => router.push('/(app)/skin-result')}
-              style={{ marginTop: 16, borderWidth: 1.5, borderColor: Colors.scanBtn, borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}
+
+            {/* Calendar Heatmap */}
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 8,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 4,
+                elevation: 1,
+              }}
             >
-              <Text style={{ color: Colors.scanBtn, fontWeight: '600', fontSize: 14 }}>Ver análise completa</Text>
-            </TouchableOpacity>
+              {/* Week day labels */}
+              <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+                {weekDayLabels.map((day, i) => (
+                  <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 11, color: '#8A8A8E' }}>{day}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Heatmap rows */}
+              {heatmapRows.map((row, rowIndex) => (
+                <View key={rowIndex} style={{ flexDirection: 'row', marginBottom: 4 }}>
+                  {row.map((day, colIndex) => {
+                    let bgColor = 'transparent';
+                    if (day.value === 'full') bgColor = '#7CB69D';
+                    else if (day.value === 'partial') bgColor = 'rgba(124,182,157,0.3)';
+                    else if (day.value === 'missed') bgColor = '#E5E7EB';
+
+                    return (
+                      <View key={colIndex} style={{ flex: 1, alignItems: 'center' }}>
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 4,
+                            backgroundColor: bgColor,
+                            borderWidth: day.isToday ? 2 : 0,
+                            borderColor: '#FB7B6B',
+                          }}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+
+            <Text style={{ fontSize: 13, color: '#7CB69D' }}>92% de consistência este mês</Text>
           </View>
-        )}
+
+          {/* Badges/Achievements */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: '#1D3A44', marginBottom: 16 }}>
+              Conquistas
+            </Text>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 16, paddingBottom: 2 }}
+            >
+              {/* Earned badges */}
+              <View style={{ alignItems: 'center', minWidth: 64 }}>
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 999,
+                    backgroundColor: '#FB7B6B',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 8,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                    elevation: 2,
+                  }}
+                >
+                  <Flame size={28} color="#FFFFFF" fill="#FFFFFF" />
+                </View>
+                <Text style={{ fontSize: 11, color: '#1D3A44', textAlign: 'center' }}>7 Dias</Text>
+              </View>
+
+              <View style={{ alignItems: 'center', minWidth: 64 }}>
+                <View
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 999,
+                    backgroundColor: '#FBBF24',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 8,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                    elevation: 2,
+                  }}
+                >
+                  <Star size={28} color="#FFFFFF" fill="#FFFFFF" />
+                </View>
+                <Text style={{ fontSize: 11, color: '#1D3A44', textAlign: 'center' }}>30 Dias</Text>
+              </View>
+
+              {/* Locked badges */}
+              <View style={{ alignItems: 'center', minWidth: 64, opacity: 0.4 }}>
+                <View style={{ width: 64, height: 64, borderRadius: 999, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                  <Gem size={28} color="#8A8A8E" />
+                </View>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textAlign: 'center' }}>Pele Nota 10</Text>
+              </View>
+
+              <View style={{ alignItems: 'center', minWidth: 64, opacity: 0.4 }}>
+                <View style={{ width: 64, height: 64, borderRadius: 999, backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                  <FlaskConical size={28} color="#8A8A8E" />
+                </View>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textAlign: 'center' }}>Expert</Text>
+              </View>
+            </ScrollView>
+          </View>
+
+        </View>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }

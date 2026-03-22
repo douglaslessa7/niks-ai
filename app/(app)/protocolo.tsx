@@ -142,33 +142,15 @@ export default function Protocolo() {
     }
   };
 
-  const toggleStepCompletion = async (stepId: number) => {
+  const toggleStepCompletion = (stepId: number) => {
     if (period === 'morning') {
-      const updated = morningSteps.map((step) => step.id === stepId ? { ...step, completed: !step.completed } : step);
-      setMorningSteps(updated);
-      if (updated.every((s) => s.completed)) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.from('routine_completions').upsert({
-            user_id: user.id,
-            period: 'am',
-            completed_at: new Date().toISOString().split('T')[0],
-          }, { onConflict: 'user_id,period,completed_at' });
-        }
-      }
+      setMorningSteps((prev) =>
+        prev.map((step) => step.id === stepId ? { ...step, completed: !step.completed } : step)
+      );
     } else {
-      const updated = nightSteps.map((step) => step.id === stepId ? { ...step, completed: !step.completed } : step);
-      setNightSteps(updated);
-      if (updated.every((s) => s.completed)) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.from('routine_completions').upsert({
-            user_id: user.id,
-            period: 'pm',
-            completed_at: new Date().toISOString().split('T')[0],
-          }, { onConflict: 'user_id,period,completed_at' });
-        }
-      }
+      setNightSteps((prev) =>
+        prev.map((step) => step.id === stepId ? { ...step, completed: !step.completed } : step)
+      );
     }
   };
 
