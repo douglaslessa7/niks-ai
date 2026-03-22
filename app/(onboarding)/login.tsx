@@ -2,12 +2,14 @@ import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
+  KeyboardAvoidingView, ScrollView, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
+import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -41,13 +43,26 @@ function GoogleIcon() {
 
 export default function Login() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithEmail, loading } = useAuth();
+  const { signInWithGoogle, signInWithApple, signInWithEmail, loading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [step, setStep] = useState<'email' | 'password'>('email');
   const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  const routeAfterLogin = async () => {
+    try {
+      const info = await getCustomerInfo();
+      if (isSubscribed(info)) {
+        router.replace('/(app)/home');
+      } else {
+        router.replace('/(onboarding)/paywall-soft');
+      }
+    } catch {
+      router.replace('/(onboarding)/paywall-soft');
+    }
+  };
 
   const handleEmailContinue = () => {
     if (!email.trim()) return;
@@ -67,7 +82,7 @@ export default function Login() {
     if (!password.trim()) return;
     try {
       await signInWithEmail(email, password);
-      router.replace('/(app)/home');
+      await routeAfterLogin();
     } catch (error: any) {
       Alert.alert('Erro ao entrar', error?.message ?? 'Tente novamente.');
     }
@@ -76,7 +91,7 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     try {
       await signInWithGoogle();
-      router.replace('/(app)/home');
+      await routeAfterLogin();
     } catch (error: any) {
       Alert.alert('Erro', error?.message ?? 'Tente novamente.');
     }
@@ -100,7 +115,15 @@ export default function Login() {
         </View>
 
         {/* Content */}
-        <View className="flex-1 px-6 justify-between py-10">
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, paddingVertical: 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* Heading */}
           <View>
             <Text
@@ -114,6 +137,9 @@ export default function Login() {
               {' '}para continuar sua jornada.
             </Text>
           </View>
+
+          {/* Spacer */}
+          <View style={{ flex: 1 }} />
 
           {/* Form + Buttons */}
           <View className="gap-3">
@@ -263,35 +289,60 @@ export default function Login() {
                   }
                 </TouchableOpacity>
 
-                {/* Entrar com Apple */}
-                <TouchableOpacity
-                  onPress={() => router.replace('/(app)/home')}
-                  activeOpacity={0.85}
-                  className="w-full flex-row items-center justify-center gap-3"
-                  style={{
-                    height: 52,
-                    borderRadius: 14,
-                    backgroundColor: '#1A1A1A',
-                  }}
-                >
-                  <AppleIcon />
-                  <Text className="text-white text-[16px] font-semibold">
-                    Entrar com Apple
-                  </Text>
-                </TouchableOpacity>
+               {/* Entrar com Apple — só iOS */}
+               {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    onPress={async () => {
+                      try {
+                        const data = await signInWithApple();
+                        if (!data) return;
+                        await routeAfterLogin();
+                      } catch (error: any) {
+                        Alert.alert('Erro', error?.message ?? 'Tente novamente.');
+                      }
+                    }}
+                    activeOpacity={0.85}
+                    disabled={loading}
+                    className="w-full flex-row items-center justify-center gap-3"
+                    style={{
+                      height: 52,
+                      borderRadius: 14,
+                      backgroundColor: '#1A1A1A',
+                    }}
+                  >
+                    {loading
+                      ? <ActivityIndicator color="#FFFFFF" />
+                      : (
+                        <>
+                          <AppleIcon />
+                          <Text className="text-white text-[16px] font-semibold">
+                            Entrar com Apple
+                          </Text>
+                        </>
+                      )
+                    }
+                  </TouchableOpacity>
+                )}
               </>
             )}
 
             {/* Terms */}
-            <Text className="text-[11px] text-[#9CA3AF] text-center leading-relaxed px-2 pt-1">
-              Ao continuar, você concorda com nossos{' '}
-              <Text className="text-[#1A1A1A] underline font-medium">Termos de Uso</Text>
-              {' '}e{' '}
-              <Text className="text-[#1A1A1A] underline font-medium">Política de Privacidade</Text>
-              .
-            </Text>
+            <View className="flex-row flex-wrap justify-center items-center px-2 pt-1">
+              <Text className="text-[11px] text-[#9CA3AF] leading-relaxed">
+                Ao continuar, você concorda com nossos{' '}
+              </Text>
+              <TouchableOpacity onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}>
+                <Text className="text-[11px] text-[#1A1A1A] underline font-medium leading-relaxed">Termos de Uso</Text>
+              </TouchableOpacity>
+              <Text className="text-[11px] text-[#9CA3AF] leading-relaxed">{' '}e{' '}</Text>
+              <TouchableOpacity onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}>
+                <Text className="text-[11px] text-[#1A1A1A] underline font-medium leading-relaxed">Política de Privacidade</Text>
+              </TouchableOpacity>
+              <Text className="text-[11px] text-[#9CA3AF] leading-relaxed">.</Text>
+            </View>
           </View>
-        </View>
+        </ScrollView>
+        </KeyboardAvoidingView>
       </View>
     </SafeAreaView>
   );

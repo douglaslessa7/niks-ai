@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
@@ -7,6 +7,7 @@ import { X, Image as ImageIcon } from 'lucide-react-native';
 import Svg, { Ellipse } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as Device from 'expo-device';
 
 export default function Camera() {
   const router = useRouter();
@@ -15,7 +16,8 @@ export default function Camera() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
 
-  const isSimulator = Platform.OS === 'ios' && __DEV__;
+  // Verdadeiro apenas no simulador (sem câmera real)
+  const isSimulator = !Device.isDevice;
 
   const navigateToLoading = (base64: string, uri: string) => {
     setSkinImage(base64, uri);
@@ -117,24 +119,22 @@ export default function Camera() {
         <TouchableOpacity
           onPress={handleCapture}
           activeOpacity={0.9}
-          disabled={capturing}
-          style={[styles.captureOuter, capturing && { opacity: 0.5 }]}
+          disabled={capturing || isSimulator}
+          style={[styles.captureOuter, (capturing || isSimulator) && { opacity: 0.5 }]}
         >
           <View style={styles.captureInner} />
         </TouchableOpacity>
       </View>
 
-      {/* Botão galeria — canto inferior direito, só no simulador */}
-      {isSimulator && (
-        <TouchableOpacity
-          onPress={handlePickImage}
-          activeOpacity={0.8}
-          disabled={capturing}
-          style={styles.galleryBtn}
-        >
-          <ImageIcon size={20} color="white" />
-        </TouchableOpacity>
-      )}
+      {/* Botão galeria — simulador: único modo; celular real: alternativa */}
+      <TouchableOpacity
+        onPress={handlePickImage}
+        activeOpacity={0.8}
+        disabled={capturing}
+        style={styles.galleryBtn}
+      >
+        <ImageIcon size={20} color="white" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "130126881074",
+    "project_id": "niks-ai-bd969",
+    "storage_bucket": "niks-ai-bd969.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:130126881074:android:52243f3d9bae10a341f72b",
+        "android_client_info": {
+          "package_name": "br.com.niksai.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZwQz1Z_b-dea3QZOeOacgIGWeU8tVYVs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

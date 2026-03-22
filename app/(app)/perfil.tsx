@@ -3,20 +3,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
-  Settings,
   ChevronRight,
   Crown,
   Bell,
   Star,
   LogOut,
   Mail,
+  Trash2,
 } from 'lucide-react-native';
+import * as Notifications from 'expo-notifications';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
+import { requestPushPermission, savePushToken } from '../../lib/notifications';
 
 export default function Perfil() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, deleteAccount } = useAuth();
   const [nome, setNome] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
 
@@ -39,6 +41,60 @@ export default function Perfil() {
     }, [])
   );
 
+  const handleNotifications = async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+
+    if (status === 'granted') {
+      // Já tem permissão — abre Ajustes para o usuário gerenciar
+      Alert.alert(
+        'Notificações ativas',
+        'Suas notificações já estão ativadas. Para gerenciá-las, acesse os Ajustes do seu iPhone.',
+        [
+          { text: 'Fechar', style: 'cancel' },
+          { text: 'Abrir Ajustes', onPress: () => Linking.openURL('app-settings:') },
+        ]
+      );
+      return;
+    }
+
+    // Ainda não tem permissão — pede e salva o token
+    const token = await requestPushPermission();
+
+    if (token) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) await savePushToken(user.id, token);
+      Alert.alert('Notificações ativadas!', 'Você receberá lembretes da sua rotina de skincare.');
+    } else {
+      // Usuário recusou — direciona para Ajustes
+      Alert.alert(
+        'Permissão necessária',
+        'Para receber notificações, ative-as nos Ajustes do seu iPhone.',
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Abrir Ajustes', onPress: () => Linking.openURL('app-settings:') },
+        ]
+      );
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Apagar minha conta',
+      'Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Apagar conta',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteAccount();
+            router.replace('/');
+          },
+        },
+      ]
+    );
+  };
+
   const initial = nome ? nome[0].toUpperCase() : '?';
 
   return (
@@ -50,13 +106,8 @@ export default function Perfil() {
         <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
           {/* Top Bar */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
-            </View>
-            <TouchableOpacity style={{ padding: 8 }}>
-              <Settings size={24} color="#8A8A8E" />
-            </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
           </View>
 
           <View style={{ paddingHorizontal: 24 }}>
@@ -184,7 +235,7 @@ export default function Perfil() {
                 style={{
                   backgroundColor: '#FFFFFF',
                   borderRadius: 16,
-                  padding: 16,
+                  overflow: 'hidden',
                   borderWidth: 1,
                   borderColor: '#F0F0F0',
                   shadowColor: '#000',
@@ -194,7 +245,23 @@ export default function Perfil() {
                   elevation: 1,
                 }}
               >
-                <Text style={{ fontSize: 15, color: '#1D3A44' }}>{email ?? ''}</Text>
+                <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
+                  <Text style={{ fontSize: 15, color: '#1D3A44' }}>{email ?? ''}</Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={handleDeleteAccount}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: 16,
+                  }}
+                >
+                  <Trash2 size={20} color="#D4183D" strokeWidth={2} />
+                  <Text style={{ flex: 1, fontSize: 15, color: '#D4183D' }}>Apagar minha conta</Text>
+                  <ChevronRight size={20} color="#D4183D" />
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -219,6 +286,7 @@ export default function Perfil() {
               >
                 <TouchableOpacity
                   activeOpacity={0.8}
+                  onPress={handleNotifications}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -257,12 +325,12 @@ export default function Perfil() {
                   onPress={() =>
                     Alert.alert(
                       'Fale conosco',
-                      'Mande a sua pergunta ou feedback para o nosso e-mail suporte@niksai.com.br',
+                      'Mande a sua pergunta ou feedback para o nosso e-mail support@niksaiapp.com',
                       [
                         { text: 'Fechar', style: 'cancel' },
                         {
                           text: 'Enviar e-mail',
-                          onPress: () => Linking.openURL('mailto:suporte@niksai.com.br'),
+                          onPress: () => Linking.openURL('mailto:support@niksaiapp.com'),
                         },
                       ]
                     )
@@ -298,7 +366,23 @@ export default function Perfil() {
 
             {/* Sign Out + Version */}
             <View style={{ alignItems: 'center', gap: 12, paddingVertical: 24 }}>
-              <TouchableOpacity activeOpacity={0.8} onPress={signOut}>
+              <TouchableOpacity activeOpacity={0.8} onPress={() => {
+                Alert.alert(
+                  'Sair da conta',
+                  'Tem certeza que deseja sair da sua conta? Para entrar novamente, será necessário fazer login com seu e-mail e senha.',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Sair',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await signOut();
+                        router.replace('/');
+                      },
+                    },
+                  ]
+                );
+              }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <LogOut size={18} color="#D4183D" />
                   <Text style={{ fontSize: 16, fontWeight: '500', color: '#D4183D' }}>Sair da conta</Text>

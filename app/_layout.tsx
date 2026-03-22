@@ -4,6 +4,8 @@ import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initRevenueCat, loginRevenueCat } from '../lib/revenuecat';
 import { supabase } from '../lib/supabase';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { initRevenueCat } from '../lib/revenuecat';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -22,8 +24,12 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <Stack screenOptions={{ headerShown: false }} />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+        </Stack>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

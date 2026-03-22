@@ -1,6 +1,9 @@
 import { View, Text } from 'react-native';
+import { useRouter } from 'expo-router';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
+import { AIConsentModal } from '../../components/ui/AIConsentModal';
+import { useAIConsent } from '../../hooks/useAIConsent';
 import { Sun, Sparkles, User } from 'lucide-react-native';
 
 const instructions = [
@@ -10,35 +13,49 @@ const instructions = [
 ];
 
 export default function ScanPrep() {
+  const router = useRouter();
+  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
+
   return (
-    <QuizLayout progress={68} showBack>
-      <View className="pt-8 flex-1">
-        {/* Heading */}
-        <View className="mb-10">
-          <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
-            Agora vamos analisar sua pele com IA
-          </Text>
-          <Text className="text-[#9CA3AF] text-[17px]">Para melhores resultados:</Text>
-        </View>
+    <>
+      <QuizLayout progress={68} showBack>
+        <View className="pt-8 flex-1">
+          {/* Heading */}
+          <View className="mb-10">
+            <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
+              Agora vamos analisar sua pele com IA
+            </Text>
+            <Text className="text-[#9CA3AF] text-[17px]">Para melhores resultados:</Text>
+          </View>
 
-        {/* Instructions */}
-        <View className="gap-6 mb-8">
-          {instructions.map(({ Icon, text }, index) => (
-            <View key={index} className="flex-row items-center gap-4">
-              <View className="w-12 h-12 rounded-full bg-[#F5F5F7] items-center justify-center flex-shrink-0">
-                <Icon size={20} color="#1A1A1A" />
+          {/* Instructions */}
+          <View className="gap-6 mb-8">
+            {instructions.map(({ Icon, text }, index) => (
+              <View key={index} className="flex-row items-center gap-4">
+                <View className="w-12 h-12 rounded-full bg-[#F5F5F7] items-center justify-center flex-shrink-0">
+                  <Icon size={20} color="#1A1A1A" />
+                </View>
+                <Text className="text-[17px] text-[#1A1A1A]">{text}</Text>
               </View>
-              <Text className="text-[17px] text-[#1A1A1A]">{text}</Text>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
 
-        <View className="flex-1" />
+          <View className="flex-1" />
 
-        <View className="pb-8">
-          <CTAButton text="Abrir câmera" to="/(scan)/camera" />
+          <View className="pb-8">
+            <CTAButton
+              text="Abrir câmera"
+              onPress={() => requestConsent(() => router.push('/(scan)/camera' as any))}
+            />
+          </View>
         </View>
-      </View>
-    </QuizLayout>
+      </QuizLayout>
+
+      <AIConsentModal
+        visible={consentModalVisible}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
+      />
+    </>
   );
 }

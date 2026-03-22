@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
+  KeyboardAvoidingView, ScrollView, Linking,
 } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { useRouter } from 'expo-router';
@@ -42,7 +43,7 @@ function GoogleIcon() {
 
 export default function Signup() {
   const router = useRouter();
-  const { signInWithGoogle, signUpWithEmail, loading } = useAuth();
+  const { signInWithGoogle, signInWithApple, signUpWithEmail, loading } = useAuth();
   const { saveToSupabase } = useAppStore();
 
   const [email, setEmail] = useState('');
@@ -96,7 +97,15 @@ export default function Signup() {
 
   return (
     <QuizLayout progress={96} showBack>
-      <View className="pt-8 flex-1">
+      <KeyboardAvoidingView
+        style={{ flex: 1, paddingTop: 32 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Heading */}
         <View className="mb-8">
           <Text className="text-[28px] font-bold text-[#1A1A1A] leading-tight tracking-tight">
@@ -254,37 +263,64 @@ export default function Signup() {
                 }
               </TouchableOpacity>
 
-              {/* Continuar com a Apple */}
-              <TouchableOpacity
-                onPress={() => router.push('/(onboarding)/paywall-soft')}
-                activeOpacity={0.85}
-                className="w-full flex-row items-center justify-center gap-3"
-                style={{
-                  height: 52,
-                  borderRadius: 14,
-                  backgroundColor: '#1A1A1A',
-                }}
-              >
-                <AppleIcon />
-                <Text className="text-white text-[16px] font-semibold">
-                  Continuar com a Apple
-                </Text>
-              </TouchableOpacity>
+              {/* Continuar com a Apple — só iOS */}
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity
+                  onPress={async () => {
+                    try {
+                      const data = await signInWithApple();
+                      if (!data) return;
+                      if (data.user?.id) {
+                        await saveToSupabase(data.user.id);
+                      }
+                      router.push('/(onboarding)/protocol-loading');
+                    } catch (error: any) {
+                      Alert.alert('Erro', error?.message ?? 'Tente novamente.');
+                    }
+                  }}
+                  activeOpacity={0.85}
+                  disabled={loading}
+                  className="w-full flex-row items-center justify-center gap-3"
+                  style={{
+                    height: 52,
+                    borderRadius: 14,
+                    backgroundColor: '#1A1A1A',
+                  }}
+                >
+                  {loading
+                    ? <ActivityIndicator color="white" />
+                    : (
+                      <>
+                        <AppleIcon />
+                        <Text className="text-white text-[16px] font-semibold">
+                          Continuar com a Apple
+                        </Text>
+                      </>
+                    )
+                  }
+                </TouchableOpacity>
+              )}
             </>
           )}
 
           {/* Terms */}
-          <Text className="text-[11px] text-[#9CA3AF] text-center leading-relaxed px-2 pt-1">
-            Ao continuar, você concorda com nossos{' '}
-            <Text className="text-[#1A1A1A] underline font-medium">Termos de Uso</Text>
-            {' '}e{' '}
-            <Text className="text-[#1A1A1A] underline font-medium">Política de Privacidade</Text>
-            .
-          </Text>
+          <View className="flex-row flex-wrap justify-center items-center px-2 pt-1">
+            <Text className="text-[11px] text-[#9CA3AF] leading-relaxed">
+              Ao continuar, você concorda com nossos{' '}
+            </Text>
+            <TouchableOpacity onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}>
+              <Text className="text-[11px] text-[#1A1A1A] underline font-medium leading-relaxed">Termos de Uso</Text>
+            </TouchableOpacity>
+            <Text className="text-[11px] text-[#9CA3AF] leading-relaxed">{' '}e{' '}</Text>
+            <TouchableOpacity onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}>
+              <Text className="text-[11px] text-[#1A1A1A] underline font-medium leading-relaxed">Política de Privacidade</Text>
+            </TouchableOpacity>
+            <Text className="text-[11px] text-[#9CA3AF] leading-relaxed">.</Text>
+          </View>
         </View>
 
-        <View className="pb-2" />
-      </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </QuizLayout>
   );
 }
