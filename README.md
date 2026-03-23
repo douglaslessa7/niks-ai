@@ -157,7 +157,7 @@ file://figma/make/source/gZ5sSJErlJ3lcBTaqzwgjN/src/app/components/home.tsx   â†
 ## ADICIONAR/ATUALIZAR GITHUB
 
   1. git add .  
-  2. git commit -m "correcao de bugs, e adicionei tela de carregamento"
+  2. git commit -m "correcao de bugs, e adicionei tela de carregamento v2"
   3. git push
 
 ---
