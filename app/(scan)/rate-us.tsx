@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { ArrowLeft, Star } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import { requestAppReview } from '../lib/storeReview';
+import { requestAppReview } from '../../lib/storeReview';
 
 const LeftLaurel = () => (
   <Svg width={32} height={48} viewBox="0 0 32 48" fill="none">

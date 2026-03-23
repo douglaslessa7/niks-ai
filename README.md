@@ -543,7 +543,7 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 ## FLUXO COMPLETO DO APP
 
 ```
-→ [app aberto com sessão ativa] → spinner → direto para home (onboarding bloqueado para usuários autenticados via guard em (onboarding)/_layout.tsx)
+→ [app aberto com sessão ativa] → spinner → verifica assinatura (RevenueCat) → assinante: home | não-assinante: paywall-soft (guard em (onboarding)/_layout.tsx também aplica a mesma lógica)
 
 Welcome
   → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
@@ -553,9 +553,7 @@ Welcome
     → App principal (tabs)
 
   → [botão "Entrar"] Login
-    → E-mail + Senha: signInWithEmail → home
-    → Google: signInWithGoogle → home
-    → Apple: signInWithApple → home
+    → E-mail + Senha / Google / Apple → verifica assinatura (RevenueCat) → assinante: home | não-assinante: paywall-soft
 
 Fluxo de comida (dentro do app principal):
   analise.tsx → food-camera (setFoodImage) → food-report (analyze-food) → protocolo (generate-protocol)
@@ -660,6 +658,7 @@ niks-ai/
 ├── hooks/useAIConsent.ts          ✅ requestConsent(), handleAccept/Decline — AsyncStorage key: "ai_consent_accepted"
 ├── assets/trust-hands.png         ✅ ilustração de palmas (Figma Make kcw7wez680I06tnIMm1ZEz)
 ├── lib/revenuecat.ts              ✅ initRevenueCat, getPackages, purchasePackage, restorePurchases, isSubscribed
+├── lib/storeReview.ts             ✅ requestAppReview() — popup nativo via expo-store-review com fallback para App Store (id6760590018)
 └── hooks/useSubscription.ts       ✅ useSubscription() — checa entitlement `premium` em tempo real
 ```
 
@@ -691,6 +690,7 @@ expo-camera
 expo-image-picker
 expo-notifications
 expo-audio          ← som de check em protocolo.tsx (useAudioPlayer)
+expo-store-review   ← popup nativo de avaliação — funciona apenas em TestFlight/produção; em dev cai no fallback da App Store
 react-native-svg
 expo-linear-gradient
 lucide-react-native
@@ -790,5 +790,5 @@ Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout
 
 ---
 
-*Última atualização: Sessão 16 — Março 2026*
-*Status: MVP — Gamificação do protocolo implementada (progresso, celebração, streak); expo-audio adicionado; colunas streak_days e last_protocol_completed_at criadas no Supabase. RevenueCat pendente. Push notifications: token real pendente até Apple Developer Program ativo.*
+*Última atualização: Sessão 17 — Março 2026*
+*Status: MVP — Gamificação do protocolo implementada; avaliação nativa do app funcional (expo-store-review); App Store ID: id6760590018. RevenueCat pendente. Push notifications: token real pendente até Apple Developer Program ativo.*
