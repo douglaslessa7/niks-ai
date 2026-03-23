@@ -109,7 +109,7 @@ export default function Protocolo() {
           celebrationTriggeredRef.current = true;
           celebrationAnim.setValue(1);
           // Verificar se a outra rotina do dia também está concluída
-          const todayDate = new Date().toISOString().split('T')[0];
+          const todayDate = getProtocolDate();
           const otherPeriod = period === 'morning' ? 'night' : 'morning';
           const otherKey = `protocolo_check_${todayDate}_${otherPeriod}`;
           const otherData = await AsyncStorage.getItem(otherKey);
@@ -164,8 +164,14 @@ export default function Protocolo() {
     generateProtocol();
   }, []);
 
+  const getProtocolDate = () => {
+    const now = new Date();
+    now.setHours(now.getHours() - 3);
+    return now.toISOString().split('T')[0];
+  };
+
   const getTodayKey = (tab: 'morning' | 'night') =>
-    `protocolo_check_${new Date().toISOString().split('T')[0]}_${tab}`;
+    `protocolo_check_${getProtocolDate()}_${tab}`;
 
   const persistChecked = async (newSet: Set<number>) => {
     const key = getTodayKey(period);
@@ -175,20 +181,46 @@ export default function Protocolo() {
   const updateStreak = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) return;
-    const today = new Date().toDateString();
-    const lastDay = lastCompletedAtRef.current ? new Date(lastCompletedAtRef.current).toDateString() : null;
-    if (lastDay !== today) {
-      const newStreak = streakDaysRef.current + 1;
-      const nowIso = new Date().toISOString();
-      await supabase.from('users').update({
-        streak_days: newStreak,
-        last_protocol_completed_at: nowIso,
-      }).eq('id', user.id);
-      setStreakDays(newStreak);
-      streakDaysRef.current = newStreak;
-      setLastCompletedAt(nowIso);
-      lastCompletedAtRef.current = nowIso;
-    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('streak_days, last_protocol_completed_at')
+      .eq('id', user.id)
+      .single();
+
+    if (!userData) return;
+
+    const todayStr = getProtocolDate();
+    const lastStr = userData.last_protocol_completed_at
+      ? (() => {
+          const d = new Date(userData.last_protocol_completed_at);
+          d.setHours(d.getHours() - 3);
+          return d.toISOString().split('T')[0];
+        })()
+      : null;
+
+    // Já foi contado hoje — não incrementar de novo
+    if (lastStr === todayStr) return;
+
+    // Calcula a data de ontem com offset de 3h
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 3 - 24);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    const newStreak = lastStr === yesterdayStr
+      ? (userData.streak_days ?? 0) + 1  // completou ontem — incrementa
+      : 1;                                // pulou um dia — reinicia
+
+    const nowIso = new Date().toISOString();
+    await supabase.from('users').update({
+      streak_days: newStreak,
+      last_protocol_completed_at: nowIso,
+    }).eq('id', user.id);
+
+    setStreakDays(newStreak);
+    streakDaysRef.current = newStreak;
+    setLastCompletedAt(nowIso);
+    lastCompletedAtRef.current = nowIso;
   };
 
 
@@ -339,7 +371,7 @@ export default function Protocolo() {
               }).start();
 
               // Verificar se ambas as rotinas do dia estão concluídas
-              const todayDate = new Date().toISOString().split('T')[0];
+              const todayDate = getProtocolDate();
               const morningKey = `protocolo_check_${todayDate}_morning`;
               const nightKey = `protocolo_check_${todayDate}_night`;
               const morningData = await AsyncStorage.getItem(morningKey);

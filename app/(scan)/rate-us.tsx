@@ -1,8 +1,10 @@
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { ArrowLeft, Star } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
+import { requestAppReview } from '../lib/storeReview';
 
 const LeftLaurel = () => (
   <Svg width={32} height={48} viewBox="0 0 32 48" fill="none">
@@ -29,6 +31,10 @@ const RightLaurel = () => (
 export default function RateUs() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    requestAppReview();
+  }, []);
 
   return (
     <SafeAreaView className="flex-1 bg-white">

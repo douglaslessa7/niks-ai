@@ -1,13 +1,25 @@
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 
 export default function OnboardingLayout() {
   const router = useRouter();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace('/(app)/home');
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        try {
+          const info = await getCustomerInfo();
+          if (isSubscribed(info)) {
+            router.replace('/(app)/home');
+          } else {
+            router.replace('/(onboarding)/paywall-soft');
+          }
+        } catch {
+          router.replace('/(app)/home');
+        }
+      }
     });
   }, []);
 

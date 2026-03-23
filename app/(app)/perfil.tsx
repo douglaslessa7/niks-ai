@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, ScrollView, Linking, Alert } from 'react-native';
+import { requestAppReview } from '../../lib/storeReview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -350,6 +351,7 @@ export default function Perfil() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
+                  onPress={requestAppReview}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',

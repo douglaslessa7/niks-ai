@@ -533,7 +533,6 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 - `paywall-soft.tsx` e `paywall-detailed.tsx` conectados (compra real + restaurar + preços dinâmicos) ✅
 - Entitlement ID: `premium` | Produtos: `br.com.niksai.app.mensal`, `br.com.niksai.app.anual`
 - **Pendente:** criar produtos no App Store Connect + configurar Entitlement/Offering no RevenueCat Dashboard
-- **Pendente:** desbloquear métricas borradas em `results.tsx` para assinantes
 
 #### 🟢 3. Melhorias futuras
 - Salvar histórico completo nos `food_scans`

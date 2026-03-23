@@ -4,16 +4,26 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { CTAButton } from '../components/ui/CTAButton';
 import { supabase } from '../lib/supabase';
+import { getCustomerInfo, isSubscribed } from '../lib/revenuecat';
 
 export default function Welcome() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'INITIAL_SESSION') {
         if (session) {
-          router.replace('/(app)/home');
+          try {
+            const info = await getCustomerInfo();
+            if (isSubscribed(info)) {
+              router.replace('/(app)/home');
+            } else {
+              router.replace('/(onboarding)/paywall-soft');
+            }
+          } catch {
+            router.replace('/(app)/home');
+          }
         } else {
           setChecking(false);
         }
