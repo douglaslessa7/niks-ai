@@ -54,12 +54,17 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 
 **Para subir build no TestFlight (build via Xcode — não EAS Build):**
 ```
-1. Xcode → Product → Archive
-2. Organizer → Distribute App → App Store Connect → Upload
-3. Aguardar processamento no App Store Connect (5–15 min)
-4. TestFlight → instalar novo build → testar
+1. Xcode → Product → Clean Build Folder (⇧⌘K)
+2. Xcode → Product → Archive
+3. Organizer → Distribute App → App Store Connect → Upload
+4. Aguardar processamento no App Store Connect (5–15 min)
+5. TestFlight → instalar novo build → testar
 ```
 > ⚠️ **Nunca ativar "Enable User Script Sandboxing"** nas recommended settings do Xcode — quebra os scripts do Hermes, CocoaPods e Expo Dev Launcher.
+
+> ⚠️ **Regra de versão:** A Apple rejeita o upload se `CFBundleShortVersionString` (campo `"version"` no `app.json` e no Xcode General → Version) não for **maior** que a última versão aprovada na App Store. Sempre incremente a versão antes de subir um novo build após uma aprovação (ex: 1.0.1 aprovado → próximo build deve ser 1.0.2+).
+
+> ℹ️ **Sandbox Apple ID para testar compras no TestFlight:** Transações no TestFlight usam o ambiente Sandbox da Apple — não cobram dinheiro real, mas exigem uma conta Sandbox. Criar em: App Store Connect → Usuários e Acesso → Sandbox → Testadores. Depois no iPhone: Ajustes → App Store → Conta Sandbox.
 
 ---
 
@@ -537,13 +542,14 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 
 ### ⏳ PENDENTE (em ordem de prioridade)
 
-#### ✅ 1. RevenueCat — Paywall
+#### 🟡 1. RevenueCat — Paywall
 - `react-native-purchases` instalado, `lib/revenuecat.ts` e `hooks/useSubscription.ts` criados ✅
 - `paywall-soft.tsx` e `paywall-detailed.tsx` conectados (compra real + restaurar + preços dinâmicos) ✅
 - Entitlement ID: `premium` | Produtos: `br.com.niksai.app.mensal`, `br.com.niksai.app.anual`
 - Produtos criados e **Aprovados** no App Store Connect ✅
 - Offering `default` configurado no RevenueCat Dashboard com ambos os pacotes vinculados ✅
 - Capability **In-App Purchase** ativada no Xcode (Signing & Capabilities) ✅
+- **⏳ Em investigação:** `getOfferings()` ainda falha silenciosamente no TestFlight (build 1.0.2) mesmo com a capability ativada. Erro real ainda não identificado — `.catch` temporariamente exibe Alert de debug para capturar o erro.
 
 **⚠️ GOTCHA CRÍTICO — In-App Purchase Capability:**
 Sem a capability "In-App Purchase" ativada no Xcode, `getOfferings()` falha silenciosamente em builds de produção/TestFlight (o `.catch(() => {})` engole o erro). O resultado é `pkg = null` e o alerta "Produto não disponível" ao tentar assinar. No simulador isso não acontece pois ele não aplica as restrições reais da Apple.

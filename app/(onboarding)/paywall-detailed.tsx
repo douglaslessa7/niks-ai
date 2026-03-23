@@ -68,7 +68,7 @@ export default function PaywallDetailed() {
           }
         }
       })
-      .catch(() => {});
+      .catch((e) => Alert.alert('Erro Debug', e?.message ?? JSON.stringify(e)));
   }, []);
 
   const handlePurchase = async () => {
