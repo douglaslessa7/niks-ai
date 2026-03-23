@@ -182,6 +182,7 @@ export default function Perfil() {
               </Text>
               <TouchableOpacity
                 activeOpacity={0.85}
+                onPress={() => Linking.openURL('itms-apps://apps.apple.com/account/subscriptions')}
                 style={{
                   backgroundColor: '#FFFFFF',
                   borderRadius: 16,

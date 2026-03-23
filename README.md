@@ -42,7 +42,7 @@ App mobile de análise de pele por IA.
 
 **Localização do projeto:** `~/Desktop/niks-ai/`
 
-**Para rodar:**
+**Para rodar localmente:**
 ```bash
 # Mudanças nativas (app.json, plugins, novas dependências) — rebuilda e instala no device:
 cd ~/Desktop/niks-ai && npx expo run:ios --device
@@ -51,6 +51,15 @@ cd ~/Desktop/niks-ai && npx expo run:ios --device
 cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 # → Abre o app no iPhone → "Enter URL manually" → digita a URL https://... que aparecer no terminal
 ```
+
+**Para subir build no TestFlight (build via Xcode — não EAS Build):**
+```
+1. Xcode → Product → Archive
+2. Organizer → Distribute App → App Store Connect → Upload
+3. Aguardar processamento no App Store Connect (5–15 min)
+4. TestFlight → instalar novo build → testar
+```
+> ⚠️ **Nunca ativar "Enable User Script Sandboxing"** nas recommended settings do Xcode — quebra os scripts do Hermes, CocoaPods e Expo Dev Launcher.
 
 ---
 
@@ -528,11 +537,17 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 
 ### ⏳ PENDENTE (em ordem de prioridade)
 
-#### 🟡 1. RevenueCat — Paywall
+#### ✅ 1. RevenueCat — Paywall
 - `react-native-purchases` instalado, `lib/revenuecat.ts` e `hooks/useSubscription.ts` criados ✅
 - `paywall-soft.tsx` e `paywall-detailed.tsx` conectados (compra real + restaurar + preços dinâmicos) ✅
 - Entitlement ID: `premium` | Produtos: `br.com.niksai.app.mensal`, `br.com.niksai.app.anual`
-- **Pendente:** criar produtos no App Store Connect + configurar Entitlement/Offering no RevenueCat Dashboard
+- Produtos criados e **Aprovados** no App Store Connect ✅
+- Offering `default` configurado no RevenueCat Dashboard com ambos os pacotes vinculados ✅
+- Capability **In-App Purchase** ativada no Xcode (Signing & Capabilities) ✅
+
+**⚠️ GOTCHA CRÍTICO — In-App Purchase Capability:**
+Sem a capability "In-App Purchase" ativada no Xcode, `getOfferings()` falha silenciosamente em builds de produção/TestFlight (o `.catch(() => {})` engole o erro). O resultado é `pkg = null` e o alerta "Produto não disponível" ao tentar assinar. No simulador isso não acontece pois ele não aplica as restrições reais da Apple.
+**Localização:** Xcode → Target NIKSAI → Signing & Capabilities → `+ Capability` → In-App Purchase
 
 #### 🟢 3. Melhorias futuras
 - Salvar histórico completo nos `food_scans`
