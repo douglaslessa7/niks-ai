@@ -17,7 +17,7 @@ export default function OnboardingLayout() {
             router.replace('/(onboarding)/paywall-soft');
           }
         } catch {
-          router.replace('/(app)/home');
+          // RevenueCat falhou — mantém o usuário no onboarding (não dá acesso ao app)
         }
       }
     });

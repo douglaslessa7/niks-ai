@@ -22,7 +22,7 @@ export default function Welcome() {
               router.replace('/(onboarding)/paywall-soft');
             }
           } catch {
-            router.replace('/(app)/home');
+            router.replace('/(onboarding)/paywall-soft');
           }
         } else {
           setChecking(false);

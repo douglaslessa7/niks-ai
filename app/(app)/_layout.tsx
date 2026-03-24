@@ -1,7 +1,10 @@
 import { Tabs, usePathname, useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Scan, Droplet, User } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase';
+import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 
 const TAB_ACTIVE = '#FB7B6B';
 const TAB_INACTIVE = '#8A8A8E';
@@ -64,6 +67,37 @@ function CustomTabBar() {
 }
 
 export default function AppLayout() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) {
+        router.replace('/');
+        return;
+      }
+      const timer = setTimeout(() => {
+        router.replace('/(onboarding)/paywall-soft');
+      }, 8000);
+
+      try {
+        const info = await getCustomerInfo();
+        clearTimeout(timer);
+        if (!isSubscribed(info)) {
+          router.replace('/(onboarding)/paywall-soft');
+          return;
+        }
+      } catch {
+        clearTimeout(timer);
+        router.replace('/(onboarding)/paywall-soft');
+        return;
+      }
+      setReady(true);
+    });
+  }, []);
+
+  if (!ready) return null;
+
   return (
     <View style={{ flex: 1 }}>
       <Tabs

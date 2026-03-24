@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { restorePurchases, isPremium } from '../../lib/revenuecat';
+import { restorePurchases, isSubscribed } from '../../lib/revenuecat';
 
 function PhoneMockup() {
   const ringSize = 36;
@@ -99,13 +99,13 @@ export default function PaywallSoft() {
     try {
       setRestoring(true);
       const customerInfo = await restorePurchases();
-      if (isPremium(customerInfo)) {
-        router.push('/(onboarding)/notifications');
+      if (isSubscribed(customerInfo)) {
+        router.replace('/(app)/home');
       } else {
-        Alert.alert('Sem assinatura ativa', 'Não encontramos nenhuma compra anterior associada a esta conta.');
+        Alert.alert('Nenhuma compra encontrada', 'Não encontramos uma assinatura ativa vinculada a este Apple ID.');
       }
     } catch {
-      Alert.alert('Erro', 'Não foi possível restaurar as compras. Tente novamente.');
+      Alert.alert('Erro ao restaurar', 'Não foi possível restaurar suas compras. Tente novamente.');
     } finally {
       setRestoring(false);
     }
@@ -118,7 +118,7 @@ export default function PaywallSoft() {
         <View className="px-6 pt-4 pb-2 items-end" style={{ zIndex: 10 }}>
           <TouchableOpacity activeOpacity={0.7} onPress={handleRestore} disabled={restoring}>
             {restoring ? (
-              <ActivityIndicator size="small" color="#9CA3AF" />
+              <Text className="text-[14px] text-[#9CA3AF]">Restaurando...</Text>
             ) : (
               <Text className="text-[14px] text-[#9CA3AF] underline">Restaurar</Text>
             )}
