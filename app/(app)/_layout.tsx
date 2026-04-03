@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Scan, Droplet, User } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePlacement } from 'expo-superwall';
 import { supabase } from '../../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 
@@ -69,6 +70,7 @@ function CustomTabBar() {
 export default function AppLayout() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const { registerPlacement } = usePlacement();
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -77,19 +79,19 @@ export default function AppLayout() {
         return;
       }
       const timer = setTimeout(() => {
-        router.replace('/(onboarding)/paywall-soft');
+        registerPlacement({ placement: 'paywall_onboarding' });
       }, 8000);
 
       try {
         const info = await getCustomerInfo();
         clearTimeout(timer);
         if (!isSubscribed(info)) {
-          router.replace('/(onboarding)/paywall-soft');
+          registerPlacement({ placement: 'paywall_onboarding' });
           return;
         }
       } catch {
         clearTimeout(timer);
-        router.replace('/(onboarding)/paywall-soft');
+        registerPlacement({ placement: 'paywall_onboarding' });
         return;
       }
       setReady(true);

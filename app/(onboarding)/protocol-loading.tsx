@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { usePlacement } from 'expo-superwall';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
@@ -20,6 +21,7 @@ const TOTAL_DURATION = 5500;
 
 export default function ProtocolLoading() {
   const router = useRouter();
+  const { registerPlacement } = usePlacement();
   const { scanResult, onboarding, skinScanId, setProtocolResult } = useAppStore();
 
   const [percentage, setPercentage] = useState(0);
@@ -65,7 +67,7 @@ export default function ProtocolLoading() {
   useEffect(() => {
     if (!apiDone) return;
     setPercentage(100);
-    const t = setTimeout(() => router.push('/(onboarding)/paywall-soft'), 400);
+    const t = setTimeout(() => registerPlacement({ placement: 'paywall_onboarding' }), 400);
     return () => clearTimeout(t);
   }, [apiDone]);
 

@@ -5,10 +5,12 @@ import { useRouter } from 'expo-router';
 import { CTAButton } from '../components/ui/CTAButton';
 import { supabase } from '../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../lib/revenuecat';
+import { usePlacement } from 'expo-superwall';
 
 export default function Welcome() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
+  const { registerPlacement } = usePlacement();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -19,10 +21,10 @@ export default function Welcome() {
             if (isSubscribed(info)) {
               router.replace('/(app)/home');
             } else {
-              router.replace('/(onboarding)/paywall-soft');
+              registerPlacement({ placement: 'paywall_onboarding' });
             }
           } catch {
-            router.replace('/(onboarding)/paywall-soft');
+            registerPlacement({ placement: 'paywall_onboarding' });
           }
         } else {
           setChecking(false);

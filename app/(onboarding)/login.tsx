@@ -10,6 +10,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
+import { usePlacement } from 'expo-superwall';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -44,6 +45,7 @@ function GoogleIcon() {
 export default function Login() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, signInWithEmail, loading } = useAuth();
+  const { registerPlacement } = usePlacement();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,10 +59,10 @@ export default function Login() {
       if (isSubscribed(info)) {
         router.replace('/(app)/home');
       } else {
-        router.replace('/(onboarding)/paywall-soft');
+        registerPlacement({ placement: 'paywall_onboarding' });
       }
     } catch {
-      router.replace('/(onboarding)/paywall-soft');
+      registerPlacement({ placement: 'paywall_onboarding' });
     }
   };
 
