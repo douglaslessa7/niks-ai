@@ -12,11 +12,12 @@ export function useSubscription() {
       .catch(() => setSubscribed(false))
       .finally(() => setLoading(false));
 
-    const listener = Purchases.addCustomerInfoUpdateListener((info: CustomerInfo) => {
+    const onCustomerInfoUpdate = (info: CustomerInfo) => {
       setSubscribed(isSubscribed(info));
-    });
+    };
+    Purchases.addCustomerInfoUpdateListener(onCustomerInfoUpdate);
 
-    return () => listener.remove();
+    return () => { Purchases.removeCustomerInfoUpdateListener(onCustomerInfoUpdate); };
   }, []);
 
   return { subscribed, loading };

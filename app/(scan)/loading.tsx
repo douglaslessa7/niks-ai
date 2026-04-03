@@ -26,8 +26,11 @@ export default function Loading() {
   const [percentage, setPercentage] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const retryCount = useRef(0);
 
   useEffect(() => {
+    retryCount.current = 0;
+
     // Progresso visual — dura ~7s
     const percentInterval = setInterval(() => {
       setPercentage((prev) => {
@@ -41,7 +44,7 @@ export default function Loading() {
     });
 
     // Chama a Edge Function
-    const analyze = async () => {
+    const runAnalysis = async () => {
       try {
         const session = await supabase.auth.getSession();
         const token = session.data.session?.access_token ?? SUPABASE_ANON_KEY;
@@ -108,18 +111,24 @@ export default function Loading() {
           router.push('/(scan)/rate-us');
         }, 500);
       } catch (err) {
-        console.error('Erro na análise:', err);
-        Alert.alert(
-          'Erro na análise',
-          'Não foi possível analisar sua pele. Tente novamente.',
-          [{ text: 'OK', onPress: () => router.back() }]
-        );
-      } finally {
-        clearInterval(percentInterval);
+        if (retryCount.current < 2) {
+          retryCount.current += 1;
+          console.warn(`Tentativa ${retryCount.current} falhou, aguardando 2s antes de retry...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          await runAnalysis();
+        } else {
+          console.error('Erro na análise após retries:', err);
+          clearInterval(percentInterval);
+          Alert.alert(
+            'Erro na análise',
+            'Não foi possível analisar sua pele. Tente novamente.',
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+        }
       }
     };
 
-    analyze();
+    runAnalysis();
 
     return () => clearInterval(percentInterval);
   }, []);

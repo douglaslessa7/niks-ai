@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
@@ -6,10 +6,12 @@ import {
 } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { useRouter } from 'expo-router';
-import { Eye, EyeOff } from 'lucide-react-native';
+import { Eye, EyeOff, Mail } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppStore } from '../../store/onboarding';
+import { supabase } from '../../lib/supabase';
+import { Colors } from '../../constants/colors';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -43,7 +45,7 @@ function GoogleIcon() {
 
 export default function Signup() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithApple, signUpWithEmail, loading } = useAuth();
+  const { signInWithGoogle, signInWithApple, loading } = useAuth();
   const { saveToSupabase } = useAppStore();
 
   const [email, setEmail] = useState('');
@@ -51,6 +53,12 @@ export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
   const [step, setStep] = useState<'email' | 'password'>('email');
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [localLoading, setLocalLoading] = useState(false);
+
+  const [waitingConfirmation, setWaitingConfirmation] = useState(false);
+  const [emailSent, setEmailSent] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleEmailContinue = () => {
     if (!email.trim()) return;
@@ -69,14 +77,55 @@ export default function Signup() {
   const handleCreateAccount = async () => {
     if (!password.trim()) return;
     try {
-      const session = await signUpWithEmail(email, password);
-      if (session?.user?.id) {
-        await saveToSupabase(session.user.id);
+      setLocalLoading(true);
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: 'niks-ai://auth/confirm',
+        },
+      });
+      if (error) {
+        Alert.alert('Erro ao criar conta', error.message ?? 'Tente novamente.');
+        return;
       }
-      router.push('/(onboarding)/protocol-loading');
+      if (!error && data.user && !data.session) {
+        setEmailSent(email);
+        setWaitingConfirmation(true);
+      } else if (!error && data.session) {
+        if (data.session.user?.id) {
+          await saveToSupabase(data.session.user.id);
+        }
+        router.push('/(onboarding)/protocol-loading');
+      }
     } catch (error: any) {
       Alert.alert('Erro ao criar conta', error?.message ?? 'Tente novamente.');
+    } finally {
+      setLocalLoading(false);
     }
+  };
+
+  const handleResend = async () => {
+    await supabase.auth.resend({ type: 'signup', email: emailSent });
+    setResendCooldown(30);
+    if (resendIntervalRef.current) clearInterval(resendIntervalRef.current);
+    const interval = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    resendIntervalRef.current = interval;
+  };
+
+  const handleUseOtherEmail = () => {
+    setWaitingConfirmation(false);
+    setEmail('');
+    setPassword('');
+    setStep('email');
   };
 
   const handleGoogleSignIn = async () => {
@@ -94,6 +143,66 @@ export default function Signup() {
   const emailBorderColor = focusedField === 'email' ? '#2A7C6F' : '#E5E7EB';
   const passwordBorderColor = focusedField === 'password' ? '#2A7C6F' : '#E5E7EB';
 
+  if (waitingConfirmation) {
+    return (
+      <QuizLayout progress={96} showBack>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingBottom: 32 }}>
+          <View style={{ marginBottom: 24 }}>
+            <Mail size={64} color={Colors.accent} />
+          </View>
+
+          <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1D3A44', textAlign: 'center', marginBottom: 16 }}>
+            Verifique seu e-mail
+          </Text>
+
+          <Text style={{ fontSize: 15, color: '#9CA3AF', textAlign: 'center', marginBottom: 8, lineHeight: 22 }}>
+            Enviamos um link de confirmação para{' '}
+            <Text style={{ fontWeight: 'bold', color: '#1A1A1A' }}>{emailSent}</Text>
+            {'. '}Clique no link para ativar sua conta.
+          </Text>
+
+          <Text style={{ fontSize: 13, color: Colors.muted, textAlign: 'center', marginBottom: 40 }}>
+            Não se esqueça de checar a pasta de spam.
+          </Text>
+
+          <TouchableOpacity
+            onPress={handleResend}
+            disabled={resendCooldown > 0}
+            activeOpacity={0.85}
+            style={{
+              width: '100%',
+              height: 52,
+              borderRadius: 14,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1.5,
+              borderColor: resendCooldown > 0 ? '#E5E7EB' : Colors.accent,
+              marginBottom: 8,
+            }}
+          >
+            <Text style={{ fontSize: 17, fontWeight: '600', color: resendCooldown > 0 ? '#9CA3AF' : Colors.accent }}>
+              Reenviar e-mail
+            </Text>
+          </TouchableOpacity>
+
+          {resendCooldown > 0 && (
+            <Text style={{ fontSize: 13, color: Colors.muted, marginBottom: 16 }}>
+              Reenviar disponível em {resendCooldown}s
+            </Text>
+          )}
+
+          <TouchableOpacity
+            onPress={handleUseOtherEmail}
+            activeOpacity={0.7}
+            style={{ marginTop: 8 }}
+          >
+            <Text style={{ fontSize: 15, color: Colors.muted }}>Usar outro e-mail</Text>
+          </TouchableOpacity>
+        </View>
+      </QuizLayout>
+    );
+  }
 
   return (
     <QuizLayout progress={96} showBack>
@@ -211,7 +320,7 @@ export default function Signup() {
             <TouchableOpacity
               onPress={handleCreateAccount}
               activeOpacity={0.85}
-              disabled={loading}
+              disabled={localLoading}
               style={{
                 height: 52,
                 borderRadius: 14,
@@ -220,7 +329,7 @@ export default function Signup() {
                 backgroundColor: password.trim() ? '#FB7B6B' : '#D1D5DB',
               }}
             >
-              {loading
+              {localLoading
                 ? <ActivityIndicator color="white" />
                 : <Text className="text-white text-[17px] font-semibold">Criar minha conta</Text>
               }

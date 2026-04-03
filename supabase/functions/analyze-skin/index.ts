@@ -85,10 +85,23 @@ REGRAS FINAIS:
           ],
         }],
         generationConfig: { maxOutputTokens: 2048 },
+        safetySettings: [
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+        ],
       }),
     })
 
     const data = await response.json()
+    if (!data.candidates || data.candidates.length === 0) {
+      console.error('Gemini returned no candidates. Full response:', JSON.stringify(data))
+      return new Response(
+        JSON.stringify({ error: 'Erro interno ao analisar a pele' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     const rawText = data.candidates[0].content.parts[0].text
 
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)

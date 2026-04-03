@@ -200,6 +200,8 @@ export const Colors = {
 | Project Ref | utpljvwmeyeqwrfulbfr |
 | Docker | NÃO necessário (deploy de functions funciona sem ele) |
 
+> ⚠️ **`tsconfig.json` — excluir `supabase/functions`:** O `tsconfig.json` do app deve conter `"exclude": ["supabase/functions"]`. As Edge Functions são Deno (não Node/RN) e causam erros de TypeScript se o compilador do app tentar incluí-las.
+
 ### SQL Functions criadas
 
 **`delete_user()`** — necessária para o botão "Apagar minha conta" em `perfil.tsx`:
@@ -288,7 +290,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - `maxOutputTokens`: 2048 para `analyze-skin`; 4096 para `analyze-food`; 8192 para `generate-protocol`
 - `system_instruction` separa o system prompt do user message (equivalente ao `system` do Claude)
 - Imagens enviadas via `inlineData: { mimeType, data: base64 }` (não via URL)
-- `safetySettings` com `BLOCK_NONE` em todas as categorias — obrigatório em `analyze-food`, senão o Gemini pode bloquear análises de refeições com itens processados ou conteúdo considerado "perigoso"
+- `safetySettings` com `BLOCK_NONE` em todas as categorias — obrigatório em **todas as funções de análise de imagem** (`analyze-skin` e `analyze-food`), senão o Gemini bloqueia a requisição e não retorna `candidates`, causando crash
 - JSON parsing: tenta extrair bloco ` ```json ``` ` primeiro, depois fallback para `\{[\s\S]*\}` — Gemini pode retornar markdown em vez de JSON puro
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
 - `generate-protocol` tem os protocolos base (`BASE_PROTOCOLS` para os 4 tipos de pele) embutidos diretamente na Edge Function — `baseProtocol` no body é opcional; se omitido, a função seleciona o protocolo correto pelo `skin_type_detected`. A IA ajusta o protocolo, não cria do zero
@@ -314,7 +316,9 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
   - ⚠️ **JWT secret key expira em setembro/2026** — regenerar com o script do README e atualizar no Supabase Dashboard (Authentication → Providers → Apple → Secret Key)
 - **Exclusão de conta:** `deleteAccount` em `hooks/useAuth.ts` — chama `supabase.rpc('delete_user')` + signOut do Google + `supabase.auth.signOut()`. Requer a SQL function `delete_user()` deployada no Supabase.
 - **E-mail + Senha:** ✅ funcionando — `signInWithEmail` e `signUpWithEmail` em `hooks/useAuth.ts`
-  - Confirmação de e-mail: **desativada** (fase de testes) — reativar no Supabase Dashboard em produção
+  - Confirmação de e-mail: infraestrutura implementada e pronta. Atualmente **desativada** no Supabase Dashboard — ativar quando aprovado na App Store.
+  - `emailRedirectTo: 'niks-ai://auth/confirm'` — configurado no `signUp` de `app/(onboarding)/signup.tsx`. O scheme `niks-ai` está em `app.json`.
+  - Deep link handler em `app/_layout.tsx` suporta dois fluxos: PKCE (`code=` → `exchangeCodeForSession`) e token-based (`access_token=` no fragmento `#` → `setSession`). O `onAuthStateChange` detecta a sessão e redireciona automaticamente — sem navegação manual necessária.
 
 ---
 
