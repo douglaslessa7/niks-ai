@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "NIKS AI",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "slug": "niks-ai",
     "version": "1.0.2",
     "orientation": "portrait",
