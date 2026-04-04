@@ -30,12 +30,12 @@ App mobile de análise de pele por IA.
 
 | Camada | Tecnologia |
 |---|---|
-| Framework | Expo + React Native (managed workflow) |
+| Framework | Expo + React Native (managed workflow) — **New Architecture ativada** (`newArchEnabled: true`) |
 | Estilo | NativeWind v4 + Tailwind CSS (sempre `className`, nunca `StyleSheet`) |
 | Navegação | Expo Router v3 (`useRouter`, `router.push`, `router.back`) |
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
 | IA | Gemini 2.5 Pro via Supabase Edge Functions |
-| Pagamentos | RevenueCat |
+| Pagamentos | RevenueCat (verificação de entitlement) + Superwall (apresentação do paywall) |
 | Analytics | — (Mixpanel removido) |
 | Camera | expo-camera + expo-image-picker |
 | Estado global | Zustand (`useAppStore` em `store/onboarding.ts`) |
@@ -526,15 +526,25 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 
 ---
 
-### 11. Guard de assinatura em `(app)/_layout.tsx` — última linha de defesa
+### 11. Guard de assinatura — Superwall + RevenueCat
 
-O acesso ao app principal é verificado em 4 pontos, em ordem:
+O paywall é gerenciado pelo **Superwall** (`expo-superwall`). O `<SuperwallProvider>` está em `app/_layout.tsx` (raiz), sendo o elemento mais externo de toda a árvore — acima de `GestureHandlerRootView` e `SafeAreaProvider`.
+
+**API Key iOS:** `pk_4iUsZwW_-ME9WdK3IcXYp`  
+**Placement identifier:** `paywall_onboarding`
+
+O acesso ao app é verificado em 4 pontos, em ordem. Em todos eles, o RevenueCat (`getCustomerInfo` + `isSubscribed`) determina se o usuário tem acesso. Se não tiver, o Superwall é acionado via `registerPlacement({ placement: 'paywall_onboarding' })` — que exibe o paywall como overlay nativo gerenciado pelo Superwall Dashboard:
+
 - `app/index.tsx` — ao abrir o app com sessão ativa
 - `app/(onboarding)/_layout.tsx` — ao navegar por telas do onboarding já logado
 - `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login
-- **`app/(app)/_layout.tsx`** — guard definitivo: bloqueia qualquer acesso às tabs sem entitlement `premium`
+- **`app/(app)/_layout.tsx`** — guard definitivo: bloqueia acesso às tabs sem entitlement `premium`
 
-O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` travar (rede lenta), o timer dispara e redireciona para `paywall-soft` em vez de deixar tela preta. Qualquer caminho — timeout, erro de rede, sem entitlement — vai para `/(onboarding)/paywall-soft`. Enquanto o guard verifica, o componente retorna `null` (sem flash das tabs).
+O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` travar (rede lenta), o timer dispara e aciona o Superwall em vez de deixar tela preta. Enquanto o guard verifica, o componente retorna `null` (sem flash das tabs).
+
+**`usePlacement`** deve ser chamado em componentes descendentes do `SuperwallProvider`. Em `(app)/_layout.tsx`, isso é garantido porque o provider está na raiz.
+
+> A tela `app/(onboarding)/paywall-soft.tsx` foi **removida** — o Superwall gerencia 100% do paywall via overlay nativo.
 
 ---
 
