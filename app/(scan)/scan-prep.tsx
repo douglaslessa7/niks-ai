@@ -5,6 +5,7 @@ import { CTAButton } from '../../components/ui/CTAButton';
 import { AIConsentModal } from '../../components/ui/AIConsentModal';
 import { useAIConsent } from '../../hooks/useAIConsent';
 import { Sun, Sparkles, User } from 'lucide-react-native';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const instructions = [
   { Icon: Sun, text: 'Boa iluminação natural' },
@@ -15,6 +16,7 @@ const instructions = [
 export default function ScanPrep() {
   const router = useRouter();
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
+  const { track } = useMixpanel();
 
   return (
     <>
@@ -45,7 +47,10 @@ export default function ScanPrep() {
           <View className="pb-8">
             <CTAButton
               text="Abrir câmera"
-              onPress={() => requestConsent(() => router.push('/(scan)/camera' as any))}
+              onPress={() => {
+                track('onboarding_step_completed', { step_number: 13, step_name: 'Análise com IA', step_total: 23 });
+                requestConsent(() => router.push('/(scan)/camera' as any));
+              }}
             />
           </View>
         </View>

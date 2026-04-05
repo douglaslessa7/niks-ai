@@ -5,6 +5,7 @@ import { CTAButton } from '../../components/ui/CTAButton';
 import { Lock } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useAppStore, SkinMetric } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const r = 70;
 const circ = 2 * Math.PI * r;
@@ -82,6 +83,7 @@ function MetricCard({ name, metric: _metric }: { name: string; metric: SkinMetri
 export default function Results() {
   const scanResult = useAppStore((s) => s.scanResult);
   const scanImageUri = useAppStore((s) => s.scanImageUri);
+  const { track } = useMixpanel();
 
   const score = scanResult?.skin_score ?? 0;
   const offset = circ * (1 - score / 100);
@@ -193,7 +195,11 @@ export default function Results() {
           </View>
 
           <View className="pb-8">
-            <CTAButton text="Continuar" to="/(onboarding)/goal" />
+            <CTAButton
+                text="Continuar"
+                to="/(onboarding)/goal"
+                onPress={() => track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 })}
+              />
           </View>
         </View>
       </ScrollView>

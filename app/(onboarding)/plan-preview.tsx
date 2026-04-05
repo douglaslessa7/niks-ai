@@ -4,6 +4,7 @@ import { CTAButton } from '../../components/ui/CTAButton';
 import { Check, Camera, Utensils, Sun, TrendingUp } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const features = [
   { Icon: Camera, text: 'Use seu Skin Score para acompanhar a evolução' },
@@ -17,6 +18,7 @@ const circ = 2 * Math.PI * r;
 
 export default function PlanPreview() {
   const scanResult = useAppStore((s) => s.scanResult);
+  const { track } = useMixpanel();
   const score = scanResult?.skin_score ?? 0;
   const offset = circ * (1 - score / 100);
 
@@ -77,7 +79,11 @@ export default function PlanPreview() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Vamos começar!" to="/(onboarding)/signup" />
+          <CTAButton
+              text="Vamos começar!"
+              to="/(onboarding)/signup"
+              onPress={() => track('onboarding_step_completed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

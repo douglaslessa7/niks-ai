@@ -6,6 +6,7 @@ import { Check, Unlock, Bell, Crown } from 'lucide-react-native';
 import { BackButton } from '../../components/ui/BackButton';
 import { getOfferings, purchasePackage, restorePurchases, isPremium } from '../../lib/revenuecat';
 import type { PurchasesPackage } from 'react-native-purchases';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 type Plan = 'monthly' | 'annual';
 
@@ -38,6 +39,7 @@ const timelineSteps = [
 
 export default function PaywallDetailed() {
   const router = useRouter();
+  const { track, timeEvent, setUserProperties, registerSuperProperties, flush } = useMixpanel();
   const [selectedPlan, setSelectedPlan] = useState<Plan>('annual');
   const [monthlyPkg, setMonthlyPkg] = useState<PurchasesPackage | null>(null);
   const [annualPkg, setAnnualPkg] = useState<PurchasesPackage | null>(null);
@@ -46,6 +48,14 @@ export default function PaywallDetailed() {
   const [annualTotal, setAnnualTotal] = useState('R$179,90/ano');
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
+
+  useEffect(() => {
+    track('onboarding_step_completed', { step_number: 23, step_name: 'Paywall', step_total: 23 });
+    track('onboarding_completed');
+    setUserProperties({ onboarding_completed: true, onboarding_completed_at: new Date().toISOString() });
+    registerSuperProperties({ onboarding_completed: true });
+    flush();
+  }, []);
 
   useEffect(() => {
     getOfferings()

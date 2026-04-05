@@ -3,13 +3,15 @@ import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
-import { useAppStore } from '../../store/onboarding'; // 👈 adicionar
+import { useAppStore } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const genders = ['Masculino', 'Feminino', 'Outro'];
 
 export default function Gender() {
   const [selected, setSelected] = useState<string | null>(null);
-  const { setOnboardingField } = useAppStore(); // 👈 adicionar
+  const { setOnboardingField } = useAppStore();
+  const { track } = useMixpanel();
 
   const handleSelect = (gender: string) => {
     setSelected(gender);
@@ -40,7 +42,12 @@ export default function Gender() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(onboarding)/birthday" disabled={!selected} />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/birthday"
+              disabled={!selected}
+              onPress={() => track('onboarding_step_completed', { step_number: 3, step_name: 'Gênero', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

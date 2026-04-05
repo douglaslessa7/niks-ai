@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { useAppStore } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const waterOptions = ['Menos de 1L', '1-2L', '2-3L', '3L+'];
 const sleepOptions = ['4-5', '6', '7', '8', '9+'];
@@ -25,6 +26,7 @@ export default function HydrationSleep() {
   const [water, setWater] = useState<string | null>(null);
   const [sleep, setSleep] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
+  const { track } = useMixpanel();
 
   return (
     <QuizLayout progress={44}>
@@ -71,7 +73,12 @@ export default function HydrationSleep() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(onboarding)/sunscreen" disabled={!water || !sleep} />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/sunscreen"
+              disabled={!water || !sleep}
+              onPress={() => track('onboarding_step_completed', { step_number: 8, step_name: 'Hidratação e Sono', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

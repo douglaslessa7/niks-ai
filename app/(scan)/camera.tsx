@@ -8,6 +8,7 @@ import Svg, { Ellipse } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as Device from 'expo-device';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function Camera() {
   const router = useRouter();
@@ -15,11 +16,13 @@ export default function Camera() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
+  const { track } = useMixpanel();
 
   // Verdadeiro apenas no simulador (sem câmera real)
   const isSimulator = !Device.isDevice;
 
   const navigateToLoading = (base64: string, uri: string) => {
+    track('onboarding_step_completed', { step_number: 14, step_name: 'Scan - Câmera', step_total: 23 });
     setSkinImage(base64, uri);
     router.push('/(scan)/loading' as any);
   };

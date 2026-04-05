@@ -2,6 +2,7 @@ import { View, Text, useWindowDimensions } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import Svg, { Polyline, Path, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const data = [
   { week: 'Semana 1', score: 45 },
@@ -66,6 +67,8 @@ function SimpleLineChart() {
 }
 
 export default function SocialProof() {
+  const { track } = useMixpanel();
+
   return (
     <QuizLayout progress={56}>
       <View className="pt-8 flex-1">
@@ -89,7 +92,11 @@ export default function SocialProof() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(onboarding)/food-analysis" />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/food-analysis"
+              onPress={() => track('onboarding_step_completed', { step_number: 10, step_name: 'Social Proof', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

@@ -4,6 +4,7 @@ import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { Pill } from '../../components/ui/Pill';
 import { useAppStore } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const concerns = [
   'Acne', 'Manchas', 'Oleosidade', 'Rugas',
@@ -13,6 +14,7 @@ const concerns = [
 export default function Concerns() {
   const [selected, setSelected] = useState<string[]>([]);
   const { setOnboardingField } = useAppStore();
+  const { track } = useMixpanel();
 
   const toggle = (item: string) => {
     setSelected((prev) => {
@@ -47,7 +49,12 @@ export default function Concerns() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(onboarding)/gender" disabled={selected.length === 0} />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/gender"
+              disabled={selected.length === 0}
+              onPress={() => track('onboarding_step_completed', { step_number: 2, step_name: 'Preocupações de Pele', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

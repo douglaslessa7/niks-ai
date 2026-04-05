@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated, Easing } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const IMAGE_H = 192;
 const FOOD_IMAGE_URI =
@@ -119,6 +120,8 @@ function FoodScanCard() {
 }
 
 export default function FoodAnalysis() {
+  const { track } = useMixpanel();
+
   return (
     <QuizLayout progress={60}>
       <View className="pt-8 flex-1">
@@ -145,7 +148,11 @@ export default function FoodAnalysis() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(onboarding)/commitment" />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/commitment"
+              onPress={() => track('onboarding_step_completed', { step_number: 11, step_name: 'Alimentação e Pele', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

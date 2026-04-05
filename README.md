@@ -36,7 +36,7 @@ App mobile de análise de pele por IA.
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
 | IA | Gemini 2.5 Pro via Supabase Edge Functions |
 | Pagamentos | RevenueCat (verificação de entitlement) + Superwall (apresentação do paywall) |
-| Analytics | — (Mixpanel removido) |
+| Analytics | Mixpanel (`mixpanel-react-native`, `useNative=true`) — `lib/mixpanel/` |
 | Camera | expo-camera + expo-image-picker |
 | Estado global | Zustand (`useAppStore` em `store/onboarding.ts`) |
 
@@ -528,7 +528,7 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 
 ### 11. Guard de assinatura — Superwall + RevenueCat
 
-O paywall é gerenciado pelo **Superwall** (`expo-superwall`). O `<SuperwallProvider>` está em `app/_layout.tsx` (raiz), sendo o elemento mais externo de toda a árvore — acima de `GestureHandlerRootView` e `SafeAreaProvider`.
+O paywall é gerenciado pelo **Superwall** (`expo-superwall`). O `<SuperwallProvider>` está em `app/_layout.tsx` (raiz), logo abaixo do `<MixpanelProvider>` — acima de `GestureHandlerRootView` e `SafeAreaProvider`.
 
 **API Key iOS:** `pk_4iUsZwW_-ME9WdK3IcXYp`  
 **Placement identifier:** `paywall_onboarding`
@@ -545,6 +545,64 @@ O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` 
 **`usePlacement`** deve ser chamado em componentes descendentes do `SuperwallProvider`. Em `(app)/_layout.tsx`, isso é garantido porque o provider está na raiz.
 
 > A tela `app/(onboarding)/paywall-soft.tsx` foi **removida** — o Superwall gerencia 100% do paywall via overlay nativo.
+
+---
+
+### 12. Analytics — Mixpanel
+
+**SDK:** `mixpanel-react-native` com `useNative=true` (usa o MixpanelSDK nativo iOS — obrigatório para build Xcode).
+
+**Token:** lido de `process.env.EXPO_PUBLIC_MIXPANEL_TOKEN` (`.env` na raiz do projeto).
+
+**Arquitetura:**
+```
+lib/mixpanel/
+  mixpanelClient.ts       ← singleton Mixpanel + initMixpanel()
+  MixpanelProvider.tsx    ← Context + useMixpanel() hook
+  useScreenTracking.ts    ← Screen Viewed automático via usePathname()
+```
+
+**Hierarquia de providers em `app/_layout.tsx`:**
+```
+<MixpanelProvider>         ← camada mais externa
+  <SuperwallProvider>
+    <GestureHandlerRootView>
+      <SafeAreaProvider>
+        <AppShell>          ← chama useScreenTracking()
+          <Stack />
+```
+
+**Super properties registradas no init** (enviadas em todos os eventos automaticamente):
+`platform`, `app_version`, `data_source: 'app'`
+
+**Eventos do onboarding:**
+
+| Evento | Onde dispara | Propriedades |
+|---|---|---|
+| `onboarding_started` | `(onboarding)/_layout.tsx` — ao confirmar que usuário está no fluxo | `onboarding_version: '1.0'`, `total_steps: 23` |
+| `onboarding_step_completed` | Botão "Continuar" / navegação de cada tela | `step_number`, `step_name`, `step_total: 23` |
+| `onboarding_completed` | `paywall-detailed.tsx` — no mount | `$duration` calculado automaticamente pelo SDK |
+| `Screen Viewed` | Toda mudança de rota (automático via `useScreenTracking`) | `screen_name`, `pathname` |
+
+**`onboarding_completed` — efeitos colaterais (também em `paywall-detailed.tsx` mount):**
+```typescript
+setUserProperties({ onboarding_completed: true, onboarding_completed_at: ISO })
+registerSuperProperties({ onboarding_completed: true })
+flush() // garante envio imediato
+```
+
+**`timeEvent("onboarding_completed")`** é chamado em `(onboarding)/_layout.tsx` assim que o usuário entra no fluxo — o SDK mede `$duration` automaticamente quando `track("onboarding_completed")` dispara no paywall.
+
+**Padrão de uso nas telas:**
+```typescript
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+
+const { track } = useMixpanel();
+// Em CTAButton:
+onPress={() => track('onboarding_step_completed', { step_number: N, step_name: 'Nome', step_total: 23 })}
+```
+
+> ⚠️ `useMixpanel()` só funciona em componentes descendentes do `<MixpanelProvider>` (toda a árvore do app, pois está na raiz). Nunca usar `mixpanel` diretamente do `mixpanelClient` fora do contexto React — usar sempre o hook.
 
 ---
 

@@ -12,6 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useAppStore } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
 import { Colors } from '../../constants/colors';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -47,6 +48,8 @@ export default function Signup() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
   const { saveToSupabase } = useAppStore();
+  const { track } = useMixpanel();
+
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -96,6 +99,7 @@ export default function Signup() {
         if (data.session.user?.id) {
           await saveToSupabase(data.session.user.id);
         }
+        track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
         router.push('/(onboarding)/protocol-loading');
       }
     } catch (error: any) {
@@ -134,6 +138,7 @@ export default function Signup() {
       if (session?.user?.id) {
         await saveToSupabase(session.user.id);
       }
+      track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
       router.push('/(onboarding)/protocol-loading');
     } catch (error: any) {
       Alert.alert('Erro', JSON.stringify(error));
@@ -382,6 +387,7 @@ export default function Signup() {
                       if (data.user?.id) {
                         await saveToSupabase(data.user.id);
                       }
+                      track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
                       router.push('/(onboarding)/protocol-loading');
                     } catch (error: any) {
                       Alert.alert('Erro', error?.message ?? 'Tente novamente.');

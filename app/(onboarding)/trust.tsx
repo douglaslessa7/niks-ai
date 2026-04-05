@@ -2,8 +2,11 @@ import { View, Text, Image } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { Lock } from 'lucide-react-native';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function Trust() {
+  const { track } = useMixpanel();
+
   return (
     <QuizLayout progress={88}>
       <View className="flex-1 items-center px-6 pt-10">
@@ -50,7 +53,11 @@ export default function Trust() {
         <View className="flex-1" />
 
         <View className="pb-8 w-full">
-          <CTAButton text="Continuar" to="/(onboarding)/plan-preview" />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/plan-preview"
+              onPress={() => track('onboarding_step_completed', { step_number: 20, step_name: 'Obrigado por Confiar', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

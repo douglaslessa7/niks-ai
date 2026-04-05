@@ -7,6 +7,13 @@ import { supabase } from '../lib/supabase';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { SuperwallProvider } from 'expo-superwall';
+import { MixpanelProvider } from '../lib/mixpanel/MixpanelProvider';
+import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
+
+function AppShell({ children }: { children: React.ReactNode }) {
+  useScreenTracking();
+  return <>{children}</>;
+}
 
 export default function RootLayout() {
   useEffect(() => {
@@ -70,14 +77,18 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SuperwallProvider apiKeys={{ ios: 'pk_4iUsZwW_-ME9WdK3IcXYp' }}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaProvider>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
-          </Stack>
-        </SafeAreaProvider>
-      </GestureHandlerRootView>
-    </SuperwallProvider>
+    <MixpanelProvider>
+      <SuperwallProvider apiKeys={{ ios: 'pk_4iUsZwW_-ME9WdK3IcXYp' }}>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <SafeAreaProvider>
+            <AppShell>
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+              </Stack>
+            </AppShell>
+          </SafeAreaProvider>
+        </GestureHandlerRootView>
+      </SuperwallProvider>
+    </MixpanelProvider>
   );
 }

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const steps = [
   { label: 'Protocolo matinal', delay: 500 },
@@ -18,6 +19,7 @@ export default function FinalLoading() {
   const [percentage, setPercentage] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const { track } = useMixpanel();
 
   useEffect(() => {
     const percentInterval = setInterval(() => {
@@ -31,7 +33,10 @@ export default function FinalLoading() {
       setTimeout(() => setCurrentStep(index + 1), step.delay);
     });
 
-    setTimeout(() => router.push('/(onboarding)/trust'), 3800);
+    setTimeout(() => {
+      track('onboarding_step_completed', { step_number: 19, step_name: 'Finalizando Protocolo', step_total: 23 });
+      router.push('/(onboarding)/trust');
+    }, 3800);
     return () => clearInterval(percentInterval);
   }, []);
 

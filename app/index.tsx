@@ -6,11 +6,13 @@ import { CTAButton } from '../components/ui/CTAButton';
 import { supabase } from '../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../lib/revenuecat';
 import { usePlacement } from 'expo-superwall';
+import { useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 
 export default function Welcome() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const { registerPlacement } = usePlacement();
+  const { track } = useMixpanel();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -129,7 +131,11 @@ export default function Welcome() {
 
           {/* Bottom CTA Section */}
           <View className="gap-4">
-            <CTAButton text="Começar" to="/(onboarding)/concerns" />
+            <CTAButton
+                text="Começar"
+                to="/(onboarding)/concerns"
+                onPress={() => track('onboarding_step_completed', { step_number: 1, step_name: 'Tela Inicial', step_total: 23 })}
+              />
             <View className="items-center flex-row justify-center gap-1">
               <Text className="text-[#9CA3AF] text-[15px]">Já tem conta? </Text>
               <TouchableOpacity onPress={() => router.push('/(onboarding)/login')}>

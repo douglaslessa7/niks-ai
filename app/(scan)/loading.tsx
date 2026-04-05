@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../lib/supabase';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
@@ -22,6 +23,7 @@ const steps = [
 export default function Loading() {
   const router = useRouter();
   const { skinImageBase64, skinImageUri, onboarding, setScanResult } = useAppStore();
+  const { track } = useMixpanel();
 
   const [percentage, setPercentage] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
@@ -108,6 +110,7 @@ export default function Loading() {
         }
 
         setTimeout(() => {
+          track('onboarding_step_completed', { step_number: 15, step_name: 'Analisando Pele', step_total: 23 });
           router.push('/(scan)/rate-us');
         }, 500);
       } catch (err) {

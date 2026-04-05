@@ -1,8 +1,11 @@
 import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function Commitment() {
+  const { track } = useMixpanel();
+
   return (
     <QuizLayout progress={64}>
       <View className="pt-8 flex-1 px-6">
@@ -19,7 +22,11 @@ export default function Commitment() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(scan)/scan-prep" />
+          <CTAButton
+              text="Continuar"
+              to="/(scan)/scan-prep"
+              onPress={() => track('onboarding_step_completed', { step_number: 12, step_name: 'Compromisso', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

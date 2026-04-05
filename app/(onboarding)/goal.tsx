@@ -4,6 +4,7 @@ import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
 import { useAppStore } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const goals = [
   'Pele mais jovem',
@@ -16,6 +17,7 @@ const goals = [
 export default function Goal() {
   const [selected, setSelected] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
+  const { track } = useMixpanel();
 
   return (
     <QuizLayout progress={80}>
@@ -44,7 +46,12 @@ export default function Goal() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(onboarding)/final-loading" disabled={!selected} />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/final-loading"
+              disabled={!selected}
+              onPress={() => track('onboarding_step_completed', { step_number: 18, step_name: 'Objetivo Principal', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>

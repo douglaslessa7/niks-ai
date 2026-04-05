@@ -4,6 +4,7 @@ import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { IOSWheelPicker } from '../../components/ui/IOSWheelPicker';
 import { useAppStore } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const months = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -17,6 +18,7 @@ export default function Birthday() {
   const [selectedMonth, setSelectedMonth] = useState('Junho');
   const [selectedYear, setSelectedYear] = useState('2007');
   const { setOnboardingField } = useAppStore();
+  const { track } = useMixpanel();
 
   const saveBirthday = (day: string, month: string, year: string) => {
     const monthIndex = String(months.indexOf(month) + 1).padStart(2, '0');
@@ -63,7 +65,11 @@ export default function Birthday() {
         <View className="flex-1" />
 
         <View className="pb-8">
-          <CTAButton text="Continuar" to="/(onboarding)/skin-type" />
+          <CTAButton
+              text="Continuar"
+              to="/(onboarding)/skin-type"
+              onPress={() => track('onboarding_step_completed', { step_number: 4, step_name: 'Data de Nascimento', step_total: 23 })}
+            />
         </View>
       </View>
     </QuizLayout>
