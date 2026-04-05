@@ -78,7 +78,9 @@ export default function AppLayout() {
         router.replace('/');
         return;
       }
+
       const timer = setTimeout(() => {
+        setReady(true);
         registerPlacement({ placement: 'paywall_onboarding' });
       }, 8000);
 
@@ -86,11 +88,13 @@ export default function AppLayout() {
         const info = await getCustomerInfo();
         clearTimeout(timer);
         if (!isSubscribed(info)) {
+          setReady(true);
           registerPlacement({ placement: 'paywall_onboarding' });
           return;
         }
       } catch {
         clearTimeout(timer);
+        setReady(true);
         registerPlacement({ placement: 'paywall_onboarding' });
         return;
       }

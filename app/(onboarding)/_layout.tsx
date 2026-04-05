@@ -2,12 +2,10 @@ import { Stack, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
-import { usePlacement } from 'expo-superwall';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function OnboardingLayout() {
   const router = useRouter();
-  const { registerPlacement } = usePlacement();
   const { track, timeEvent, registerSuperProperties, isReady } = useMixpanel();
   const [isInOnboarding, setIsInOnboarding] = useState(false);
   const hasTrackedStart = useRef(false);
@@ -21,7 +19,6 @@ export default function OnboardingLayout() {
             router.replace('/(app)/home');
             return;
           }
-          registerPlacement({ placement: 'paywall_onboarding' });
         } catch {
           // RevenueCat falhou — mantém o usuário no onboarding (não dá acesso ao app)
         }

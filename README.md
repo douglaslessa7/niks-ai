@@ -533,18 +533,29 @@ O paywall é gerenciado pelo **Superwall** (`expo-superwall`). O `<SuperwallProv
 **API Key iOS:** `pk_4iUsZwW_-ME9WdK3IcXYp`  
 **Placement identifier:** `paywall_onboarding`
 
-O acesso ao app é verificado em 4 pontos, em ordem. Em todos eles, o RevenueCat (`getCustomerInfo` + `isSubscribed`) determina se o usuário tem acesso. Se não tiver, o Superwall é acionado via `registerPlacement({ placement: 'paywall_onboarding' })` — que exibe o paywall como overlay nativo gerenciado pelo Superwall Dashboard:
+O acesso ao app é verificado em 3 pontos, em ordem. Em todos eles, o RevenueCat (`getCustomerInfo` + `isSubscribed`) determina se o usuário tem acesso:
 
-- `app/index.tsx` — ao abrir o app com sessão ativa
-- `app/(onboarding)/_layout.tsx` — ao navegar por telas do onboarding já logado
-- `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login
-- **`app/(app)/_layout.tsx`** — guard definitivo: bloqueia acesso às tabs sem entitlement `premium`
+- `app/index.tsx` — ao abrir o app com sessão ativa → não-assinante: `registerPlacement` direto
+- `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login → não-assinante: `registerPlacement` direto
+- **`app/(app)/_layout.tsx`** — guard definitivo: não-assinante aciona `registerPlacement`; assinante: `setReady(true)` → tabs renderizam
 
-O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` travar (rede lenta), o timer dispara e aciona o Superwall em vez de deixar tela preta. Enquanto o guard verifica, o componente retorna `null` (sem flash das tabs).
+O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` travar (rede lenta), o timer dispara e aciona o Superwall. `setReady(true)` é chamado **antes** de `registerPlacement` em todos os caminhos — o Superwall aparece como overlay sobre as tabs em vez de bloquear o render com `null`.
 
 **`usePlacement`** deve ser chamado em componentes descendentes do `SuperwallProvider`. Em `(app)/_layout.tsx`, isso é garantido porque o provider está na raiz.
 
-> A tela `app/(onboarding)/paywall-soft.tsx` foi **removida** — o Superwall gerencia 100% do paywall via overlay nativo.
+#### `paywall-soft.tsx` — tela dedicada para paywall pós-onboarding
+
+Ao final do onboarding (`notifications.tsx`), o Superwall **não** é acionado diretamente. Em vez disso, `notifications.tsx` navega para `app/(onboarding)/paywall-soft.tsx`, que chama `registerPlacement` com callbacks:
+
+```typescript
+const { registerPlacement } = usePlacement({
+  onDismiss: async () => await navigateToApp(),  // usuário fechou (assinou, restaurou ou dispensou)
+  onSkip: async () => await navigateToApp(),      // Superwall não exibiu (holdout, já assinante)
+  onError: async () => router.replace('/(app)/home'),
+});
+```
+
+**Por que esta abordagem:** `registerPlacement` retorna uma `Promise<void>` que resolve **imediatamente** após registrar o placement com o SDK nativo — **não** após o paywall ser fechado. Fazer `await registerPlacement(...)` e depois navegar resulta em navegação antes da interação do usuário. A navegação pós-paywall deve sempre acontecer nos callbacks `onDismiss`/`onSkip`/`onError`.
 
 ---
 

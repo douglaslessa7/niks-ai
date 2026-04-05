@@ -1,40 +1,72 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, ActivityIndicator, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Bell } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { requestPushPermission, savePushToken } from '../../lib/notifications';
+import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 
 export default function Notifications() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const loadingRef = useRef(false);
+
+  const navigateToApp = async () => {
+    try {
+      const infoPromise = getCustomerInfo();
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), 8000)
+      );
+      const info = await Promise.race([infoPromise, timeoutPromise]);
+
+      if (info && isSubscribed(info)) {
+        router.replace('/(app)/home');
+      } else {
+        router.replace('/(onboarding)/paywall-soft');
+      }
+    } catch {
+      router.replace('/(onboarding)/paywall-soft');
+    }
+  };
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active' && loadingRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+        await navigateToApp();
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   const handleActivate = async () => {
     setLoading(true);
+    loadingRef.current = true;
     try {
-      // 1. Pede permissão ao iOS e obtém o token
-      const token = await requestPushPermission();
+      const token = await Promise.race([
+        requestPushPermission(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+      ]);
 
       if (token) {
-        // 2. Busca o usuário autenticado
         const { data: { user } } = await supabase.auth.getUser();
-
         if (user) {
-          // 3. Salva o token no Supabase
           await savePushToken(user.id, token);
         }
       }
     } catch (error) {
       console.error('[Notifications] Erro:', error);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
-      router.replace('/(app)/home');
+      await navigateToApp();
     }
   };
 
-  const handleSkip = () => {
-    router.replace('/(app)/home');
+  const handleSkip = async () => {
+    await navigateToApp();
   };
 
   return (

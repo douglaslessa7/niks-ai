@@ -67,7 +67,10 @@ export default function ProtocolLoading() {
   useEffect(() => {
     if (!apiDone) return;
     setPercentage(100);
-    const t = setTimeout(() => registerPlacement({ placement: 'paywall_onboarding' }), 400);
+    const t = setTimeout(async () => {
+      await registerPlacement({ placement: 'paywall_onboarding' });
+      router.replace('/(onboarding)/notifications');
+    }, 400);
     return () => clearTimeout(t);
   }, [apiDone]);
 
