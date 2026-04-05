@@ -543,6 +543,12 @@ O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` 
 
 **`usePlacement`** deve ser chamado em componentes descendentes do `SuperwallProvider`. Em `(app)/_layout.tsx`, isso é garantido porque o provider está na raiz.
 
+> ⚠️ **Import gotcha:** `expo-superwall` exporta apenas `SuperwallProvider`, hooks e tipos. Para usar a API de classe (`Superwall.shared.*`), importe de `expo-superwall/compat`:
+> ```typescript
+> import Superwall from 'expo-superwall/compat'; // ← compat, não expo-superwall
+> ```
+> `refreshConfiguration()` **não existe** no wrapper JS — o equivalente disponível é `Superwall.shared.preloadAllPaywalls()`.
+
 #### `paywall-soft.tsx` — tela dedicada para paywall pós-onboarding
 
 Ao final do onboarding (`notifications.tsx`), o Superwall **não** é acionado diretamente. Em vez disso, `notifications.tsx` navega para `app/(onboarding)/paywall-soft.tsx`, que chama `registerPlacement` com callbacks:

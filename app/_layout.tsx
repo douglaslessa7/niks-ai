@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { SuperwallProvider } from 'expo-superwall';
+import Superwall from 'expo-superwall/compat';
 import { MixpanelProvider } from '../lib/mixpanel/MixpanelProvider';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
 
@@ -16,6 +17,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    Superwall.shared.preloadAllPaywalls();
+  }, []);
+
   useEffect(() => {
     initRevenueCat();
 
