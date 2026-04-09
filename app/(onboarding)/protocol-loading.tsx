@@ -8,6 +8,7 @@ import { Check } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult } from '../../store/onboarding';
 import { BASE_PROTOCOLS } from '../../constants/protocols';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 
 const steps = [
@@ -23,6 +24,7 @@ export default function ProtocolLoading() {
   const router = useRouter();
   const { registerPlacement } = usePlacement();
   const { scanResult, onboarding, skinScanId, setProtocolResult } = useAppStore();
+  const { track } = useMixpanel();
 
   const [percentage, setPercentage] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
@@ -113,18 +115,44 @@ export default function ProtocolLoading() {
       const skinType = scanResult.skin_type_detected ?? 'normal'
       const baseProtocol = BASE_PROTOCOLS[skinType] ?? BASE_PROTOCOLS['normal']
 
-      const { data, error } = await supabase.functions.invoke('generate-protocol', {
-        body: { baseProtocol, scanResult, onboardingData: onboarding },
-      });
+      let data: any = null;
+      let lastError: any = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const { data: invokeData, error: invokeError } = await supabase.functions.invoke('generate-protocol', {
+          body: { baseProtocol, scanResult, onboardingData: onboarding },
+        });
 
-      if (error) {
-        const body = await (error as any).context?.json?.().catch(() => null);
-        console.error('generate-protocol error:', error.message, body ? JSON.stringify(body) : '');
+        if (!invokeError) {
+          data = invokeData;
+          lastError = null;
+          break;
+        }
+
+        const status = (invokeError as any).context?.status;
+        const errMsg = invokeError.message ?? '';
+        const is503 = status === 503 || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand');
+
+        if (is503 && attempt < 3) {
+          console.warn(`generate-protocol 503 (tentativa ${attempt}/3), aguardando 3s...`);
+          setStatusText('Estamos finalizando sua análise, aguarde um momento...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          continue;
+        }
+
+        lastError = invokeError;
+        break;
+      }
+
+      if (lastError) {
+        const body = await (lastError as any).context?.json?.().catch(() => null);
+        console.error('generate-protocol error:', lastError.message, body ? JSON.stringify(body) : '');
+        track('protocol_failed', { error: lastError.message ?? 'unknown' });
         return;
       }
 
       // Salvar no store para a aba Protocolo usar sem regenerar
       setProtocolResult(data);
+      track('protocol_generated');
 
       // Montar dicas
       const dicas: string[] = [];
@@ -148,6 +176,7 @@ export default function ProtocolLoading() {
       if (insertError) console.error('Erro ao salvar protocolo:', insertError);
     } catch (err) {
       console.error('Erro em generateAndSaveProtocol:', err);
+      track('protocol_failed', { error: (err as any)?.message ?? 'unknown' });
     } finally {
       // Sinalizar conclusão independente de sucesso ou erro
       apiDoneRef.current = true;

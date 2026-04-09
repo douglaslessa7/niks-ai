@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text, ScrollView, Image } from 'react-native';
 import { Canvas, Circle as SkiaCircle, BlurMask } from '@shopify/react-native-skia';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
@@ -84,6 +85,10 @@ export default function Results() {
   const scanResult = useAppStore((s) => s.scanResult);
   const scanImageUri = useAppStore((s) => s.scanImageUri);
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 });
+  }, []);
 
   const score = scanResult?.skin_score ?? 0;
   const offset = circ * (1 - score / 100);

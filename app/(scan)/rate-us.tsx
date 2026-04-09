@@ -38,6 +38,10 @@ export default function RateUs() {
     requestAppReview();
   }, []);
 
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
+  }, []);
+
   return (
     <SafeAreaView className="flex-1 bg-white">
       {/* Top Bar */}

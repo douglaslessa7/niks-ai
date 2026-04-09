@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text, Image } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -6,6 +7,10 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function Trust() {
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 20, step_name: 'Obrigado por Confiar', step_total: 23 });
+  }, []);
 
   return (
     <QuizLayout progress={88}>

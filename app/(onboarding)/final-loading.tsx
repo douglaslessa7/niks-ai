@@ -22,6 +22,7 @@ export default function FinalLoading() {
   const { track } = useMixpanel();
 
   useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 19, step_name: 'Finalizando Protocolo', step_total: 23 });
     const percentInterval = setInterval(() => {
       setPercentage((prev) => {
         if (prev >= 100) { clearInterval(percentInterval); return 100; }

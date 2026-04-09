@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,6 +17,10 @@ export default function Camera() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 14, step_name: 'Scan - Câmera', step_total: 23 });
+  }, []);
 
   // Verdadeiro apenas no simulador (sem câmera real)
   const isSimulator = !Device.isDevice;

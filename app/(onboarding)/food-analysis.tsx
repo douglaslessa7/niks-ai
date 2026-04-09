@@ -122,6 +122,10 @@ function FoodScanCard() {
 export default function FoodAnalysis() {
   const { track } = useMixpanel();
 
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 11, step_name: 'Alimentação e Pele', step_total: 23 });
+  }, []);
+
   return (
     <QuizLayout progress={60}>
       <View className="pt-8 flex-1">

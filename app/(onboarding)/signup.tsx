@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
@@ -48,8 +48,11 @@ export default function Signup() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
   const { saveToSupabase } = useAppStore();
-  const { track } = useMixpanel();
+  const { track, identify } = useMixpanel();
 
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
+  }, []);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -97,6 +100,7 @@ export default function Signup() {
         setWaitingConfirmation(true);
       } else if (!error && data.session) {
         if (data.session.user?.id) {
+          identify(data.session.user.id);
           await saveToSupabase(data.session.user.id);
         }
         track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
@@ -136,6 +140,7 @@ export default function Signup() {
     try {
       const session = await signInWithGoogle();
       if (session?.user?.id) {
+        identify(session.user.id);
         await saveToSupabase(session.user.id);
       }
       track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
@@ -385,6 +390,7 @@ export default function Signup() {
                       const data = await signInWithApple();
                       if (!data) return;
                       if (data.user?.id) {
+                        identify(data.user.id);
                         await saveToSupabase(data.user.id);
                       }
                       track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });

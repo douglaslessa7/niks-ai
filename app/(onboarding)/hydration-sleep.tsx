@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -27,6 +27,10 @@ export default function HydrationSleep() {
   const [sleep, setSleep] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 8, step_name: 'Hidratação e Sono', step_total: 23 });
+  }, []);
 
   return (
     <QuizLayout progress={44}>

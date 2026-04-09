@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -19,6 +19,10 @@ export default function Birthday() {
   const [selectedYear, setSelectedYear] = useState('2007');
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 4, step_name: 'Data de Nascimento', step_total: 23 });
+  }, []);
 
   const saveBirthday = (day: string, month: string, year: string) => {
     const monthIndex = String(months.indexOf(month) + 1).padStart(2, '0');

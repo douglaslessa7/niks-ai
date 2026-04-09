@@ -11,6 +11,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { usePlacement } from 'expo-superwall';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -46,6 +47,7 @@ export default function Login() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, signInWithEmail, loading } = useAuth();
   const { registerPlacement } = usePlacement();
+  const { track, identify } = useMixpanel();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -83,7 +85,9 @@ export default function Login() {
   const handleLogin = async () => {
     if (!password.trim()) return;
     try {
-      await signInWithEmail(email, password);
+      const session = await signInWithEmail(email, password);
+      if (session.user?.id) identify(session.user.id);
+      track('user_logged_in', { method: 'email' });
       await routeAfterLogin();
     } catch (error: any) {
       Alert.alert('Erro ao entrar', error?.message ?? 'Tente novamente.');
@@ -92,7 +96,9 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     try {
-      await signInWithGoogle();
+      const session = await signInWithGoogle();
+      if (session.user?.id) identify(session.user.id);
+      track('user_logged_in', { method: 'google' });
       await routeAfterLogin();
     } catch (error: any) {
       Alert.alert('Erro', error?.message ?? 'Tente novamente.');
@@ -298,6 +304,8 @@ export default function Login() {
                       try {
                         const data = await signInWithApple();
                         if (!data) return;
+                        if (data.user?.id) identify(data.user.id);
+                        track('user_logged_in', { method: 'apple' });
                         await routeAfterLogin();
                       } catch (error: any) {
                         Alert.alert('Erro', error?.message ?? 'Tente novamente.');

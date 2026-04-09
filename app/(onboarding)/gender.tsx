@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -12,6 +12,10 @@ export default function Gender() {
   const [selected, setSelected] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 3, step_name: 'Gênero', step_total: 23 });
+  }, []);
 
   const handleSelect = (gender: string) => {
     setSelected(gender);

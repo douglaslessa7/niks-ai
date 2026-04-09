@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -19,6 +20,11 @@ const circ = 2 * Math.PI * r;
 export default function PlanPreview() {
   const scanResult = useAppStore((s) => s.scanResult);
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 });
+  }, []);
+
   const score = scanResult?.skin_score ?? 0;
   const offset = circ * (1 - score / 100);
 

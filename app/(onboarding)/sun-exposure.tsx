@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -17,6 +17,10 @@ export default function SunExposure() {
   const [selected, setSelected] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 7, step_name: 'Exposição Solar', step_total: 23 });
+  }, []);
 
   return (
     <QuizLayout progress={40}>

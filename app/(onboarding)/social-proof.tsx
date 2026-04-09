@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text, useWindowDimensions } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -68,6 +69,10 @@ function SimpleLineChart() {
 
 export default function SocialProof() {
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 10, step_name: 'Social Proof', step_total: 23 });
+  }, []);
 
   return (
     <QuizLayout progress={56}>

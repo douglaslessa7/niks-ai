@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -5,6 +6,10 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function Commitment() {
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 12, step_name: 'Compromisso', step_total: 23 });
+  }, []);
 
   return (
     <QuizLayout progress={64}>

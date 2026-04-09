@@ -3,10 +3,14 @@ import { View, ActivityIndicator, InteractionManager } from 'react-native';
 import { useRouter } from 'expo-router';
 import { usePlacement } from 'expo-superwall';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function PaywallSoft() {
   const router = useRouter();
   const hasRegistered = useRef(false);
+  const { track } = useMixpanel();
+
+  track('paywall_viewed', { screen: 'soft' });
 
   const navigateToApp = async () => {
     try {

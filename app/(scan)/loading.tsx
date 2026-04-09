@@ -31,6 +31,7 @@ export default function Loading() {
   const retryCount = useRef(0);
 
   useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 15, step_name: 'Analisando Pele', step_total: 23 });
     retryCount.current = 0;
 
     // Progresso visual — dura ~7s
@@ -74,6 +75,7 @@ export default function Loading() {
         const data = await response.json();
 
         setScanResult(data, skinImageUri ?? '');
+        track('scan_completed', { skin_score: data.skin_score, skin_type: data.skin_type_detected });
         setPercentage(100);
 
         // Salvar scan no banco ANTES de navegar (garantia de persistência)
@@ -121,6 +123,7 @@ export default function Loading() {
           await runAnalysis();
         } else {
           console.error('Erro na análise após retries:', err);
+          track('scan_failed', { error: (err as any)?.message ?? 'unknown' });
           clearInterval(percentInterval);
           Alert.alert(
             'Erro na análise',

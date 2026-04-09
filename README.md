@@ -467,6 +467,8 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 2. Supabase (busca o registro mais recente por `user_id`)
 3. Fallback: chama `generate-protocol` novamente via `fetch` direto (com JWT manual) — envia `baseProtocol` derivado de `constants/protocols.ts` + `scanResult` + `onboardingData`
 
+**Retry automático em `protocol-loading.tsx`:** a chamada ao `generate-protocol` tenta até **3 vezes** com delay de 3s entre tentativas, mas **somente** para erros HTTP 503 ou mensagens `UNAVAILABLE`/`high demand` (sobrecarga do Gemini). Para outros erros, falha imediatamente. Durante a espera, o status text muda para "Estamos finalizando sua análise, aguarde um momento...". Outros tipos de erro não fazem retry — falham na primeira tentativa.
+
 ### 8. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
 
 O bucket `scans` é privado. `getPublicUrl()` retorna uma URL que responde 403. **Sempre usar `createSignedUrl(path, 31536000)`** (TTL de 1 ano) para gerar a URL que vai para `foto_url` no banco.
@@ -585,21 +587,38 @@ lib/mixpanel/
   <SuperwallProvider>
     <GestureHandlerRootView>
       <SafeAreaProvider>
-        <AppShell>          ← chama useScreenTracking()
+        <AppShell>          ← chama useScreenTracking() + dispara app_opened no mount
           <Stack />
 ```
 
 **Super properties registradas no init** (enviadas em todos os eventos automaticamente):
 `platform`, `app_version`, `data_source: 'app'`
 
-**Eventos do onboarding:**
+**`identify(userId)`** deve ser chamado imediatamente após qualquer autenticação bem-sucedida — antes de `saveToSupabase`. Sem isso, todos os eventos ficam vinculados a IDs anônimos do SDK. Implementado em `signup.tsx` e `login.tsx` para os três métodos (email, Google, Apple).
 
-| Evento | Onde dispara | Propriedades |
+**Eventos instrumentados:**
+
+| Evento | Arquivo | Propriedades |
 |---|---|---|
-| `onboarding_started` | `(onboarding)/_layout.tsx` — ao confirmar que usuário está no fluxo | `onboarding_version: '1.0'`, `total_steps: 23` |
-| `onboarding_step_completed` | Botão "Continuar" / navegação de cada tela | `step_number`, `step_name`, `step_total: 23` |
-| `onboarding_completed` | `paywall-detailed.tsx` — no mount | `$duration` calculado automaticamente pelo SDK |
-| `Screen Viewed` | Toda mudança de rota (automático via `useScreenTracking`) | `screen_name`, `pathname` |
+| `app_opened` | `app/_layout.tsx` — `AppShell` mount | — |
+| `Screen Viewed` | automático via `useScreenTracking` | `screen_name`, `pathname` |
+| `onboarding_started` | `(onboarding)/_layout.tsx` | `onboarding_version`, `total_steps: 23` |
+| `onboarding_step_viewed` | mount de cada tela do onboarding (steps 2–23) | `step_number`, `step_name`, `step_total: 23` |
+| `onboarding_step_completed` | botão "Continuar" de cada tela | `step_number`, `step_name`, `step_total: 23` |
+| `onboarding_completed` | `paywall-detailed.tsx` mount | `$duration` (calculado pelo SDK via `timeEvent`) |
+| `paywall_viewed` | `paywall-soft.tsx` e `paywall-detailed.tsx` mount | `screen: 'soft' \| 'detailed'` |
+| `plan_selected` | toque nos cards de plano em `paywall-detailed.tsx` | `plan: 'mensal' \| 'anual'` |
+| `purchase_initiated` | `lib/revenuecat.ts` antes do SDK de compra | `plan: 'mensal' \| 'anual'` |
+| `purchase_completed` | `lib/revenuecat.ts` após compra bem-sucedida | `plan: 'mensal' \| 'anual'` |
+| `purchase_failed` | `lib/revenuecat.ts` em erro de compra | `plan`, `error: string` |
+| `purchase_restored` | `lib/revenuecat.ts` após restore | — |
+| `user_logged_in` | `login.tsx` após qualquer login bem-sucedido | `method: 'email' \| 'google' \| 'apple'` |
+| `scan_completed` | `(scan)/loading.tsx` após `analyze-skin` | `skin_score: number`, `skin_type: string` |
+| `scan_failed` | `(scan)/loading.tsx` após esgotar 2 retries | `error: string` |
+| `protocol_generated` | `protocol-loading.tsx` após `generate-protocol` | — |
+| `protocol_failed` | `protocol-loading.tsx` em erro | `error: string` |
+| `food_scan_completed` | `(scan)/food-report.tsx` após `analyze-food` | `meal_score: number`, `meal_label: string` |
+| `food_scan_failed` | `(scan)/food-report.tsx` em erro | `error: string` |
 
 **`onboarding_completed` — efeitos colaterais (também em `paywall-detailed.tsx` mount):**
 ```typescript
@@ -619,7 +638,7 @@ const { track } = useMixpanel();
 onPress={() => track('onboarding_step_completed', { step_number: N, step_name: 'Nome', step_total: 23 })}
 ```
 
-> ⚠️ `useMixpanel()` só funciona em componentes descendentes do `<MixpanelProvider>` (toda a árvore do app, pois está na raiz). Nunca usar `mixpanel` diretamente do `mixpanelClient` fora do contexto React — usar sempre o hook.
+> ⚠️ `useMixpanel()` só funciona em componentes React descendentes do `<MixpanelProvider>`. Usar o hook por padrão. **Exceção:** `lib/revenuecat.ts` importa `mixpanel` diretamente do `mixpanelClient` porque não é um componente React — qualquer outra função utilitária fora do contexto React deve seguir o mesmo padrão.
 
 ---
 
@@ -804,11 +823,11 @@ niks-ai/
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://utpljvwmeyeqwrfulbfr.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+EXPO_PUBLIC_MIXPANEL_TOKEN=<configurado>
 
 # Ainda com placeholder:
 EXPO_PUBLIC_REVENUECAT_IOS_KEY=
 EXPO_PUBLIC_REVENUECAT_ANDROID_KEY=
-EXPO_PUBLIC_MIXPANEL_TOKEN=
 ```
 
 ---

@@ -1,11 +1,12 @@
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 import type { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
 import { Platform } from 'react-native';
+import { mixpanel } from './mixpanel/mixpanelClient';
 
 const IOS_KEY = 'appl_KEtOtPCtwkUlypWaXDQWmWsRfTW';
 
-export const PRODUCT_MENSAL = 'br.com.niksai.app.mensal';
-export const PRODUCT_ANUAL = 'br.com.niksai.app.anual';
+export const PRODUCT_MENSAL = 'br.com.niksai.app.mensal.notrial';
+export const PRODUCT_ANUAL = 'br.com.niksai.app.anual.notrial';
 export const ENTITLEMENT_ID = 'premium';
 
 export function initRevenueCat() {
@@ -39,12 +40,22 @@ export async function getPackages(): Promise<{
 }
 
 export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo> {
-  const { customerInfo } = await Purchases.purchasePackage(pkg);
-  return customerInfo;
+  const plan = pkg.product.identifier.includes('anual') ? 'anual' : 'mensal';
+  mixpanel.track('purchase_initiated', { plan });
+  try {
+    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    mixpanel.track('purchase_completed', { plan });
+    return customerInfo;
+  } catch (err: any) {
+    mixpanel.track('purchase_failed', { plan, error: err?.message ?? 'unknown' });
+    throw err;
+  }
 }
 
 export async function restorePurchases(): Promise<CustomerInfo> {
-  return await Purchases.restorePurchases();
+  const customerInfo = await Purchases.restorePurchases();
+  mixpanel.track('purchase_restored');
+  return customerInfo;
 }
 
 export async function getCustomerInfo(): Promise<CustomerInfo> {

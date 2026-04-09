@@ -50,6 +50,8 @@ export default function PaywallDetailed() {
   const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
+    track('paywall_viewed', { screen: 'detailed' });
+    track('onboarding_step_viewed', { step_number: 23, step_name: 'Paywall', step_total: 23 });
     track('onboarding_step_completed', { step_number: 23, step_name: 'Paywall', step_total: 23 });
     track('onboarding_completed');
     setUserProperties({ onboarding_completed: true, onboarding_completed_at: new Date().toISOString() });
@@ -181,7 +183,7 @@ export default function PaywallDetailed() {
             <View className="flex-row gap-3">
               {/* Monthly Plan */}
               <TouchableOpacity
-                onPress={() => setSelectedPlan('monthly')}
+                onPress={() => { setSelectedPlan('monthly'); track('plan_selected', { plan: 'mensal' }); }}
                 activeOpacity={0.85}
                 className="flex-1 p-4 rounded-[16px]"
                 style={{
@@ -229,7 +231,7 @@ export default function PaywallDetailed() {
                   </View>
                 )}
                 <TouchableOpacity
-                  onPress={() => setSelectedPlan('annual')}
+                  onPress={() => { setSelectedPlan('annual'); track('plan_selected', { plan: 'anual' }); }}
                   activeOpacity={0.85}
                   className="p-4 rounded-[16px]"
                   style={{

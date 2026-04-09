@@ -8,11 +8,17 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { SuperwallProvider } from 'expo-superwall';
 import Superwall from 'expo-superwall/compat';
-import { MixpanelProvider } from '../lib/mixpanel/MixpanelProvider';
+import { MixpanelProvider, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
 
 function AppShell({ children }: { children: React.ReactNode }) {
+  const { track } = useMixpanel();
   useScreenTracking();
+
+  useEffect(() => {
+    track('app_opened');
+  }, []);
+
   return <>{children}</>;
 }
 

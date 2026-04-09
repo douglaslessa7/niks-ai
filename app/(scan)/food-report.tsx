@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft, ArrowLeft, Sparkles, Info, AlertTriangle, CheckCircle, Zap } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 type FoodItem = {
   name: string;
@@ -43,6 +44,7 @@ const impactConfig = {
 export default function FoodReport() {
   const router = useRouter();
   const { foodImageBase64, foodImageMimeType, onboarding, selectedFoodResult, setSelectedFoodResult } = useAppStore();
+  const { track } = useMixpanel();
   const [result, setResult] = useState<FoodAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +115,7 @@ export default function FoodReport() {
 
       const data = await response.json();
       setResult(data);
+      track('food_scan_completed', { meal_score: data.meal_score, meal_label: data.meal_label });
 
       // Salvar na tabela food_scans para aparecer na home
       try {
@@ -156,6 +159,7 @@ export default function FoodReport() {
       }
     } catch (err: any) {
       console.error('Erro ao analisar refeição:', String(err));
+      track('food_scan_failed', { error: err?.message ?? 'unknown' });
       setError('Não foi possível analisar a refeição. Tente novamente.');
     } finally {
       apiDoneRef.current = true;

@@ -126,14 +126,31 @@ ${onboardingData ? `DADOS DO PERFIL:
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
 
-    const response = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-        generationConfig: { maxOutputTokens: 8192 },
-      }),
+    const callGeminiWithRetry = async (url: string, body: object): Promise<Response> => {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (res.status !== 503) return res
+        const errData = await res.clone().json().catch(() => ({}))
+        const errMsg = JSON.stringify(errData)
+        if (!errMsg.includes('UNAVAILABLE') && !errMsg.includes('high demand')) return res
+        if (attempt < 3) {
+          console.warn(`Gemini 503 (tentativa ${attempt}/3), aguardando 2s...`)
+          await new Promise(resolve => setTimeout(resolve, 2000))
+        } else {
+          throw new Error(`Gemini indisponível após 3 tentativas: ${errMsg}`)
+        }
+      }
+      throw new Error('Gemini: loop de retry encerrado inesperadamente')
+    }
+
+    const response = await callGeminiWithRetry(geminiUrl, {
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+      generationConfig: { maxOutputTokens: 8192 },
     })
 
     const data = await response.json()

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
@@ -17,6 +18,10 @@ export default function ScanPrep() {
   const router = useRouter();
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
   const { track } = useMixpanel();
+
+  useEffect(() => {
+    track('onboarding_step_viewed', { step_number: 13, step_name: 'Análise com IA', step_total: 23 });
+  }, []);
 
   return (
     <>
