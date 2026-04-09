@@ -30,9 +30,10 @@ export default function Sunscreen() {
         </View>
 
         <View className="gap-3 mb-8">
-          {sunscreenOptions.map((option) => (
+          {sunscreenOptions.map((option, index) => (
             <OptionCard
               key={option}
+              index={index}
               selected={selected === option}
               onPress={() => { setSelected(option); setOnboardingField('sunscreen', option); }}
             >

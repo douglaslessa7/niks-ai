@@ -1,5 +1,6 @@
 import { TouchableOpacity, Text } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Colors } from '../../constants/colors';
 
 interface CTAButtonProps {
   text: string;
@@ -25,9 +26,8 @@ export function CTAButton({ text, to, disabled = false, onPress }: CTAButtonProp
       onPress={handlePress}
       disabled={disabled}
       activeOpacity={0.85}
-      className={`w-full py-4 rounded-[14px] items-center justify-center ${
-        disabled ? 'bg-[#D1D5DB]' : 'bg-[#1A1A1A]'
-      }`}
+      style={{ backgroundColor: disabled ? Colors.disabled : Colors.scanBtn }}
+      className="w-full py-4 rounded-[14px] items-center justify-center"
     >
       <Text className="text-white text-[17px] font-semibold">{text}</Text>
     </TouchableOpacity>

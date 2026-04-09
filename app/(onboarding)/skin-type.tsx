@@ -33,9 +33,10 @@ export default function SkinType() {
         </View>
 
         <View className="gap-3 mb-8">
-          {skinTypes.map(({ label, subtitle }) => (
+          {skinTypes.map(({ label, subtitle }, index) => (
             <OptionCard
               key={label}
+              index={index}
               selected={selected === label}
               onPress={() => { setSelected(label); setOnboardingField('skin_type', label); }}
               subtitle={subtitle}

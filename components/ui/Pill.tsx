@@ -1,4 +1,5 @@
 import { TouchableOpacity, Text } from 'react-native';
+import { Colors } from '../../constants/colors';
 
 interface PillProps {
   selected: boolean;
@@ -11,14 +12,12 @@ export function Pill({ selected, onPress, children }: PillProps) {
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
-      className={`px-4 py-3 rounded-full items-center justify-center ${
-        selected ? 'bg-[#1A1A1A]' : 'bg-[#F5F5F7]'
-      }`}
+      style={{ backgroundColor: selected ? Colors.scanBtn : Colors.lightGray }}
+      className="px-4 py-3 rounded-full items-center justify-center"
     >
       <Text
-        className={`text-[15px] font-medium text-center ${
-          selected ? 'text-white' : 'text-[#1A1A1A]'
-        }`}
+        style={{ color: selected ? Colors.white : Colors.black }}
+        className="text-[15px] font-medium text-center"
       >
         {children}
       </Text>

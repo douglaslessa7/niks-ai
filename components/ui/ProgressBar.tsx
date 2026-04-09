@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { View, Animated } from 'react-native';
+import { Colors } from '../../constants/colors';
 
 interface ProgressBarProps {
   progress: number; // 0-100
@@ -22,10 +23,10 @@ export function ProgressBar({ progress }: ProgressBarProps) {
   });
 
   return (
-    <View className="relative w-full h-[2px] bg-[#E5E7EB]">
+    <View style={{ backgroundColor: Colors.lightGray }} className="relative w-full h-[2px]">
       <Animated.View
-        style={{ width: widthInterpolated }}
-        className="absolute top-0 left-0 h-[4px] bg-[#1A1A1A]"
+        style={{ width: widthInterpolated, backgroundColor: Colors.scanBtn }}
+        className="absolute top-0 left-0 h-[4px]"
       />
     </View>
   );

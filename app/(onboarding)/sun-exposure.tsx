@@ -33,9 +33,10 @@ export default function SunExposure() {
         </View>
 
         <View className="gap-3 mb-8">
-          {exposureOptions.map((option) => (
+          {exposureOptions.map((option, index) => (
             <OptionCard
               key={option}
+              index={index}
               selected={selected === option}
               onPress={() => { setSelected(option); setOnboardingField('sun_exposure', option); }}
             >

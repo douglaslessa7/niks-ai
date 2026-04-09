@@ -4,6 +4,7 @@ import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { Colors } from '../../constants/colors';
 
 const waterOptions = ['Menos de 1L', '1-2L', '2-3L', '3L+'];
 const sleepOptions = ['4-5', '6', '7', '8', '9+'];
@@ -13,9 +14,10 @@ function Chip({ selected, onPress, children }: { selected: boolean; onPress: () 
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
-      className={`px-5 py-2.5 rounded-full mr-2 ${selected ? 'bg-[#1A1A1A]' : 'bg-[#F5F5F7]'}`}
+      style={{ backgroundColor: selected ? Colors.scanBtn : Colors.lightGray }}
+      className="px-5 py-2.5 rounded-full mr-2"
     >
-      <Text className={`text-[15px] font-medium whitespace-nowrap ${selected ? 'text-white' : 'text-[#1A1A1A]'}`}>
+      <Text style={{ color: selected ? Colors.white : Colors.black }} className="text-[15px] font-medium">
         {children}
       </Text>
     </TouchableOpacity>
