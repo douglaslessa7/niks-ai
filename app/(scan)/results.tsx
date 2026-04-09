@@ -1,16 +1,18 @@
 import { useEffect } from 'react';
 import { View, Text, ScrollView, Image } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { Canvas, Circle as SkiaCircle, BlurMask } from '@shopify/react-native-skia';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { Lock } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useAppStore, SkinMetric } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
-import { Colors } from '../../constants/colors';
 
 const r = 70;
 const circ = 2 * Math.PI * r;
+
+const CANVAS_W = 160;
+const CANVAS_H = 60;
 
 const metricColors: Record<string, string> = {
   hydration: '#3B82F6',
@@ -32,53 +34,49 @@ const metricLabels: Record<string, string> = {
   skin_age: 'Idade da Pele',
 };
 
-const BlurredNumber = ({ value }: { value: number }) => (
-  <View style={{ position: 'relative' }}>
-    <Text style={{ fontSize: 28, fontWeight: '700', color: Colors.black }}>
-      {value}
-    </Text>
-    <BlurView
-      intensity={60}
-      tint="light"
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-    />
-  </View>
-);
-
-function MetricCard({ name, metric }: { name: string; metric: SkinMetric }) {
-  const color = metricColors[name] ?? Colors.gray;
-  const label = metricLabels[name] ?? name;
-
+function MetricCard({ name, metric: _metric }: { name: string; metric: SkinMetric }) {
+  const color = metricColors[name] ?? '#9CA3AF';
   return (
     <View
       style={{
         width: '47%',
         borderRadius: 16,
-        backgroundColor: Colors.white,
-        padding: 14,
-        minHeight: 110,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        padding: 16,
+        minHeight: 120,
+        overflow: 'hidden',
       }}
     >
-      <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.black, marginBottom: 8 }}>
-        {label}
+      {/* Título */}
+      <Text style={{ fontSize: 14, fontWeight: '600', color: 'white', marginBottom: 12 }}>
+        {metricLabels[name] ?? name}
       </Text>
 
-      <View style={{ marginBottom: 8 }}>
-        <BlurredNumber value={metric.score} />
-      </View>
+      {/* Score pill borrado — design original, bloqueado até assinar */}
+      <View
+        style={{
+          width: 50,
+          height: 24,
+          backgroundColor: 'rgba(255,255,255,0.38)',
+          borderRadius: 12,
+          marginBottom: 8,
+        }}
+      />
 
-      {/* Progress bar */}
-      <View style={{ height: 4, backgroundColor: Colors.lightGray, borderRadius: 2, overflow: 'hidden' }}>
-        <View
-          style={{
-            height: '100%',
-            width: `${Math.max(15, metric.score)}%`,
-            backgroundColor: color,
-            borderRadius: 2,
-            opacity: 0.3,
-          }}
-        />
-      </View>
+      {/* Skia glow blob */}
+      <Canvas
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: CANVAS_H,
+        }}
+      >
+        <SkiaCircle cx={CANVAS_W / 2} cy={CANVAS_H} r={40} color={color} opacity={0.55}>
+          <BlurMask blur={18} style="normal" />
+        </SkiaCircle>
+      </Canvas>
     </View>
   );
 }
@@ -95,24 +93,19 @@ export default function Results() {
   const score = scanResult?.skin_score ?? 0;
   const offset = circ * (1 - score / 100);
 
-  const getFakeMetricScore = (skinScore: number, metricOffset: number): number => {
-    const base = skinScore + metricOffset;
-    return Math.min(95, Math.max(20, base));
-  };
-
-  const dummy: SkinMetric = { score: 0, label: '', insight: '' };
-
+  // Sempre mostrar 6 cards borrados como preview — os valores são ocultos de qualquer forma
+  const dummy: SkinMetric = { score: 0, label: '', insight: '' }
   const metrics: [string, SkinMetric][] = [
-    ['acne',       scanResult?.acne ?? dummy],
-    ['skin_age',   { score: getFakeMetricScore(score, -7),  label: '', insight: '' }],
-    ['hydration',  { score: getFakeMetricScore(score, +12), label: '', insight: '' }],
-    ['oiliness',   { score: getFakeMetricScore(score, -3),  label: '', insight: '' }],
-    ['dark_spots', { score: getFakeMetricScore(score, +5),  label: '', insight: '' }],
-    ['texture',    { score: getFakeMetricScore(score, -15), label: '', insight: '' }],
+    ['acne',        scanResult?.acne ?? dummy],
+    ['skin_age',    { score: 0, label: String(scanResult?.skin_age ?? 0), insight: '' }],
+    ['hydration',   scanResult?.metrics?.hydration ?? dummy],
+    ['oiliness',    scanResult?.metrics?.oiliness  ?? dummy],
+    ['dark_spots',  scanResult?.metrics?.dark_spots ?? dummy],
+    ['texture',     scanResult?.metrics?.texture    ?? dummy],
   ];
 
   return (
-    <QuizLayout progress={76} showBack bgColor={Colors.cardBg}>
+    <QuizLayout progress={76} showBack>
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View className="pt-8">
           {/* Headline da IA */}
@@ -136,7 +129,7 @@ export default function Results() {
                 <Circle cx={80} cy={80} r={r} stroke="#E5E7EB" strokeWidth={6} fill="none" />
                 <Circle
                   cx={80} cy={80} r={r}
-                  stroke={Colors.scanBtn} strokeWidth={6} fill="none"
+                  stroke="#10B981" strokeWidth={6} fill="none"
                   strokeDasharray={circ} strokeDashoffset={offset}
                   strokeLinecap="round"
                 />
@@ -157,9 +150,9 @@ export default function Results() {
                 height: 128,
                 borderRadius: 64,
                 borderWidth: 4,
-                borderColor: Colors.scanBtn,
+                borderColor: '#10B981',
                 overflow: 'hidden',
-                backgroundColor: Colors.disabled,
+                backgroundColor: '#E5E7EB',
               }}
             >
               {scanImageUri ? (
@@ -169,38 +162,27 @@ export default function Results() {
                   resizeMode="cover"
                 />
               ) : (
-                <View style={{ flex: 1, backgroundColor: Colors.disabled }} />
+                <View style={{ flex: 1, backgroundColor: '#E5E7EB' }} />
               )}
             </View>
           </View>
 
-          {/* Metrics card */}
+          {/* Dark metrics card — métricas borradas */}
           <View
             style={{
-              backgroundColor: Colors.lightGray,
-              borderRadius: 16,
-              borderWidth: 0.5,
-              borderColor: 'rgba(0,0,0,0.08)',
-              paddingHorizontal: 16,
+              backgroundColor: '#1E1E2E',
+              borderRadius: 24,
+              paddingHorizontal: 24,
               paddingTop: 80,
-              paddingBottom: 16,
+              paddingBottom: 24,
               marginBottom: 16,
             }}
           >
-            <Text
-              style={{
-                fontSize: 17,
-                fontWeight: '700',
-                color: Colors.black,
-                marginBottom: 16,
-                textAlign: 'center',
-              }}
-            >
+            <Text className="text-[17px] font-bold text-white mb-4 text-center">
               Suas métricas detalhadas
             </Text>
 
-            {/* 2x3 grid — Acne visible, others blurred */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            <View className="flex-row flex-wrap gap-3">
               {metrics.map(([name, metric]) => (
                 <MetricCard key={name} name={name} metric={metric} />
               ))}
@@ -219,10 +201,10 @@ export default function Results() {
 
           <View className="pb-8">
             <CTAButton
-              text="Continuar"
-              to="/(onboarding)/goal"
-              onPress={() => track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 })}
-            />
+                text="Continuar"
+                to="/(onboarding)/goal"
+                onPress={() => track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 })}
+              />
           </View>
         </View>
       </ScrollView>
