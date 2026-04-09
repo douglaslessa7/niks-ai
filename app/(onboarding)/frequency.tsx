@@ -48,9 +48,10 @@ export default function Frequency() {
         </View>
 
         <View className="gap-3 mb-8">
-          {frequencies.map((option) => (
+          {frequencies.map((option, index) => (
             <OptionCard
               key={option.range}
+              index={index}
               selected={selected === option.range}
               onPress={() => { setSelected(option.range); setOnboardingField('frequency', option.range); }}
               icon={<DotsIcon count={option.dots} selected={selected === option.range} />}

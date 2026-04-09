@@ -32,11 +32,12 @@ export default function Gender() {
         </View>
 
         <View className="gap-3 mb-8">
-          {genders.map((gender) => (
+          {genders.map((gender, index) => (
             <OptionCard
               key={gender}
+              index={index}
               selected={selected === gender}
-              onPress={() => handleSelect(gender)} // 👈 trocar
+              onPress={() => handleSelect(gender)}
             >
               {gender}
             </OptionCard>

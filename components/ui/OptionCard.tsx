@@ -1,5 +1,13 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { TouchableOpacity, View, Text } from 'react-native';
+import { Colors } from '../../constants/colors';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  withSpring,
+} from 'react-native-reanimated';
 
 interface OptionCardProps {
   selected: boolean;
@@ -7,38 +15,63 @@ interface OptionCardProps {
   children: ReactNode;
   icon?: ReactNode;
   subtitle?: string;
+  index?: number;
 }
 
-export function OptionCard({ selected, onPress, children, icon, subtitle }: OptionCardProps) {
+export function OptionCard({ selected, onPress, children, icon, subtitle, index = 0 }: OptionCardProps) {
+  const translateY = useSharedValue(35);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    translateY.value = 35;
+    opacity.value = 0;
+
+    // Slide up with spring — slight overshoot for premium "landing" feel
+    translateY.value = withDelay(
+      index * 130,
+      withSpring(0, { mass: 0.8, damping: 14, stiffness: 120 })
+    );
+
+    // Fade in with timing — decoupled from spring for clean opacity
+    opacity.value = withDelay(
+      index * 130,
+      withTiming(1, { duration: 400 })
+    );
+  }, []);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
+  }));
+
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      className={`w-full px-5 py-4 rounded-[14px] ${
-        selected ? 'bg-[#1A1A1A]' : 'bg-[#F5F5F7]'
-      }`}
-    >
-      <View className="flex-row items-center gap-3">
-        {icon && <View className="shrink-0">{icon}</View>}
-        <View className="flex-1">
-          <Text
-            className={`text-[17px] font-semibold ${
-              selected ? 'text-white' : 'text-[#1A1A1A]'
-            }`}
-          >
-            {children}
-          </Text>
-          {subtitle && (
+    <Animated.View style={animStyle}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        style={{ backgroundColor: selected ? Colors.scanBtn : Colors.lightGray }}
+        className="w-full px-5 py-4 rounded-[14px]"
+      >
+        <View className="flex-row items-center gap-3">
+          {icon && <View className="shrink-0">{icon}</View>}
+          <View className="flex-1">
             <Text
-              className={`text-[13px] mt-0.5 ${
-                selected ? 'text-white/70' : 'text-[#717182]'
-              }`}
+              style={{ color: selected ? Colors.white : Colors.black }}
+              className="text-[17px] font-semibold"
             >
-              {subtitle}
+              {children}
             </Text>
-          )}
+            {subtitle && (
+              <Text
+                style={{ color: selected ? 'rgba(255,255,255,0.7)' : Colors.muted }}
+                className="text-[13px] mt-0.5"
+              >
+                {subtitle}
+              </Text>
+            )}
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
