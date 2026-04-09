@@ -422,30 +422,23 @@ camera.tsx → setSkinImage(base64, uri) → navega → loading.tsx lê do store
 |---|---|---|
 | `analyze-skin` | `fetch` direto | payload contém imageBase64 grande |
 | `analyze-food` | `fetch` direto | payload contém imageBase64 grande |
-| `generate-protocol` | `supabase.functions.invoke` ✅ | funciona após deploy com `--no-verify-jwt` |
+| `generate-protocol` | `fetch` direto + anon key hardcoded | `supabase.functions.invoke` causa 401 pós-signup (sessão não está pronta no cliente) |
 
-**NUNCA usar `supabase.functions.invoke` para `analyze-skin` e `analyze-food`** — trunca o base64 da imagem. Para `generate-protocol`, o `supabase.functions.invoke` é preferido pois gerencia o JWT automaticamente.
+**NUNCA usar `supabase.functions.invoke` para nenhuma das três funções acima.** Para `analyze-skin` e `analyze-food`, trunca o base64. Para `generate-protocol`, o invoke tenta pegar o token da sessão ativa mas ela ainda não está estabelecida logo após o signup — o API gateway da Supabase rejeita com 401 "Invalid JWT" antes de chegar na função. A função foi deployada com `--no-verify-jwt`, então o anon key é suficiente.
 
-Exemplo para funções com imagem (`fetch` direto):
+Exemplo para `generate-protocol` (`fetch` direto com anon key):
 ```typescript
 const response = await fetch(
-  'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/analyze-food',
+  'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/generate-protocol',
   {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+      'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
     },
-    body: JSON.stringify({ imageBase64, mimeType, skinProfile }),
+    body: JSON.stringify({ scanResult, onboardingData }),
   }
-)
-```
-
-Exemplo para `generate-protocol` (`supabase.functions.invoke`):
-```typescript
-const { data, error } = await supabase.functions.invoke('generate-protocol', {
-  body: { baseProtocol, scanResult, onboardingData },
-});
+);
 ```
 
 ### 3. Simulador iOS
@@ -458,7 +451,7 @@ Redimensionada para 512px + compress 0.5 via `expo-image-manipulator` antes de s
 Os scores de hidratação, oleosidade etc. são **intencionalmente** ocultados — só desbloqueados para assinantes (integração RevenueCat pendente).
 
 ### 6. Geração e cache do protocolo personalizado
-O protocolo é gerado **uma única vez** na tela `protocol-loading` (logo após o signup) usando um **template base** de `constants/protocols.ts` que a IA ajusta conforme o scan. Salvo em dois lugares:
+O protocolo é gerado **uma única vez** na tela `protocol-loading` (logo após o signup). A função `generate-protocol` recebe `scanResult` e `onboardingData` — não recebe mais `baseProtocol` (a função determina o template base internamente com base em `skin_type_detected`). Salvo em dois lugares:
 1. **Zustand store** (`protocolResult`) — para acesso imediato sem nova chamada à API
 2. **Supabase `protocolos`** — para persistência entre sessões
 
@@ -466,6 +459,8 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 1. Store cache (se ainda estiver na sessão)
 2. Supabase (busca o registro mais recente por `user_id`)
 3. Fallback: chama `generate-protocol` novamente via `fetch` direto (com JWT manual) — envia `baseProtocol` derivado de `constants/protocols.ts` + `scanResult` + `onboardingData`
+
+**Fallback de `scanResult` em `protocol-loading.tsx`:** se `scanResult` estiver null no store ao montar (pode ocorrer em edge cases pós-signup), a tela busca automaticamente o scan mais recente do usuário em `skin_scans` via Supabase (`.order('created_at', { ascending: false }).limit(1)`) e popula o store antes de gerar o protocolo. Só aborta se o Supabase também não retornar nada.
 
 **Retry automático em `protocol-loading.tsx`:** a chamada ao `generate-protocol` tenta até **3 vezes** com delay de 3s entre tentativas, mas **somente** para erros HTTP 503 ou mensagens `UNAVAILABLE`/`high demand` (sobrecarga do Gemini). Para outros erros, falha imediatamente. Durante a espera, o status text muda para "Estamos finalizando sua análise, aguarde um momento...". Outros tipos de erro não fazem retry — falham na primeira tentativa.
 
@@ -688,7 +683,7 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 - `app/(onboarding)/protocol-loading.tsx` ✅ — gera protocolo + salva em `protocolos`
 - `(app)/protocolo.tsx` ✅ — carrega do cache/Supabase antes de regenerar
 - Push Notifications ✅ — `lib/notifications.ts` + `notifications.tsx` + Edge Function `send-notifications` + 3 jobs `pg_cron`
-- RevenueCat ✅ — `lib/revenuecat.ts` + `hooks/useSubscription.ts`; entitlement `premium`; produtos `br.com.niksai.app.mensal` e `br.com.niksai.app.anual`; offering `default` configurado no Dashboard
+- RevenueCat ✅ — `lib/revenuecat.ts` + `hooks/useSubscription.ts`; entitlement `premium`; produtos `br.com.niksai.app.mensal.notrial` e `br.com.niksai.app.anual.notrial`; offering `default` configurado no Dashboard
 
 **⚠️ GOTCHA — In-App Purchase Capability:** Sem a capability ativada no Xcode, `getOfferings()` falha silenciosamente em builds de produção (`.catch` engole o erro → `pkg = null` → alerta "Produto não disponível"). No simulador não acontece. **Localização:** Xcode → Target NIKSAI → Signing & Capabilities → `+ Capability` → In-App Purchase
 
