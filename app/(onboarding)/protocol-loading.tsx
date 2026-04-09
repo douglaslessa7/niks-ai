@@ -6,8 +6,7 @@ import { usePlacement } from 'expo-superwall';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
-import { useAppStore, ProtocolResult } from '../../store/onboarding';
-import { BASE_PROTOCOLS } from '../../constants/protocols';
+import { useAppStore, ProtocolResult, ScanResult } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 
@@ -23,7 +22,7 @@ const TOTAL_DURATION = 5500;
 export default function ProtocolLoading() {
   const router = useRouter();
   const { registerPlacement } = usePlacement();
-  const { scanResult, onboarding, skinScanId, setProtocolResult } = useAppStore();
+  const { scanResult, onboarding, skinScanId, setProtocolResult, setScanResult } = useAppStore();
   const { track } = useMixpanel();
 
   const [percentage, setPercentage] = useState(0);
@@ -110,42 +109,71 @@ export default function ProtocolLoading() {
 
   const generateAndSaveProtocol = async () => {
     try {
-      if (!scanResult) return;
+      let effectiveScanResult = scanResult;
 
-      const skinType = scanResult.skin_type_detected ?? 'normal'
-      const baseProtocol = BASE_PROTOCOLS[skinType] ?? BASE_PROTOCOLS['normal']
+      if (!effectiveScanResult) {
+        console.warn('[protocol-loading] scanResult null no store — buscando do Supabase');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) {
+          const { data: latestScan } = await supabase
+            .from('skin_scans')
+            .select('full_result')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          if (latestScan?.full_result) {
+            effectiveScanResult = latestScan.full_result as ScanResult;
+            setScanResult(latestScan.full_result as ScanResult, null);
+            console.log('[protocol-loading] scanResult recuperado do Supabase');
+          }
+        }
+        if (!effectiveScanResult) {
+          console.error('[protocol-loading] scanResult indisponível — abortando');
+          return;
+        }
+      }
 
       let data: any = null;
       let lastError: any = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        const { data: invokeData, error: invokeError } = await supabase.functions.invoke('generate-protocol', {
-          body: { baseProtocol, scanResult, onboardingData: onboarding },
-        });
+        try {
+          const response = await fetch(
+            'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/generate-protocol',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
+              },
+              body: JSON.stringify({ scanResult: effectiveScanResult, onboardingData: onboarding }),
+            }
+          );
 
-        if (!invokeError) {
-          data = invokeData;
+          if (!response.ok) {
+            const errorBody = await response.text();
+            const is503 = response.status === 503 || errorBody.includes('UNAVAILABLE') || errorBody.includes('high demand');
+            if (is503 && attempt < 3) {
+              console.warn(`generate-protocol 503 (tentativa ${attempt}/3), aguardando 3s...`);
+              setStatusText('Estamos finalizando sua análise, aguarde um momento...');
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              continue;
+            }
+            lastError = new Error(`generate-protocol error: ${response.status} ${errorBody}`);
+            break;
+          }
+
+          data = await response.json();
           lastError = null;
           break;
+        } catch (fetchErr: any) {
+          lastError = fetchErr;
+          break;
         }
-
-        const status = (invokeError as any).context?.status;
-        const errMsg = invokeError.message ?? '';
-        const is503 = status === 503 || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand');
-
-        if (is503 && attempt < 3) {
-          console.warn(`generate-protocol 503 (tentativa ${attempt}/3), aguardando 3s...`);
-          setStatusText('Estamos finalizando sua análise, aguarde um momento...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          continue;
-        }
-
-        lastError = invokeError;
-        break;
       }
 
       if (lastError) {
-        const body = await (lastError as any).context?.json?.().catch(() => null);
-        console.error('generate-protocol error:', lastError.message, body ? JSON.stringify(body) : '');
+        console.error('generate-protocol error:', lastError.message);
         track('protocol_failed', { error: lastError.message ?? 'unknown' });
         return;
       }

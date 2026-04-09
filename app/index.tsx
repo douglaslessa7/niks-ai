@@ -18,6 +18,11 @@ export default function Welcome() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'INITIAL_SESSION') {
         if (session) {
+          if (__DEV__) {
+            router.replace('/(app)/home');
+            return;
+          }
+
           try {
             const info = await getCustomerInfo();
             if (isSubscribed(info)) {

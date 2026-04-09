@@ -103,6 +103,11 @@ export default function AppLayout() {
         return;
       }
 
+      if (__DEV__) {
+        setReady(true);
+        return;
+      }
+
       const timer = setTimeout(() => {
         setReady(true);
         registerPlacement({ placement: 'paywall_onboarding' });
