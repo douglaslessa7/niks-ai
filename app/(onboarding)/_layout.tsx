@@ -12,6 +12,11 @@ export default function OnboardingLayout() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (__DEV__) {
+        setIsInOnboarding(true);
+        return;
+      }
+
       if (session) {
         try {
           const info = await getCustomerInfo();

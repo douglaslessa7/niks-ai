@@ -327,6 +327,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - `safetySettings` com `BLOCK_NONE` em todas as categorias — obrigatório em **todas as funções de análise de imagem** (`analyze-skin` e `analyze-food`), senão o Gemini bloqueia a requisição e não retorna `candidates`, causando crash
 - JSON parsing: tenta extrair bloco ` ```json ``` ` primeiro, depois fallback para `\{[\s\S]*\}` — Gemini pode retornar markdown em vez de JSON puro
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
+- **Retry interno de Gemini 503 em `analyze-food`:** o Gemini 2.5 Pro retorna 503 `UNAVAILABLE` com frequência sob alta demanda. A Edge Function `analyze-food` tem loop de **3 tentativas** com **3s de espera** entre elas antes de retornar erro ao app — não remover esse loop.
 - `generate-protocol` tem os protocolos base (`BASE_PROTOCOLS` para os 4 tipos de pele) embutidos diretamente na Edge Function — `baseProtocol` no body é opcional; se omitido, a função seleciona o protocolo correto pelo `skin_type_detected`. A IA ajusta o protocolo, não cria do zero
 
 ### Push Notifications (`pg_cron`)
@@ -421,10 +422,10 @@ camera.tsx → setSkinImage(base64, uri) → navega → loading.tsx lê do store
 | Função | Método | Motivo |
 |---|---|---|
 | `analyze-skin` | `fetch` direto | payload contém imageBase64 grande |
-| `analyze-food` | `fetch` direto | payload contém imageBase64 grande |
+| `analyze-food` | `fetch` direto + anon key hardcoded | payload contém imageBase64 grande; `getSession()` pode retornar `undefined` → `"Bearer undefined"` → 401 instantâneo |
 | `generate-protocol` | `fetch` direto + anon key hardcoded | `supabase.functions.invoke` causa 401 pós-signup (sessão não está pronta no cliente) |
 
-**NUNCA usar `supabase.functions.invoke` para nenhuma das três funções acima.** Para `analyze-skin` e `analyze-food`, trunca o base64. Para `generate-protocol`, o invoke tenta pegar o token da sessão ativa mas ela ainda não está estabelecida logo após o signup — o API gateway da Supabase rejeita com 401 "Invalid JWT" antes de chegar na função. A função foi deployada com `--no-verify-jwt`, então o anon key é suficiente.
+**NUNCA usar `supabase.functions.invoke` para nenhuma das três funções acima.** Para `analyze-skin` e `analyze-food`, trunca o base64. Para `analyze-food` e `generate-protocol`, usar `getSession()` para obter o token é frágil — se a sessão não estiver pronta, o header fica `"Bearer undefined"` e o API gateway rejeita com 401 imediatamente. As funções foram deployadas com `--no-verify-jwt`, então o anon key hardcoded é suficiente e elimina essa classe de erro.
 
 Exemplo para `generate-protocol` (`fetch` direto com anon key):
 ```typescript

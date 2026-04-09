@@ -70,29 +70,42 @@ REGRAS FINAIS:
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
 
-    const response = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [{
-          role: 'user',
-          parts: [
-            { inlineData: { mimeType: mimeType ?? 'image/jpeg', data: imageBase64 } },
-            { text: userMessage },
-          ],
-        }],
-        generationConfig: { maxOutputTokens: 4096 },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    const geminiBody = JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: mimeType ?? 'image/jpeg', data: imageBase64 } },
+          { text: userMessage },
         ],
-      }),
+      }],
+      generationConfig: { maxOutputTokens: 4096 },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      ],
     })
 
-    const data = await response.json()
+    let data: any = null
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const response = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: geminiBody,
+      })
+      data = await response.json()
+
+      const is503 = data?.error?.code === 503 || data?.error?.status === 'UNAVAILABLE'
+      if (!data.candidates && is503 && attempt < 3) {
+        console.warn(`Gemini 503 (tentativa ${attempt}/3), aguardando 3s...`)
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        continue
+      }
+      break
+    }
+
     if (!data.candidates || data.candidates.length === 0) {
       console.error('Gemini sem candidates:', JSON.stringify(data))
       throw new Error('Gemini bloqueou a resposta: ' + JSON.stringify(data?.promptFeedback ?? data?.error ?? 'resposta vazia'))

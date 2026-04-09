@@ -112,18 +112,22 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
   }, [isOpen]);
 
   const handleScanFood = () => {
-    requestConsent(() => {
-      onClose();
-      router.push('/(scan)/food-scan-intro' as any);
-    });
+    onClose();
+    setTimeout(() => {
+      requestConsent(() => {
+        router.push('/(scan)/food-scan-intro' as any);
+      });
+    }, 200); // aguarda animação de fechamento (180ms) antes de exibir outro Modal
   };
 
   const handleScanFace = () => {
     if (cooldownMsg) return; // Bloqueado — não navega
-    requestConsent(() => {
-      onClose();
-      router.push('/(scan)/scan-prep' as any);
-    });
+    onClose();
+    setTimeout(() => {
+      requestConsent(() => {
+        router.push('/(scan)/scan-prep' as any);
+      });
+    }, 200);
   };
 
   const faceDisponivel = !cooldownMsg;

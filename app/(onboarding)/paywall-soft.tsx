@@ -44,6 +44,11 @@ export default function PaywallSoft() {
   });
 
   useEffect(() => {
+    if (__DEV__) {
+      navigateToApp();
+      return;
+    }
+
     if (hasRegistered.current) return;
     hasRegistered.current = true;
 

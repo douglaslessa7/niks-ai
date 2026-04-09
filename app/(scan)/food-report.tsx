@@ -89,31 +89,58 @@ export default function FoodReport() {
       console.log('foodImageBase64 size KB:', Math.round(((foodImageBase64?.length ?? 0) * 0.75) / 1024));
       console.log('foodImageMimeType:', foodImageMimeType);
 
-      const response = await fetch(
-        'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/analyze-food',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          },
-          body: JSON.stringify({
-            imageBase64: foodImageBase64,
-            mimeType: foodImageMimeType ?? 'image/jpeg',
-            skinProfile: {
-              skin_type: onboarding.skin_type,
-              concerns: onboarding.concerns,
-            },
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errBody = await response.json();
-        throw new Error(JSON.stringify(errBody));
+      if (!foodImageBase64) {
+        console.error('[food-report] foodImageBase64 está null — abortando análise');
+        setError('Imagem não disponível. Tente tirar a foto novamente.');
+        return;
       }
 
-      const data = await response.json();
+      let data: any = null;
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const response = await fetch(
+            'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/analyze-food',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
+              },
+              body: JSON.stringify({
+                imageBase64: foodImageBase64,
+                mimeType: foodImageMimeType ?? 'image/jpeg',
+                skinProfile: {
+                  skin_type: onboarding.skin_type,
+                  concerns: onboarding.concerns,
+                },
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            const errBody = await response.text();
+            throw new Error(`analyze-food error: ${response.status} ${errBody}`);
+          }
+
+          data = await response.json();
+          lastError = null;
+          break;
+        } catch (fetchErr: any) {
+          lastError = fetchErr;
+          if (attempt < 3) {
+            console.warn(`[food-report] Tentativa ${attempt}/3 falhou, aguardando 2s...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+      }
+
+      if (lastError) {
+        console.error('[food-report] Erro após 3 tentativas:', lastError.message);
+        throw lastError;
+      }
+
       setResult(data);
       track('food_scan_completed', { meal_score: data.meal_score, meal_label: data.meal_label });
 
