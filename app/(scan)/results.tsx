@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { View, Text, ScrollView, Image } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Canvas, Circle as SkiaCircle, BlurMask } from '@shopify/react-native-skia';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
@@ -7,12 +8,10 @@ import { Lock } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useAppStore, SkinMetric } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { Colors } from '../../constants/colors';
 
 const r = 70;
 const circ = 2 * Math.PI * r;
-
-const CANVAS_W = 160;
-const CANVAS_H = 60;
 
 const metricColors: Record<string, string> = {
   hydration: '#3B82F6',
@@ -34,49 +33,51 @@ const metricLabels: Record<string, string> = {
   skin_age: 'Idade da Pele',
 };
 
-function MetricCard({ name, metric: _metric }: { name: string; metric: SkinMetric }) {
-  const color = metricColors[name] ?? '#9CA3AF';
+function MetricCard({ name, metric }: { name: string; metric: SkinMetric }) {
+  const color = metricColors[name] ?? Colors.gray;
+  const label = metricLabels[name] ?? name;
+
   return (
-    <View
-      style={{
-        width: '47%',
-        borderRadius: 16,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        padding: 16,
-        minHeight: 120,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Título */}
-      <Text style={{ fontSize: 14, fontWeight: '600', color: 'white', marginBottom: 12 }}>
-        {metricLabels[name] ?? name}
+    <View style={{
+      width: '47%',
+      borderRadius: 16,
+      backgroundColor: Colors.white,
+      padding: 14,
+      minHeight: 110,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
+      elevation: 2,
+      justifyContent: 'space-between',
+      overflow: 'hidden',
+    }}>
+      {/* Skia glow blob — fica atrás de tudo */}
+      <Canvas style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 60 }}>
+        <SkiaCircle cx={60} cy={60} r={40} color={color} opacity={0.35}>
+          <BlurMask blur={18} style="normal" />
+        </SkiaCircle>
+      </Canvas>
+
+      {/* Ícone de cadeado no canto superior direito */}
+      <View style={{ position: 'absolute', top: 10, right: 10 }}>
+        <Lock size={12} color={Colors.gray} />
+      </View>
+
+      <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.black, marginBottom: 8 }}>
+        {label}
       </Text>
 
-      {/* Score pill borrado — design original, bloqueado até assinar */}
+      {/* Pill coral cobrindo o número */}
       <View
         style={{
           width: 50,
           height: 24,
-          backgroundColor: 'rgba(255,255,255,0.38)',
+          backgroundColor: 'rgba(0,0,0,0.12)',
           borderRadius: 12,
           marginBottom: 8,
         }}
       />
-
-      {/* Skia glow blob */}
-      <Canvas
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: CANVAS_H,
-        }}
-      >
-        <SkiaCircle cx={CANVAS_W / 2} cy={CANVAS_H} r={40} color={color} opacity={0.55}>
-          <BlurMask blur={18} style="normal" />
-        </SkiaCircle>
-      </Canvas>
     </View>
   );
 }
@@ -110,14 +111,20 @@ export default function Results() {
         <View className="pt-8">
           {/* Headline da IA */}
           {scanResult?.headline && (
-            <Text className="text-[15px] text-[#9CA3AF] text-center mb-2">
+            <Text style={{
+              fontSize: 14,
+              color: Colors.gray,
+              textAlign: 'center',
+              marginBottom: 8,
+              paddingHorizontal: 16,
+            }}>
               {scanResult.headline}
             </Text>
           )}
 
           {/* Título */}
-          <View className="mb-6 items-center">
-            <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight">
+          <View style={{ flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+            <Text style={{ fontSize: 32, fontWeight: '800', color: Colors.black }}>
               Seu Skin Score
             </Text>
           </View>
@@ -129,7 +136,7 @@ export default function Results() {
                 <Circle cx={80} cy={80} r={r} stroke="#E5E7EB" strokeWidth={6} fill="none" />
                 <Circle
                   cx={80} cy={80} r={r}
-                  stroke="#10B981" strokeWidth={6} fill="none"
+                  stroke={Colors.scanBtn} strokeWidth={6} fill="none"
                   strokeDasharray={circ} strokeDashoffset={offset}
                   strokeLinecap="round"
                 />
@@ -150,7 +157,7 @@ export default function Results() {
                 height: 128,
                 borderRadius: 64,
                 borderWidth: 4,
-                borderColor: '#10B981',
+                borderColor: Colors.scanBtn,
                 overflow: 'hidden',
                 backgroundColor: '#E5E7EB',
               }}
@@ -167,18 +174,20 @@ export default function Results() {
             </View>
           </View>
 
-          {/* Dark metrics card — métricas borradas */}
+          {/* Light metrics card — métricas borradas */}
           <View
             style={{
-              backgroundColor: '#1E1E2E',
-              borderRadius: 24,
+              backgroundColor: Colors.white,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: 'rgba(0,0,0,0.18)',
               paddingHorizontal: 24,
               paddingTop: 80,
               paddingBottom: 24,
               marginBottom: 16,
             }}
           >
-            <Text className="text-[17px] font-bold text-white mb-4 text-center">
+            <Text style={{ fontSize: 17, fontWeight: '700', color: Colors.black, marginBottom: 16, textAlign: 'center' }}>
               Suas métricas detalhadas
             </Text>
 
@@ -190,12 +199,24 @@ export default function Results() {
           </View>
 
           {/* Locked cards */}
-          <View className="gap-3 mb-8">
-            <View className="bg-niks-light rounded-card h-24 flex-row items-center justify-center gap-2 overflow-hidden">
-              <Lock size={16} color="#1A1A1A" />
-              <Text className="text-[15px] font-semibold text-niks-black">
-                Seu Protocolo Personalizado
-              </Text>
+          <View style={{ marginBottom: 8 }}>
+            <View style={{
+              backgroundColor: '#FB7B6B',
+              borderRadius: 16,
+              paddingVertical: 20,
+              paddingHorizontal: 24,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              marginBottom: 8,
+            }}>
+              <Lock size={22} color="white" />
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: 'white' }}>
+                  Seu Protocolo Personalizado
+                </Text>
+              </View>
             </View>
           </View>
 

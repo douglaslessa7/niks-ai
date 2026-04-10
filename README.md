@@ -160,7 +160,7 @@ file://figma/make/source/gZ5sSJErlJ3lcBTaqzwgjN/src/app/components/home.tsx   �
 ## ADICIONAR/ATUALIZAR GITHUB
 
   1. git add .  
-  2. git commit -m "fix: confirmação de e-mail, crash analyze-skin e erros de TypeScript. Implementa fluxo completo de confirmação de e-mail (tela de espera + reenvio + deep link handler PKCE/token-based) e corrige crash em produção na analyze-skin adicionando safetySettings BLOCK_NONE e guard para candidates undefined. Corrige erros de TypeScript pré-existentes em useSubscription, notifications e tsconfig, e adiciona retry silencioso de até 2x no fluxo de scan antes de exibir erro ao usuário."
+  2. git commit -m "alterações design do onboarding"
   3. git push
 
 ---

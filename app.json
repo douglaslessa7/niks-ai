@@ -83,7 +83,8 @@
         }
       ],
       "expo-apple-authentication",
-      "expo-audio"
+      "expo-audio",
+      "expo-video"
     ],
     "scheme": "niks-ai",
     "extra": {
