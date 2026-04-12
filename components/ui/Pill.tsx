@@ -1,4 +1,5 @@
 import { TouchableOpacity, Text } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../constants/colors';
 
 interface PillProps {
@@ -10,7 +11,10 @@ interface PillProps {
 export function Pill({ selected, onPress, children }: PillProps) {
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={async () => {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
       activeOpacity={0.8}
       style={{ backgroundColor: selected ? Colors.scanBtn : Colors.lightGray }}
       className="px-4 py-3 rounded-full items-center justify-center"

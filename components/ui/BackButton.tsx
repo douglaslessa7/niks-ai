@@ -1,6 +1,7 @@
 import { TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../constants/colors';
 
 export function BackButton() {
@@ -8,7 +9,10 @@ export function BackButton() {
 
   return (
     <TouchableOpacity
-      onPress={() => router.back()}
+      onPress={async () => {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        router.back();
+      }}
       activeOpacity={0.7}
       style={{ backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border }}
       className="w-10 h-10 rounded-full items-center justify-center"

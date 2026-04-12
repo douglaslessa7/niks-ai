@@ -1,5 +1,6 @@
 import { ReactNode, useEffect } from 'react';
 import { TouchableOpacity, View, Text } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../constants/colors';
 import Animated, {
   useSharedValue,
@@ -47,7 +48,10 @@ export function OptionCard({ selected, onPress, children, icon, subtitle, index 
   return (
     <Animated.View style={animStyle}>
       <TouchableOpacity
-        onPress={onPress}
+        onPress={async () => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPress();
+        }}
         activeOpacity={0.8}
         style={{ backgroundColor: selected ? Colors.scanBtn : Colors.lightGray }}
         className="w-full px-5 py-4 rounded-[14px]"

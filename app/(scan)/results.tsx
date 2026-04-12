@@ -201,7 +201,7 @@ export default function Results() {
           {/* Locked cards */}
           <View style={{ marginBottom: 8 }}>
             <View style={{
-              backgroundColor: '#FB7B6B',
+              backgroundColor: Colors.cardBg,
               borderRadius: 16,
               paddingVertical: 20,
               paddingHorizontal: 24,
@@ -211,12 +211,10 @@ export default function Results() {
               gap: 12,
               marginBottom: 8,
             }}>
-              <Lock size={22} color="white" />
-              <View>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: 'white' }}>
-                  Seu Protocolo Personalizado
-                </Text>
-              </View>
+              <Lock size={22} color={Colors.muted} />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.muted }}>
+                Seu Protocolo Personalizado
+              </Text>
             </View>
           </View>
 

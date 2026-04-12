@@ -1,21 +1,38 @@
-import { useEffect } from 'react';
-import { View, Text } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { View, Text, ScrollView } from 'react-native';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
-import { Check, Camera, Utensils, Sun, TrendingUp } from 'lucide-react-native';
-import Svg, { Circle } from 'react-native-svg';
+import { CheckCircle, Calendar } from 'lucide-react-native';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { Colors } from '../../constants/colors';
 
-const features = [
-  { Icon: Camera, text: 'Use seu Skin Score para acompanhar a evolução' },
-  { Icon: Utensils, text: 'Escaneie suas refeições e veja o impacto na pele' },
-  { Icon: Sun, text: 'Siga seu protocolo matinal e noturno' },
-  { Icon: TrendingUp, text: 'Acompanhe seu progresso semana a semana' },
+const HOW_TO_ITEMS = [
+  { emoji: '📷', text: 'Use seu Skin Score para acompanhar a evolução' },
+  { emoji: '🍽️', text: 'Escaneie suas refeições e veja o impacto na pele' },
+  { emoji: '☀️', text: 'Siga seu protocolo matinal e noturno' },
+  { emoji: '📈', text: 'Acompanhe seu progresso semana a semana' },
 ];
 
-const r = 28;
-const circ = 2 * Math.PI * r;
+const TIMELINE = [
+  { week: 'Semana 1', color: Colors.scanBtn, text: 'Primeiros ajustes visíveis na oleosidade e textura' },
+  { week: 'Semana 4', color: Colors.scanBtn, text: 'Redução perceptível de acne e manchas' },
+  { week: 'Semana 8', color: '#4CAF50',      text: 'Pele transformada — score acima de 90' },
+];
+
+const CARD_WHITE = {
+  backgroundColor: Colors.white,
+  borderRadius: 16,
+  padding: 16,
+  marginBottom: 12,
+} as const;
+
+const CARD_CREAM = {
+  backgroundColor: Colors.cardBg,
+  borderRadius: 16,
+  padding: 16,
+  marginBottom: 12,
+} as const;
 
 export default function PlanPreview() {
   const scanResult = useAppStore((s) => s.scanResult);
@@ -25,73 +42,131 @@ export default function PlanPreview() {
     track('onboarding_step_viewed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 });
   }, []);
 
-  const score = scanResult?.skin_score ?? 0;
-  const offset = circ * (1 - score / 100);
+  const scoreProjetado = useMemo(() => {
+    const base = Math.floor(Math.random() * 6) + 90;
+    return Math.min(Math.max(base, (scanResult?.skin_score ?? 60) + 20), 95);
+  }, []);
+
+  const currentScore = scanResult?.skin_score ?? 0;
 
   return (
     <QuizLayout progress={92}>
-      <View className="pt-8 flex-1">
-        {/* Success Header */}
-        <View className="flex-row items-center gap-3 mb-8">
-          <View className="w-8 h-8 rounded-full bg-[#1A1A1A] items-center justify-center">
-            <Check size={18} color="#FFFFFF" strokeWidth={2.5} />
-          </View>
-          <Text className="text-[26px] font-bold text-[#1A1A1A] leading-tight tracking-tight flex-1">
-            Parabéns! Seu protocolo está pronto!
-          </Text>
-        </View>
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+        <View className="pt-8">
 
-        {/* Skin Score Card */}
-        <View className="bg-[#F5F5F7] rounded-[16px] p-4 mb-8 flex-row items-center gap-4">
-          <View style={{ width: 64, height: 64 }}>
-            <Svg width={64} height={64} style={{ transform: [{ rotate: '-90deg' }] }}>
-              <Circle cx={32} cy={32} r={r} stroke="#E5E7EB" strokeWidth={4} fill="none" />
-              <Circle
-                cx={32} cy={32} r={r}
-                stroke="#10B981" strokeWidth={4} fill="none"
-                strokeDasharray={circ} strokeDashoffset={offset}
-                strokeLinecap="round"
-              />
-            </Svg>
-            <View style={{ position: 'absolute', top: 0, left: 0, width: 64, height: 64, alignItems: 'center', justifyContent: 'center' }}>
-              <Text className="text-[16px] font-bold text-[#1A1A1A]">{score}</Text>
-            </View>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+            <CheckCircle size={36} color={Colors.scanBtn} strokeWidth={2} />
+            <Text style={{ fontSize: 22, fontWeight: '800', color: Colors.tabActive, flex: 1, lineHeight: 28 }}>
+              Parabéns! Seu protocolo está pronto!
+            </Text>
           </View>
-          <View className="flex-1">
-            <Text className="text-[17px] font-semibold text-[#1A1A1A]">Skin Score: {score}/100</Text>
-            <Text className="text-[14px] text-[#9CA3AF]">Vamos melhorar juntos</Text>
-          </View>
-        </View>
 
-        {/* Features */}
-        <Text className="text-[20px] font-semibold text-[#1A1A1A] mb-4">
-          Como alcançar seus objetivos:
-        </Text>
-        <View className="gap-4 mb-8">
-          {features.map(({ Icon, text }, i) => (
-            <View key={i} className="flex-row items-start gap-3">
-              <View key={i} className="w-10 h-10 rounded-full bg-[#F5F5F7] items-center justify-center">
-                <Icon size={20} color="#1A1A1A" />
+          {/* Pills */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+            {['✦ Baseado no seu scan', '✦ Protocolo personalizado'].map((label) => (
+              <View
+                key={label}
+                style={{
+                  backgroundColor: Colors.cardBg,
+                  borderRadius: 20,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                }}
+              >
+                <Text style={{ fontSize: 10, color: Colors.muted, fontWeight: '600' }}>{label}</Text>
               </View>
-              <Text className="text-[15px] text-[#1A1A1A] leading-relaxed flex-1 pt-2">{text}</Text>
+            ))}
+          </View>
+
+          {/* Widget 1 — Linha do Tempo */}
+          <View style={CARD_CREAM}>
+            {/* Card header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+              <Calendar size={14} color={Colors.scanBtn} strokeWidth={2} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.tabActive }}>
+                Linha do Tempo do seu Progresso
+              </Text>
             </View>
-          ))}
-        </View>
 
-        <Text className="text-[13px] text-[#9CA3AF] mb-8">
-          Plano baseado em: Journal of Dermatology, Nutrition Research, SBD
-        </Text>
+            {/* Score labels */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+              <View style={{ backgroundColor: '#F0EEEA', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: Colors.muted }}>SCORE ATUAL</Text>
+              </View>
+              <View style={{ backgroundColor: '#F0EEEA', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: Colors.muted }}>SEU POTENCIAL</Text>
+              </View>
+            </View>
 
-        <View className="flex-1" />
+            {/* Progress line */}
+            <View style={{ position: 'relative', height: 24, justifyContent: 'center', marginVertical: 8 }}>
+              <View style={{ position: 'absolute', left: 12, right: 12, height: 1.5, backgroundColor: 'rgba(0,0,0,0.1)' }} />
+              <View style={{
+                position: 'absolute', left: 0,
+                width: 20, height: 20, borderRadius: 10,
+                backgroundColor: Colors.scanBtn,
+                borderWidth: 3, borderColor: Colors.white,
+                shadowColor: Colors.scanBtn, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 4,
+              }} />
+              <View style={{
+                position: 'absolute', right: 0,
+                width: 20, height: 20, borderRadius: 10,
+                backgroundColor: Colors.white,
+                borderWidth: 2, borderColor: Colors.gray,
+              }} />
+            </View>
 
-        <View className="pb-8">
-          <CTAButton
+            {/* Score values */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <View>
+                <Text style={{ fontSize: 28, fontWeight: '800', color: Colors.tabActive, lineHeight: 32 }}>
+                  {currentScore}
+                </Text>
+                <Text style={{ fontSize: 11, color: Colors.gray }}>pontos hoje</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 28, fontWeight: '800', color: '#2E7D32', lineHeight: 32 }}>
+                  {scoreProjetado}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#2E7D32' }}>em 3 meses</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Widget 2 — Como alcançar seus objetivos */}
+          <View style={{ backgroundColor: Colors.white, borderRadius: 16, borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.07)', padding: 14, marginBottom: 10 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.tabActive, marginBottom: 14 }}>
+              Como alcançar seus objetivos
+            </Text>
+            <View style={{ gap: 12 }}>
+              {HOW_TO_ITEMS.map(({ emoji, text }, i) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: Colors.cardBg, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 18 }}>{emoji}</Text>
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 13, color: Colors.black, lineHeight: 18 }}>{text}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+
+          {/* Footer */}
+          <Text style={{ fontSize: 10, color: Colors.gray, textAlign: 'center', marginBottom: 20 }}>
+            Plano baseado em: Journal of Dermatology, Nutrition Research, SBD
+          </Text>
+
+          <View className="pb-8">
+            <CTAButton
               text="Vamos começar!"
               to="/(onboarding)/signup"
               onPress={() => track('onboarding_step_completed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 })}
             />
+          </View>
+
         </View>
-      </View>
+      </ScrollView>
     </QuizLayout>
   );
 }

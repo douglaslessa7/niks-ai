@@ -1,5 +1,6 @@
 import { TouchableOpacity, Text } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { Colors } from '../../constants/colors';
 
 interface CTAButtonProps {
@@ -12,7 +13,8 @@ interface CTAButtonProps {
 export function CTAButton({ text, to, disabled = false, onPress }: CTAButtonProps) {
   const router = useRouter();
 
-  const handlePress = () => {
+  const handlePress = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (onPress) {
       onPress();
     }
