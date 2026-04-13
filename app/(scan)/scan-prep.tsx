@@ -5,13 +5,14 @@ import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { AIConsentModal } from '../../components/ui/AIConsentModal';
 import { useAIConsent } from '../../hooks/useAIConsent';
-import { Sun, Sparkles, User } from 'lucide-react-native';
+import { Sun, Sparkles, User, Glasses } from 'lucide-react-native';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 const instructions = [
   { Icon: Sun, text: 'Boa iluminação natural' },
   { Icon: Sparkles, text: 'Rosto limpo, sem maquiagem' },
   { Icon: User, text: 'Cabelo preso para trás' },
+  { Icon: Glasses, text: 'Retire óculos e acessórios do rosto' },
 ];
 
 export default function ScanPrep() {
@@ -30,7 +31,7 @@ export default function ScanPrep() {
           {/* Heading */}
           <View className="mb-10">
             <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
-              Agora vamos analisar sua pele com IA
+              Agora vamos analisar sua pele por foto
             </Text>
             <Text className="text-[#9CA3AF] text-[17px]">Para melhores resultados:</Text>
           </View>
@@ -39,8 +40,8 @@ export default function ScanPrep() {
           <View className="gap-6 mb-8">
             {instructions.map(({ Icon, text }, index) => (
               <View key={index} className="flex-row items-center gap-4">
-                <View className="w-12 h-12 rounded-full bg-[#F5F5F7] items-center justify-center flex-shrink-0">
-                  <Icon size={20} color="#1A1A1A" />
+                <View className="w-12 h-12 rounded-full bg-[#fb7b6b] items-center justify-center flex-shrink-0">
+                  <Icon size={20} color="#FFFFFF" />
                 </View>
                 <Text className="text-[17px] text-[#1A1A1A]">{text}</Text>
               </View>

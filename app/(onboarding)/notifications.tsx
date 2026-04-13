@@ -13,6 +13,11 @@ export default function Notifications() {
   const loadingRef = useRef(false);
 
   const navigateToApp = async () => {
+    if (__DEV__) {
+      router.replace('/(app)/home');
+      return;
+    }
+
     try {
       const infoPromise = getCustomerInfo();
       const timeoutPromise = new Promise<null>((resolve) =>

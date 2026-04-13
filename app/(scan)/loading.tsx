@@ -29,18 +29,34 @@ export default function Loading() {
   const [currentStep, setCurrentStep] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const retryCount = useRef(0);
+  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentPercentageRef = useRef(0);
 
   useEffect(() => {
     track('onboarding_step_viewed', { step_number: 15, step_name: 'Analisando Pele', step_total: 23 });
     retryCount.current = 0;
 
-    // Progresso visual — dura ~7s
-    const percentInterval = setInterval(() => {
-      setPercentage((prev) => {
-        if (prev >= 95) { clearInterval(percentInterval); return 95; }
-        return prev + 1;
-      });
-    }, 70);
+    // Progresso visual — velocidade decresce conforme se aproxima de 100%
+    const tickProgress = () => {
+      const current = currentPercentageRef.current;
+      if (current >= 99) return; // pausa em 99 até a API responder
+
+      let delay: number;
+      if (current < 60) delay = 50;
+      else if (current < 75) delay = 120;
+      else if (current < 85) delay = 300;
+      else if (current < 92) delay = 800;
+      else if (current < 96) delay = 2500;
+      else delay = 6000;
+
+      progressTimerRef.current = setTimeout(() => {
+        const next = current + 1;
+        currentPercentageRef.current = next;
+        setPercentage(next);
+        tickProgress();
+      }, delay);
+    };
+    tickProgress();
 
     steps.forEach((step, index) => {
       setTimeout(() => setCurrentStep(index + 1), step.delay);
@@ -124,7 +140,7 @@ export default function Loading() {
         } else {
           console.error('Erro na análise após retries:', err);
           track('scan_failed', { error: (err as any)?.message ?? 'unknown' });
-          clearInterval(percentInterval);
+          if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
           Alert.alert(
             'Erro na análise',
             'Não foi possível analisar sua pele. Tente novamente.',
@@ -136,7 +152,7 @@ export default function Loading() {
 
     runAnalysis();
 
-    return () => clearInterval(percentInterval);
+    return () => { if (progressTimerRef.current) clearTimeout(progressTimerRef.current); };
   }, []);
 
   useEffect(() => {
