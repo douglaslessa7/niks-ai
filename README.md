@@ -38,6 +38,7 @@ App mobile de análise de pele por IA.
 | Pagamentos | RevenueCat (verificação de entitlement) + Superwall (apresentação do paywall) |
 | Analytics | Mixpanel (`mixpanel-react-native`, `useNative=true`) — `lib/mixpanel/` |
 | Camera | expo-camera + expo-image-picker |
+| Vídeo | expo-video (`useVideoPlayer` + `VideoView`) — usado na tela Welcome |
 | Estado global | Zustand (`useAppStore` em `store/onboarding.ts`) |
 
 **Localização do projeto:** `~/Desktop/niks-ai/`
@@ -306,7 +307,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 | `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns } }` | `{ skin_score, skin_type_detected, headline, acne: { score, label, insight }, skin_age, pontos_fortes: string[2], pontos_fracos: string[3], disclaimer }` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
 | `generate-protocol` | ✅ | `{ baseProtocol?, scanResult, onboardingData }` — `baseProtocol` **opcional**: se omitido, a função usa os protocolos base embutidos em si mesma com base no `skin_type_detected` | `{ morning[], night[], introduction_warnings, expected_timeline }` |
-| `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'scan_available' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API. `scan_available` filtra automaticamente usuários cujo último scan foi há 7+ dias |
+| `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API |
 | `revenuecat-webhook` | ✅ | POST do RevenueCat — header `Authorization: Bearer REVENUECAT_WEBHOOK_SECRET` | Retorna sempre HTTP 200. Faz UPSERT em `subscriptions` com base no `app_user_id` (= `user_id` do Supabase). Trata: `INITIAL_PURCHASE`, `RENEWAL`, `TRIAL_STARTED`, `TRIAL_CONVERTED`, `TRIAL_CANCELLED`, `CANCELLATION`, `EXPIRATION`, `UNCANCELLATION` |
 
 **Configuração do webhook no RevenueCat Dashboard:**
@@ -338,7 +339,6 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 |---|---|---|---|
 | `morning-routine` | `0 10 * * *` | Todo dia às 7h | Envia para todos os usuários com `push_token` |
 | `night-routine` | `0 0 * * *` | Todo dia às 21h | Envia para todos os usuários com `push_token` |
-| `scan-available` | `0 13 * * *` | Todo dia às 10h | Envia apenas para usuários cujo último scan foi há 7+ dias |
 
 **⚠️ Pendência:** `push_token` real só é gerado após build no TestFlight/produção. O entitlement `aps-environment: production` está configurado no `app.json`.
 
@@ -478,18 +478,6 @@ Isso se aplica em: `store/onboarding.ts` (`uploadScanPhoto`), `app/(scan)/loadin
 
 ---
 
-### 7. Cooldown de 7 dias para scan de rosto
-O botão "Scanear Rosto" no `ScanModal` consulta `skin_scans` (campo `created_at`) para calcular quanto tempo falta desde o último scan do usuário. A lógica vive inteiramente no frontend — nenhuma coluna extra no Supabase foi necessária.
-
-**Régua de exibição:**
-- > 48h restantes → "próxima análise em X dias"
-- ≤ 48h restantes → "próxima análise em Xh"
-- 0 → disponível normalmente
-
-Quando bloqueado: card acinzentado, ícone `Lock` (lucide-react-native), `onPress` desabilitado. A contagem é individual por usuário pois usa o `created_at` do próprio registro.
-
-**Import:** usar caminho relativo `../../lib/supabase` — o alias `@/` não resolve dentro de `components/scan/`.
-
 ---
 
 ### 10. Refs obrigatórias em callbacks assíncronas de animação (`protocolo.tsx`)
@@ -522,6 +510,8 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 
 **Atenção ao integrar em novas telas:** `CTAButton` executa `onPress` e `to` simultaneamente. Ao usar `requestConsent`, sempre remover o `to` e usar apenas `onPress` — senão a navegação dispara antes do consentimento.
 
+> ⚠️ **Modal stacking no iOS:** `AIConsentModal` é um `<Modal>` nativo. Se for chamado enquanto outro `<Modal>` nativo estiver aberto (ex: o bottom sheet do `ScanModal`), o iOS silencia o segundo — o usuário clica e não acontece nada. **Solução aplicada em `ScanModal`:** `handleScanFood` e `handleScanFace` chamam `onClose()` primeiro e só disparam `requestConsent` após 200ms (tempo da animação de fechamento de 180ms). Qualquer nova integração de `AIConsentModal` dentro de um Modal deve seguir o mesmo padrão.
+
 ---
 
 ### 11. Guard de assinatura — Superwall + RevenueCat
@@ -531,11 +521,23 @@ O paywall é gerenciado pelo **Superwall** (`expo-superwall`). O `<SuperwallProv
 **API Key iOS:** `pk_4iUsZwW_-ME9WdK3IcXYp`  
 **Placement identifier:** `paywall_onboarding`
 
-O acesso ao app é verificado em 3 pontos, em ordem. Em todos eles, o RevenueCat (`getCustomerInfo` + `isSubscribed`) determina se o usuário tem acesso:
+O acesso ao app é verificado em 5 pontos, em ordem. Em todos eles, o RevenueCat (`getCustomerInfo` + `isSubscribed`) determina se o usuário tem acesso:
 
 - `app/index.tsx` — ao abrir o app com sessão ativa → não-assinante: `registerPlacement` direto
+- `app/(onboarding)/_layout.tsx` — ao entrar no onboarding com sessão ativa → assinante já vai direto para home
 - `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login → não-assinante: `registerPlacement` direto
+- `app/(onboarding)/protocol-loading.tsx` — ao concluir geração do protocolo → aciona `registerPlacement` antes de navegar para `notifications`
 - **`app/(app)/_layout.tsx`** — guard definitivo: não-assinante aciona `registerPlacement`; assinante: `setReady(true)` → tabs renderizam
+
+> ⚠️ **Bypass para desenvolvimento (`__DEV__`):** Todos os pontos acima têm um bypass condicional que é ativado automaticamente no simulador/Metro. Além disso, `app/(onboarding)/notifications.tsx` também tem bypass em `navigateToApp()` — vai direto para `/(app)/home` sem chamar RevenueCat (sem esse bypass, a tela de notificações esperava 8s pelo timeout do RevenueCat antes de avançar para o paywall):
+> ```typescript
+> if (__DEV__) {
+>   // pula RevenueCat e Superwall — vai direto para o destino
+>   setReady(true); // ou router.replace('/(app)/home')
+>   return;
+> }
+> ```
+> Em produção (`__DEV__ === false`) o comportamento é idêntico ao descrito acima. **Se o Superwall sumir no simulador, é esperado** — não é um bug.
 
 O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` travar (rede lenta), o timer dispara e aciona o Superwall. `setReady(true)` é chamado **antes** de `registerPlacement` em todos os caminhos — o Superwall aparece como overlay sobre as tabs em vez de bloquear o render com `null`.
 
@@ -547,9 +549,11 @@ O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` 
 > ```
 > `refreshConfiguration()` **não existe** no wrapper JS — o equivalente disponível é `Superwall.shared.preloadAllPaywalls()`.
 
-#### `paywall-soft.tsx` — tela dedicada para paywall pós-onboarding
+#### `paywall-soft.tsx` — gateway para o Superwall (sem UI própria)
 
-Ao final do onboarding (`notifications.tsx`), o Superwall **não** é acionado diretamente. Em vez disso, `notifications.tsx` navega para `app/(onboarding)/paywall-soft.tsx`, que chama `registerPlacement` com callbacks:
+`paywall-soft.tsx` **não é uma tela de paywall visual**. É um componente spinner (`ActivityIndicator`) que entrega o controle ao Superwall SDK. O Superwall exibe sua própria tela de paywall hospedada no dashboard — toda a UI, copy e design do paywall são configurados lá, não no código.
+
+`protocol-loading.tsx` chama `registerPlacement` ao terminar, o que aciona o Superwall. `paywall-soft.tsx` registra callbacks para saber quando o usuário interagiu:
 
 ```typescript
 const { registerPlacement } = usePlacement({
@@ -559,7 +563,12 @@ const { registerPlacement } = usePlacement({
 });
 ```
 
-**Por que esta abordagem:** `registerPlacement` retorna uma `Promise<void>` que resolve **imediatamente** após registrar o placement com o SDK nativo — **não** após o paywall ser fechado. Fazer `await registerPlacement(...)` e depois navegar resulta em navegação antes da interação do usuário. A navegação pós-paywall deve sempre acontecer nos callbacks `onDismiss`/`onSkip`/`onError`.
+`navigateToApp()` verifica o RevenueCat: assinante → `/(app)/home`; não-assinante → `/(onboarding)/paywall-soft` (o guard de `(app)/_layout.tsx` barra na sequência).
+
+**Por que esta abordagem:** `registerPlacement` retorna uma `Promise<void>` que resolve **imediatamente** após registrar o placement com o SDK nativo — **não** após o paywall ser fechado. A navegação pós-paywall deve sempre acontecer nos callbacks `onDismiss`/`onSkip`/`onError`, nunca após `await registerPlacement`.
+
+**`paywall-detailed.tsx` — dead code (não está no fluxo ativo):**
+Arquivo com UI customizada de paywall (planos mensal/anual, trial de 3 dias, integração RevenueCat direta). Era o paywall antes do Superwall ser integrado. Nenhuma tela navega para ela atualmente. Mantida no projeto como fallback caso o Superwall seja removido.
 
 ---
 
@@ -601,9 +610,9 @@ lib/mixpanel/
 | `onboarding_started` | `(onboarding)/_layout.tsx` | `onboarding_version`, `total_steps: 23` |
 | `onboarding_step_viewed` | mount de cada tela do onboarding (steps 2–23) | `step_number`, `step_name`, `step_total: 23` |
 | `onboarding_step_completed` | botão "Continuar" de cada tela | `step_number`, `step_name`, `step_total: 23` |
-| `onboarding_completed` | `paywall-detailed.tsx` mount | `$duration` (calculado pelo SDK via `timeEvent`) |
-| `paywall_viewed` | `paywall-soft.tsx` e `paywall-detailed.tsx` mount | `screen: 'soft' \| 'detailed'` |
-| `plan_selected` | toque nos cards de plano em `paywall-detailed.tsx` | `plan: 'mensal' \| 'anual'` |
+| `onboarding_completed` | `paywall-detailed.tsx` mount (dead code — dispara caso a tela seja reativada) | `$duration` (calculado pelo SDK via `timeEvent`) |
+| `paywall_viewed` | `paywall-soft.tsx` mount | `screen: 'soft'` |
+| `plan_selected` | toque nos cards de plano em `paywall-detailed.tsx` (dead code) | `plan: 'mensal' \| 'anual'` |
 | `purchase_initiated` | `lib/revenuecat.ts` antes do SDK de compra | `plan: 'mensal' \| 'anual'` |
 | `purchase_completed` | `lib/revenuecat.ts` após compra bem-sucedida | `plan: 'mensal' \| 'anual'` |
 | `purchase_failed` | `lib/revenuecat.ts` em erro de compra | `plan`, `error: string` |
@@ -616,7 +625,7 @@ lib/mixpanel/
 | `food_scan_completed` | `(scan)/food-report.tsx` após `analyze-food` | `meal_score: number`, `meal_label: string` |
 | `food_scan_failed` | `(scan)/food-report.tsx` em erro | `error: string` |
 
-**`onboarding_completed` — efeitos colaterais (também em `paywall-detailed.tsx` mount):**
+**`onboarding_completed` — efeitos colaterais (em `paywall-detailed.tsx` mount — dead code; mover para `paywall-soft.tsx` se o Superwall for removido):**
 ```typescript
 setUserProperties({ onboarding_completed: true, onboarding_completed_at: ISO })
 registerSuperProperties({ onboarding_completed: true })
@@ -652,12 +661,16 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 - `components/ui/Pill.tsx`
 - `components/ui/IOSWheelPicker.tsx`
 - `components/layouts/QuizLayout.tsx`
-- `components/scan/ScanModal.tsx` — cooldown de 7 dias para scan de rosto (consulta `skin_scans` no Supabase; exibe contagem regressiva em dias ou horas; bloqueia navegação quando indisponível); intercepta ambos os cards com `useAIConsent` antes de navegar
+- `components/scan/ScanModal.tsx` — intercepta ambos os cards com `useAIConsent` antes de navegar; sem cooldown (scan de rosto sempre disponível)
 - `components/ui/AIConsentModal.tsx` — modal de consentimento de uso de IA (LGPD); bottom sheet animado com `Animated.spring`; backdrop não fecha o modal; link inline para Política de Privacidade
 
 
 **Telas — Onboarding (20 telas):**
-`concerns` → `gender` → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `commitment` → `goal` → `final-loading` → `trust` → `plan-preview` → `signup` → `protocol-loading` → `paywall-soft` → `paywall-detailed` → `notifications`
+`concerns` → `gender` → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `commitment` → `goal` → `trust` → `plan-preview` → `signup` → `protocol-loading` → `paywall-soft` → `notifications`
+
+> ⚠️ `final-loading.tsx` existe no projeto mas está **fora do fluxo** — `goal.tsx` navega diretamente para `trust`. A tela não faz nenhum processamento real (era animação pura de 3.8s). Não remover o arquivo; apenas não está na rota ativa.
+
+> ⚠️ `paywall-detailed.tsx` existe no projeto mas está **fora do fluxo** — é dead code do fluxo anterior ao Superwall. Nenhuma tela navega para ela. Não remover; o arquivo contém a lógica de compra RevenueCat direta caso o Superwall seja retirado no futuro.
 
 **Tela de Login (acesso direto da Welcome):**
 `login` — standalone, sem QuizLayout, acessada pelo botão "Entrar" na Welcome screen
@@ -698,8 +711,8 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 Welcome
   → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
     → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results
-    → goal → plan-preview (skin_score real do store)
-    → signup (Google / Apple / E-mail+Senha → saveToSupabase) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft → paywall-detailed → notifications
+    → goal → trust → plan-preview (skin_score real do store)
+    → signup (Google / Apple / E-mail+Senha → saveToSupabase) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft (Superwall) → notifications
     → App principal (tabs)
 
   → [botão "Entrar"] Login
@@ -727,13 +740,12 @@ O scan flow é inserido entre `commitment` e `goal` — não no final do onboard
 | food-analysis | 60% | |
 | commitment | 64% | |
 | **→ SCAN FLOW ENTRA AQUI** | — | scan-prep → camera → loading → results |
-| goal | 80% | |
+| goal | 80% | navega direto para `trust` (final-loading ignorada) |
 | trust | 88% | |
 | plan-preview | 92% | |
 | signup | 96% | |
 | protocol-loading | sem progress bar | gera e salva protocolo no Supabase |
-| paywall-soft | sem progress bar | |
-| paywall-detailed | sem progress bar | |
+| paywall-soft | sem progress bar | entrega controle ao Superwall SDK — sem UI própria |
 | notifications | sem progress bar | |
 
 ---
@@ -744,7 +756,7 @@ O scan flow é inserido entre `commitment` e `goal` — não no final do onboard
 niks-ai/
 ├── app/
 │   ├── _layout.tsx                ✅
-│   ├── index.tsx                  ✅ Welcome
+│   ├── index.tsx                  ✅ Welcome (vídeo em loop — assets/welcome-video.mp4)
 │   ├── (onboarding)/
 │   │   ├── _layout.tsx            ✅
 │   │   ├── concerns.tsx           ✅
@@ -765,8 +777,8 @@ niks-ai/
 │   │   ├── signup.tsx             ✅ fluxo dois passos (e-mail/senha + Google/Apple)
 │   │   ├── login.tsx              ✅ fluxo dois passos (e-mail/senha + Google/Apple)
 │   │   ├── protocol-loading.tsx   ✅ gera protocolo + salva no Supabase
-│   │   ├── paywall-soft.tsx       ✅
-│   │   ├── paywall-detailed.tsx   ✅
+│   │   ├── paywall-soft.tsx       ✅ gateway para Superwall — spinner sem UI própria
+│   │   ├── paywall-detailed.tsx   ⚠️ dead code — UI customizada do fluxo pré-Superwall, fora da rota ativa
 │   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase
 │   ├── (app)/
 │   │   ├── _layout.tsx            ✅ Tab bar: scanear/protocolo/perfil (sem FAB, sem evolução)
@@ -862,7 +874,7 @@ Redesenhada com base no Figma Make `sxih7FXdLGWu1lKovpOjIa`. Layout (de cima par
 Redesenhado com base no Figma Make `sxih7FXdLGWu1lKovpOjIa`. Bottom sheet vertical com:
 - Handle + Título "Escolha o tipo de scan" + Subtítulo
 - Card **"Scanear Alimento"** (Utensils coral + badge verde "⭐ MAIS USADO" + chevron)
-- Card **"Scanear Rosto"** (Camera coral + chevron) — bloqueado durante cooldown (ícone `Lock` lucide)
+- Card **"Scanear Rosto"** (Camera coral + chevron) — sempre disponível, sem cooldown
 - Botão **"Cancelar"** (card branco)
 - Animação: `Animated.spring` translateY (slide up)
 

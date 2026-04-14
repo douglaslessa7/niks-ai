@@ -17,8 +17,6 @@ const steps = [
   { label: 'Organizando seu protocolo de cuidados', delay: 3400 },
 ];
 
-const TOTAL_DURATION = 5500;
-
 export default function ProtocolLoading() {
   const router = useRouter();
   const { registerPlacement } = usePlacement();
@@ -30,6 +28,8 @@ export default function ProtocolLoading() {
   const [statusText, setStatusText] = useState('Salvando e organizando o seu protocolo...');
   const [apiDone, setApiDone] = useState(false);
   const apiDoneRef = useRef(false);
+  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentPercentageRef = useRef(0);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -69,6 +69,10 @@ export default function ProtocolLoading() {
     if (!apiDone) return;
     setPercentage(100);
     const t = setTimeout(async () => {
+      if (__DEV__) {
+        router.replace('/(onboarding)/notifications');
+        return;
+      }
       await registerPlacement({ placement: 'paywall_onboarding' });
       router.replace('/(onboarding)/notifications');
     }, 400);
@@ -76,20 +80,27 @@ export default function ProtocolLoading() {
   }, [apiDone]);
 
   useEffect(() => {
-    // Fase 1 (0→90%): animação rápida em TOTAL_DURATION ms
-    // Fase 2 (90→98%): crawl muito lento enquanto API não terminou
-    const increment = 90 / (TOTAL_DURATION / 50);
-    const percentInterval = setInterval(() => {
-      if (apiDoneRef.current) {
-        clearInterval(percentInterval);
-        return;
-      }
-      setPercentage((prev) => {
-        if (prev >= 98) return 98;
-        if (prev >= 90) return prev + 0.03;
-        return Math.min(prev + increment, 90);
-      });
-    }, 50);
+    // Progresso realista — velocidade decresce conforme se aproxima de 100%
+    const tickProgress = () => {
+      const current = currentPercentageRef.current;
+      if (current >= 99) return; // pausa em 99 até a API responder
+
+      let delay: number;
+      if (current < 60) delay = 50;
+      else if (current < 75) delay = 150;
+      else if (current < 85) delay = 400;
+      else if (current < 92) delay = 1000;
+      else if (current < 96) delay = 3000;
+      else delay = 7000;
+
+      progressTimerRef.current = setTimeout(() => {
+        const next = current + 1;
+        currentPercentageRef.current = next;
+        setPercentage(next);
+        tickProgress();
+      }, delay);
+    };
+    tickProgress();
 
     // Progressão dos steps
     steps.forEach((step, index) => {
@@ -98,13 +109,13 @@ export default function ProtocolLoading() {
 
     // Mudar status text no meio
     setTimeout(() => {
-      setStatusText('Gerando seu protocolo personalizado com IA...');
+      setStatusText('Gerando seu protocolo personalizado...');
     }, 2500);
 
     // Iniciar chamada à Edge Function
     generateAndSaveProtocol();
 
-    return () => clearInterval(percentInterval);
+    return () => { if (progressTimerRef.current) clearTimeout(progressTimerRef.current); };
   }, []);
 
   const generateAndSaveProtocol = async () => {
@@ -224,16 +235,6 @@ export default function ProtocolLoading() {
           justifyContent: 'center',
         }}
       >
-        {/* Ícone com gradiente */}
-        <View style={{ alignItems: 'center', marginBottom: 32 }}>
-          <LinearGradient
-            colors={['#FB7B6B', '#2A7C6F']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ width: 72, height: 72, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}
-          />
-        </View>
-
         {/* Percentagem */}
         <Text
           style={{

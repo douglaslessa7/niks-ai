@@ -52,7 +52,7 @@ export default function Goal() {
         <View className="pb-8">
           <CTAButton
               text="Continuar"
-              to="/(onboarding)/final-loading"
+              to="/(onboarding)/trust"
               disabled={!selected}
               onPress={() => track('onboarding_step_completed', { step_number: 18, step_name: 'Objetivo Principal', step_total: 23 })}
             />

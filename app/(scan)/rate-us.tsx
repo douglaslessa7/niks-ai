@@ -54,7 +54,7 @@ export default function RateUs() {
           <ArrowLeft size={20} color="#1A1A1A" />
         </TouchableOpacity>
         <View className="flex-1 h-1 bg-[#F5F5F5] rounded-full overflow-hidden">
-          <View className="w-[90%] h-full bg-[#1A1A1A] rounded-full" />
+          <View className="w-[90%] h-full bg-[#fb7b6b] rounded-full" />
         </View>
       </View>
 
@@ -110,10 +110,10 @@ export default function RateUs() {
             <View className="flex-row items-center justify-between mb-3">
               <View className="flex-row items-center gap-3">
                 <Image
-                  source={{ uri: 'https://images.unsplash.com/photo-1630841539293-bd20634c5d72?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
+                  source={{ uri: 'https://images.unsplash.com/photo-1599651515421-43a8e7dbf212?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
                   style={styles.testimonialAvatar}
                 />
-                <Text style={styles.testimonialName}>João Pedro</Text>
+                <Text style={styles.testimonialName}>Mariana Silva</Text>
               </View>
               <View className="flex-row items-center gap-[2px]">
                 {[1, 2, 3, 4, 5].map((star) => (
@@ -122,7 +122,7 @@ export default function RateUs() {
               </View>
             </View>
             <Text style={styles.testimonialText}>
-              Minha pele melhorou muito em 2 meses! Eu estava cético no início, mas decidi dar uma chance a este app e funcionou :)
+              Minha pele já melhorou muito em 2 meses! Eu estava cética no início, mas decidi dar uma chance a este app e funcionou :)
             </Text>
           </View>
         </View>
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   continueBtn: {
     width: '100%',
     height: 56,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#fb7b6b',
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
