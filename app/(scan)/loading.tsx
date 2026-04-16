@@ -22,7 +22,7 @@ const steps = [
 
 export default function Loading() {
   const router = useRouter();
-  const { skinImageBase64, skinImageUri, onboarding, setScanResult } = useAppStore();
+  const { skinImageBase64, skinImageUri, onboarding, setScanResult, scanSource, setSelectedScan } = useAppStore();
   const { track } = useMixpanel();
 
   const [percentage, setPercentage] = useState(0);
@@ -80,6 +80,15 @@ export default function Loading() {
               skinProfile: {
                 skin_type: onboarding.skin_type,
                 concerns: onboarding.concerns,
+                genero: onboarding.genero,
+                idade: onboarding.birthday
+                  ? Math.floor((Date.now() - new Date(onboarding.birthday).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+                  : null,
+                sun_exposure: onboarding.sun_exposure,
+                hydration: onboarding.hydration,
+                sleep: onboarding.sleep,
+                sunscreen: onboarding.sunscreen,
+                objetivo: onboarding.objetivo,
               },
             }),
           }
@@ -90,6 +99,7 @@ export default function Loading() {
         }
         const data = await response.json();
 
+        setSelectedScan(null);
         setScanResult(data, skinImageUri ?? '');
         track('scan_completed', { skin_score: data.skin_score, skin_type: data.skin_type_detected });
         setPercentage(100);
@@ -129,7 +139,11 @@ export default function Loading() {
 
         setTimeout(() => {
           track('onboarding_step_completed', { step_number: 15, step_name: 'Analisando Pele', step_total: 23 });
-          router.push('/(scan)/rate-us');
+          if (scanSource === 'app') {
+            router.replace('/(app)/skin-result' as any);
+          } else {
+            router.push('/(scan)/rate-us');
+          }
         }, 500);
       } catch (err) {
         if (retryCount.current < 2) {

@@ -6,6 +6,7 @@ import { ArrowLeft, Star } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { requestAppReview } from '../../lib/storeReview';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { useAppStore } from '../../store/onboarding';
 
 const LeftLaurel = () => (
   <Svg width={32} height={48} viewBox="0 0 32 48" fill="none">
@@ -33,6 +34,7 @@ export default function RateUs() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { track } = useMixpanel();
+  const { scanSource, setScanSource } = useAppStore();
 
   useEffect(() => {
     requestAppReview();
@@ -133,7 +135,12 @@ export default function RateUs() {
         <TouchableOpacity
           onPress={() => {
             track('onboarding_step_completed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
-            router.replace('/(scan)/results');
+            if (scanSource === 'app') {
+              setScanSource('onboarding');
+              router.replace('/(app)/skin-result' as any);
+            } else {
+              router.replace('/(scan)/results');
+            }
           }}
           style={styles.continueBtn}
           activeOpacity={0.85}

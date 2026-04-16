@@ -34,7 +34,7 @@ App mobile de análise de pele por IA.
 | Estilo | NativeWind v4 + Tailwind CSS (sempre `className`, nunca `StyleSheet`) |
 | Navegação | Expo Router v3 (`useRouter`, `router.push`, `router.back`) |
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
-| IA | Gemini 2.5 Pro via Supabase Edge Functions |
+| IA | Gemini 3 Flash Preview (`analyze-skin`) / Gemini 2.5 Pro (`analyze-food`, `generate-protocol`) via Supabase Edge Functions |
 | Pagamentos | RevenueCat (verificação de entitlement) + Superwall (apresentação do paywall) |
 | Analytics | Mixpanel (`mixpanel-react-native`, `useNative=true`) — `lib/mixpanel/` |
 | Camera | expo-camera + expo-image-picker |
@@ -304,7 +304,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 
 | Função | Status | Entrada | Saída |
 |---|---|---|---|
-| `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns } }` | `{ skin_score, skin_type_detected, headline, acne: { score, label, insight }, skin_age, pontos_fortes: string[2], pontos_fracos: string[3], disclaimer }` |
+| `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns, genero, idade, sun_exposure, hydration, sleep, sunscreen, objetivo } }` | Schema clínico completo — ver tipo `ScanResult` no store. Campos-chave: `skin_score`, `skin_type_detected`, `headline`, `acne`, `envelhecimento`, `pigmentacao`, `cicatrizes`, `rosacea`, `textura_poros`, `barrier_status`, `qualidade_foto`, `confianca_analise`, `prioridade_clinica`, `contraindicacoes`, `pontos_fortes: string[2]`, `pontos_fracos: string[3]`, `skin_strengths[2]`, `action_recommendations[4]`, `region_insights[]` (apenas regiões com condição relevante), `goal_alignment` (apenas se `objetivo` informado), `disclaimer` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
 | `generate-protocol` | ✅ | `{ baseProtocol?, scanResult, onboardingData }` — `baseProtocol` **opcional**: se omitido, a função usa os protocolos base embutidos em si mesma com base no `skin_type_detected` | `{ morning[], night[], introduction_warnings, expected_timeline }` |
 | `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API |
@@ -315,20 +315,24 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - URL: `https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/revenuecat-webhook`
 - Authorization header: `Bearer <valor do secret REVENUECAT_WEBHOOK_SECRET>`
 
-**Modelo de IA:** `gemini-2.5-pro-preview-03-25` — secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → Edge Functions → Secrets).
+**Modelos de IA:**
+- `analyze-skin`: `gemini-3-flash-preview` (mais rápido, custo menor)
+- `analyze-food`, `generate-protocol`: `gemini-2.5-pro` (mais preciso para tarefas complexas)
+
+Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → Edge Functions → Secrets).
 
 **Secrets necessários no Supabase Dashboard (Project Settings → Edge Functions → Secrets):**
 - `GEMINI_API_KEY` — usado por `analyze-skin`, `analyze-food`, `generate-protocol`
 - `REVENUECAT_WEBHOOK_SECRET` — usado por `revenuecat-webhook` para validar o header `Authorization`
 
 **Configuração Gemini nas Edge Functions:**
-- `maxOutputTokens`: 2048 para `analyze-skin`; 4096 para `analyze-food`; 8192 para `generate-protocol`
+- `maxOutputTokens`: 4096 para `analyze-skin`; 4096 para `analyze-food`; 8192 para `generate-protocol`
 - `system_instruction` separa o system prompt do user message (equivalente ao `system` do Claude)
 - Imagens enviadas via `inlineData: { mimeType, data: base64 }` (não via URL)
 - `safetySettings` com `BLOCK_NONE` em todas as categorias — obrigatório em **todas as funções de análise de imagem** (`analyze-skin` e `analyze-food`), senão o Gemini bloqueia a requisição e não retorna `candidates`, causando crash
 - JSON parsing: tenta extrair bloco ` ```json ``` ` primeiro, depois fallback para `\{[\s\S]*\}` — Gemini pode retornar markdown em vez de JSON puro
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
-- **Retry interno de Gemini 503 em `analyze-food`:** o Gemini 2.5 Pro retorna 503 `UNAVAILABLE` com frequência sob alta demanda. A Edge Function `analyze-food` tem loop de **3 tentativas** com **3s de espera** entre elas antes de retornar erro ao app — não remover esse loop.
+- **Retry interno de Gemini 503 em `analyze-skin` e `analyze-food`:** o Gemini retorna 503 `UNAVAILABLE` com frequência sob alta demanda. Ambas as Edge Functions têm loop de **3 tentativas** com **3s de espera** entre elas antes de retornar erro ao app — não remover esse loop.
 - `generate-protocol` tem os protocolos base (`BASE_PROTOCOLS` para os 4 tipos de pele) embutidos diretamente na Edge Function — `baseProtocol` no body é opcional; se omitido, a função seleciona o protocolo correto pelo `skin_type_detected`. A IA ajusta o protocolo, não cria do zero
 
 ### Push Notifications (`pg_cron`)
@@ -363,20 +367,76 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 
 **Tipos exportados:** `SkinMetric`, `ScanResult`, `ProtocolStep`, `ProtocolResult`, `OnboardingData`, `FoodReportResult`
 
-**Tipo `ScanResult` (schema atual — Sessão 11):**
+**Tipo `ScanResult` (schema clínico expandido):**
 ```typescript
 {
-  skin_score: number
-  skin_type_detected: 'seca' | 'oleosa' | 'mista' | 'normal'
-  headline: string
-  acne: SkinMetric          // { score, label, insight }
-  skin_age: number          // idade aparente da pele em anos
-  pontos_fortes: string[]   // 2 destaques positivos
-  pontos_fracos: string[]   // 3 áreas de atenção
+  // Campos obrigatórios (sempre presentes)
+  skin_score: number                   // 0–100
+  skin_type_detected: string           // mapeado automaticamente de skin_type_sebaceous pela Edge Function
+  headline: string                     // frase específica descrevendo esta pele
   disclaimer: string
-  // ATENÇÃO: scans antigos têm 'metrics', 'top_concerns', 'positive_highlights' — usar ?. ao acessar
+
+  // Campos clínicos (novos — todos opcionais para compat com scans antigos)
+  skin_type_sebaceous?: 'seca'|'oleosa'|'mista'|'normal'  // fonte de skin_type_detected
+  skin_phototype?: 'I'|'II'|'III'|'IV'|'V'|'VI'
+  skin_hydration?: 'desidratada'|'normal'|'hidratada'
+  barrier_status?: 'integra'|'levemente_comprometida'|'comprometida'|'severamente_comprometida'
+  barrier_insight?: string
+  acne?: {
+    present?: boolean; lesion_type?: string|null; severity?: string
+    severity_score?: number; distribution?: string[]; pattern?: string|null
+    score?: number; label?: string; insight?: string  // score/label/insight: compat com UI
+  }
+  cicatrizes?: { present: boolean; type: string|null; severity: string|null; location: string[] }
+  pigmentacao?: { present: boolean; type: string|null; location: string[]; intensity_score: number; insight: string }
+  rosacea?: { present: boolean; subtype: string|null }
+  textura_poros?: { pore_visibility: string; texture: string; insight: string }
+  brilho_sebaceo?: { intensity: string; location: string[] }
+  envelhecimento?: { present: boolean; lines_type: string; location: string[]; firmness_loss: string; skin_age?: number }
+  area_periocular?: string
+  condicoes_secundarias?: string[]
+  qualidade_foto?: { score: number; nivel: 'baixa'|'media'|'alta'; notas: string }
+  confianca_analise?: { score: number; nivel: 'baixa'|'media'|'alta'; campos_incertos: string[] }
+  prioridade_clinica?: { primaria: string; secundaria: string|null; justificativa: string }
+  contraindicacoes?: string[]
+
+  // Campos de UI (mantidos para compatibilidade)
+  skin_age?: number         // mapeado de envelhecimento.skin_age pela Edge Function
+  pontos_fortes?: string[]  // 2 destaques positivos (legado — use skin_strengths)
+  pontos_fracos?: string[]  // 3 áreas de atenção
+
+  // Campos enriquecidos — adicionados após MVP
+  skin_strengths?: Array<{
+    title: string            // nome curto do ponto forte (máx 4 palavras)
+    icon: 'shield'|'drop'|'sparkle'|'leaf'|'sun'
+    body: string             // 2 frases: significado clínico + o que permite no tratamento
+  }>
+  action_recommendations?: Array<{
+    category: string         // nome da categoria (máx 4 palavras)
+    text: string             // instrução específica com ativo/abordagem concreta
+  }>                         // 4 itens ordenados por prioridade clínica
+  region_insights?: Array<{
+    region: 'testa'|'nariz_zona_t'|'bochechas'|'queixo_mandibula'|'area_periocular'
+    main_finding: string     // título do card da região (máx 10 palavras)
+    consequence: string      // risco clínico se não tratado (máx 18 palavras)
+    benefit: string          // melhora esperada ao tratar (começa com verbo no infinitivo)
+  }>                         // gerado apenas para regiões com condição relevante
+  goal_alignment?: {
+    alinhamento: 'confirmado'|'parcial'|'divergente'
+    regioes_afetadas: string[]
+    mensagem: string         // 2 frases: contextualiza o objetivo + o que o protocolo vai fazer
+  }                          // gerado apenas se skinProfile.objetivo foi informado
+
+  // Legacy (scans antigos armazenados antes do schema clínico)
+  metrics?: Record<string, SkinMetric>
+  top_concerns?: string[]
+  positive_highlights?: string[]
 }
 ```
+
+**⚠️ Dois campos de compatibilidade são injetados automaticamente pela Edge Function `analyze-skin` antes de retornar a resposta — não remover essa lógica:**
+- `skin_type_detected` ← cópia de `skin_type_sebaceous` (consumido em 7 lugares no app: Mixpanel, DB, UI, protocolo)
+- `skin_age` (top-level) ← cópia de `envelhecimento.skin_age` (consumido em 4 lugares: results.tsx, skin-result.tsx, loading.tsx, store)
 
 **Campos de onboarding:** `genero`, `birthday`, `skin_type`, `concerns[]`, `frequency`, `sun_exposure`, `hydration`, `sleep`, `sunscreen`, `objetivo`
 
@@ -385,6 +445,9 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `foodImageMimeType: string | null`
 - `skinImageBase64: string | null`
 - `skinImageUri: string | null`
+
+**Campos de contexto de scan:**
+- `scanSource: 'onboarding' | 'app'` — controla o fluxo de navegação pós-scan; default `'onboarding'`
 
 **Campos de resultado:**
 - `scanResult: ScanResult | null`
@@ -395,6 +458,7 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `selectedFoodResult: FoodReportResult | null` — resultado salvo de food scan selecionado na home; exibido sem re-análise em `food-report.tsx`; limpo ao sair da tela ou iniciar novo scan
 
 **Métodos:**
+- `setScanSource(source: 'onboarding' | 'app')` — chamado por `ScanModal.handleScanFace` antes de iniciar scan do app principal
 - `setOnboardingField(field, value)`
 - `setFoodImage(base64, mimeType)`
 - `setSkinImage(base64, uri)`
@@ -448,8 +512,12 @@ Não tem câmera real. `camera.tsx` detecta via `Platform.OS === 'ios' && __DEV_
 ### 4. Imagem de comida
 Redimensionada para 512px + compress 0.5 via `expo-image-manipulator` antes de salvar no store (~52KB).
 
-### 5. Métricas borradas em results.tsx
-Os scores de hidratação, oleosidade etc. são **intencionalmente** ocultados — só desbloqueados para assinantes (integração RevenueCat pendente).
+### 5. `results.tsx` (onboarding) mostra análise completa — navegação de volta bloqueada
+`app/(scan)/results.tsx` exibe o resultado completo do scan (mesma estrutura de `skin-result.tsx`: parallax hero, score ring, análise por região, condição geral, pontos fortes, etc.). As métricas **não** são mais borradas/bloqueadas — o usuário vê tudo no onboarding.
+
+**Navegação de volta bloqueada intencionalmente:** ao chegar em `results.tsx`, o usuário não pode voltar. Motivo: `rate-us.tsx` usa `router.replace` para chegar aqui, mas a tela de `loading.tsx` ainda estaria no stack — voltar travaria o usuário lá. Implementado com dois mecanismos:
+- `<Stack.Screen options={{ gestureEnabled: false }} />` — desabilita swipe-back no iOS
+- `BackHandler.addEventListener('hardwareBackPress', () => true)` — bloqueia botão físico no Android
 
 ### 6. Geração e cache do protocolo personalizado
 O protocolo é gerado **uma única vez** na tela `protocol-loading` (logo após o signup). A função `generate-protocol` recebe `scanResult` e `onboardingData` — não recebe mais `baseProtocol` (a função determina o template base internamente com base em `skin_type_detected`). Salvo em dois lugares:
@@ -493,6 +561,26 @@ useEffect(() => { streakDaysRef.current = streakDays; }, [streakDays]);
 ```
 
 Refs atualmente necessárias em `protocolo.tsx`: `checkedItemsRef`, `stepsRef`, `celebrationTriggeredRef`, `morningStepsRef`, `nightStepsRef`, `streakDaysRef`, `lastCompletedAtRef`.
+
+---
+
+### 13. Contexto de scan: app vs onboarding (`scanSource`)
+
+O scan facial é iniciado de dois lugares distintos e segue fluxos diferentes:
+
+| Origem | Fluxo |
+|---|---|
+| Onboarding (primeiro scan) | `scan-prep` (com barra de progresso) → `camera` → `loading` → `rate-us` → `results` (onboarding) |
+| App principal (`ScanModal`) | `scan-prep` (sem barra de progresso) → `camera` → `loading` → `/(app)/skin-result` (direto, pula rate-us) |
+
+**Como funciona:**
+1. `ScanModal.handleScanFace` chama `setScanSource('app')` antes de navegar para `scan-prep`
+2. `scan-prep.tsx` lê `scanSource`: se `'app'`, renderiza sem `QuizLayout` (sem barra de progresso do onboarding)
+3. `loading.tsx` lê `scanSource` após análise concluída: se `'app'`, chama `setSelectedScan(null)` + `router.replace('/(app)/skin-result')`; se `'onboarding'`, segue para `/(scan)/rate-us`
+
+**Por que `setSelectedScan(null)` é obrigatório em `loading.tsx`:** `skin-result.tsx` usa `selectedScan?.result ?? scanResult`. Se `selectedScan` ainda estiver populado de uma visualização anterior do carrossel da home, a tela mostra o scan antigo em vez do recém-feito.
+
+**Não confundir** com o retry de login do usuário no app: o guard de assinatura em `(app)/_layout.tsx` não depende de `scanSource`.
 
 ---
 
@@ -683,7 +771,7 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 - **Visualização salva** (`selectedFoodResult !== null`): exibe `full_result` do store instantaneamente, sem chamada à IA; botão "Voltar para tela inicial" (coral, ArrowLeft) via `router.replace`
 
 **Telas — App principal (8 arquivos):**
-`(app)/_layout.tsx` (tab bar sem FAB), `home.tsx`, `skin-result.tsx` (resultado da análise facial in-app), `protocolo.tsx`, `analise.tsx`, `evolucao.tsx` (oculta), `perfil.tsx`, `set-name.tsx` (definir nome do usuário)
+`(app)/_layout.tsx` (tab bar sem FAB), `home.tsx`, `skin-result.tsx` (resultado da análise facial in-app — exibe o schema clínico completo: acne, barreira cutânea, pigmentação, textura/poros, oleosidade, envelhecimento, área periocular, fotótipo Fitzpatrick, condições secundárias, prioridade clínica e contraindicações; todos os campos novos são opcionais para compatibilidade com scans antigos), `protocolo.tsx`, `analise.tsx`, `evolucao.tsx` (oculta), `perfil.tsx`, `set-name.tsx` (definir nome do usuário)
 
 **Integrações:**
 - `lib/supabase.ts` ✅
@@ -710,8 +798,7 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 
 Welcome
   → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
-    → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results
-    → goal → trust → plan-preview (skin_score real do store)
+    → goal → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results → trust → plan-preview (skin_score real do store)
     → signup (Google / Apple / E-mail+Senha → saveToSupabase) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft (Superwall) → notifications
     → App principal (tabs)
 
@@ -724,7 +811,7 @@ Fluxo de comida (dentro do app principal):
 
 ### Valores de progresso do onboarding (ProgressBar)
 
-O scan flow é inserido entre `commitment` e `goal` — não no final do onboarding.
+O scan flow é inserido entre `goal` e `trust` — `goal` é respondido **antes** do scan.
 
 | Tela | Progress | Observação |
 |---|---|---|
@@ -739,8 +826,8 @@ O scan flow é inserido entre `commitment` e `goal` — não no final do onboard
 | social-proof | 56% | |
 | food-analysis | 60% | |
 | commitment | 64% | |
-| **→ SCAN FLOW ENTRA AQUI** | — | scan-prep → camera → loading → results |
-| goal | 80% | navega direto para `trust` (final-loading ignorada) |
+| goal | 80% | ⚠️ valor deve ser ajustado para ~68% (antes do scan); navega para `scan-prep` |
+| **→ SCAN FLOW ENTRA AQUI** | — | scan-prep → camera → loading → rate-us → results |
 | trust | 88% | |
 | plan-preview | 92% | |
 | signup | 96% | |
@@ -879,17 +966,26 @@ Redesenhado com base no Figma Make `sxih7FXdLGWu1lKovpOjIa`. Bottom sheet vertic
 - Animação: `Animated.spring` translateY (slide up)
 
 ### Tela de Resultado Facial — App (`app/(app)/skin-result.tsx`)
-Tela dedicada acessada via "Ver resultado" na home (substitui o redirecionamento para a tela de onboarding). Estrutura:
-1. **Header** — back button circular + título "Análise Facial"
-2. **Card Hero** — foto do rosto (280px, `resizeMode="cover"`), badge coral com skin score, tipo de pele + mini score ring no rodapé
-3. **Headline da IA** — card branco com ícone `Sparkles` coral + texto `headline`
-4. **Métricas detalhadas** — 6 `MetricCard` empilhados: ponto colorido + nome, score real (`XX/100`) na cor da métrica, barra de progresso colorida, insight gerado pela IA
-5. **Principais preocupações** — card branco com `AlertTriangle` amarelo + lista de `top_concerns`
-6. **Pontos positivos** — card branco com `CheckCircle` verde + lista de `positive_highlights`
-7. **Disclaimer** — texto pequeno cinza com ícone `Info`
+Tela dedicada acessada via "Ver resultado" na home. Usa `Animated.ScrollView` com efeito parallax — foto fixada atrás do scroll, conteúdo desliza por cima. Ver Decisão #14 para detalhes de arquitetura.
 
-**Dados lidos do Zustand:** `selectedScan` (quando aberto via carrossel) com fallback para `scanResult`/`scanImageUri` (quando aberto direto do scan flow). `selectedScan` é limpo no `useEffect` de desmontagem.
-**Métricas:** exibidas com scores reais (sem blur) — esta tela é exclusiva do app, não do onboarding
+**Hero (dentro da foto, bottom-left/right — animados com o scroll via `overlayTranslateY`):**
+- Ring de score SVG (bottom-left): gradiente verde `#34D399→#059669`, `strokeDashoffset` proporcional ao score
+- Badges (bottom-right): tipo de pele + fotótipo Fitzpatrick; fundo `#fb7b6b`, texto branco
+
+**Seções (de cima para baixo, dentro do card de conteúdo):**
+1. **Headline + qualidade** — texto `headline` centralizado; linha "Qualidade da foto · Alta/Média/Baixa" e "Precisão · XX%"
+2. **Objetivo Validado** — condicional (`goal_alignment`): card com borda esquerda colorida (verde=confirmado / âmbar=parcial / coral=divergente), badge + mensagem de 2 frases
+3. **Análise por Região** — cards com thumbnail da foto (crop vertical por região), tag de issues, descrição clínica; se `region_insights` tiver entrada: separador + "→ benefit" em itálico coral
+4. **Pigmentação** — condicional (`pigmentacao.present`): tipo + escala de intensidade (5 pontos) + insight
+5. **O que fazer pela sua pele** — condicional (`action_recommendations`): lista numerada 1–4, números `#fb7b6b` (42px, bold), category label uppercase cinza, texto da instrução
+6. **Condição Geral** — grid 2×2: Barreira, Hidratação, Oleosidade, Fotótipo
+7. **Por onde começar** — fundo `#fb7b6b`: prioridade 01 e 02, números brancos opacity 0.9 + justificativa branca semi-transparente
+8. **Pontos de Atenção + Pontos Fortes** — se `skin_strengths` existir: ScrollView horizontal com cards (ícone `lucide-react-native`, título, body); senão: lista `pontos_fortes` como fallback. Pontos de atenção (`pontos_fracos`) sempre como lista
+9. **Ativos a evitar** — fundo `#FFF5F4`, lista de `contraindicacoes` formatados
+10. **Fotótipo Detectado** — Fitzpatrick + descrição textual
+11. **Disclaimer**
+
+**Dados lidos do Zustand:** `selectedScan` (carrossel da home) com fallback para `scanResult`/`scanImageUri` (scan flow direto). `selectedScan` é limpo no `useEffect` de desmontagem.
 
 ### Tab Bar (`app/(app)/_layout.tsx`)
 Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`:
@@ -952,5 +1048,45 @@ Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout
 
 ---
 
-*Última atualização: Sessão 18 — Março 2026*
-*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018.*
+### 14. Parallax hero em `skin-result.tsx` — foto fixa + scroll por cima
+
+A tela `skin-result.tsx` usa `Animated.ScrollView` para criar efeito parallax: a foto do rosto fica fixada no fundo e o card de conteúdo desliza por cima dela ao rolar.
+
+**Estrutura de camadas (zIndex):**
+```
+<View flex:1>
+  <View position:absolute zIndex:0>          ← foto fixada no fundo
+    <Image />
+    <LinearGradient />                        ← gradiente inferior escuro
+    <Animated.View translateY={overlayTranslateY} pointerEvents:"none">
+      {/* ring SVG (bottom-left) + badges (bottom-right) */}
+    </Animated.View>
+  </View>
+  <SafeAreaView position:absolute zIndex:10>  ← header flutuante (back button)
+  <Animated.ScrollView zIndex:1 paddingTop:HERO_HEIGHT>
+    <View borderTopRadius:24 overflow:hidden>  ← card de conteúdo cobre a foto
+      {/* seções */}
+    </View>
+  </Animated.ScrollView>
+</View>
+```
+
+**`overlayTranslateY`** — interpolação de `scrollY` que faz o ring e os badges parecerem subir junto com o conteúdo:
+```typescript
+const overlayTranslateY = scrollY.interpolate({
+  inputRange: [0, HERO_HEIGHT],
+  outputRange: [0, -HERO_HEIGHT],
+  extrapolate: 'clamp',
+});
+```
+
+**`HERO_HEIGHT = 380`** — controla altura da foto e o `paddingTop` do ScrollView. Se mudar um, mudar o outro.
+
+**Ring de score** (`react-native-svg`): `strokeDasharray={207.3}` (circunferência de r=33), `strokeDashoffset={207.3 * (1 - score/100)}`, rotacionado -90° para começar no topo.
+
+**`borderTopLeftRadius/RightRadius: 24`** no container do conteúdo cria o efeito de card pousando sobre a foto ao rolar. `overflow: 'hidden'` obrigatório no mesmo container.
+
+---
+
+*Última atualização: Sessão 20 — Abril 2026*
+*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto).*

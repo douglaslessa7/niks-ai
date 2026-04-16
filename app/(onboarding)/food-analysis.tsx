@@ -154,7 +154,7 @@ export default function FoodAnalysis() {
         <View className="pb-8">
           <CTAButton
               text="Continuar"
-              to="/(scan)/scan-prep"
+              to="/(onboarding)/commitment"
               onPress={() => track('onboarding_step_completed', { step_number: 11, step_name: 'Alimentação e Pele', step_total: 23 })}
             />
         </View>

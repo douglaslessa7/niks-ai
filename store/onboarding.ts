@@ -29,16 +29,106 @@ export type ScanResult = {
   skin_score: number
   skin_type_detected: string
   headline: string
-  // New schema fields
-  acne?: SkinMetric
+  disclaimer: string
+
+  // Campos de análise expandida (novo schema)
+  skin_type_sebaceous?: 'seca' | 'oleosa' | 'mista' | 'normal'
+  skin_phototype?: 'I' | 'II' | 'III' | 'IV' | 'V' | 'VI'
+  skin_hydration?: 'desidratada' | 'normal' | 'hidratada'
+  barrier_status?: 'integra' | 'levemente_comprometida' | 'comprometida' | 'severamente_comprometida'
+  barrier_insight?: string
+  acne?: {
+    present?: boolean
+    lesion_type?: string | null
+    severity?: string
+    severity_score?: number
+    distribution?: string[]
+    pattern?: string | null
+    score?: number
+    label?: string
+    insight?: string
+  }
+  cicatrizes?: {
+    present: boolean
+    type: string | null
+    severity: string | null
+    location: string[]
+  }
+  pigmentacao?: {
+    present: boolean
+    type: string | null
+    location: string[]
+    intensity_score: number
+    insight: string
+  }
+  rosacea?: {
+    present: boolean
+    subtype: string | null
+  }
+  textura_poros?: {
+    pore_visibility: string
+    texture: string
+    insight: string
+  }
+  brilho_sebaceo?: {
+    intensity: string
+    location: string[]
+  }
+  envelhecimento?: {
+    present: boolean
+    lines_type: string
+    location: string[]
+    firmness_loss: string
+    skin_age?: number
+  }
+  area_periocular?: string
+  condicoes_secundarias?: string[]
+  qualidade_foto?: {
+    score: number
+    nivel: 'baixa' | 'media' | 'alta'
+    notas: string
+  }
+  confianca_analise?: {
+    score: number
+    nivel: 'baixa' | 'media' | 'alta'
+    campos_incertos: string[]
+  }
+  prioridade_clinica?: {
+    primaria: string
+    secundaria: string | null
+    justificativa: string
+  }
+  contraindicacoes?: string[]
+
+  // Campos de UI (mantidos para compatibilidade)
   skin_age?: number
   pontos_fortes?: string[]
   pontos_fracos?: string[]
-  // Legacy fields (old stored scans)
+  skin_strengths?: Array<{
+    title: string
+    icon: 'shield' | 'drop' | 'sparkle' | 'leaf' | 'sun'
+    body: string
+  }>
+  action_recommendations?: Array<{
+    category: string
+    text: string
+  }>
+  region_insights?: Array<{
+    region: 'testa' | 'nariz_zona_t' | 'bochechas' | 'queixo_mandibula' | 'area_periocular'
+    main_finding: string
+    consequence: string
+    benefit: string
+  }>
+  goal_alignment?: {
+    alinhamento: 'confirmado' | 'parcial' | 'divergente'
+    regioes_afetadas: string[]
+    mensagem: string
+  }
+
+  // Legacy fields (scans antigos armazenados)
   metrics?: Record<string, SkinMetric>
   top_concerns?: string[]
   positive_highlights?: string[]
-  disclaimer: string
 }
 
 export type ProtocolStep = {
@@ -99,6 +189,8 @@ export type OnboardingData = {
 type AppStore = {
   onboarding: OnboardingData
   setOnboardingField: <K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) => void
+  scanSource: 'onboarding' | 'app'
+  setScanSource: (source: 'onboarding' | 'app') => void
   scanResult: ScanResult | null
   scanImageUri: string | null
   setScanResult: (result: ScanResult, imageUri: string) => void
@@ -136,6 +228,7 @@ const initialOnboarding: OnboardingData = {
 
 export const useAppStore = create<AppStore>((set, get) => ({
   onboarding: initialOnboarding,
+  scanSource: 'onboarding',
   scanResult: null,
   scanImageUri: null,
   foodImageBase64: null,
@@ -146,6 +239,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   protocolResult: null,
   selectedScan: null,
   selectedFoodResult: null,
+
+  setScanSource: (source) => set({ scanSource: source }),
 
   setOnboardingField: (key, value) =>
     set((state) => ({

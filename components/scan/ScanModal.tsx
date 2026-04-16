@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AIConsentModal } from '../ui/AIConsentModal';
 import { useAIConsent } from '../../hooks/useAIConsent';
+import { useAppStore } from '../../store/onboarding';
 
 interface ScanModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
   const opacity = useRef(new Animated.Value(0)).current;
 
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
+  const { setScanSource } = useAppStore();
 
   // ── Animação ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -52,6 +54,7 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
   };
 
   const handleScanFace = () => {
+    setScanSource('app');
     onClose();
     setTimeout(() => {
       requestConsent(() => {

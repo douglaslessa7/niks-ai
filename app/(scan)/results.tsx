@@ -1,236 +1,823 @@
-import { useEffect } from 'react';
-import { View, Text, ScrollView, Image } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { Canvas, Circle as SkiaCircle, BlurMask } from '@shopify/react-native-skia';
-import { QuizLayout } from '../../components/layouts/QuizLayout';
-import { CTAButton } from '../../components/ui/CTAButton';
-import { Lock } from 'lucide-react-native';
-import Svg, { Circle } from 'react-native-svg';
-import { useAppStore, SkinMetric } from '../../store/onboarding';
+import { View, Text, TouchableOpacity, ScrollView, Image, ActivityIndicator, Animated, BackHandler } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, Stack } from 'expo-router';
+import React, { useEffect, useRef } from 'react';
+import { Shield, Droplets, Sparkles, Leaf, Sun } from 'lucide-react-native';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useAppStore, ScanResult } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
-import { Colors } from '../../constants/colors';
 
-const r = 70;
-const circ = 2 * Math.PI * r;
+// ── Constants ──────────────────────────────────────────────────────────────────
 
-const metricColors: Record<string, string> = {
-  hydration: '#3B82F6',
-  oiliness: '#F59E0B',
-  texture: '#10B981',
-  acne: '#8B5CF6',
-  dark_spots: '#EF4444',
-  sensitivity: '#06B6D4',
-  skin_age: '#EC4899',
+const HERO_HEIGHT = 380;
+
+const skinStrengthIcons: Record<string, React.ReactNode> = {
+  shield: <Shield size={18} color="#FFFFFF" strokeWidth={2} />,
+  drop: <Droplets size={18} color="#FFFFFF" strokeWidth={2} />,
+  sparkle: <Sparkles size={18} color="#FFFFFF" strokeWidth={2} />,
+  leaf: <Leaf size={18} color="#FFFFFF" strokeWidth={2} />,
+  sun: <Sun size={18} color="#FFFFFF" strokeWidth={2} />,
 };
 
-const metricLabels: Record<string, string> = {
-  hydration: 'Hidratação',
-  oiliness: 'Oleosidade',
-  texture: 'Textura',
-  acne: 'Acne',
-  dark_spots: 'Manchas',
-  sensitivity: 'Elasticidade',
-  skin_age: 'Idade da Pele',
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+const formatDate = (date: Date): string => {
+  const months = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'];
+  const day = date.getDate();
+  const month = months[date.getMonth()];
+  const h = date.getHours().toString().padStart(2, '0');
+  const m = date.getMinutes().toString().padStart(2, '0');
+  return `${day} de ${month} às ${h}:${m}`;
 };
 
-function MetricCard({ name, metric }: { name: string; metric: SkinMetric }) {
-  const color = metricColors[name] ?? Colors.gray;
-  const label = metricLabels[name] ?? name;
+const formatPriority = (text: string | null | undefined): string => {
+  if (!text) return '';
+  return text.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
 
-  return (
-    <View style={{
-      width: '47%',
-      borderRadius: 16,
-      backgroundColor: Colors.white,
-      padding: 14,
-      minHeight: 110,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.06,
-      shadowRadius: 4,
-      elevation: 2,
-      justifyContent: 'space-between',
-      overflow: 'hidden',
-    }}>
-      {/* Skia glow blob — fica atrás de tudo */}
-      <Canvas style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 60 }}>
-        <SkiaCircle cx={60} cy={60} r={40} color={color} opacity={0.35}>
-          <BlurMask blur={18} style="normal" />
-        </SkiaCircle>
-      </Canvas>
+const formatContraindication = (value: string): string => {
+  const map: Record<string, string> = {
+    acido_glicolico_alta_concentracao: 'Ácido glicólico em alta concentração',
+    retinoides_sem_preparo_de_barreira: 'Retinoides sem preparo de barreira',
+    esfoliantes_fisicos: 'Esfoliantes físicos',
+    esfoliantes_fisicos_agressivos: 'Esfoliantes físicos agressivos',
+    'vitamina_c_pH_baixo_sem_adaptacao': 'Vitamina C em pH baixo sem adaptação',
+    acidos_esfoliantes_alta_concentracao: 'Ácidos esfoliantes em alta concentração',
+    acidos_esfoliantes_alta_concentracao_sem_preparo: 'Ácidos esfoliantes em alta concentração',
+    produtos_com_alcool_alto: 'Produtos com álcool',
+    produtos_com_alta_fragrancia: 'Produtos com fragrância',
+    sabonetes_com_sulfatos_fortes: 'Sabonetes com sulfatos fortes',
+  };
+  return map[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
 
-      {/* Ícone de cadeado no canto superior direito */}
-      <View style={{ position: 'absolute', top: 10, right: 10 }}>
-        <Lock size={12} color={Colors.gray} />
-      </View>
+const barrierLabel = (status?: string): string => {
+  switch (status) {
+    case 'integra': return 'Íntegra';
+    case 'levemente_comprometida': return 'Atenção';
+    case 'comprometida': return 'Comprometida';
+    case 'severamente_comprometida': return 'Crítica';
+    default: return status ?? '—';
+  }
+};
 
-      <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.black, marginBottom: 8 }}>
-        {label}
-      </Text>
+const hydrationLabel = (h?: string): string => {
+  switch (h) {
+    case 'desidratada': return 'Desidratada';
+    case 'normal': return 'Normal';
+    case 'hidratada': return 'Boa';
+    default: return h ?? '—';
+  }
+};
 
-      {/* Pill coral cobrindo o número */}
-      <View
-        style={{
-          width: 50,
-          height: 24,
-          backgroundColor: 'rgba(0,0,0,0.12)',
-          borderRadius: 12,
-          marginBottom: 8,
-        }}
-      />
-    </View>
-  );
-}
+const sebaceoLabel = (i?: string): string => {
+  switch (i) {
+    case 'nenhum': return 'Nenhuma';
+    case 'leve': return 'Leve';
+    case 'moderado': return 'Moderada';
+    case 'intenso': return 'Intensa';
+    default: return i ?? '—';
+  }
+};
+
+const qualidadeLabel = (n?: string): string => {
+  switch (n) {
+    case 'alta': return 'Alta';
+    case 'media': return 'Média';
+    case 'baixa': return 'Baixa';
+    default: return '—';
+  }
+};
+
+const qualidadeColor = (n?: string): string => {
+  switch (n) {
+    case 'alta': return '#4CAF50';
+    case 'media': return '#F59E0B';
+    case 'baixa': return '#EF4444';
+    default: return '#8A8A8E';
+  }
+};
+
+const pigmentacaoTypeLabel = (type?: string | null): string => {
+  switch (type) {
+    case 'melasma': return 'Melasma';
+    case 'HPI': return 'Hiperpigmentação pós-inflamatória';
+    case 'PIE': return 'PIE vascular';
+    case 'lentigos_solares': return 'Manchas solares';
+    case 'efelides': return 'Efélides';
+    case 'misto': return 'Misto';
+    default: return type ?? '—';
+  }
+};
+
+const fototipoText = (ph?: string): string => {
+  switch (ph) {
+    case 'I':
+    case 'II': return 'Pele muito clara, alta sensibilidade ao sol';
+    case 'III': return 'Pele oliva, bronzeia com facilidade';
+    case 'IV': return 'Pele morena, risco moderado de manchas';
+    case 'V': return 'Pele escura, alto risco de hiperpigmentação pós-inflamatória';
+    case 'VI': return 'Pele muito escura, máxima atenção a manchas e retinoides';
+    default: return '';
+  }
+};
+
+// ── Regional analysis builder ──────────────────────────────────────────────────
+
+type RegionalEntry = { zone: string; issues: string[]; detail: string | null | undefined; regionKey: string };
+
+const buildRegionalAnalysis = (result: ScanResult | null | undefined): RegionalEntry[] => {
+  if (!result) return [];
+  const regions: RegionalEntry[] = [];
+
+  const foreheadIssues: string[] = [];
+  if (result?.acne?.distribution?.includes('testa') && result?.acne?.present) {
+    foreheadIssues.push(result.acne.lesion_type === 'comedonal' ? 'cravos e comedões' : 'lesões de acne');
+  }
+  if (result?.brilho_sebaceo?.location?.includes('testa')) foreheadIssues.push('oleosidade');
+  if (result?.envelhecimento?.location?.includes('testa')) foreheadIssues.push('linhas finas');
+  if (foreheadIssues.length > 0) regions.push({ zone: 'Testa', issues: foreheadIssues, detail: result?.acne?.insight, regionKey: 'testa' });
+
+  const noseIssues: string[] = [];
+  if (result?.brilho_sebaceo?.location?.includes('nariz')) noseIssues.push('oleosidade');
+  if (result?.textura_poros?.pore_visibility !== 'normal') noseIssues.push('poros dilatados');
+  if (noseIssues.length > 0) regions.push({ zone: 'Nariz e Zona T', issues: noseIssues, detail: result?.textura_poros?.insight, regionKey: 'nariz_zona_t' });
+
+  const cheekIssues: string[] = [];
+  if (result?.acne?.distribution?.includes('bochechas') && result?.acne?.present) cheekIssues.push('acne');
+  if (result?.pigmentacao?.location?.includes('bochechas') && result?.pigmentacao?.present) cheekIssues.push('manchas');
+  if (result?.rosacea?.present) cheekIssues.push('eritema');
+  if (cheekIssues.length > 0) regions.push({ zone: 'Bochechas', issues: cheekIssues, detail: result?.pigmentacao?.insight, regionKey: 'bochechas' });
+
+  const chinIssues: string[] = [];
+  if (result?.acne?.distribution?.includes('queixo') && result?.acne?.present) chinIssues.push('acne');
+  if (result?.acne?.distribution?.includes('mandibula') && result?.acne?.present) chinIssues.push('acne hormonal');
+  if (result?.acne?.pattern === 'hormonal') chinIssues.push('padrão hormonal');
+  if (chinIssues.length > 0) regions.push({ zone: 'Queixo e Mandíbula', issues: chinIssues, detail: result?.acne?.insight, regionKey: 'queixo_mandibula' });
+
+  if (result?.area_periocular && result?.area_periocular !== 'normal') {
+    const periocularLabel: Record<string, string> = {
+      olheiras: 'olheiras visíveis',
+      inchaco: 'inchaço palpebral',
+      linhas_finas: 'linhas finas',
+      misto: 'olheiras e linhas finas',
+    };
+    regions.push({
+      zone: 'Área dos Olhos',
+      issues: [periocularLabel[result.area_periocular] ?? result.area_periocular],
+      detail: null,
+      regionKey: 'area_periocular',
+    });
+  }
+
+  return regions;
+};
+
+const regionCropOffset: Record<string, number> = {
+  'Testa': 0,
+  'Área dos Olhos': 48,
+  'Nariz e Zona T': 96,
+  'Bochechas': 112,
+  'Queixo e Mandíbula': 160,
+};
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export default function Results() {
-  const scanResult = useAppStore((s) => s.scanResult);
-  const scanImageUri = useAppStore((s) => s.scanImageUri);
+  const router = useRouter();
+  const { scanResult, scanImageUri } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const scrollY = useRef(new Animated.Value(0)).current;
   const { track } = useMixpanel();
 
   useEffect(() => {
     track('onboarding_step_viewed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 });
   }, []);
 
-  const score = scanResult?.skin_score ?? 0;
-  const offset = circ * (1 - score / 100);
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, []);
 
-  // Sempre mostrar 6 cards borrados como preview — os valores são ocultos de qualquer forma
-  const dummy: SkinMetric = { score: 0, label: '', insight: '' }
-  const metrics: [string, SkinMetric][] = [
-    ['acne',        scanResult?.acne ?? dummy],
-    ['skin_age',    { score: 0, label: String(scanResult?.skin_age ?? 0), insight: '' }],
-    ['hydration',   scanResult?.metrics?.hydration ?? dummy],
-    ['oiliness',    scanResult?.metrics?.oiliness  ?? dummy],
-    ['dark_spots',  scanResult?.metrics?.dark_spots ?? dummy],
-    ['texture',     scanResult?.metrics?.texture    ?? dummy],
-  ];
+  const result = scanResult;
+  const imageUri = scanImageUri;
+
+  if (!result) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#FAFAF8', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#FB7B6B" />
+      </SafeAreaView>
+    );
+  }
+
+  const score = result.skin_score ?? 0;
+
+  const overlayTranslateY = scrollY.interpolate({
+    inputRange: [0, HERO_HEIGHT],
+    outputRange: [0, -HERO_HEIGHT],
+    extrapolate: 'clamp',
+  });
+  const regions = buildRegionalAnalysis(result);
+  const pontosFortesArr: string[] = result.pontos_fortes ?? result.positive_highlights ?? [];
+  const pontosFracosArr: string[] = result.pontos_fracos ?? result.top_concerns ?? [];
+  const contraindicacoesArr: string[] = result.contraindicacoes ?? [];
+  const pig = result.pigmentacao;
+  const today = new Date();
 
   return (
-    <QuizLayout progress={76} showBack>
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="pt-8">
-          {/* Headline da IA */}
-          {scanResult?.headline && (
-            <Text style={{
-              fontSize: 14,
-              color: Colors.gray,
-              textAlign: 'center',
-              marginBottom: 8,
-              paddingHorizontal: 16,
-            }}>
-              {scanResult.headline}
-            </Text>
-          )}
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <Stack.Screen options={{ gestureEnabled: false }} />
 
-          {/* Título */}
-          <View style={{ flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-            <Text style={{ fontSize: 32, fontWeight: '800', color: Colors.black }}>
-              Seu Skin Score
-            </Text>
-          </View>
+      {/* ── Header flutuante ─────────────────────────────────── */}
+      <SafeAreaView style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }} edges={['top']}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, alignItems: 'center' }}>
+          <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>Relatório de Pele</Text>
+          <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>{formatDate(today)}</Text>
+        </View>
+      </SafeAreaView>
 
-          {/* Score Ring */}
-          <View className="items-center mb-2">
-            <View style={{ width: 160, height: 160 }}>
-              <Svg width={160} height={160} style={{ transform: [{ rotate: '-90deg' }] }}>
-                <Circle cx={80} cy={80} r={r} stroke="#E5E7EB" strokeWidth={6} fill="none" />
+      {/* ── Foto fixa atrás do conteúdo ───────────────────────────── */}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: HERO_HEIGHT, zIndex: 0 }}>
+        {imageUri ? (
+          <Image
+            source={{ uri: imageUri }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={{ flex: 1, backgroundColor: '#C8C0B8' }} />
+        )}
+
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.65)']}
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 200 }}
+        />
+
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: HERO_HEIGHT,
+            transform: [{ translateY: overlayTranslateY }],
+          }}
+        >
+          {/* Ring — canto inferior esquerdo */}
+          <View style={{ position: 'absolute', bottom: 18, left: 16, alignItems: 'center' }}>
+            <Text style={{ fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 2, marginBottom: 5, textAlign: 'center' }}>
+              SKIN SCORE
+            </Text>
+            <View style={{ width: 86, height: 86 }}>
+              <Svg width={86} height={86}>
+                <Defs>
+                  <SvgLinearGradient id="scoreGrad" x1="0" y1="0" x2="1" y2="0">
+                    <Stop offset="0%" stopColor="#34D399" />
+                    <Stop offset="100%" stopColor="#059669" />
+                  </SvgLinearGradient>
+                </Defs>
+                <Circle cx={43} cy={43} r={38} fill="rgba(0,0,0,0.4)" stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+                <Circle cx={43} cy={43} r={33} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={3.5} />
                 <Circle
-                  cx={80} cy={80} r={r}
-                  stroke={Colors.scanBtn} strokeWidth={6} fill="none"
-                  strokeDasharray={circ} strokeDashoffset={offset}
+                  cx={43}
+                  cy={43}
+                  r={33}
+                  fill="none"
+                  stroke="url(#scoreGrad)"
+                  strokeWidth={3.5}
                   strokeLinecap="round"
+                  strokeDasharray={207.3}
+                  strokeDashoffset={207.3 * (1 - score / 100)}
+                  transform="rotate(-90 43 43)"
                 />
+                <Circle cx={43} cy={43} r={29} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
               </Svg>
-              <View style={{ position: 'absolute', top: 0, left: 0, width: 160, height: 160, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 56, fontWeight: '700', color: '#1A1A1A' }}>{score}</Text>
-              </View>
-            </View>
-          </View>
-
-          <Text className="text-[14px] text-[#9CA3AF] text-center mb-8">de 100</Text>
-
-          {/* Foto do usuário */}
-          <View className="items-center" style={{ marginBottom: -60, zIndex: 2 }}>
-            <View
-              style={{
-                width: 128,
-                height: 128,
-                borderRadius: 64,
-                borderWidth: 4,
-                borderColor: Colors.scanBtn,
-                overflow: 'hidden',
-                backgroundColor: '#E5E7EB',
-              }}
-            >
-              {scanImageUri ? (
-                <Image
-                  source={{ uri: scanImageUri }}
-                  style={{ width: '100%', height: '100%' }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={{ flex: 1, backgroundColor: '#E5E7EB' }} />
-              )}
-            </View>
-          </View>
-
-          {/* Light metrics card — métricas borradas */}
-          <View
-            style={{
-              backgroundColor: Colors.white,
-              borderRadius: 16,
-              borderWidth: 1,
-              borderColor: 'rgba(0,0,0,0.18)',
-              paddingHorizontal: 24,
-              paddingTop: 80,
-              paddingBottom: 24,
-              marginBottom: 16,
-            }}
-          >
-            <Text style={{ fontSize: 17, fontWeight: '700', color: Colors.black, marginBottom: 16, textAlign: 'center' }}>
-              Suas métricas detalhadas
-            </Text>
-
-            <View className="flex-row flex-wrap gap-3">
-              {metrics.map(([name, metric]) => (
-                <MetricCard key={name} name={name} metric={metric} />
-              ))}
-            </View>
-          </View>
-
-          {/* Locked cards */}
-          <View style={{ marginBottom: 8 }}>
-            <View style={{
-              backgroundColor: 'white',
-              borderRadius: 16,
-              borderWidth: 2,
-              borderColor: '#fb7b6b',
-              paddingVertical: 20,
-              paddingHorizontal: 24,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 12,
-              marginBottom: 8,
-            }}>
-              <Lock size={22} color="#fb7b6b" />
-              <View>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#fb7b6b' }}>
-                  Seu Protocolo Personalizado
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: -1, lineHeight: 28 }}>
+                  {score}
+                </Text>
+                <Text style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: '500', letterSpacing: 0.5 }}>
+                  /100
                 </Text>
               </View>
             </View>
           </View>
 
-          <View className="pb-8">
-            <CTAButton
-                text="Continuar"
-                to="/(onboarding)/goal"
-                onPress={() => track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 })}
-              />
+          {/* Badges — canto inferior direito */}
+          <View style={{ position: 'absolute', bottom: 18, right: 16, alignItems: 'flex-end', gap: 7 }}>
+            {result.skin_type_sebaceous ? (
+              <View style={{ backgroundColor: '#fb7b6b', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
+                <Text style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '600', letterSpacing: 0.5 }}>
+                  {result.skin_type_sebaceous.charAt(0).toUpperCase() + result.skin_type_sebaceous.slice(1)}
+                </Text>
+              </View>
+            ) : null}
+            {result.skin_phototype ? (
+              <View style={{ backgroundColor: '#fb7b6b', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
+                <Text style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '600', letterSpacing: 0.5 }}>
+                  Fitzpatrick {result.skin_phototype}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </Animated.View>
+      </View>
+
+
+      {/* ── Conteúdo com scroll ───────────────────────────────────── */}
+      <Animated.ScrollView
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: HERO_HEIGHT, paddingBottom: 0 }}
+        style={{ flex: 1, zIndex: 1 }}
+      >
+        <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
+
+        {/* ── Headline + Qualidade/Precisão ─────────────────────── */}
+        <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: '#EFEFED' }}>
+          {result.headline ? (
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#1D3A44', lineHeight: 22, marginBottom: 12, textAlign: 'center' }}>
+              {result.headline}
+            </Text>
+          ) : null}
+          {(result.qualidade_foto || result.confianca_analise) ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20 }}>
+              {result.qualidade_foto ? (
+                <Text style={{ fontSize: 12, color: '#999' }}>
+                  Qualidade{' '}
+                  <Text style={{ color: qualidadeColor(result.qualidade_foto.nivel), fontWeight: '600' }}>
+                    · {qualidadeLabel(result.qualidade_foto.nivel)}
+                  </Text>
+                </Text>
+              ) : null}
+              {result.confianca_analise ? (
+                <Text style={{ fontSize: 12, color: '#999' }}>
+                  Precisão{' '}
+                  <Text style={{ fontWeight: '600', color: '#1D3A44' }}>
+                    · {result.confianca_analise.score}%
+                  </Text>
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+
+        {/* ── Objetivo Validado ────────────────────────────────── */}
+        {result.goal_alignment ? (() => {
+          const ga = result.goal_alignment!;
+          const borderColor = ga.alinhamento === 'confirmado' ? '#10B981' : ga.alinhamento === 'parcial' ? '#F59E0B' : '#E8754A';
+          const badgeStyle = ga.alinhamento === 'confirmado'
+            ? { bg: '#ECFDF5', color: '#065F46', text: '✓ Alinha com a análise' }
+            : ga.alinhamento === 'parcial'
+            ? { bg: '#FFFBEB', color: '#92400E', text: '~ Parcialmente alinhado' }
+            : { bg: '#FFF5F4', color: '#991B1B', text: '⚠ A análise sugere outra prioridade' };
+          return (
+            <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, marginHorizontal: 20, marginBottom: 12, marginTop: 24, padding: 20 }}>
+              <View style={{ width: 3, position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: borderColor, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }} />
+              <View style={{ paddingLeft: 16 }}>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: '#999', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' }}>
+                  Seu Objetivo
+                </Text>
+                <View style={{ backgroundColor: badgeStyle.bg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 12 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: badgeStyle.color }}>
+                    {badgeStyle.text}
+                  </Text>
+                </View>
+                <View style={{ height: 1, backgroundColor: '#F0EDE8', marginBottom: 12 }} />
+                <Text style={{ fontSize: 14, color: '#444', lineHeight: 20 }}>
+                  {ga.mensagem}
+                </Text>
+              </View>
+            </View>
+          );
+        })() : null}
+
+        {/* ── Análise por Região ─────────────────────────────────── */}
+        <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginBottom: 32 }}>
+          <Text style={{ fontSize: 24, fontWeight: '400', fontStyle: 'italic', fontFamily: 'Georgia', color: '#fb7b6b', marginBottom: 16 }}>
+            Análise por Região
+          </Text>
+
+          {regions.length === 0 ? (
+            <Text style={{ fontSize: 15, color: '#8A8A8E', lineHeight: 22 }}>
+              Nenhuma área de atenção identificada — pele com aparência uniforme.
+            </Text>
+          ) : (
+            regions.map((region, i) => {
+              const displayIssues = region.issues.map((iss, idx) =>
+                idx === 0 ? iss.charAt(0).toUpperCase() + iss.slice(1) : iss
+              ).join(', ');
+              const cropOffset = regionCropOffset[region.zone] ?? 80;
+
+              return (
+                <View key={i}>
+                  {i > 0 ? (
+                    <View style={{ height: 1, backgroundColor: '#EFEFED', marginVertical: 4 }} />
+                  ) : null}
+                  <View style={{ flexDirection: 'row', gap: 16, paddingVertical: 20 }}>
+                    {imageUri ? (
+                      <View style={{ width: 80, height: 80, borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
+                        <Image
+                          source={{ uri: imageUri }}
+                          style={{ width: 80, height: 240, position: 'absolute', top: -cropOffset }}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    ) : (
+                      <View style={{ width: 80, height: 80, borderRadius: 12, backgroundColor: '#E8E4DF', flexShrink: 0 }} />
+                    )}
+
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Text
+                          style={{
+                            fontWeight: '700',
+                            fontSize: 13,
+                            color: '#1A1A1A',
+                            letterSpacing: 0.5,
+                            textTransform: 'uppercase',
+                            flex: 1,
+                            marginRight: 8,
+                          }}
+                        >
+                          {region.zone}
+                        </Text>
+                        {region.issues.length > 0 ? (
+                          <View
+                            style={{
+                              backgroundColor: '#FB7B6B',
+                              borderRadius: 20,
+                              paddingHorizontal: 10,
+                              paddingVertical: 4,
+                            }}
+                          >
+                            <Text style={{ fontSize: 11, color: 'white', fontWeight: '600' }}>
+                              {region.issues[0]}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      {displayIssues ? (
+                        <Text style={{ fontSize: 14, color: '#8A8A8E', lineHeight: 20, marginBottom: 4 }}>
+                          {displayIssues}
+                        </Text>
+                      ) : null}
+
+                      {region.detail ? (
+                        <Text style={{ fontSize: 13, color: '#6B6B6B', lineHeight: 19, marginTop: 2 }}>
+                          {region.detail}
+                        </Text>
+                      ) : null}
+
+                      {(() => {
+                        const insight = result.region_insights?.find(r => r.region === region.regionKey);
+                        return insight ? (
+                          <>
+                            <View style={{ height: 1, backgroundColor: '#F0EDE8', marginVertical: 10 }} />
+                            <Text style={{ fontSize: 13, lineHeight: 18 }}>
+                              <Text style={{ color: '#E8754A', fontWeight: '600' }}>{'→ '}</Text>
+                              <Text style={{ color: '#1D3A44', fontStyle: 'italic' }}>{insight.benefit}</Text>
+                            </Text>
+                          </>
+                        ) : null;
+                      })()}
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        {/* ── Pigmentação ───────────────────────────────────────── */}
+        {pig?.present ? (
+          <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginBottom: 12 }}>
+            <Text
+              style={{
+                fontSize: 11,
+                color: '#8A8A8E',
+                textTransform: 'uppercase',
+                letterSpacing: 1.5,
+                marginBottom: 12,
+              }}
+            >
+              Pigmentação
+            </Text>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#1A1A1A', marginBottom: 10 }}>
+              {pigmentacaoTypeLabel(pig.type)}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 5, marginBottom: 12 }}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <Text
+                  key={n}
+                  style={{
+                    fontSize: 18,
+                    color: n <= (pig.intensity_score ?? 0) ? '#fb7b6b' : '#D8D8D8',
+                  }}
+                >
+                  {n <= (pig.intensity_score ?? 0) ? '●' : '○'}
+                </Text>
+              ))}
+            </View>
+            {pig.insight ? (
+              <Text style={{ fontSize: 14, color: '#8A8A8E', lineHeight: 21 }}>
+                {pig.insight}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* ── O que fazer pela sua pele ───────────────────────── */}
+        {result.action_recommendations?.length ? (
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 20, marginBottom: 12, padding: 20 }}>
+            <Text style={{ fontSize: 24, fontWeight: '400', fontStyle: 'italic', fontFamily: 'Georgia', color: '#fb7b6b', marginBottom: 16, marginTop: 0 }}>
+              O que fazer pela sua pele
+            </Text>
+            {result.action_recommendations.map((rec, i) => (
+              <View key={i}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 42, fontWeight: '800', color: '#fb7b6b', lineHeight: 42, width: 48, marginRight: 8 }}>
+                    {i + 1}
+                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: '#999', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 3 }}>
+                      {rec.category}
+                    </Text>
+                    <Text style={{ fontSize: 14, color: '#333', lineHeight: 20 }}>{rec.text}</Text>
+                  </View>
+                </View>
+                {i < result.action_recommendations!.length - 1 ? (
+                  <View style={{ height: 1, backgroundColor: '#F0EDE8', marginVertical: 14 }} />
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* ── Condição Geral — grid 2x2 ─────────────────────────── */}
+        <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginTop: 12, marginBottom: 12 }}>
+          <Text style={{ fontSize: 24, fontWeight: '400', fontStyle: 'italic', fontFamily: 'Georgia', color: '#fb7b6b', marginBottom: 16 }}>
+            Condição Geral
+          </Text>
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: '#E8E6E0',
+              backgroundColor: 'white',
+              overflow: 'hidden',
+            }}
+          >
+            <View style={{ flexDirection: 'row' }}>
+              <View style={{ flex: 1, padding: 16, borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#E8E6E0' }}>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6 }}>
+                  Barreira
+                </Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
+                  {barrierLabel(result.barrier_status)}
+                </Text>
+              </View>
+              <View style={{ flex: 1, padding: 16, borderBottomWidth: 1, borderColor: '#E8E6E0' }}>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6 }}>
+                  Hidratação
+                </Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
+                  {hydrationLabel(result.skin_hydration)}
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row' }}>
+              <View style={{ flex: 1, padding: 16, borderRightWidth: 1, borderColor: '#E8E6E0' }}>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6 }}>
+                  Oleosidade
+                </Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
+                  {sebaceoLabel(result.brilho_sebaceo?.intensity)}
+                </Text>
+              </View>
+              <View style={{ flex: 1, padding: 16 }}>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6 }}>
+                  Fotótipo
+                </Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
+                  {result.skin_phototype ? `Fitzpatrick ${result.skin_phototype}` : '—'}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
-      </ScrollView>
-    </QuizLayout>
+
+        {/* ── Por onde começar ───────────────────────────────────── */}
+        {result.prioridade_clinica ? (
+          <View
+            style={{
+              backgroundColor: '#fb7b6b',
+              borderRadius: 16,
+              marginHorizontal: 20,
+              marginBottom: 32,
+              padding: 24,
+              marginTop: 32,
+            }}
+          >
+            <Text style={{ fontSize: 20, fontWeight: '800', color: 'white' }}>
+              Por onde começar
+            </Text>
+            <Text style={{ fontSize: 48, fontWeight: '800', color: '#FFFFFF', lineHeight: 58, marginTop: 16, opacity: 0.9 }}>
+              01
+            </Text>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: 'white' }}>
+              {formatPriority(result.prioridade_clinica.primaria)}
+            </Text>
+            {result.prioridade_clinica.secundaria ? (
+              <>
+                <Text style={{ fontSize: 48, fontWeight: '800', color: '#FFFFFF', lineHeight: 58, marginTop: 20, opacity: 0.9 }}>
+                  02
+                </Text>
+                <Text style={{ fontSize: 17, fontWeight: '600', color: 'rgba(255,255,255,0.7)' }}>
+                  {formatPriority(result.prioridade_clinica.secundaria)}
+                </Text>
+              </>
+            ) : null}
+            {result.prioridade_clinica.justificativa ? (
+              <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', lineHeight: 21, marginTop: 12 }}>
+                {result.prioridade_clinica.justificativa}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* ── Pontos de atenção + Pontos positivos ────────────── */}
+        {(pontosFracosArr.length > 0 || pontosFortesArr.length > 0 || result.skin_strengths?.length) ? (
+          <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginTop: 32, marginBottom: 4 }}>
+            {pontosFracosArr.length > 0 ? (
+              <>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>
+                  Pontos de Atenção
+                </Text>
+                {pontosFracosArr.map((item, i) => (
+                  <View key={i}>
+                    {i > 0 ? <View style={{ height: 1, backgroundColor: '#F0F0F0' }} /> : null}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 14 }}>
+                      <Text style={{ fontSize: 16, color: '#FB7B6B', fontWeight: '700', lineHeight: 22 }}>—</Text>
+                      <Text style={{ flex: 1, fontSize: 15, color: '#1A1A1A', lineHeight: 22 }}>{item}</Text>
+                    </View>
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            {pontosFracosArr.length > 0 && (result.skin_strengths?.length || pontosFortesArr.length > 0) ? (
+              <View style={{ height: 24 }} />
+            ) : null}
+
+            {result.skin_strengths?.length ? (
+              <>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>
+                  Pontos Fortes da Pele
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginHorizontal: -20 }}
+                  contentContainerStyle={{ paddingHorizontal: 20 }}
+                >
+                  {result.skin_strengths.map((item, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        width: 260,
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 12,
+                        padding: 16,
+                        marginRight: 12,
+                        borderWidth: 1,
+                        borderColor: '#F0EDE8',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 20,
+                          backgroundColor: '#fb7b6b',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {skinStrengthIcons[item.icon]}
+                      </View>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44', marginTop: 10, marginBottom: 6 }}>
+                        {item.title}
+                      </Text>
+                      <Text style={{ fontSize: 13, color: '#666', lineHeight: 18 }}>{item.body}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </>
+            ) : pontosFortesArr.length > 0 ? (
+              <>
+                <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>
+                  Pontos Positivos
+                </Text>
+                {pontosFortesArr.map((item, i) => (
+                  <View key={i}>
+                    {i > 0 ? <View style={{ height: 1, backgroundColor: '#F0F0F0' }} /> : null}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 14 }}>
+                      <Text style={{ fontSize: 16, color: '#4CAF50', fontWeight: '700', lineHeight: 22 }}>✓</Text>
+                      <Text style={{ flex: 1, fontSize: 15, color: '#1A1A1A', lineHeight: 22 }}>{item}</Text>
+                    </View>
+                  </View>
+                ))}
+              </>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* ── Ativos a evitar ───────────────────────────────────── */}
+        {contraindicacoesArr.length > 0 ? (
+          <View
+            style={{
+              backgroundColor: '#FFFFFF',
+              paddingHorizontal: 20,
+              paddingVertical: 28,
+              marginTop: 4,
+              marginBottom: 4,
+            }}
+          >
+            <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>
+              Evitar para sua pele
+            </Text>
+            {contraindicacoesArr.map((item, i) => (
+              <View key={`contra-${i}`}>
+                {i > 0 ? (
+                  <View style={{ height: 1, backgroundColor: 'rgba(239,68,68,0.12)' }} />
+                ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 12 }}>
+                  <Text style={{ fontSize: 16, color: '#EF4444', fontWeight: '700', lineHeight: 22 }}>×</Text>
+                  <Text style={{ flex: 1, fontSize: 15, color: '#1A1A1A', lineHeight: 22 }}>
+                    {formatContraindication(item)}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* ── Fotótipo ─────────────────────────────────────────── */}
+        {result.skin_phototype ? (
+          <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginTop: 4 }}>
+            <Text style={{ fontSize: 11, color: '#8A8A8E', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 }}>
+              Fotótipo Detectado
+            </Text>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#1A1A1A', lineHeight: 23 }}>
+              Fitzpatrick {result.skin_phototype}
+            </Text>
+            {fototipoText(result.skin_phototype) ? (
+              <Text style={{ fontSize: 15, color: '#1A1A1A', lineHeight: 23, flexShrink: 1 }}>
+                {fototipoText(result.skin_phototype)}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* ── Disclaimer ───────────────────────────────────────── */}
+        {result.disclaimer ? (
+          <View style={{ paddingHorizontal: 24, paddingTop: 32, paddingBottom: 24, alignItems: 'center' }}>
+            <Text style={{ fontSize: 11, color: '#8A8A8E', textAlign: 'center', lineHeight: 16 }}>
+              {result.disclaimer}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* ── Botão Continuar ───────────────────────────────────────── */}
+        <View style={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 24, paddingTop: 8 }}>
+          <TouchableOpacity
+            onPress={() => {
+              track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 });
+              router.push('/(onboarding)/trust');
+            }}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: '#fb7b6b',
+              borderRadius: 28,
+              height: 56,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: 'white', fontSize: 16, fontWeight: '700' }}>Continuar</Text>
+          </TouchableOpacity>
+        </View>
+
+        </View>
+      </Animated.ScrollView>
+
+    </View>
   );
 }
