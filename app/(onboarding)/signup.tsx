@@ -104,7 +104,7 @@ export default function Signup() {
           await saveToSupabase(data.session.user.id);
         }
         track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-        router.push('/(onboarding)/protocol-loading');
+        router.push('/(onboarding)/skincare-routine');
       }
     } catch (error: any) {
       Alert.alert('Erro ao criar conta', error?.message ?? 'Tente novamente.');
@@ -144,7 +144,7 @@ export default function Signup() {
         await saveToSupabase(session.user.id);
       }
       track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-      router.push('/(onboarding)/protocol-loading');
+      router.push('/(onboarding)/skincare-routine');
     } catch (error: any) {
       Alert.alert('Erro', JSON.stringify(error));
     }
@@ -394,7 +394,7 @@ export default function Signup() {
                         await saveToSupabase(data.user.id);
                       }
                       track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-                      router.push('/(onboarding)/protocol-loading');
+                      router.push('/(onboarding)/skincare-routine');
                     } catch (error: any) {
                       Alert.alert('Erro', error?.message ?? 'Tente novamente.');
                     }

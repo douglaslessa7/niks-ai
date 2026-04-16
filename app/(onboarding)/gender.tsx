@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text } from 'react-native';
+import { useRouter } from 'expo-router';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { OptionCard } from '../../components/ui/OptionCard';
@@ -10,8 +11,9 @@ const genders = ['Masculino', 'Feminino', 'Outro'];
 
 export default function Gender() {
   const [selected, setSelected] = useState<string | null>(null);
-  const { setOnboardingField } = useAppStore();
+  const { setOnboardingField, onboarding } = useAppStore();
   const { track } = useMixpanel();
+  const router = useRouter();
 
   useEffect(() => {
     track('onboarding_step_viewed', { step_number: 3, step_name: 'Gênero', step_total: 23 });
@@ -48,11 +50,17 @@ export default function Gender() {
 
         <View className="pb-8">
           <CTAButton
-              text="Continuar"
-              to="/(onboarding)/birthday"
-              disabled={!selected}
-              onPress={() => track('onboarding_step_completed', { step_number: 3, step_name: 'Gênero', step_total: 23 })}
-            />
+            text="Continuar"
+            disabled={!selected}
+            onPress={() => {
+              track('onboarding_step_completed', { step_number: 3, step_name: 'Gênero', step_total: 23 });
+              if (onboarding.genero === 'Feminino') {
+                router.push('/(onboarding)/pregnancy');
+              } else {
+                router.push('/(onboarding)/birthday');
+              }
+            }}
+          />
         </View>
       </View>
     </QuizLayout>

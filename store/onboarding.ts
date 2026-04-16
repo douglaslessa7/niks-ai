@@ -145,6 +145,7 @@ export type ProtocolResult = {
   morning: ProtocolStep[]
   night: ProtocolStep[]
   introduction_warnings: string | null
+  introduction_schedule?: string | null
   expected_timeline: {
     two_weeks: string
     one_month: string
@@ -174,6 +175,7 @@ export type FoodReportResult = {
 export type OnboardingData = {
   concerns: string[]
   genero: string | null
+  pregnancy_status?: 'none' | 'pregnant' | 'breastfeeding' | 'trying' | null
   birthday: string | null
   skin_type: string | null
   frequency: string | null
@@ -184,6 +186,10 @@ export type OnboardingData = {
   food_analysis: boolean | null
   commitment: string | null
   objetivo: string | null
+  skincare_routine_type?: 'zero' | 'complement' | 'prescribed' | 'unsure' | null
+  skincare_routine_description?: string | null
+  allergy_type?: 'none' | 'sensitive' | 'reaction' | null
+  allergy_description?: string | null
 }
 
 type AppStore = {
@@ -214,6 +220,7 @@ type AppStore = {
 const initialOnboarding: OnboardingData = {
   concerns: [],
   genero: null,
+  pregnancy_status: null,
   birthday: null,
   skin_type: null,
   frequency: null,
@@ -224,6 +231,10 @@ const initialOnboarding: OnboardingData = {
   food_analysis: null,
   commitment: null,
   objetivo: null,
+  skincare_routine_type: null,
+  skincare_routine_description: null,
+  allergy_type: null,
+  allergy_description: null,
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -280,6 +291,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         id: userId,
         email: user?.email ?? '',
         genero: onboarding.genero,
+        pregnancy_status: onboarding.pregnancy_status ?? null,
+        skincare_routine_type: onboarding.skincare_routine_type ?? null,
+        skincare_routine_description: onboarding.skincare_routine_description ?? null,
+        allergy_type: onboarding.allergy_type ?? null,
+        allergy_description: onboarding.allergy_description ?? null,
         idade,
         tipo_pele: onboarding.skin_type,
         concerns: onboarding.concerns,

@@ -34,7 +34,7 @@ App mobile de análise de pele por IA.
 | Estilo | NativeWind v4 + Tailwind CSS (sempre `className`, nunca `StyleSheet`) |
 | Navegação | Expo Router v3 (`useRouter`, `router.push`, `router.back`) |
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
-| IA | Gemini 3 Flash Preview (`analyze-skin`) / Gemini 2.5 Pro (`analyze-food`, `generate-protocol`) via Supabase Edge Functions |
+| IA | Gemini 3 Flash Preview (`analyze-skin`, `generate-protocol`) / Gemini 2.5 Pro (`analyze-food`) via Supabase Edge Functions |
 | Pagamentos | RevenueCat (verificação de entitlement) + Superwall (apresentação do paywall) |
 | Analytics | Mixpanel (`mixpanel-react-native`, `useNative=true`) — `lib/mixpanel/` |
 | Camera | expo-camera + expo-image-picker |
@@ -261,7 +261,12 @@ updated_at timestamptz DEFAULT now()
 | `morning[]` | `rotina_am` |
 | `night[]` | `rotina_pm` |
 | `introduction_warnings` | `dicas[0]` |
-| `expected_timeline.*` | `dicas[1,2,3]` |
+| `expected_timeline.two_weeks` | `dicas[1]` |
+| `expected_timeline.one_month` | `dicas[2]` |
+| `expected_timeline.three_months` | `dicas[3]` |
+| `introduction_schedule` | `dicas[4]` |
+
+> ⚠️ O array `dicas` usa índices fixos (nunca push condicional). `protocol-loading.tsx` monta o array com posições garantidas — se um campo for null, salva null na posição. Isso garante que `dicas[4]` seja sempre `introduction_schedule`.
 
 **Colunas extras na tabela `users`:**
 ```sql
@@ -269,8 +274,13 @@ genero text, idade int4, tipo_pele text,
 concerns text[] DEFAULT '{}', objetivo text,
 frequency text, sun_exposure text, hydration text,
 sleep text, sunscreen text, birthday text,
-push_token text,             -- token Expo Push Notifications (salvo na tela notifications.tsx)
-streak_days int4 DEFAULT 0,  -- dias consecutivos com AMBAS as rotinas (manhã + noite) concluídas
+pregnancy_status text,              -- 'none' | 'pregnant' | 'breastfeeding' | 'trying' — só coletado para gênero Feminino
+skincare_routine_type text,         -- 'zero' | 'complement' | 'prescribed' | 'unsure'
+skincare_routine_description text,  -- texto livre (só coletado para complement/prescribed)
+allergy_type text,                  -- 'none' | 'sensitive' | 'reaction'
+allergy_description text,           -- texto livre (só coletado para reaction)
+push_token text,                    -- token Expo Push Notifications (salvo na tela notifications.tsx)
+streak_days int4 DEFAULT 0,         -- dias consecutivos com AMBAS as rotinas (manhã + noite) concluídas
 last_protocol_completed_at timestamptz  -- última vez que o streak foi incrementado (evita duplo incremento no mesmo dia)
 ```
 
@@ -278,6 +288,11 @@ Migration aplicada:
 ```sql
 ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days int4 DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_protocol_completed_at timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pregnancy_status text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS skincare_routine_type text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS skincare_routine_description text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS allergy_type text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS allergy_description text;
 ```
 
 **Colunas extras na tabela `skin_scans`:**
@@ -306,7 +321,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 |---|---|---|---|
 | `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns, genero, idade, sun_exposure, hydration, sleep, sunscreen, objetivo } }` | Schema clínico completo — ver tipo `ScanResult` no store. Campos-chave: `skin_score`, `skin_type_detected`, `headline`, `acne`, `envelhecimento`, `pigmentacao`, `cicatrizes`, `rosacea`, `textura_poros`, `barrier_status`, `qualidade_foto`, `confianca_analise`, `prioridade_clinica`, `contraindicacoes`, `pontos_fortes: string[2]`, `pontos_fracos: string[3]`, `skin_strengths[2]`, `action_recommendations[4]`, `region_insights[]` (apenas regiões com condição relevante), `goal_alignment` (apenas se `objetivo` informado), `disclaimer` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
-| `generate-protocol` | ✅ | `{ baseProtocol?, scanResult, onboardingData }` — `baseProtocol` **opcional**: se omitido, a função usa os protocolos base embutidos em si mesma com base no `skin_type_detected` | `{ morning[], night[], introduction_warnings, expected_timeline }` |
+| `generate-protocol` | ✅ | `{ scanResult, onboardingData }` | `{ morning[], night[], introduction_warnings, expected_timeline, introduction_schedule }` — cada item de `morning`/`night` contém: `id, name, ingredient, instruction, steps: string[], color, waitTime, product_suggestions` |
 | `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API |
 | `revenuecat-webhook` | ✅ | POST do RevenueCat — header `Authorization: Bearer REVENUECAT_WEBHOOK_SECRET` | Retorna sempre HTTP 200. Faz UPSERT em `subscriptions` com base no `app_user_id` (= `user_id` do Supabase). Trata: `INITIAL_PURCHASE`, `RENEWAL`, `TRIAL_STARTED`, `TRIAL_CONVERTED`, `TRIAL_CANCELLED`, `CANCELLATION`, `EXPIRATION`, `UNCANCELLATION` |
 
@@ -317,7 +332,8 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 
 **Modelos de IA:**
 - `analyze-skin`: `gemini-3-flash-preview` (mais rápido, custo menor)
-- `analyze-food`, `generate-protocol`: `gemini-2.5-pro` (mais preciso para tarefas complexas)
+- `analyze-food`: `gemini-2.5-pro` (mais preciso para tarefas complexas)
+- `generate-protocol`: `gemini-3-flash-preview`
 
 Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → Edge Functions → Secrets).
 
@@ -333,7 +349,7 @@ Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → 
 - JSON parsing: tenta extrair bloco ` ```json ``` ` primeiro, depois fallback para `\{[\s\S]*\}` — Gemini pode retornar markdown em vez de JSON puro
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
 - **Retry interno de Gemini 503 em `analyze-skin` e `analyze-food`:** o Gemini retorna 503 `UNAVAILABLE` com frequência sob alta demanda. Ambas as Edge Functions têm loop de **3 tentativas** com **3s de espera** entre elas antes de retornar erro ao app — não remover esse loop.
-- `generate-protocol` tem os protocolos base (`BASE_PROTOCOLS` para os 4 tipos de pele) embutidos diretamente na Edge Function — `baseProtocol` no body é opcional; se omitido, a função seleciona o protocolo correto pelo `skin_type_detected`. A IA ajusta o protocolo, não cria do zero
+- `generate-protocol` gera o protocolo **do zero** com um system prompt dermatológico clínico extenso (hierarquia clínica, regras cronobiológicas, incompatibilidades, adaptações por fotótipo). Não usa mais `BASE_PROTOCOLS` nem recebe `baseProtocol` — o campo é ignorado se enviado
 
 ### Push Notifications (`pg_cron`)
 
@@ -438,7 +454,7 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `skin_type_detected` ← cópia de `skin_type_sebaceous` (consumido em 7 lugares no app: Mixpanel, DB, UI, protocolo)
 - `skin_age` (top-level) ← cópia de `envelhecimento.skin_age` (consumido em 4 lugares: results.tsx, skin-result.tsx, loading.tsx, store)
 
-**Campos de onboarding:** `genero`, `birthday`, `skin_type`, `concerns[]`, `frequency`, `sun_exposure`, `hydration`, `sleep`, `sunscreen`, `objetivo`
+**Campos de onboarding:** `genero`, `pregnancy_status`, `birthday`, `skin_type`, `concerns[]`, `frequency`, `sun_exposure`, `hydration`, `sleep`, `sunscreen`, `objetivo`, `skincare_routine_type`, `skincare_routine_description`, `allergy_type`, `allergy_description`
 
 **Campos de imagem:**
 - `foodImageBase64: string | null`
@@ -753,8 +769,10 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 - `components/ui/AIConsentModal.tsx` — modal de consentimento de uso de IA (LGPD); bottom sheet animado com `Animated.spring`; backdrop não fecha o modal; link inline para Política de Privacidade
 
 
-**Telas — Onboarding (20 telas):**
-`concerns` → `gender` → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `commitment` → `goal` → `trust` → `plan-preview` → `signup` → `protocol-loading` → `paywall-soft` → `notifications`
+**Telas — Onboarding (25 telas):**
+`concerns` → `gender` → `pregnancy`\* → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `commitment` → `goal` → `trust` → `plan-preview` → `signup` → `skincare-routine` → `skincare-routine-detail`\* → `allergies` → `allergies-detail`\* → `protocol-loading` → `paywall-soft` → `notifications`
+
+> \* Telas condicionais: `pregnancy` só para gênero Feminino; `skincare-routine-detail` só para `complement`/`prescribed`; `allergies-detail` só para `reaction`.
 
 > ⚠️ `final-loading.tsx` existe no projeto mas está **fora do fluxo** — `goal.tsx` navega diretamente para `trust`. A tela não faz nenhum processamento real (era animação pura de 3.8s). Não remover o arquivo; apenas não está na rota ativa.
 
@@ -799,7 +817,7 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 Welcome
   → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
     → goal → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results → trust → plan-preview (skin_score real do store)
-    → signup (Google / Apple / E-mail+Senha → saveToSupabase) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft (Superwall) → notifications
+    → signup (Google / Apple / E-mail+Senha → saveToSupabase) → skincare-routine → skincare-routine-detail* (se complement/prescribed) → allergies → allergies-detail* (se reaction) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft (Superwall) → notifications
     → App principal (tabs)
 
   → [botão "Entrar"] Login
@@ -817,6 +835,7 @@ O scan flow é inserido entre `goal` e `trust` — `goal` é respondido **antes*
 |---|---|---|
 | concerns | 8% | |
 | gender | 16% | |
+| pregnancy | 20% | Condicional — só exibida se gênero = Feminino |
 | birthday | 24% | |
 | skin-type | 32% | |
 | frequency | 36% | |
@@ -831,6 +850,10 @@ O scan flow é inserido entre `goal` e `trust` — `goal` é respondido **antes*
 | trust | 88% | |
 | plan-preview | 92% | |
 | signup | 96% | |
+| skincare-routine | 88% | Após signup — coleta rotina atual de skincare |
+| skincare-routine-detail | 90% | Condicional — só se `skincare_routine_type` = `complement` ou `prescribed` |
+| allergies | 92% | |
+| allergies-detail | 94% | Condicional — só se `allergy_type` = `reaction` |
 | protocol-loading | sem progress bar | gera e salva protocolo no Supabase |
 | paywall-soft | sem progress bar | entrega controle ao Superwall SDK — sem UI própria |
 | notifications | sem progress bar | |
@@ -847,7 +870,8 @@ niks-ai/
 │   ├── (onboarding)/
 │   │   ├── _layout.tsx            ✅
 │   │   ├── concerns.tsx           ✅
-│   │   ├── gender.tsx             ✅
+│   │   ├── gender.tsx             ✅ navega para pregnancy (Feminino) ou birthday (outros)
+│   │   ├── pregnancy.tsx          ✅ condicional — só para gênero Feminino; entre gender e birthday
 │   │   ├── birthday.tsx           ✅
 │   │   ├── skin-type.tsx          ✅
 │   │   ├── frequency.tsx          ✅
@@ -863,6 +887,10 @@ niks-ai/
 │   │   ├── plan-preview.tsx       ✅
 │   │   ├── signup.tsx             ✅ fluxo dois passos (e-mail/senha + Google/Apple)
 │   │   ├── login.tsx              ✅ fluxo dois passos (e-mail/senha + Google/Apple)
+│   │   ├── skincare-routine.tsx   ✅ após signup — tipo de rotina atual (4 opções)
+│   │   ├── skincare-routine-detail.tsx ✅ condicional — descrição dos produtos usados/prescritos
+│   │   ├── allergies.tsx          ✅ alergias/sensibilidades (3 opções)
+│   │   ├── allergies-detail.tsx   ✅ condicional — descrição do ativo/produto que causou reação
 │   │   ├── protocol-loading.tsx   ✅ gera protocolo + salva no Supabase
 │   │   ├── paywall-soft.tsx       ✅ gateway para Superwall — spinner sem UI própria
 │   │   ├── paywall-detailed.tsx   ⚠️ dead code — UI customizada do fluxo pré-Superwall, fora da rota ativa
@@ -1025,7 +1053,8 @@ Nova tela acessada ao tocar no Profile Header Card do perfil:
 Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout:
 1. **Header** — "Seu Protocolo" (28px, font-800, `#1D3A44`)
 2. **Tab Toggle** — 2 botões pill com `Sun`/`Moon` (48px). Ativo: coral `#FB7B6B` sólido; Inativo: outline `#1D3A44`
-3. **Barra de progresso** — texto "X de Y passos concluídos" + barra coral animada (`Animated.timing`, 400ms)
+3. **Cronograma de Introdução** — card colapsável (começa fechado) com ícone `Calendar` coral; visível em ambas as abas; exibido apenas se `dicas[4]` (`introduction_schedule`) existir; posicionado entre o Tab Toggle e a barra de progresso
+4. **Barra de progresso** — texto "X de Y passos concluídos" + barra coral animada (`Animated.timing`, 400ms)
 4. **Cards de passo** — card branco `borderRadius: 16`, borda `#F0F0F0`:
    - Círculo numerado 40×40 (coral manhã / `#1D3A44` noite) + nome + tag de dias opcional + ingredient + instruction
    - Checkbox circular 24×24 no canto superior direito (vazio quando pendente; verde `#4CAF50` + ícone `Check` quando marcado)
@@ -1033,7 +1062,7 @@ Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout
    - Botão "Ver passo a passo" (`#F0F9F5`, texto `#7CB69D`, ícone `Info`)
 5. **Seção "Concluídos hoje"** — colapsável (começa fechada); itens esmaecidos com risco no texto; toque desmarca o item
 6. **Card de celebração** — aparece ao concluir todos os passos do período; verde `#E8F5E9`, borda `#4CAF50`, ícone `CheckCircle`; mostra streak se ambas as rotinas do dia estiverem concluídas
-7. **Modal "Ver passo a passo"** — `Modal` nativo (`transparent + animationType: 'slide'`), handle + instrução dividida em sub-passos numerados + botão "Entendi" coral
+7. **Modal "Ver passo a passo"** — `Modal` nativo (`transparent + animationType: 'slide'`), handle + nome (título) + ingredient (subtítulo cinza) + instruction (texto narrativo) + lista numerada de sub-passos + botão "Entendi" coral. Sub-passos usam o campo `steps[]` da API; fallback para parsing de `instruction` em protocolos antigos sem o campo
 8. **Nota de Observação** (aba noite) — card `#FDFDFD` exibindo `protocol.introduction_warnings`
 
 **Estado de conclusão (AsyncStorage):** chave `protocolo_check_YYYY-MM-DD_morning` e `protocolo_check_YYYY-MM-DD_night` — valor: JSON array de índices marcados. Reseta automaticamente no novo dia. Estado independente por período.
@@ -1088,5 +1117,5 @@ const overlayTranslateY = scrollY.interpolate({
 
 ---
 
-*Última atualização: Sessão 20 — Abril 2026*
+*Última atualização: Sessão 21 — Abril 2026*
 *Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto).*

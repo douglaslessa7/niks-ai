@@ -193,12 +193,14 @@ export default function ProtocolLoading() {
       setProtocolResult(data);
       track('protocol_generated');
 
-      // Montar dicas
-      const dicas: string[] = [];
-      if (data.introduction_warnings) dicas.push(data.introduction_warnings);
-      if (data.expected_timeline?.two_weeks) dicas.push(data.expected_timeline.two_weeks);
-      if (data.expected_timeline?.one_month) dicas.push(data.expected_timeline.one_month);
-      if (data.expected_timeline?.three_months) dicas.push(data.expected_timeline.three_months);
+      // Montar dicas (índices fixos: 0=warnings, 1=2weeks, 2=1month, 3=3months, 4=schedule)
+      const dicas = [
+        data.introduction_warnings ?? null,
+        data.expected_timeline?.two_weeks ?? null,
+        data.expected_timeline?.one_month ?? null,
+        data.expected_timeline?.three_months ?? null,
+        data.introduction_schedule ?? null,
+      ];
 
       // Salvar no Supabase
       const { data: { user } } = await supabase.auth.getUser();
