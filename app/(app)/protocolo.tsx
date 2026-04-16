@@ -1,7 +1,7 @@
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState, useEffect, useRef } from 'react';
-import { Check, Sun, Moon, Info, CheckCircle, ChevronDown, ChevronUp, Flame } from 'lucide-react-native';
+import { Check, Sun, Moon, Info, CheckCircle, ChevronDown, ChevronUp, Flame, Calendar } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult } from '../../store/onboarding';
 import { BASE_PROTOCOLS } from '../../constants/protocols';
@@ -15,6 +15,7 @@ interface Step {
   name: string;
   ingredient: string;
   instruction: string;
+  steps?: string[];
   color: string;
   waitTime?: string | null;
   product_suggestions?: string[];
@@ -24,6 +25,7 @@ interface Protocol {
   morning: Step[];
   night: Step[];
   introduction_warnings: string | null;
+  introduction_schedule?: string | null;
   expected_timeline: {
     two_weeks: string;
     one_month: string;
@@ -41,6 +43,8 @@ export default function Protocolo() {
   const [error, setError] = useState<string | null>(null);
   const [selectedStep, setSelectedStep] = useState<Step | null>(null);
   const [showStepDetail, setShowStepDetail] = useState(false);
+
+  const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
 
   // Progress & gamification state
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
@@ -263,6 +267,7 @@ export default function Protocolo() {
               one_month: saved.dicas?.[2] ?? '',
               three_months: saved.dicas?.[3] ?? '',
             },
+            introduction_schedule: saved.dicas?.[4] ?? null,
           };
           setProtocolResult(fromDb as ProtocolResult);
           setProtocol(fromDb);
@@ -438,6 +443,7 @@ export default function Protocolo() {
   };
 
   const getSubSteps = (step: Step): string[] => {
+    if (step.steps && step.steps.length > 0) return step.steps;
     if (step.instruction) {
       const parts = step.instruction
         .split(/\.\s+/)
@@ -748,6 +754,48 @@ export default function Protocolo() {
             </TouchableOpacity>
           </View>
 
+          {/* Cronograma de Introdução */}
+          {protocol?.introduction_schedule && (
+            <View
+              style={{
+                borderRadius: 16,
+                backgroundColor: '#FDFDFD',
+                borderWidth: 1,
+                borderColor: '#F0F0F0',
+                marginBottom: 16,
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => setIsScheduleExpanded((prev) => !prev)}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 16,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Calendar size={16} color="#FB7B6B" strokeWidth={2} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>
+                    Cronograma de Introdução
+                  </Text>
+                </View>
+                {isScheduleExpanded
+                  ? <ChevronUp size={16} color="#1D3A44" />
+                  : <ChevronDown size={16} color="#1D3A44" />
+                }
+              </TouchableOpacity>
+              {isScheduleExpanded && (
+                <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+                  <Text style={{ fontSize: 13, color: '#6B7280', lineHeight: 20 }}>
+                    {protocol.introduction_schedule}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Barra de progresso */}
           {total > 0 && (
             <View style={{ marginBottom: 20 }}>
@@ -897,8 +945,11 @@ export default function Protocolo() {
             <ScrollView showsVerticalScrollIndicator={false}>
               {selectedStep && (
                 <>
-                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#1D3A44', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#1D3A44', marginBottom: 4 }}>
                     {selectedStep.name}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#8A8A8E', marginBottom: 16 }}>
+                    {selectedStep.ingredient}
                   </Text>
                   <Text style={{ fontSize: 14, color: '#8A8A8E', marginBottom: 24, lineHeight: 20 }}>
                     {selectedStep.instruction}

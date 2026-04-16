@@ -29,7 +29,7 @@ export default function Commitment() {
         <View className="pb-8">
           <CTAButton
               text="Continuar"
-              to="/(scan)/scan-prep"
+              to="/(onboarding)/goal"
               onPress={() => track('onboarding_step_completed', { step_number: 12, step_name: 'Compromisso', step_total: 23 })}
             />
         </View>
