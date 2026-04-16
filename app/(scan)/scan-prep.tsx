@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { AIConsentModal } from '../../components/ui/AIConsentModal';
@@ -48,18 +49,53 @@ export default function ScanPrep() {
   if (scanSource === 'app') {
     return (
       <>
-        <SafeAreaView className="flex-1 bg-white">
-          <View className="flex-1 max-w-[393px] w-full mx-auto">
-            <View className="pt-4 px-6 pb-2">
-              <TouchableOpacity
-                onPress={() => router.back()}
-                className="w-10 h-10 rounded-full bg-[#F5F5F5] items-center justify-center"
-                activeOpacity={0.7}
-              >
-                <ChevronLeft size={20} color="#1A1A1A" />
-              </TouchableOpacity>
+        <LinearGradient
+          colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
+          locations={[0, 0.4, 0.7, 1]}
+          style={{ flex: 1 }}
+        >
+          <SafeAreaView style={{ flex: 1 }}>
+            <View className="flex-1 max-w-[393px] w-full mx-auto">
+              <View className="pt-4 px-6 pb-2">
+                <TouchableOpacity
+                  onPress={() => router.back()}
+                  className="w-10 h-10 rounded-full bg-[#F5F5F5] items-center justify-center"
+                  activeOpacity={0.7}
+                >
+                  <ChevronLeft size={20} color="#1A1A1A" />
+                </TouchableOpacity>
+              </View>
+              <View className="px-6 pt-4 flex-1">
+                <View className="mb-10">
+                  <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
+                    Agora vamos analisar sua pele por foto
+                  </Text>
+                  <Text className="text-[#9CA3AF] text-[17px]">Para melhores resultados:</Text>
+                </View>
+                <InstructionList />
+                <View className="flex-1" />
+                <View className="pb-8">
+                  <CTAButton text="Abrir câmera" onPress={handleOpenCamera} />
+                </View>
+              </View>
             </View>
-            <View className="px-6 pt-4 flex-1">
+          </SafeAreaView>
+        </LinearGradient>
+        <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <LinearGradient
+        colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
+        locations={[0, 0.4, 0.7, 1]}
+        style={{ flex: 1 }}
+      >
+        <SafeAreaView style={{ flex: 1 }}>
+          <QuizLayout progress={68} showBack>
+            <View className="pt-8 flex-1">
               <View className="mb-10">
                 <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
                   Agora vamos analisar sua pele por foto
@@ -72,30 +108,9 @@ export default function ScanPrep() {
                 <CTAButton text="Abrir câmera" onPress={handleOpenCamera} />
               </View>
             </View>
-          </View>
+          </QuizLayout>
         </SafeAreaView>
-        <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <QuizLayout progress={68} showBack>
-        <View className="pt-8 flex-1">
-          <View className="mb-10">
-            <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
-              Agora vamos analisar sua pele por foto
-            </Text>
-            <Text className="text-[#9CA3AF] text-[17px]">Para melhores resultados:</Text>
-          </View>
-          <InstructionList />
-          <View className="flex-1" />
-          <View className="pb-8">
-            <CTAButton text="Abrir câmera" onPress={handleOpenCamera} />
-          </View>
-        </View>
-      </QuizLayout>
+      </LinearGradient>
       <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
     </>
   );

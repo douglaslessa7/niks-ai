@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { View, Text, Image, Animated, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -127,38 +128,44 @@ export default function FoodAnalysis() {
   }, []);
 
   return (
-    <QuizLayout progress={60}>
-      <View className="pt-8 flex-1">
-        <View className="mb-10">
-          <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight">
-            Sua alimentação afeta sua pele mais do que você imagina
-          </Text>
-        </View>
-
-        {/* Food Analysis Card */}
-        <View className="bg-[#F5F5F7] rounded-[16px] p-6 mb-3">
-          <View className="mb-4">
-            <FoodScanCard />
+    <LinearGradient
+      colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
+      locations={[0, 0.3, 0.6, 1]}
+      style={{ flex: 1 }}
+    >
+      <QuizLayout progress={60}>
+        <View className="pt-8 flex-1">
+          <View className="mb-10">
+            <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight">
+              Sua alimentação afeta sua pele mais do que você imagina
+            </Text>
           </View>
-          <Text className="text-[15px] text-[#1A1A1A] leading-relaxed">
-            Escaneie qualquer refeição e descubra na hora o que está ajudando — ou sabotando — sua pele.
+
+          {/* Food Analysis Card */}
+          <View className="bg-[#F5F5F7] rounded-[16px] p-6 mb-3">
+            <View className="mb-4">
+              <FoodScanCard />
+            </View>
+            <Text className="text-[15px] text-[#1A1A1A] leading-relaxed">
+              Escaneie qualquer refeição e descubra na hora o que está ajudando — ou sabotando — sua pele.
+            </Text>
+          </View>
+
+          <Text className="text-[13px] text-[#9CA3AF] text-center px-6 mb-8">
+            Baseado em estudos do Journal of Dermatology e Nutrition Research
           </Text>
-        </View>
 
-        <Text className="text-[13px] text-[#9CA3AF] text-center px-6 mb-8">
-          Baseado em estudos do Journal of Dermatology e Nutrition Research
-        </Text>
+          <View className="flex-1" />
 
-        <View className="flex-1" />
-
-        <View className="pb-8">
-          <CTAButton
+          <View className="pb-8">
+            <CTAButton
               text="Continuar"
               to="/(onboarding)/commitment"
               onPress={() => track('onboarding_step_completed', { step_number: 11, step_name: 'Alimentação e Pele', step_total: 23 })}
             />
+          </View>
         </View>
-      </View>
-    </QuizLayout>
+      </QuizLayout>
+    </LinearGradient>
   );
 }

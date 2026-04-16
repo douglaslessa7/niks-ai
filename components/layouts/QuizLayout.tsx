@@ -12,7 +12,7 @@ interface QuizLayoutProps {
 
 export function QuizLayout({ progress, showBack = true, children }: QuizLayoutProps) {
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1" style={{ backgroundColor: 'transparent' }}>
       <View className="flex-1 max-w-[393px] w-full mx-auto">
         {/* Progress bar and back button row */}
         <View className="pt-4 px-6">

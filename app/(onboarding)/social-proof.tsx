@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { View, Text as RNText, useWindowDimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient as ExpoLinearGradient } from 'expo-linear-gradient';
 import { QuizLayout } from '../../components/layouts/QuizLayout';
 import { CTAButton } from '../../components/ui/CTAButton';
 import Svg, {
@@ -290,6 +292,11 @@ export default function SocialProof() {
   }));
 
   return (
+    <ExpoLinearGradient
+      colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
+      locations={[0, 0.3, 0.6, 1]}
+      style={{ flex: 1 }}
+    >
     <QuizLayout progress={56}>
       <View className="pt-6 flex-1">
         {/* Title */}
@@ -363,5 +370,6 @@ export default function SocialProof() {
         </Animated.View>
       </View>
     </QuizLayout>
+    </ExpoLinearGradient>
   );
 }
