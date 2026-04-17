@@ -7,6 +7,7 @@ import { X, Image as ImageIcon } from 'lucide-react-native';
 import Svg, { Ellipse } from 'react-native-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
@@ -59,10 +60,17 @@ export default function Camera() {
       setCapturing(true);
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.7,
-        base64: true,
+        base64: false,
       });
-      if (!photo?.base64 || !photo?.uri) throw new Error('Falha ao capturar');
-      navigateToLoading(photo.base64, photo.uri);
+      if (!photo?.uri) throw new Error('Falha ao capturar');
+      // Normaliza a orientação EXIF — sem isso, o Android exibe a foto rotacionada
+      const normalized = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      if (!normalized.base64) throw new Error('Falha ao processar foto');
+      navigateToLoading(normalized.base64, normalized.uri);
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível capturar a foto. Tente novamente.');
     } finally {
