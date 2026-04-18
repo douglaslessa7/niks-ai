@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Animated } from 'react-native';
+import { View, Text, Animated, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { usePlacement } from 'expo-superwall';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check } from 'lucide-react-native';
+import Svg, { Path, Line, Circle } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult, ScanResult } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -27,6 +28,12 @@ export default function ProtocolLoading() {
   const [currentStep, setCurrentStep] = useState(0);
   const [statusText, setStatusText] = useState('Salvando e organizando o seu protocolo...');
   const [apiDone, setApiDone] = useState(false);
+  const [showDemandNotice, setShowDemandNotice] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+  const [countdownPaused, setCountdownPaused] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const apiDoneRef = useRef(false);
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPercentageRef = useRef(0);
@@ -63,6 +70,50 @@ export default function ProtocolLoading() {
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
   });
+
+  const demandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (percentage >= 99 && !apiDone) {
+      demandTimerRef.current = setTimeout(() => {
+        setShowDemandNotice(true);
+      }, 3000);
+    } else {
+      if (demandTimerRef.current) clearTimeout(demandTimerRef.current);
+      setShowDemandNotice(false);
+    }
+    return () => { if (demandTimerRef.current) clearTimeout(demandTimerRef.current); };
+  }, [percentage, apiDone]);
+
+  useEffect(() => {
+    if (!showDemandNotice) {
+      if (countdownRef.current) clearTimeout(countdownRef.current);
+      setCountdown(60);
+      setCountdownPaused(false);
+      return;
+    }
+
+    const tick = (current: number, paused: boolean) => {
+      if (paused) return;
+      if (current <= 1) {
+        setCountdownPaused(true);
+        setCountdown(0);
+        countdownRef.current = setTimeout(() => {
+          setCountdown(60);
+          setCountdownPaused(false);
+          countdownRef.current = setTimeout(() => tick(60, false), 1000);
+        }, 3000);
+        return;
+      }
+      const next = current - 1;
+      setCountdown(next);
+      countdownRef.current = setTimeout(() => tick(next, false), 1000);
+    };
+
+    countdownRef.current = setTimeout(() => tick(60, false), 1000);
+
+    return () => { if (countdownRef.current) clearTimeout(countdownRef.current); };
+  }, [showDemandNotice]);
 
   // Fase 3: quando API terminar, ir a 100% e navegar
   useEffect(() => {
@@ -116,9 +167,10 @@ export default function ProtocolLoading() {
     generateAndSaveProtocol();
 
     return () => { if (progressTimerRef.current) clearTimeout(progressTimerRef.current); };
-  }, []);
+  }, [retryCount]);
 
   const generateAndSaveProtocol = async () => {
+    setShowError(false);
     try {
       let effectiveScanResult = scanResult;
 
@@ -174,7 +226,8 @@ export default function ProtocolLoading() {
             break;
           }
 
-          data = await response.json();
+          const responseText = await response.text();
+          data = JSON.parse(responseText);
           lastError = null;
           break;
         } catch (fetchErr: any) {
@@ -185,6 +238,7 @@ export default function ProtocolLoading() {
 
       if (lastError) {
         console.error('generate-protocol error:', lastError.message);
+        setShowError(true);
         track('protocol_failed', { error: lastError.message ?? 'unknown' });
         return;
       }
@@ -225,6 +279,17 @@ export default function ProtocolLoading() {
     }
   };
 
+  const handleRetry = () => {
+    setShowError(false);
+    setPercentage(0);
+    currentPercentageRef.current = 0;
+    setCurrentStep(0);
+    setApiDone(false);
+    apiDoneRef.current = false;
+    setStatusText('Salvando e organizando o seu protocolo...');
+    setRetryCount(prev => prev + 1);
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <View
@@ -237,6 +302,43 @@ export default function ProtocolLoading() {
           justifyContent: 'center',
         }}
       >
+        {!showError && (<>
+
+        {showDemandNotice && (
+          <View style={{
+            width: '100%',
+            backgroundColor: '#FB7B6B',
+            borderRadius: 10,
+            padding: 12,
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: 9,
+            marginBottom: 20,
+          }}>
+            <Svg width={16} height={16} viewBox="0 0 16 16" style={{ marginTop: 1, flexShrink: 0 }}>
+              <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none"/>
+              <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none"/>
+              <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round"/>
+              <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round"/>
+            </Svg>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
+                Estamos com alta demanda agora
+              </Text>
+              {countdownPaused ? (
+                <Text style={{ fontSize: 12, fontWeight: '400', color: '#FFFFFF', lineHeight: 18 }}>
+                  Por favor, aguarde só mais um pouco.
+                </Text>
+              ) : (
+                <Text style={{ fontSize: 12, fontWeight: '400', color: '#FFFFFF', lineHeight: 18 }}>
+                  A rotina de skincare perfeita para sua pele está sendo finalizada. Por favor, aguarde só mais{' '}
+                  <Text style={{ fontWeight: '700', color: '#FFFFFF' }}>{countdown}s</Text>.
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Percentagem */}
         <Text
           style={{
@@ -364,6 +466,71 @@ export default function ProtocolLoading() {
             );
           })}
         </View>
+        </>)}
+
+        {showError && (
+          <View style={{ width: '100%', alignItems: 'center' }}>
+
+            {/* Banner topo */}
+            <View style={{
+              width: '100%',
+              backgroundColor: '#FB7B6B',
+              borderRadius: 10,
+              padding: 12,
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: 9,
+              marginBottom: 20,
+            }}>
+              <Svg width={16} height={16} viewBox="0 0 16 16" style={{ marginTop: 1, flexShrink: 0 }}>
+                <Path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="white" strokeWidth={1.4} strokeLinejoin="round" fill="none"/>
+                <Line x1={8} y1={6.5} x2={8} y2={10} stroke="white" strokeWidth={1.4} strokeLinecap="round"/>
+                <Circle cx={8} cy={11.8} r={0.75} fill="white"/>
+              </Svg>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
+                  Não conseguimos gerar seu protocolo
+                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '400', color: '#FFFFFF', lineHeight: 18 }}>
+                  Estamos com alta demanda no momento. Tente novamente em instantes.
+                </Text>
+              </View>
+            </View>
+
+            {/* Rosto triste grande */}
+            <Svg width={72} height={72} viewBox="0 0 72 72" style={{ marginBottom: 12 }}>
+              <Circle cx={36} cy={36} r={33} stroke="#E24B4A" strokeWidth={3} fill="none"/>
+              <Circle cx={24} cy={30} r={4} fill="#E24B4A"/>
+              <Circle cx={48} cy={30} r={4} fill="#E24B4A"/>
+              <Path d="M24 50 C28 44 44 44 48 50" stroke="#E24B4A" strokeWidth={3} strokeLinecap="round" fill="none"/>
+            </Svg>
+
+            {/* Texto */}
+            <Text style={{ fontSize: 18, fontWeight: '600', color: '#1A1A1A', textAlign: 'center', lineHeight: 24, marginBottom: 8 }}>
+              Algo deu errado por aqui...
+            </Text>
+            <Text style={{ fontSize: 14, color: '#8A8A8E', textAlign: 'center', marginBottom: 32 }}>
+              Não se preocupe, seus dados estão salvos
+            </Text>
+
+            {/* Botão */}
+            <TouchableOpacity
+              onPress={handleRetry}
+              style={{
+                width: '100%',
+                backgroundColor: '#FB7B6B',
+                borderRadius: 12,
+                paddingVertical: 14,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>
+                Tentar novamente
+              </Text>
+            </TouchableOpacity>
+
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );

@@ -47,7 +47,7 @@ export function IOSWheelPicker({
           left: 0,
           right: 0,
           height: ITEM_HEIGHT,
-          backgroundColor: '#F5F5F7',
+          backgroundColor: '#FFFFFF',
           borderRadius: 12,
         }}
         pointerEvents="none"
@@ -79,7 +79,7 @@ export function IOSWheelPicker({
                 opacity,
               }}
             >
-              <Text style={{ fontSize: 17, color: '#1A1A1A' }}>{value}</Text>
+              <Text style={{ fontSize: 17, color: distance === 0 ? '#FB7B6B' : '#1A1A1A', fontWeight: distance === 0 ? '700' : '400' }}>{value}</Text>
             </View>
           );
         })}

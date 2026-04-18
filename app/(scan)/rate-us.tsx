@@ -1,12 +1,15 @@
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ArrowLeft, Star } from 'lucide-react-native';
+import { ChevronLeft, Star } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { requestAppReview } from '../../lib/storeReview';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
+import { Colors } from '../../constants/colors';
 
 const LeftLaurel = () => (
   <Svg width={32} height={48} viewBox="0 0 32 48" fill="none">
@@ -32,7 +35,6 @@ const RightLaurel = () => (
 
 export default function RateUs() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { track } = useMixpanel();
   const { scanSource, setScanSource } = useAppStore();
 
@@ -44,248 +46,173 @@ export default function RateUs() {
     track('onboarding_step_viewed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
   }, []);
 
+  const handleContinue = () => {
+    track('onboarding_step_completed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
+    if (scanSource === 'app') {
+      setScanSource('onboarding');
+      router.replace('/(app)/skin-result' as any);
+    } else {
+      router.replace('/(scan)/results');
+    }
+  };
+
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      {/* Top Bar */}
-      <View className="px-6 pt-2 pb-4 flex-row items-center gap-4">
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="w-10 h-10 rounded-full bg-[#F5F5F5] items-center justify-center"
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={20} color="#1A1A1A" />
-        </TouchableOpacity>
-        <View className="flex-1 h-1 bg-[#F5F5F5] rounded-full overflow-hidden">
-          <View className="w-[90%] h-full bg-[#fb7b6b] rounded-full" />
-        </View>
-      </View>
+    <LinearGradient
+      colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
+      locations={[0, 0.4, 0.7, 1]}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
-      <View className="flex-1 px-6" style={{ paddingBottom: insets.bottom + 88 }}>
-        <Text style={styles.title}>Avalie-nos</Text>
+          {/* Header */}
+          <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
+            <TouchableOpacity
+              onPress={async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.back();
+              }}
+              activeOpacity={0.7}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: 'rgba(255,255,255,0.85)',
+                borderWidth: 0.5,
+                borderColor: 'rgba(0,0,0,0.08)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <ChevronLeft size={20} color="#6B7280" />
+            </TouchableOpacity>
 
-        {/* Rating Card */}
-        <View style={styles.ratingCard}>
-          <LeftLaurel />
-          <View className="flex-1 items-center gap-2">
-            <Text style={styles.ratingText}>
-              {'Deixe a sua avaliação\ndo nosso app!'}
-            </Text>
-            <View className="flex-row items-center gap-[2px]">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <Star key={star} size={18} color="#F59E0B" fill="#F59E0B" />
-              ))}
+            <View style={{ marginTop: 16 }}>
+              <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
+                <View style={{ height: 2, width: '70%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
+              </View>
             </View>
           </View>
-          <RightLaurel />
-        </View>
 
-        {/* Made for you */}
-        <View className="items-center mb-8">
-          <Text style={styles.madeForYouTitle}>
-            NIKS AI foi feito para pessoas como você
-          </Text>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={{
+              fontSize: 26,
+              fontWeight: '800',
+              color: Colors.tabActive,
+              lineHeight: 31,
+              marginBottom: 32,
+            }}>
+              Avalie-nos
+            </Text>
 
-          {/* Overlapping Avatars */}
-          <View style={styles.avatarRow}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1705940372495-ab4ed45d3102?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
-              style={[styles.avatar, styles.avatarSide, { zIndex: 10 }]}
-            />
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1690444963408-9573a17a8058?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
-              style={[styles.avatar, styles.avatarCenter, { zIndex: 20 }]}
-            />
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1656339504243-2df4c5ebf1c0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
-              style={[styles.avatar, styles.avatarSide, { zIndex: 10 }]}
-            />
-          </View>
-        </View>
+            {/* Rating */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 32 }}>
+              <LeftLaurel />
+              <View style={{ alignItems: 'center', gap: 8 }}>
+                <Text style={{
+                  fontWeight: '700',
+                  color: Colors.tabActive,
+                  textAlign: 'center',
+                  lineHeight: 26,
+                  fontSize: 18,
+                  marginBottom: 4,
+                }}>
+                  {'Deixe a sua avaliação\ndo nosso app!'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star key={star} size={18} color="#F59E0B" fill="#F59E0B" />
+                  ))}
+                </View>
+              </View>
+              <RightLaurel />
+            </View>
 
-        {/* Testimonial Cards */}
-        <View style={styles.testimonialContainer}>
-          {/* Ghost card behind */}
-          <View style={styles.ghostCard} />
+            {/* Made for you */}
+            <View style={{ alignItems: 'center', marginBottom: 28 }}>
+              <Text style={{
+                fontSize: 22,
+                fontWeight: '800',
+                color: Colors.tabActive,
+                textAlign: 'center',
+                maxWidth: 280,
+                lineHeight: 28,
+                marginBottom: 20,
+              }}>
+                NIKS AI foi feito para pessoas como você
+              </Text>
 
-          {/* Main card */}
-          <View style={styles.mainCard}>
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-3">
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 16 }}>
                 <Image
-                  source={{ uri: 'https://images.unsplash.com/photo-1599651515421-43a8e7dbf212?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
-                  style={styles.testimonialAvatar}
+                  source={{ uri: 'https://images.unsplash.com/photo-1705940372495-ab4ed45d3102?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
+                  style={{ width: 72, height: 72, borderRadius: 999, borderWidth: 3, borderColor: Colors.white, marginLeft: -16, zIndex: 10 }}
                 />
-                <Text style={styles.testimonialName}>Mariana Silva</Text>
-              </View>
-              <View className="flex-row items-center gap-[2px]">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Star key={star} size={14} color="#F59E0B" fill="#F59E0B" />
-                ))}
+                <Image
+                  source={{ uri: 'https://images.unsplash.com/photo-1690444963408-9573a17a8058?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
+                  style={{ width: 84, height: 84, borderRadius: 999, borderWidth: 3, borderColor: Colors.white, marginLeft: -16, marginTop: -8, zIndex: 20 }}
+                />
+                <Image
+                  source={{ uri: 'https://images.unsplash.com/photo-1656339504243-2df4c5ebf1c0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
+                  style={{ width: 72, height: 72, borderRadius: 999, borderWidth: 3, borderColor: Colors.white, marginLeft: -16, zIndex: 10 }}
+                />
               </View>
             </View>
-            <Text style={styles.testimonialText}>
-              Minha pele já melhorou muito em 2 meses! Eu estava cética no início, mas decidi dar uma chance a este app e funcionou :)
-            </Text>
-          </View>
-        </View>
-      </View>
 
-      {/* Bottom CTA */}
-      <View style={[styles.bottomCta, { paddingBottom: insets.bottom + 16 }]}>
-        <TouchableOpacity
-          onPress={() => {
-            track('onboarding_step_completed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
-            if (scanSource === 'app') {
-              setScanSource('onboarding');
-              router.replace('/(app)/skin-result' as any);
-            } else {
-              router.replace('/(scan)/results');
-            }
-          }}
-          style={styles.continueBtn}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.continueBtnText}>Continuar</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+            {/* Testimonial */}
+            <View style={{
+              width: '100%',
+              marginBottom: 40,
+              borderRadius: 24,
+              borderWidth: 1,
+              borderColor: 'rgba(0,0,0,0.10)',
+              padding: 20,
+              backgroundColor: 'transparent',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Image
+                    source={{ uri: 'https://images.unsplash.com/photo-1599651515421-43a8e7dbf212?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=200' }}
+                    style={{ width: 44, height: 44, borderRadius: 22 }}
+                  />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.tabActive }}>
+                    Mariana Silva
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Star key={star} size={14} color="#F59E0B" fill="#F59E0B" />
+                  ))}
+                </View>
+              </View>
+              <Text style={{ fontSize: 15, lineHeight: 22, color: Colors.gray }}>
+                Minha pele já melhorou muito em 2 meses! Eu estava cética no início, mas decidi dar uma chance a este app e funcionou :)
+              </Text>
+            </View>
+
+            <View style={{ flex: 1 }} />
+
+            <TouchableOpacity
+              onPress={handleContinue}
+              activeOpacity={0.8}
+              style={{
+                backgroundColor: Colors.scanBtn,
+                borderRadius: 100,
+                paddingVertical: 16,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>
+                Continuar
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+        </View>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
-
-const styles = StyleSheet.create({
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginTop: 8,
-    marginBottom: 24,
-    letterSpacing: -0.5,
-  },
-  ratingCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 12,
-    elevation: 1,
-    backgroundColor: '#fff',
-  },
-  ratingText: {
-    fontWeight: '700',
-    color: '#1A1A1A',
-    textAlign: 'center',
-    lineHeight: 26,
-    fontSize: 20,
-    marginBottom: 8,
-  },
-  madeForYouTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    textAlign: 'center',
-    maxWidth: 280,
-    lineHeight: 32,
-    marginBottom: 20,
-    letterSpacing: -0.3,
-  },
-  avatarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 16,
-  },
-  avatar: {
-    borderWidth: 3,
-    borderColor: '#fff',
-    borderRadius: 999,
-  },
-  avatarSide: {
-    width: 72,
-    height: 72,
-    marginLeft: -16,
-  },
-  avatarCenter: {
-    width: 84,
-    height: 84,
-    marginTop: -8,
-    marginLeft: -16,
-  },
-  testimonialContainer: {
-    position: 'relative',
-    width: '100%',
-    marginTop: 8,
-  },
-  ghostCard: {
-    position: 'absolute',
-    bottom: -16,
-    left: 16,
-    right: 16,
-    height: 60,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#fff',
-    opacity: 0.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-  },
-  mainCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 20,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 20,
-    elevation: 2,
-  },
-  testimonialAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  testimonialName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  testimonialText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#6B7280',
-  },
-  bottomCta: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    backgroundColor: 'transparent',
-  },
-  continueBtn: {
-    width: '100%',
-    height: 56,
-    backgroundColor: '#fb7b6b',
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  continueBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 17,
-  },
-});

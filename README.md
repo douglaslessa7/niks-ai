@@ -70,6 +70,7 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 ## REGRAS DE DESENVOLVIMENTO (NUNCA VIOLAR)
 
 - **NativeWind (`className`)** para estilo — `StyleSheet.create()` só em último caso absoluto
+  - **Exceção — telas redesenhadas:** `scan-prep`, `rate-us`, `trust`, `plan-preview`, `signup`, `login`, `skincare-routine`, `skincare-routine-detail`, `allergies`, `allergies-detail` e outras telas redesenhadas usam **inline styles + `Colors` constants** (não NativeWind). Padrão: `LinearGradient` rosa→branco como fundo, botão voltar circular `rgba(255,255,255,0.85)` com `ChevronLeft`, barra de progresso manual, botões pill `borderRadius: 100`, campos de texto com borda `Colors.scanBtn` ao focar. Novas telas do onboarding devem seguir esse padrão, não o `QuizLayout`.
 - **Expo Router** para navegação — `useRouter()`, `router.push()`, `router.back()`
 - **TypeScript** em tudo — nunca JavaScript puro
 - **Nunca inventar cores** — usar sempre `constants/colors.ts`
@@ -350,6 +351,7 @@ Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → 
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
 - **Retry interno de Gemini 503 em `analyze-skin` e `analyze-food`:** o Gemini retorna 503 `UNAVAILABLE` com frequência sob alta demanda. Ambas as Edge Functions têm loop de **3 tentativas** com **3s de espera** entre elas antes de retornar erro ao app — não remover esse loop.
 - `generate-protocol` gera o protocolo **do zero** com um system prompt dermatológico clínico extenso (hierarquia clínica, regras cronobiológicas, incompatibilidades, adaptações por fotótipo). Não usa mais `BASE_PROTOCOLS` nem recebe `baseProtocol` — o campo é ignorado se enviado
+- **`generate-protocol` usa SSE streaming (`streamGenerateContent?alt=sse`)** para evitar o IDLE_TIMEOUT de 150s da Supabase Edge Runtime — se a geração demorar mais que 150s sem tráfego de dados, a Supabase encerra a conexão. A função transmite os chunks SSE do Gemini em tempo real como `text/plain; charset=utf-8`. No cliente (`protocol-loading.tsx`), a resposta é lida com `response.text()` seguido de `JSON.parse()` — **nunca usar `response.json()` aqui**, pois o Content-Type não é `application/json`. O retry em 503 também foi refatorado para verificar `resp.ok` antes de ler o body, evitando consumir o stream em caso de erro.
 
 ### Push Notifications (`pg_cron`)
 
@@ -548,6 +550,10 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 **Fallback de `scanResult` em `protocol-loading.tsx`:** se `scanResult` estiver null no store ao montar (pode ocorrer em edge cases pós-signup), a tela busca automaticamente o scan mais recente do usuário em `skin_scans` via Supabase (`.order('created_at', { ascending: false }).limit(1)`) e popula o store antes de gerar o protocolo. Só aborta se o Supabase também não retornar nada.
 
 **Retry automático em `protocol-loading.tsx`:** a chamada ao `generate-protocol` tenta até **3 vezes** com delay de 3s entre tentativas, mas **somente** para erros HTTP 503 ou mensagens `UNAVAILABLE`/`high demand` (sobrecarga do Gemini). Para outros erros, falha imediatamente. Durante a espera, o status text muda para "Estamos finalizando sua análise, aguarde um momento...". Outros tipos de erro não fazem retry — falham na primeira tentativa.
+
+**Erro e retry manual em `protocol-loading.tsx`:** se todas as tentativas falharem, a tela exibe um estado de erro inline (não `Alert`) com botão "Tentar novamente". Ao tocar, o retry **reseta o fluxo inteiro** — percentage, currentStep, apiDone, statusText e retryCount voltam ao estado inicial, reiniciando a barra de progresso do zero. Isso é intencional: o usuário vê o progresso completo novamente em vez de uma barra travada.
+
+**Erro em `app/(scan)/loading.tsx`:** equivalente — erros após 2 retries exibem estado inline (sem `Alert`) com botão que chama `router.back()`, levando o usuário de volta à câmera para tirar uma nova foto.
 
 ### 8. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
 
@@ -769,8 +775,8 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 - `components/ui/AIConsentModal.tsx` — modal de consentimento de uso de IA (LGPD); bottom sheet animado com `Animated.spring`; backdrop não fecha o modal; link inline para Política de Privacidade
 
 
-**Telas — Onboarding (25 telas):**
-`concerns` → `gender` → `pregnancy`\* → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `commitment` → `goal` → `trust` → `plan-preview` → `signup` → `skincare-routine` → `skincare-routine-detail`\* → `allergies` → `allergies-detail`\* → `protocol-loading` → `paywall-soft` → `notifications`
+**Telas — Onboarding (24 telas):**
+`concerns` → `gender` → `pregnancy`\* → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `goal` → `trust` → `plan-preview` → `signup` → `skincare-routine` → `skincare-routine-detail`\* → `allergies` → `allergies-detail`\* → `protocol-loading` → `paywall-soft` → `notifications`
 
 > \* Telas condicionais: `pregnancy` só para gênero Feminino; `skincare-routine-detail` só para `complement`/`prescribed`; `allergies-detail` só para `reaction`.
 
@@ -779,7 +785,7 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 > ⚠️ `paywall-detailed.tsx` existe no projeto mas está **fora do fluxo** — é dead code do fluxo anterior ao Superwall. Nenhuma tela navega para ela. Não remover; o arquivo contém a lógica de compra RevenueCat direta caso o Superwall seja retirado no futuro.
 
 **Tela de Login (acesso direto da Welcome):**
-`login` — standalone, sem QuizLayout, acessada pelo botão "Entrar" na Welcome screen
+`login` — standalone, acessada pelo botão "Entrar" na Welcome screen. Mesmo padrão visual do `signup.tsx`: `LinearGradient` rosa→branco, botão voltar circular, campos com borda `Colors.scanBtn` ao focar, botões pill. Sem barra de progresso (não é etapa do onboarding).
 
 **Telas — Scan flow (7 telas):**
 `scan-prep` → `camera` → `loading` → `rate-us` → `results` → `food-scan-intro` → `food-camera` → `food-report`
@@ -818,6 +824,7 @@ Welcome
   → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
     → goal → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results → trust → plan-preview (skin_score real do store)
     → signup (Google / Apple / E-mail+Senha → saveToSupabase) → skincare-routine → skincare-routine-detail* (se complement/prescribed) → allergies → allergies-detail* (se reaction) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft (Superwall) → notifications
+
     → App principal (tabs)
 
   → [botão "Entrar"] Login
@@ -844,7 +851,7 @@ O scan flow é inserido entre `goal` e `trust` — `goal` é respondido **antes*
 | sunscreen | 52% | |
 | social-proof | 56% | |
 | food-analysis | 60% | |
-| commitment | 64% | |
+| ~~commitment~~ | ~~64%~~ | ⚠️ dead code — `food-analysis` navega direto para `goal` |
 | goal | 80% | ⚠️ valor deve ser ajustado para ~68% (antes do scan); navega para `scan-prep` |
 | **→ SCAN FLOW ENTRA AQUI** | — | scan-prep → camera → loading → rate-us → results |
 | trust | 88% | |
@@ -880,7 +887,7 @@ niks-ai/
 │   │   ├── sunscreen.tsx          ✅
 │   │   ├── social-proof.tsx       ✅
 │   │   ├── food-analysis.tsx      ✅
-│   │   ├── commitment.tsx         ✅
+│   │   ├── commitment.tsx         ⚠️ dead code — food-analysis navega direto para goal
 │   │   ├── goal.tsx               ✅
 │   │   ├── final-loading.tsx      ✅
 │   │   ├── trust.tsx              ✅
@@ -933,7 +940,7 @@ niks-ai/
 ├── lib/notifications.ts           ✅ requestPushPermission() + savePushToken() — requer Apple Developer Program para token real
 ├── hooks/useAuth.ts               ✅
 ├── hooks/useAIConsent.ts          ✅ requestConsent(), handleAccept/Decline — AsyncStorage key: "ai_consent_accepted"
-├── assets/trust-hands.png         ✅ ilustração de palmas (Figma Make kcw7wez680I06tnIMm1ZEz)
+├── assets/trust-hands.png         ⚠️ não usado — trust.tsx usa o componente SVG DoubleHeart inline (substituiu esta imagem)
 ├── lib/revenuecat.ts              ✅ initRevenueCat, getPackages, purchasePackage, restorePurchases, isSubscribed
 ├── lib/storeReview.ts             ✅ requestAppReview() — popup nativo via expo-store-review com fallback para App Store (id6760590018)
 └── hooks/useSubscription.ts       ✅ useSubscription() — checa entitlement `premium` em tempo real

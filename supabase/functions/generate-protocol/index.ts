@@ -328,59 +328,103 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
 9. Use TODOS os campos disponíveis em onboardingData para personalizar o protocolo conforme as regras da seção "USO OBRIGATÓRIO DOS DADOS DO ONBOARDING"
 10. Retorne apenas JSON válido`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:streamGenerateContent?alt=sse&key=${Deno.env.get('GEMINI_API_KEY')}`
 
-    let data: any = null
+    const geminiBody = JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{
+        role: 'user',
+        parts: [{ text: userMessage }],
+      }],
+      generationConfig: {
+        maxOutputTokens: 8192,
+        responseMimeType: 'application/json',
+      },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      ],
+    })
+
+    // Tenta obter resposta streaming do Gemini (retry em 503)
+    let geminiResponse: Response | null = null
+    let fetchError: string | null = null
+
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const response = await fetch(geminiUrl, {
+      const resp = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
-          contents: [{
-            role: 'user',
-            parts: [{ text: userMessage }],
-          }],
-          generationConfig: {
-            maxOutputTokens: 8192,
-            responseMimeType: 'application/json',
-          },
-          safetySettings: [
-            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-          ],
-        }),
+        body: geminiBody,
       })
 
-      data = await response.json()
-      const isUnavailable =
-        data?.error?.status === 'UNAVAILABLE' ||
-        data?.error?.code === 503 ||
-        JSON.stringify(data).includes('UNAVAILABLE')
-      if (isUnavailable) {
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 3000))
+      if (!resp.ok) {
+        const errBody = await resp.text()
+        const is503 = resp.status === 503 || errBody.includes('UNAVAILABLE')
+        if (is503 && attempt < 3) {
+          console.warn(`Gemini 503 (tentativa ${attempt}/3), aguardando 3s...`)
+          await new Promise(r => setTimeout(r, 3000))
           continue
         }
+        fetchError = `Gemini error ${resp.status}: ${errBody}`
+        break
       }
+
+      geminiResponse = resp
       break
     }
 
-    if (!data?.candidates || data.candidates.length === 0) {
-      console.error('Gemini returned no candidates. Full response:', JSON.stringify(data))
+    if (!geminiResponse) {
+      console.error('Gemini indisponível após retries:', fetchError)
       return new Response(
         JSON.stringify({ error: 'Erro interno ao gerar protocolo' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const rawText = data.candidates[0].content.parts[0].text
-    const result = JSON.parse(rawText)
+    // Transmite os chunks do Gemini (SSE) como texto simples para o cliente
+    // Isso mantém a conexão ativa e evita o IDLE_TIMEOUT de 150s da Supabase
+    const decoder = new TextDecoder()
+    const encoder = new TextEncoder()
 
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = geminiResponse!.body!.getReader()
+        let sseBuffer = ''
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            sseBuffer += decoder.decode(value, { stream: true })
+            const lines = sseBuffer.split('\n')
+            sseBuffer = lines.pop() ?? ''
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue
+              const payload = line.slice(6).trim()
+              if (!payload || payload === '[DONE]') continue
+
+              try {
+                const parsed = JSON.parse(payload)
+                const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text
+                if (text) controller.enqueue(encoder.encode(text))
+              } catch {
+                // chunk SSE malformado, ignora
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock()
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
     })
   } catch (error) {
     console.error('Erro no generate-protocol:', error)

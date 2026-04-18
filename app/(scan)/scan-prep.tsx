@@ -1,14 +1,16 @@
 import { useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { QuizLayout } from '../../components/layouts/QuizLayout';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { ChevronLeft, Sun, Sparkles, User, Glasses } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { CTAButton } from '../../components/ui/CTAButton';
 import { AIConsentModal } from '../../components/ui/AIConsentModal';
 import { useAIConsent } from '../../hooks/useAIConsent';
-import { Sun, Sparkles, User, Glasses, ChevronLeft } from 'lucide-react-native';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
+import { Colors } from '../../constants/colors';
 
 const instructions = [
   { Icon: Sun, text: 'Boa iluminação natural' },
@@ -16,19 +18,6 @@ const instructions = [
   { Icon: User, text: 'Cabelo preso para trás' },
   { Icon: Glasses, text: 'Retire óculos e acessórios do rosto' },
 ];
-
-const InstructionList = () => (
-  <View className="gap-6 mb-8">
-    {instructions.map(({ Icon, text }, index) => (
-      <View key={index} className="flex-row items-center gap-4">
-        <View className="w-12 h-12 rounded-full bg-[#fb7b6b] items-center justify-center flex-shrink-0">
-          <Icon size={20} color="#FFFFFF" />
-        </View>
-        <Text className="text-[17px] text-[#1A1A1A]">{text}</Text>
-      </View>
-    ))}
-  </View>
-);
 
 export default function ScanPrep() {
   const router = useRouter();
@@ -45,57 +34,137 @@ export default function ScanPrep() {
     requestConsent(() => router.push('/(scan)/camera' as any));
   };
 
-  if (scanSource === 'app') {
-    return (
-      <>
-        <SafeAreaView className="flex-1 bg-white">
-          <View className="flex-1 max-w-[393px] w-full mx-auto">
-            <View className="pt-4 px-6 pb-2">
-              <TouchableOpacity
-                onPress={() => router.back()}
-                className="w-10 h-10 rounded-full bg-[#F5F5F5] items-center justify-center"
-                activeOpacity={0.7}
-              >
-                <ChevronLeft size={20} color="#1A1A1A" />
-              </TouchableOpacity>
+  const backButton = (
+    <TouchableOpacity
+      onPress={async () => {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        router.back();
+      }}
+      activeOpacity={0.7}
+      style={{
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255,255,255,0.85)',
+        borderWidth: 0.5,
+        borderColor: 'rgba(0,0,0,0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <ChevronLeft size={20} color="#6B7280" />
+    </TouchableOpacity>
+  );
+
+  const content = (
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text style={{
+        fontSize: 11,
+        fontWeight: '700',
+        color: Colors.scanBtn,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
+        marginBottom: 8,
+      }}>
+        Análise da pele
+      </Text>
+
+      <Text style={{
+        fontSize: 26,
+        fontWeight: '800',
+        color: Colors.tabActive,
+        lineHeight: 31,
+        marginBottom: 8,
+      }}>
+        Agora vamos analisar sua pele por foto
+      </Text>
+
+      <Text style={{
+        fontSize: 13,
+        color: Colors.gray,
+        lineHeight: 20,
+        marginBottom: 28,
+      }}>
+        Para melhores resultados:
+      </Text>
+
+      <View style={{ gap: 20, marginBottom: 0 }}>
+        {instructions.map(({ Icon, text }, index) => (
+          <View
+            key={index}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 16,
+            }}
+          >
+            <View style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: Colors.scanBtn,
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Icon size={20} color={Colors.white} />
             </View>
-            <View className="px-6 pt-4 flex-1">
-              <View className="mb-10">
-                <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
-                  Agora vamos analisar sua pele por foto
-                </Text>
-                <Text className="text-[#9CA3AF] text-[17px]">Para melhores resultados:</Text>
-              </View>
-              <InstructionList />
-              <View className="flex-1" />
-              <View className="pb-8">
-                <CTAButton text="Abrir câmera" onPress={handleOpenCamera} />
-              </View>
-            </View>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: Colors.tabActive }}>
+              {text}
+            </Text>
           </View>
-        </SafeAreaView>
-        <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
-      </>
-    );
-  }
+        ))}
+      </View>
+
+      <View style={{ flex: 1 }} />
+
+      <TouchableOpacity
+        onPress={handleOpenCamera}
+        activeOpacity={0.8}
+        style={{
+          backgroundColor: Colors.scanBtn,
+          borderRadius: 100,
+          paddingVertical: 16,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>
+          Abrir câmera
+        </Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
 
   return (
     <>
-      <QuizLayout progress={68} showBack>
-        <View className="pt-8 flex-1">
-          <View className="mb-10">
-            <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
-              Agora vamos analisar sua pele por foto
-            </Text>
-            <Text className="text-[#9CA3AF] text-[17px]">Para melhores resultados:</Text>
+      <LinearGradient
+        colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
+        locations={[0, 0.4, 0.7, 1]}
+        style={{ flex: 1 }}
+      >
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+
+            <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
+              {backButton}
+              {scanSource !== 'app' && (
+                <View style={{ marginTop: 16 }}>
+                  <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
+                    <View style={{ height: 2, width: '68%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {content}
+
           </View>
-          <InstructionList />
-          <View className="flex-1" />
-          <View className="pb-8">
-            <CTAButton text="Abrir câmera" onPress={handleOpenCamera} />
-          </View>
-        </View>
-      </QuizLayout>
+        </SafeAreaView>
+      </LinearGradient>
       <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
     </>
   );
