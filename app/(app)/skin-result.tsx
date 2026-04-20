@@ -184,7 +184,7 @@ const regionCropOffset: Record<string, number> = {
   'Área dos Olhos': 48,
   'Nariz e Zona T': 96,
   'Bochechas': 112,
-  'Queixo e Mandíbula': 160,
+  'Queixo e Mandíbula': 136,
 };
 
 // ── Main component ─────────────────────────────────────────────────────────────

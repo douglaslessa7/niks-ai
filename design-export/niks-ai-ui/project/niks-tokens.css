@@ -1,0 +1,184 @@
+/* NIKS AI — Colors & Type Tokens
+   Source of truth for all NIKS-branded HTML artifacts.
+   Derived from niks-ai/constants/colors.ts and the onboarding/app screens.
+*/
+
+/* ── FONTS ────────────────────────────────────────────────────────────── */
+/* NIKS AI uses the system font stack (`fontFamily: 'System'` in Tailwind config).
+   On iOS this is SF Pro; on Android, Roboto. We substitute Inter via Google
+   Fonts for cross-platform HTML renders — the closest match to SF Pro's
+   proportions at UI sizes. TODO: user to confirm or provide SF Pro files. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* ── BRAND COLORS ───────────────────────────────────────────────────── */
+  --coral: #FB7B6B;                 /* primary — scanBtn, active states */
+  --coral-shadow: rgba(251,123,107,0.4);
+  --coral-soft: #FF9B8A;            /* accent — lighter coral */
+  --coral-tint-1: #FCEAE5;          /* gradient stop 0 */
+  --coral-tint-2: #FDF0ED;          /* gradient stop 1 */
+  --coral-tint-3: #FDFAF9;          /* gradient stop 2 */
+  --cream: #F6F4EE;                 /* cardBg / in-app background */
+  --ink: #1D3A44;                   /* tabActive — primary text, deep teal */
+  --gold: #FFD700;                  /* premium accent */
+
+  /* ── NEUTRALS ───────────────────────────────────────────────────────── */
+  --black: #1A1A1A;
+  --white: #FFFFFF;
+  --gray-1: #F5F5F7;                /* lightGray */
+  --gray-2: #F3F3F5;                /* inputBg */
+  --gray-3: #EDEDEE;                /* tabBarBg */
+  --gray-4: #D1D5DB;                /* disabled */
+  --gray-5: #9CA3AF;                /* gray */
+  --gray-6: #8A8A8E;                /* tabInactive / muted labels */
+  --gray-7: #717182;                /* muted */
+  --gray-8: #6B7280;                /* icon gray */
+  --border: rgba(0,0,0,0.1);
+  --border-soft: rgba(0,0,0,0.08);
+  --border-hairline: rgba(0,0,0,0.07);
+
+  /* ── SEMANTIC ───────────────────────────────────────────────────────── */
+  --fg-1: var(--ink);               /* primary text */
+  --fg-2: var(--gray-5);            /* secondary text / body support */
+  --fg-3: var(--gray-6);            /* tertiary / captions */
+  --fg-muted: var(--gray-7);
+  --fg-on-coral: var(--white);
+
+  --bg-app: var(--cream);           /* main app background in-product */
+  --bg-card: var(--white);
+  --bg-onboarding: linear-gradient(180deg, #FCEAE5 0%, #FDF0ED 40%, #FDFAF9 70%, #FFFFFF 100%);
+  --bg-input: var(--gray-2);
+
+  --accent: var(--coral);
+  --accent-fg: var(--white);
+  --destructive: #D4183D;
+  --success: #2E7D32;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  --premium: #CBA052;               /* crown gold used in perfil.tsx */
+
+  /* ── RADII ──────────────────────────────────────────────────────────── */
+  --radius-btn: 14px;               /* quadrada pill — legacy */
+  --radius-pill: 100px;             /* primary button shape */
+  --radius-card: 16px;
+  --radius-card-lg: 20px;
+  --radius-card-xl: 24px;
+  --radius-circle: 9999px;
+
+  /* ── SHADOWS ────────────────────────────────────────────────────────── */
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.06);
+  --shadow-card-raised: 0 2px 10px rgba(0,0,0,0.02);
+  --shadow-hero: 0 4px 16px rgba(0,0,0,0.12);
+  --shadow-coral: 0 4px 16px rgba(251,123,107,0.25);
+  --shadow-coral-glow: 0 0 12px rgba(251,123,107,0.4);
+
+  /* ── SPACING (4pt scale) ────────────────────────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ── TYPE ───────────────────────────────────────────────────────────── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-sans);
+
+  /* Base */
+  --fs-display: 32px;               /* onboarding hero headline */
+  --fs-h1: 26px;                    /* page title */
+  --fs-h2: 22px;                    /* section title */
+  --fs-h3: 20px;                    /* card title */
+  --fs-h4: 18px;                    /* subhead */
+  --fs-body: 15px;                  /* body */
+  --fs-body-sm: 14px;
+  --fs-cta: 16px;                   /* primary button */
+  --fs-cta-lg: 17px;                /* option card selected text */
+  --fs-caption: 13px;
+  --fs-micro: 11px;                 /* eyebrow label */
+
+  /* Line-heights, letter-spacing */
+  --lh-tight: 1.1;
+  --lh-snug: 1.2;
+  --lh-normal: 1.5;
+  --tracking-eyebrow: 1.2px;
+
+  /* Weights */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+}
+
+/* ── SEMANTIC TEXT STYLES ─────────────────────────────────────────────── */
+.niks-display {
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  font-weight: var(--fw-extrabold);
+  line-height: 38px;
+  color: var(--fg-1);
+  letter-spacing: -0.01em;
+}
+.niks-h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-extrabold);
+  line-height: 31px;
+  color: var(--fg-1);
+  letter-spacing: -0.01em;
+}
+.niks-h2 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-extrabold);
+  line-height: 28px;
+  color: var(--fg-1);
+}
+.niks-h3 {
+  font-family: var(--font-sans);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+  line-height: 24px;
+  color: var(--fg-1);
+}
+.niks-h4 {
+  font-family: var(--font-sans);
+  font-size: var(--fs-h4);
+  font-weight: var(--fw-bold);
+  line-height: 22px;
+  color: var(--fg-1);
+}
+.niks-body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+  line-height: 22px;
+  color: var(--fg-1);
+}
+.niks-caption {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-regular);
+  line-height: 20px;
+  color: var(--fg-2);
+}
+.niks-eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--coral);
+}
+.niks-label {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+}
+
+body { font-family: var(--font-sans); color: var(--fg-1); }

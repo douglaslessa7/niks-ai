@@ -86,6 +86,12 @@
       "expo-audio",
       "expo-video"
     ],
+    "fonts": [
+      "./assets/fonts/PlayfairDisplay-Regular.ttf",
+      "./assets/fonts/PlayfairDisplay-Italic.ttf",
+      "./assets/fonts/DMSerifDisplay-Regular.ttf",
+      "./assets/fonts/DMSerifDisplay-Italic.ttf"
+    ],
     "scheme": "niks-ai",
     "extra": {
       "router": {},

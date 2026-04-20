@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<title>Protocolo NIKS AI — Explorações</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+<link rel="stylesheet" href="niks-tokens.css"/>
+
+<style>
+  html, body { margin:0; padding:0; background:#f0eee9; }
+  body { font-family: 'Inter', -apple-system, system-ui, sans-serif; color:#1D3A44; }
+  * { box-sizing: border-box; }
+
+  /* Tweaks panel */
+  .tweak-panel {
+    position: fixed; top: 20px; right: 20px; z-index: 1000;
+    background: #fff; border-radius: 16px; padding: 18px 20px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
+    width: 260px; font-family: 'Inter', sans-serif;
+  }
+  .tweak-panel h3 {
+    margin: 0 0 4px; font-size: 14px; font-weight: 700; color: #1D3A44;
+  }
+  .tweak-panel p {
+    margin: 0 0 14px; font-size: 11px; color: #9CA3AF;
+  }
+  .tweak-row { margin-bottom: 14px; }
+  .tweak-row:last-child { margin-bottom: 0; }
+  .tweak-label {
+    display: block; font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+    color: #8A8A8E; text-transform: uppercase; margin-bottom: 6px;
+  }
+  .tweak-options { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tweak-opt {
+    padding: 6px 10px; border-radius: 100px; font-size: 11px; font-weight: 500;
+    background: #F5F5F7; color: #1D3A44; cursor: pointer; border: 0.5px solid transparent;
+    transition: all 150ms;
+  }
+  .tweak-opt.active {
+    background: #1D3A44; color: #fff; font-weight: 600;
+  }
+  .tweak-swatch {
+    width: 28px; height: 28px; border-radius: 14px; cursor: pointer;
+    border: 2px solid transparent; transition: all 150ms;
+  }
+  .tweak-swatch.active { border-color: #1D3A44; transform: scale(1.08); }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="niks-primitives.jsx"></script>
+<script type="text/babel" src="niks-protocolo-shared.jsx"></script>
+<script type="text/babel" src="direction-1-editorial.jsx"></script>
+<script type="text/babel" src="direction-2-clinica.jsx"></script>
+<script type="text/babel" src="direction-atelier.jsx"></script>
+<script type="text/babel" src="direction-silencio.jsx"></script>
+<script type="text/babel" src="direction-respiro.jsx"></script>
+<script type="text/babel" src="direction-clinica-white.jsx"></script>
+<script type="text/babel" src="direction-quietude.jsx"></script>
+<script type="text/babel" src="direction-quietude-v2.jsx"></script>
+<script type="text/babel" src="direction-3-cerimonia.jsx"></script>
+<script type="text/babel" src="direction-quietude-v3.jsx"></script>
+<script type="text/babel" src="direction-quietude-v3-original.jsx"></script>
+<script type="text/babel" src="direction-4-vitrine.jsx"></script>
+<script type="text/babel" src="direction-5-constelacao.jsx"></script>
+<script type="text/babel" src="direction-6-couture.jsx"></script>
+<script type="text/babel" src="direction-7-diario.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+
+const { useState, useEffect } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#FB7B6B",
+  "displayFont": "Cormorant Garamond",
+  "mode": "am"
+} /*EDITMODE-END*/;
+
+const FONT_OPTIONS = [
+{ label: 'Cormorant', value: "'Cormorant Garamond', serif" },
+{ label: 'Fraunces', value: "'Fraunces', serif" },
+{ label: 'Playfair', value: "'Playfair Display', serif" },
+{ label: 'DM Serif', value: "'DM Serif Display', serif" }];
+
+
+const ACCENT_OPTIONS = [
+{ label: 'Coral', value: '#FB7B6B' },
+{ label: 'Deep coral', value: '#E85D4D' },
+{ label: 'Terracotta', value: '#C86651' },
+{ label: 'Burgundy', value: '#7D2E2E' },
+{ label: 'Ink', value: '#1D3A44' },
+{ label: 'Gold', value: '#CBA052' }];
+
+
+function FontLabel({ fontValue }) {
+  return <span style={{ fontFamily: fontValue, fontStyle: 'italic' }}>Aa</span>;
+}
+
+function TweakPanel({ state, setState }) {
+  const fontValueToLabel = (v) => FONT_OPTIONS.find((f) => v.includes(f.label.replace(' ', ' ')) || v.includes(f.label.split(' ')[0]))?.label || FONT_OPTIONS[0].label;
+
+  return (
+    <div className="tweak-panel">
+      <h3>Tweaks</h3>
+      <p>Ajuste fonte, cor e modo em todas as direções ao vivo.</p>
+
+      <div className="tweak-row">
+        <div className="tweak-label">Fonte display (serif)</div>
+        <div className="tweak-options">
+          {FONT_OPTIONS.map((f) =>
+          <div key={f.label}
+          className={`tweak-opt${state.displayFont === f.value ? ' active' : ''}`}
+          onClick={() => setState({ ...state, displayFont: f.value })}
+          style={{ fontFamily: f.value, fontSize: 12 }}>
+              {f.label}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="tweak-row">
+        <div className="tweak-label">COR DE DESTAQUE</div>
+        <div className="tweak-options">
+          {ACCENT_OPTIONS.map((c) =>
+          <div key={c.value}
+          className={`tweak-swatch${state.accent === c.value ? ' active' : ''}`}
+          onClick={() => setState({ ...state, accent: c.value })}
+          style={{ background: c.value }}
+          title={c.label} />
+          )}
+        </div>
+      </div>
+
+      <div className="tweak-row">
+        <div className="tweak-label">Modo</div>
+        <div className="tweak-options">
+          {['am', 'pm'].map((m) =>
+          <div key={m}
+          className={`tweak-opt${state.mode === m ? ' active' : ''}`}
+          onClick={() => setState({ ...state, mode: m })}>
+              {m === 'am' ? '☀ Manhã' : '☾ Noite'}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>);
+
+}
+
+// Phone frame wrapper — uses IOSDevice for realistic iPhone chrome
+function Phone({ children, width = 393, height = 852 }) {
+  return (
+    <IOSDevice width={width} height={height}>
+      {children}
+    </IOSDevice>);
+
+}
+
+function App() {
+  const [state, setState] = useState(TWEAK_DEFAULTS);
+  const { accent, displayFont, mode } = state;
+
+  // edit-mode protocol
+  useEffect(() => {
+    const onMsg = (e) => {
+      const d = e.data || {};
+      if (d.type === '__activate_edit_mode') document.body.dataset.edit = '1';
+      if (d.type === '__deactivate_edit_mode') delete document.body.dataset.edit;
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const directions = [
+  {
+    key: 'quietude-v3',
+    title: '★ Quietude v3 — com toggle e detalhes',
+    subtitle: 'Toggle AM/PM embutido como "manhã · noite" em serif italic sob o orb. Toque em qualquer passo abre bottom sheet com detalhes completos.',
+    Cmp: ProtocoloQuietudeV3,
+    note: 'O toggle usa a própria linguagem da tela (serif italic). Os passos agora têm chevron › indicando tocabilidade — abrem um bottom sheet com benefício, modo de aplicar, ativos e explicação personalizada. A visualização principal continua limpa.'
+  },
+  {
+    key: 'quietude-v3-original',
+    title: 'Quietude v3 original',
+    subtitle: 'Mesmo layout da v3, mas com padding lateral 28px e título 38px permitindo quebrar em duas linhas naturalmente.',
+    Cmp: ProtocoloQuietudeV3Original,
+    note: 'Versão anterior preservada. Título maior respirando com mais padding, sem forçar nowrap.'
+  },
+  {
+    key: 'quietude-v2',
+    title: 'Quietude v2',
+    subtitle: 'Versão anterior — sem toggle ainda, sem detalhes expandidos.',
+    Cmp: ProtocoloQuietudeV2,
+    note: 'Referência para comparação.'
+  },
+  {
+    key: 'quietude',
+    title: 'Quietude — original',
+    subtitle: 'Versão anterior (off-white, "rito da manhã", "quatro gestos", 72 min, só passo atual colorido).',
+    Cmp: ProtocoloQuietude,
+    note: 'Para comparação lado-a-lado.'
+  },
+  {
+    key: 'clinica-white',
+    title: 'Clínica — fundo branco',
+    subtitle: 'A direção 3 original, mas com fundo branco puro. Cards viraram creme para ganhar profundidade.',
+    Cmp: ProtocoloClinicaWhite,
+    note: 'Exato mesmo layout da Clínica original, só o fundo trocado para branco. Para você ver se a mudança limpa respira mais.'
+  },
+  {
+    key: 'clinica',
+    title: 'Clínica — original (cream)',
+    subtitle: 'A versão que você preferiu. Mantida como âncora de comparação.',
+    Cmp: ProtocoloClinica,
+    note: 'Referência.'
+  },
+  {
+    key: 'silencio',
+    title: 'Silêncio — minimalismo (descartada)',
+    subtitle: 'Foi longe demais.',
+    Cmp: ProtocoloSilencio,
+    note: 'Mantida para contraste.'
+  },
+  {
+    key: 'respiro',
+    title: 'Respiro — página de livro (descartada)',
+    subtitle: 'Foi longe demais.',
+    Cmp: ProtocoloRespiro,
+    note: 'Mantida para contraste.'
+  },
+  {
+    key: 'atelier',
+    title: 'Atelier — carregada (descartada)',
+    subtitle: 'Mantida só para contexto histórico.',
+    Cmp: ProtocoloAtelier,
+    note: 'Referência.'
+  },
+  {
+    key: 'cerimonia',
+    title: '★ Cerimônia — imersiva passo a passo',
+    subtitle: 'Abre a partir da Atelier. Uma etapa por vez, orb respiratório, full-bleed gradiente. Foco em presença, não em completude.',
+    Cmp: ProtocoloCerimonia,
+    note: 'A experiência emocional. Abre em modal full-screen a partir do botão "Começar minha rotina" da Atelier.',
+    mock: (p) => <ProtocoloCerimonia {...p} currentStep={p.mode === 'am' ? 2 : 2} />
+  },
+  {
+    key: 'editorial',
+    title: '01 · Editorial de beleza',
+    subtitle: 'Sephora-esque levado ao ritual. Eyebrow minúsculo, serif gigante, muito whitespace.',
+    Cmp: ProtocoloEditorial,
+    note: 'A mais próxima da sua referência original. Mantida para contexto.'
+  },
+  {
+    key: 'couture',
+    title: '02 · Couture (black + coral)',
+    subtitle: 'Masthead preto, coral imperativo, números em serif de 76px.',
+    Cmp: ProtocoloCouture,
+    note: 'Preto puro como cor de ação. Mantida para contexto.'
+  },
+  {
+    key: 'vitrine',
+    title: '05 · Vitrine de perfumaria',
+    subtitle: 'Carrossel horizontal. Cada passo é um frasco. Foco no atual, próximos em preview.',
+    Cmp: ProtocoloVitrine,
+    note: 'Cada frasco é um objeto precioso. Desfoca o próximo/anterior como uma vitrine real.',
+    mock: (p) => <ProtocoloVitrine {...p} currentStep={p.mode === 'am' ? 2 : 2} />
+  },
+  {
+    key: 'constelacao',
+    title: '06 · Constelação (céu noturno)',
+    subtitle: 'A mais radical. Pele é um céu. Cada passo é uma estrela. Escuro em PM, aurora em AM.',
+    Cmp: ProtocoloConstelacao,
+    note: 'Luxo como observatório privado. Nada a ver com checklist. Pode conviver com outra direção se quiser.',
+    mock: (p) => <ProtocoloConstelacao {...p} expandedStep={p.mode === 'am' ? 2 : 2} />
+  },
+  {
+    key: 'diario',
+    title: '07 · Diário da pele',
+    subtitle: 'Streak de 14 dias + entradas com timestamps. Ritual como prática de escrita.',
+    Cmp: ProtocoloDiario,
+    note: 'Adiciona contexto longitudinal. A constância vira a "medalha" em vez do check do dia.'
+  }];
+
+
+  return (
+    <>
+      <TweakPanel state={state} setState={setState} />
+
+      <DesignCanvas minScale={0.2} maxScale={2}>
+        {/* Title block */}
+        <div style={{ padding: '0 60px 60px', maxWidth: 900 }}>
+          <div style={{
+            fontSize: 12, fontWeight: 700, letterSpacing: 2.5,
+            color: '#FB7B6B', textTransform: 'uppercase'
+          }}>
+            NIKS AI · Tela de Protocolo, v2
+          </div>
+          <div style={{
+            fontFamily: displayFont, fontSize: 48, fontWeight: 400,
+            color: '#1D3A44', lineHeight: 1.05, letterSpacing: '-0.02em',
+            marginTop: 12
+          }}>
+            <span style={{ fontStyle: 'italic', color: '#FB7B6B' }}>Quietude</span> + Clínica-white<br />
+            — leveza com substância.
+          </div>
+          <div style={{
+            fontSize: 14, color: '#486269', lineHeight: 1.6,
+            marginTop: 16, maxWidth: 640
+          }}>
+Feedback ouvido duas vezes: a Atelier era carregada, a Silêncio/Respiro foi vazia demais. Agora duas respostas: (1) <b>Clínica-white</b> — sua preferida com fundo branco puro, cards viram creme para ganhar profundidade; (2) <b>Quietude</b> — nova tentativa livre, um talismã orgânico no topo como objeto afetivo + serif respirando + um único ponto de coral. A ideia da Quietude: cada elemento justifica sua existência, nada mais.
+          </div>
+          <div style={{
+            fontSize: 12, color: '#8A8A8E', lineHeight: 1.6,
+            marginTop: 18, maxWidth: 640, padding: '12px 16px',
+            background: 'rgba(251,123,107,0.08)', borderLeft: '2px solid #FB7B6B',
+            borderRadius: '0 12px 12px 0'
+          }}>
+            <b style={{ color: '#1D3A44' }}>Dica:</b> use o painel Tweaks (canto superior direito) para trocar a fonte display, a cor de destaque e o modo AM/PM em todas as direções simultaneamente — assim você compara no mesmo pé.
+          </div>
+        </div>
+
+        <DCSection
+          title="Direções"
+          subtitle="Passe o cursor e role lateralmente. Todas na moldura iPhone, 393×852."
+          gap={60}>
+          
+          {directions.map((d) =>
+          <DCArtboard key={d.key} label={d.title} width={393} height={852}>
+              <Phone>
+                {d.mock ? d.mock({ accent, displayFont, mode }) : <d.Cmp accent={accent} displayFont={displayFont} mode={mode} />}
+              </Phone>
+            </DCArtboard>
+          )}
+        </DCSection>
+
+        {/* Notes row — one postit per direction */}
+        <DCSection title="Notas de design" subtitle="Por que cada direção existe." gap={40}>
+          {directions.map((d, i) =>
+          <div key={d.key} style={{
+            width: 280, background: '#fff', borderRadius: 12,
+            padding: '18px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            flexShrink: 0
+          }}>
+              <div style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: 1.5,
+              color: '#FB7B6B', textTransform: 'uppercase'
+            }}>
+                {d.title}
+              </div>
+              <div style={{
+              fontFamily: displayFont, fontSize: 18, fontWeight: 500,
+              color: '#1D3A44', lineHeight: 1.25,
+              marginTop: 8, letterSpacing: '-0.01em'
+            }}>
+                {d.subtitle}
+              </div>
+              <div style={{
+              fontSize: 12, color: '#486269', lineHeight: 1.5,
+              marginTop: 10, paddingTop: 10,
+              borderTop: '0.5px solid rgba(0,0,0,0.1)'
+            }}>
+                {d.note}
+              </div>
+            </div>
+          )}
+        </DCSection>
+      </DesignCanvas>
+    </>);
+
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>

@@ -1,7 +1,9 @@
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Animated } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  View, Text, TouchableOpacity, ScrollView,
+  ActivityIndicator, Animated, Pressable, StyleSheet,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect, useRef } from 'react';
-import { Check, Sun, Moon, Info, CheckCircle, ChevronDown, ChevronUp, Flame, Calendar } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult } from '../../store/onboarding';
 import { BASE_PROTOCOLS } from '../../constants/protocols';
@@ -9,6 +11,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { useAudioPlayer } from 'expo-audio';
 import { Colors } from '../../constants/colors';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { useFonts } from 'expo-font';
+// react-native-svg — ícones inline fiéis ao design (sol, lua, chevron, fechar, seta)
+import Svg, {
+  Line as SvgLine,
+  Circle as SvgCircle,
+  Path as SvgPath,
+} from 'react-native-svg';
+// Skia — radial gradient fiel ao orb + nebulosas do NightSky
+import {
+  Canvas, Circle,
+  RadialGradient, vec, BlurMask,
+} from '@shopify/react-native-skia';
+import NightSky from '../../components/ui/NightSky';
 
 interface Step {
   id: number;
@@ -69,14 +86,80 @@ export default function Protocolo() {
 
   const player = useAudioPlayer(require('../../assets/sounds/check.mp3'));
 
+  // ── Fontes serif fiéis ao design ──────────────────────────────────
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
+    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    'DMSerifDisplay-Regular': require('../../assets/fonts/DMSerifDisplay-Regular.ttf'),
+    'DMSerifDisplay-Italic': require('../../assets/fonts/DMSerifDisplay-Italic.ttf'),
+  });
+  const displayFont = fontsLoaded ? 'PlayfairDisplay-Italic' : undefined;
+  const displayFontReg = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
+  const insets = useSafeAreaInsets();
+
+  // ── Novos states — Quietude v3 ─────────────────────────────────────
+  const [skinScore, setSkinScore] = useState<number | null>(null);
+  const [openStep, setOpenStep] = useState<number | null>(null);
+  const [ritualOpen, setRitualOpen] = useState(false);
+  const [ritualStep, setRitualStep] = useState(0);
+  const [ritualDone, setRitualDone] = useState(false);
+
+  // ── Animated values orb breathing (Cerimônia) ─────────────────────
+  const orbBreath1 = useRef(new Animated.Value(1)).current;
+  const orbBreath2 = useRef(new Animated.Value(1)).current;
+  // Bottom sheet slide-in
+  const sheetSlide = useRef(new Animated.Value(500)).current;
+
   // Animated values por card (arrays mutáveis)
   const cardOpacityRef = useRef<Animated.Value[]>([]);
   const cardScaleYRef = useRef<Animated.Value[]>([]);
   const cardGreenRef = useRef<Animated.Value[]>([]);
 
+  // Cerimônia celebration — staggered entrances
+  const celebScreenOpacity = useRef(new Animated.Value(0)).current;
+  const celebScreenScale = useRef(new Animated.Value(0.96)).current;
+  const celebOrbScale = useRef(new Animated.Value(0.5)).current;
+  const celebOrbOpacity = useRef(new Animated.Value(0)).current;
+  const celebEyebrowAnim = useRef(new Animated.Value(0)).current;
+  const celebTitleAnim = useRef(new Animated.Value(0)).current;
+  const celebSubtextoAnim = useRef(new Animated.Value(0)).current;
+  const celebFooterAnim = useRef(new Animated.Value(0)).current;
+
   const steps = period === 'morning' ? morningSteps : nightSteps;
   const isMorning = period === 'morning';
   const accentColor = isMorning ? Colors.scanBtn : Colors.tabActive;
+
+  // ── Theme Quietude v3 ──────────────────────────────────────────────
+  const isPM = period === 'night';
+  const accent = Colors.scanBtn; // #FB7B6B coral — igual em ambos os modos
+  const ink = isPM ? '#FFFFFF' : '#2B2724';
+  const inkSoft = isPM ? 'rgba(255,255,255,0.65)' : 'rgba(43,39,36,0.55)';
+  const inkHair = isPM ? 'rgba(255,255,255,0.14)' : 'rgba(43,39,36,0.10)';
+  const inkWhisper = isPM ? 'rgba(255,255,255,0.42)' : 'rgba(43,39,36,0.35)';
+
+  // ── Helpers ────────────────────────────────────────────────────────
+  const toRoman = (n: number) =>
+    ['I','II','III','IV','V','VI','VII','VIII','IX','X'][n - 1] ?? String(n);
+
+  const totalLabel = (() => {
+    const total = steps.reduce((acc, s) => {
+      const m = (s.waitTime ?? '').match(/(\d+)\s*(min|seg)/i);
+      if (!m) return acc;
+      return acc + (m[2].toLowerCase() === 'min' ? parseInt(m[1]) * 60 : parseInt(m[1]));
+    }, 0);
+    if (total === 0) return '';
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return secs === 0 ? `${mins} min` : `${mins} min ${secs} seg`;
+  })();
+
+  const formattedDate = (() => {
+    const d = new Date();
+    d.setHours(d.getHours() - 3);
+    const months = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    const days = ['dom','seg','ter','qua','qui','sex','sáb'];
+    return `${d.getDate()} ${months[d.getMonth()]} · ${days[d.getDay()]}`;
+  })();
 
   // Manter refs sincronizados
   useEffect(() => { checkedItemsRef.current = checkedItems; }, [checkedItems]);
@@ -94,6 +177,54 @@ export default function Protocolo() {
     cardScaleYRef.current = Array.from({ length: count }, () => new Animated.Value(1));
     cardGreenRef.current = Array.from({ length: count }, () => new Animated.Value(0));
   }, [steps.length, period]);
+
+  // Anéis respiratórios do orb na Cerimônia
+  useEffect(() => {
+    const breathe = (anim: Animated.Value, delay: number) => {
+      Animated.loop(Animated.sequence([
+        Animated.timing(anim, { toValue: 1.08, duration: 3000, useNativeDriver: true, delay }),
+        Animated.timing(anim, { toValue: 1, duration: 3000, useNativeDriver: true, delay: 0 }),
+      ])).start();
+    };
+    breathe(orbBreath1, 0);
+    breathe(orbBreath2, 300);
+  }, []);
+
+  // Bottom sheet slide-in quando openStep muda
+  useEffect(() => {
+    if (openStep !== null) {
+      sheetSlide.setValue(500);
+      Animated.spring(sheetSlide, {
+        toValue: 0,
+        tension: 60,
+        friction: 12,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [openStep]);
+
+  // Celebration screen — staggered entrances (fiel a cerimonia-celebration-*-in)
+  useEffect(() => {
+    if (!ritualDone) return;
+    celebScreenOpacity.setValue(0);
+    celebScreenScale.setValue(0.96);
+    celebOrbScale.setValue(0.5);
+    celebOrbOpacity.setValue(0);
+    celebEyebrowAnim.setValue(0);
+    celebTitleAnim.setValue(0);
+    celebSubtextoAnim.setValue(0);
+    celebFooterAnim.setValue(0);
+    Animated.parallel([
+      Animated.timing(celebScreenOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(celebScreenScale, { toValue: 1, tension: 80, friction: 12, useNativeDriver: true }),
+      Animated.spring(celebOrbScale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
+      Animated.timing(celebOrbOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.timing(celebEyebrowAnim, { toValue: 1, duration: 700, delay: 400, useNativeDriver: true }),
+      Animated.timing(celebTitleAnim, { toValue: 1, duration: 700, delay: 550, useNativeDriver: true }),
+      Animated.timing(celebSubtextoAnim, { toValue: 1, duration: 700, delay: 700, useNativeDriver: true }),
+      Animated.timing(celebFooterAnim, { toValue: 1, duration: 700, delay: 850, useNativeDriver: true }),
+    ]).start();
+  }, [ritualDone]);
 
   // Carregar estado de conclusão do AsyncStorage ao trocar de aba ou quando steps carrega
   useEffect(() => {
@@ -145,7 +276,7 @@ export default function Protocolo() {
     }).start();
   }, [checkedItems.size, steps.length]);
 
-  // Buscar dados do usuário (nome, streak)
+  // Buscar dados do usuário (streak + skin_score)
   useEffect(() => {
     const fetchUserData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -158,6 +289,17 @@ export default function Protocolo() {
         if (data) {
           setStreakDays(data.streak_days ?? 0);
           setLastCompletedAt(data.last_protocol_completed_at ?? null);
+        }
+        // Fetch skin_score do último scan
+        const { data: lastScan } = await supabase
+          .from('skin_scans')
+          .select('skin_score')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        if (lastScan?.skin_score != null) {
+          setSkinScore(lastScan.skin_score);
         }
       }
     };
@@ -418,603 +560,924 @@ export default function Protocolo() {
     }
   };
 
-  // Detecta se o texto contém info de dias da semana
-  const DAY_REGEX = /(?:Seg|Ter|Qua|Qui|Sex|S[aá]b|Dom|segunda|terça|quarta|quinta|sexta|s[aá]bado|domingo)/i;
+  const stepsCountWord = (() => {
+    const words = ['um','dois','três','quatro','cinco','seis','sete','oito','nove','dez'];
+    return words[steps.length - 1] ?? String(steps.length);
+  })();
+  const periodWord = isPM ? 'Noite,' : 'Manhã,';
 
-  const getDayTag = (step: Step): string | null => {
-    if (step.waitTime && DAY_REGEX.test(step.waitTime)) {
-      return step.waitTime;
-    }
-    if (step.ingredient) {
-      const match = step.ingredient.match(/\(([^)]*(?:Seg|Ter|Qua|Qui|Sex|S[aá]b|Dom)[^)]*)\)/i);
-      if (match) return match[1];
-    }
-    if (step.instruction && DAY_REGEX.test(step.instruction)) {
-      const match = step.instruction.match(/\(([^)]*(?:Seg|Ter|Qua|Qui|Sex|S[aá]b|Dom)[^)]*)\)/i);
-      if (match) return match[1];
-    }
-    return null;
-  };
+  // ── Computed vars para o return ───────────────────────────────────
+  const currentOpenStep = openStep !== null ? steps[openStep] : null;
 
-  const isTimeWait = (wt: string | null | undefined): boolean => {
-    if (!wt) return false;
-    if (DAY_REGEX.test(wt)) return false;
-    return /\d/.test(wt);
-  };
+  const dayGradients: [string, string, string][] = [
+    ['#FDE8E1', '#FBD5CA', '#F5B8A8'],
+    ['#FEF0E6', '#FADBC7', '#EBB497'],
+    ['#FCEAE5', '#F8C9B9', '#E89F8B'],
+    ['#FFEDE8', '#FFD4C5', '#FB9F89'],
+    ['#FFE5DD', '#FBBFAE', '#E88770'],
+  ];
+  const rtBg: [string, string, string] = isPM
+    ? ['#0F1420', '#1A1F2E', '#2A1F28']
+    : dayGradients[ritualStep % dayGradients.length];
+  const rtInk = isPM ? '#FFFFFF' : '#1D3A44';
+  const rtInkSoft = isPM ? 'rgba(255,255,255,0.65)' : '#486269';
+  const rtInkHair = isPM ? 'rgba(255,255,255,0.18)' : 'rgba(29,58,68,0.2)';
+  const chipBg = isPM ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.5)';
+  const chipBorder = isPM ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.7)';
+  const ritualCurrentStep = steps[ritualStep] ?? steps[steps.length - 1];
+  const isRitualLast = ritualStep === steps.length - 1;
 
-  const getSubSteps = (step: Step): string[] => {
-    if (step.steps && step.steps.length > 0) return step.steps;
-    if (step.instruction) {
-      const parts = step.instruction
-        .split(/\.\s+/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .map((s) => (s.endsWith('.') ? s : `${s}.`));
-      if (parts.length > 1) return parts;
-    }
-    return step.instruction ? [step.instruction] : ['Siga as instruções do fabricante.'];
-  };
+  // Cerimônia usa DM Serif Display (diferente da tela principal que usa Playfair)
+  const cerimFont = fontsLoaded ? 'DMSerifDisplay-Italic' : undefined;
+  const cerimFontReg = fontsLoaded ? 'DMSerifDisplay-Regular' : undefined;
+  // Título partido: 1ª palavra italic + vírgula + restante normal
+  const cerimTitleParts = (ritualCurrentStep?.name ?? '').split(' ');
+  const cerimTitleFirst = cerimTitleParts[0] ?? '';
+  const cerimTitleRest = cerimTitleParts.slice(1).join(' ');
+  // Tema da tela de celebração (CerimoniaCelebration)
+  const celebBgColors: string[] = isPM ? ['#1a2332', '#0a1420', '#050a12'] : ['#FFF8F3', '#FFEFE4'];
+  const celebTextColor = isPM ? '#F5E6D3' : '#1D3A44';
+  const celebSubtleColor = isPM ? 'rgba(245,230,211,0.6)' : 'rgba(29,58,68,0.55)';
+  const celebRuleColor = isPM ? 'rgba(245,230,211,0.25)' : 'rgba(29,58,68,0.2)';
+  const celebCtaBg = isPM ? '#F5E6D3' : '#1D3A44';
+  const celebCtaText = isPM ? '#0a1420' : '#FFF8F3';
 
-  const renderStepCard = (step: Step, index: number, isCompleted: boolean) => {
-    const dayTag = getDayTag(step);
-
-    if (isCompleted) {
-      // Card concluído: esmaecido, sem botão "Ver passo a passo", toque desmarca
-      return (
-        <TouchableOpacity
-          key={`completed-${step.id}`}
-          onPress={() => toggleStepCompletion(index)}
-          activeOpacity={0.75}
-          style={{ opacity: 0.45 }}
-        >
-          <View
-            style={{
-              borderRadius: 16,
-              padding: 16,
-              backgroundColor: Colors.white,
-              borderWidth: 1,
-              borderColor: '#F0F0F0',
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-              {/* Círculo cinza com check */}
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 999,
-                  backgroundColor: Colors.disabled,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Check size={18} color={Colors.white} strokeWidth={3} />
-              </View>
-
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.gray, textDecorationLine: 'line-through', flexShrink: 1 }}>
-                    {step.name}
-                  </Text>
-                  {dayTag && (
-                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: '#F3F3F5', flexShrink: 0, alignSelf: 'flex-start' }}>
-                      <Text style={{ fontSize: 10, fontWeight: '600', color: Colors.gray }}>{dayTag}</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={{ fontSize: 13, color: Colors.gray, flexShrink: 1 }}>
-                  {step.ingredient}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-      );
-    }
-
-    // Card pendente: com animações
-    const greenAnim = cardGreenRef.current[index];
-    const bgColor = greenAnim
-      ? greenAnim.interpolate({ inputRange: [0, 1], outputRange: [Colors.white, '#E8F5E9'] })
-      : Colors.white;
-    const circleColor = greenAnim
-      ? greenAnim.interpolate({ inputRange: [0, 1], outputRange: [accentColor, '#4CAF50'] })
-      : accentColor;
-
-    return (
-      <Animated.View
-        key={step.id}
-        style={{
-          opacity: cardOpacityRef.current[index] ?? 1,
-          transform: [{ scaleY: cardScaleYRef.current[index] ?? 1 }],
-          overflow: 'hidden',
-        }}
-      >
-        <Animated.View
-          style={{
-            backgroundColor: bgColor,
-            borderRadius: 16,
-            padding: 16,
-            borderWidth: 1,
-            borderColor: '#F0F0F0',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.05,
-            shadowRadius: 4,
-            elevation: 1,
-          }}
-        >
-          {/* Top row */}
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-            {/* Number circle — só a cor anima para verde */}
-            <Animated.View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 999,
-                backgroundColor: circleColor,
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                shadowColor: accentColor,
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.25,
-                shadowRadius: 8,
-                elevation: 3,
-              }}
-            >
-              <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.white }}>
-                {index + 1}
-              </Text>
-            </Animated.View>
-
-            {/* Text info */}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#1D3A44', flexShrink: 1 }}>
-                  {step.name}
-                </Text>
-                {(() => {
-                  if (dayTag) {
-                    return (
-                      <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: '#FFF5F4', borderWidth: 1, borderColor: '#FDE8E6', flexShrink: 0, alignSelf: 'flex-start' }}>
-                        <Text style={{ fontSize: 10, fontWeight: '600', color: Colors.scanBtn }}>{dayTag}</Text>
-                      </View>
-                    );
-                  }
-                  if (isTimeWait(step.waitTime)) {
-                    return (
-                      <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: '#F3F3F5', flexShrink: 0, alignSelf: 'flex-start' }}>
-                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#8A8A8E' }}>{step.waitTime}</Text>
-                      </View>
-                    );
-                  }
-                  return null;
-                })()}
-              </View>
-              <Text style={{ fontSize: 13, color: '#8A8A8E', marginBottom: 4, flexShrink: 1 }}>
-                {step.ingredient}
-              </Text>
-              <Text style={{ fontSize: 12, color: '#A0A0A8', lineHeight: 18, flexShrink: 1 }}>
-                {step.instruction}
-              </Text>
-            </View>
-
-            {/* Checkbox direito */}
-            <TouchableOpacity
-              onPress={() => toggleStepCompletion(index)}
-              activeOpacity={0.8}
-              style={{ flexShrink: 0 }}
-            >
-              <Animated.View
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 999,
-                  backgroundColor: greenAnim
-                    ? greenAnim.interpolate({ inputRange: [0, 1], outputRange: ['transparent', '#4CAF50'] })
-                    : 'transparent',
-                  borderWidth: 1,
-                  borderColor: greenAnim
-                    ? greenAnim.interpolate({ inputRange: [0, 1], outputRange: [Colors.disabled, '#4CAF50'] })
-                    : Colors.disabled,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Animated.View
-                  style={{
-                    opacity: greenAnim
-                      ? greenAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] })
-                      : 0,
-                  }}
-                >
-                  <Check size={14} color="#FFFFFF" strokeWidth={2.5} />
-                </Animated.View>
-              </Animated.View>
-            </TouchableOpacity>
-          </View>
-
-          {/* "Ver passo a passo" button */}
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedStep(step);
-              setShowStepDetail(true);
-            }}
-            activeOpacity={0.8}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              paddingVertical: 10,
-              borderRadius: 10,
-              backgroundColor: '#F0F9F5',
-            }}
-          >
-            <Info size={14} color="#7CB69D" strokeWidth={2} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: '#7CB69D' }}>
-              Ver passo a passo
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </Animated.View>
-    );
-  };
+  // ── JSX ────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.cardBg, alignItems: 'center', justifyContent: 'center' }} edges={['top']}>
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color={Colors.scanBtn} />
-        <Text style={{ marginTop: 16, color: '#8A8A8E', fontSize: 15 }}>Gerando seu protocolo personalizado...</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.cardBg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }} edges={['top']}>
-        <Text style={{ color: Colors.black, fontSize: 16, fontWeight: '600', textAlign: 'center', marginBottom: 16 }}>{error}</Text>
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <Text style={{ fontSize: 16, color: '#2B2724', textAlign: 'center', marginBottom: 20 }}>{error}</Text>
         {scanResult && (
           <TouchableOpacity
             onPress={generateProtocol}
-            style={{ backgroundColor: Colors.scanBtn, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+            style={{ backgroundColor: Colors.scanBtn, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 100 }}
           >
-            <Text style={{ color: Colors.white, fontWeight: '600' }}>Tentar novamente</Text>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Tentar novamente</Text>
           </TouchableOpacity>
         )}
-      </SafeAreaView>
+      </View>
     );
   }
 
-  const pendingSteps = steps.map((step, index) => ({ step, index })).filter(({ index }) => !checkedItems.has(index));
-  const completedSteps = steps.map((step, index) => ({ step, index })).filter(({ index }) => checkedItems.has(index));
-  const total = steps.length;
-  const completed = checkedItems.size;
-  const allDone = total > 0 && completed === total;
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.cardBg }} edges={['top']}>
-      <ScrollView
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      >
-        <View style={{ maxWidth: 393, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 24 }}>
+    <View style={{ flex: 1, backgroundColor: isPM ? '#0F1420' : '#FFFFFF' }}>
+      {isPM && (
+        <LinearGradient
+          colors={['#0F1420', '#1A1F2E', '#2A1F28']}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+      {isPM && <NightSky />}
 
-          {/* Header */}
-          <Text style={{ fontSize: 28, fontWeight: '800', color: '#1D3A44', marginBottom: 24 }}>
-            Seu Protocolo
+      {/* ── Scroll content ─────────────────────────────────── */}
+      <ScrollView
+        style={{ flex: 1, zIndex: 1 }}
+        contentContainerStyle={{ paddingBottom: 180 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Masthead */}
+        <View style={{
+          paddingTop: insets.top + 20,
+          paddingHorizontal: 28,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <Text style={{
+            fontSize: 10, fontWeight: '600',
+            letterSpacing: 2.8, color: inkSoft,
+            textTransform: 'uppercase',
+          }}>NIKS</Text>
+          <Text style={{ fontSize: 10, fontWeight: '500', letterSpacing: 0.5, color: inkSoft }}>
+            {formattedDate}
+          </Text>
+        </View>
+
+        {/* Orb 132×132 — Skia RadialGradient fiel ao design */}
+        <View style={{ paddingTop: 56, paddingHorizontal: 28, alignItems: 'center' }}>
+          <View style={{
+            shadowColor: isPM ? '#FFF8DC' : '#E89178',
+            shadowOffset: { width: 0, height: 18 },
+            shadowOpacity: isPM ? 0.35 : 0.28,
+            shadowRadius: 22,
+            elevation: 8,
+          }}>
+            <Canvas style={{ width: 132, height: 132 }}>
+              <Circle cx={66} cy={66} r={66}>
+                <RadialGradient
+                  c={vec(46, 40)}
+                  r={120}
+                  colors={isPM
+                    ? ['#FFFFFF', '#F4EEE4', '#D8CDB8', '#A89676']
+                    : ['#FFE8DF', '#F9C9B6', '#E89178', '#C86651']}
+                />
+              </Circle>
+              <Circle cx={47} cy={27} r={21}>
+                <RadialGradient
+                  c={vec(47, 27)}
+                  r={21}
+                  colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
+                />
+                <BlurMask blur={4} style="normal" />
+              </Circle>
+              {isPM && (
+                <>
+                  <Circle cx={77} cy={49} r={7}>
+                    <RadialGradient c={vec(75, 47)} r={7}
+                      colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']} />
+                  </Circle>
+                  <Circle cx={43} cy={77} r={5}>
+                    <RadialGradient c={vec(41, 75)} r={5}
+                      colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0)']} />
+                  </Circle>
+                  <Circle cx={96} cy={60} r={3.5}>
+                    <RadialGradient c={vec(95, 59)} r={3.5}
+                      colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0)']} />
+                  </Circle>
+                  <Circle cx={71} cy={91} r={3}>
+                    <RadialGradient c={vec(70, 90)} r={3}
+                      colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0)']} />
+                  </Circle>
+                  <Circle cx={53} cy={37} r={2.5}>
+                    <RadialGradient c={vec(52, 36)} r={2.5}
+                      colors={['rgba(0,0,0,0.04)', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0)']} />
+                  </Circle>
+                </>
+              )}
+            </Canvas>
+          </View>
+        </View>
+
+        {/* Toggle AM/PM — serif italic + SVG fiéis ao design */}
+        <View style={{
+          paddingTop: 26, paddingHorizontal: 28,
+          flexDirection: 'row', justifyContent: 'center',
+          alignItems: 'center', gap: 14,
+        }}>
+          <TouchableOpacity
+            onPress={() => setPeriod('morning')}
+            activeOpacity={0.75}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 7,
+              paddingBottom: 3,
+              borderBottomWidth: 0.5,
+              borderBottomColor: !isPM ? accent : 'transparent',
+            }}
+          >
+            <Svg width={13} height={13} viewBox="0 0 14 14" fill="none">
+              <SvgCircle cx={7} cy={7} r={2.4} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} />
+              <SvgLine x1={7} y1={1} x2={7} y2={2.8} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+              <SvgLine x1={7} y1={11.2} x2={7} y2={13} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+              <SvgLine x1={1} y1={7} x2={2.8} y2={7} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+              <SvgLine x1={11.2} y1={7} x2={13} y2={7} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+              <SvgLine x1={2.76} y1={2.76} x2={4.04} y2={4.04} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+              <SvgLine x1={9.96} y1={9.96} x2={11.24} y2={11.24} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+              <SvgLine x1={11.24} y1={2.76} x2={9.96} y2={4.04} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+              <SvgLine x1={4.04} y1={9.96} x2={2.76} y2={11.24} stroke={!isPM ? accent : inkWhisper} strokeWidth={0.8} strokeLinecap="round" />
+            </Svg>
+            <Text style={{
+              fontFamily: displayFont, fontSize: 15, fontWeight: '400',
+              color: !isPM ? accent : inkWhisper,
+            }}>manhã</Text>
+          </TouchableOpacity>
+
+          <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: inkWhisper }} />
+
+          <TouchableOpacity
+            onPress={() => setPeriod('night')}
+            activeOpacity={0.75}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 7,
+              paddingBottom: 3,
+              borderBottomWidth: 0.5,
+              borderBottomColor: isPM ? accent : 'transparent',
+            }}
+          >
+            <Text style={{
+              fontFamily: displayFont, fontSize: 15, fontWeight: '400',
+              color: isPM ? accent : inkWhisper,
+            }}>noite</Text>
+            <Svg width={13} height={13} viewBox="0 0 14 14" fill="none">
+              <SvgPath
+                d="M11 8.5 A 5 5 0 1 1 5.5 3 A 4 4 0 0 0 11 8.5 Z"
+                stroke={isPM ? accent : inkWhisper}
+                strokeWidth={0.8}
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </TouchableOpacity>
+        </View>
+
+        {/* Title block */}
+        <View style={{ paddingTop: 26, paddingHorizontal: 28, alignItems: 'center' }}>
+          <Text style={{
+            fontFamily: displayFontReg,
+            fontSize: 38, fontWeight: '400',
+            color: ink, lineHeight: 40,
+            letterSpacing: -0.95,
+            textAlign: 'center',
+          }}>
+            <Text style={{ fontFamily: displayFont }}>{periodWord} </Text>
+            {stepsCountWord} passos.
           </Text>
 
-          {/* Tab Toggle */}
-          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-            <TouchableOpacity
-              onPress={() => setPeriod('morning')}
-              activeOpacity={0.8}
-              style={{
-                flex: 1,
-                height: 48,
-                borderRadius: 999,
-                alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-                gap: 8,
-                backgroundColor: isMorning ? Colors.scanBtn : 'transparent',
-                borderWidth: 1,
-                borderColor: isMorning ? Colors.scanBtn : '#1D3A44',
-              }}
-            >
-              <Sun size={20} color={isMorning ? Colors.white : '#1D3A44'} strokeWidth={2} />
-              <Text style={{ fontSize: 15, fontWeight: '600', color: isMorning ? Colors.white : '#1D3A44' }}>
-                Manhã
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setPeriod('night')}
-              activeOpacity={0.8}
-              style={{
-                flex: 1,
-                height: 48,
-                borderRadius: 999,
-                alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-                gap: 8,
-                backgroundColor: !isMorning ? Colors.scanBtn : 'transparent',
-                borderWidth: 1,
-                borderColor: !isMorning ? Colors.scanBtn : '#1D3A44',
-              }}
-            >
-              <Moon size={20} color={!isMorning ? Colors.white : '#1D3A44'} strokeWidth={2} />
-              <Text style={{ fontSize: 15, fontWeight: '600', color: !isMorning ? Colors.white : '#1D3A44' }}>
-                Noite
-              </Text>
-            </TouchableOpacity>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            justifyContent: 'center', gap: 10, marginTop: 22,
+          }}>
+            <View style={{ width: 36, height: 0.5, backgroundColor: inkHair }} />
+            <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: accent }} />
+            <View style={{ width: 36, height: 0.5, backgroundColor: inkHair }} />
           </View>
 
-          {/* Cronograma de Introdução */}
-          {protocol?.introduction_schedule && (
-            <View
-              style={{
-                borderRadius: 16,
-                backgroundColor: '#FDFDFD',
-                borderWidth: 1,
-                borderColor: '#F0F0F0',
-                marginBottom: 16,
-              }}
-            >
+          <Text style={{
+            fontSize: 11, fontWeight: '500', letterSpacing: 0.4,
+            color: inkSoft, marginTop: 20,
+          }}>
+            {[totalLabel, skinScore != null ? `score ${skinScore}` : null].filter(Boolean).join('  ·  ')}
+          </Text>
+        </View>
+
+        {/* Steps list */}
+        <View style={{ paddingTop: 48, paddingHorizontal: 28 }}>
+          {steps.map((s, i) => {
+            const done = checkedItems.has(i);
+            return (
               <TouchableOpacity
-                onPress={() => setIsScheduleExpanded((prev) => !prev)}
-                activeOpacity={0.7}
+                key={s.id ?? i}
+                onPress={() => setOpenStep(i)}
+                activeOpacity={0.85}
                 style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: 16,
+                  flexDirection: 'row', alignItems: 'flex-start',
+                  gap: 20, paddingTop: 22, paddingBottom: 22, paddingLeft: 16,
+                  borderBottomWidth: i < steps.length - 1 ? 0.5 : 0,
+                  borderBottomColor: inkHair,
+                  position: 'relative',
+                  opacity: done ? 0.42 : 1,
                 }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Calendar size={16} color="#FB7B6B" strokeWidth={2} />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44' }}>
-                    Cronograma de Introdução
-                  </Text>
+                <View style={{
+                  position: 'absolute', left: 0, top: 22, bottom: 22,
+                  width: 2, borderRadius: 1, backgroundColor: accent,
+                }} />
+                <Text style={{
+                  fontFamily: displayFont,
+                  fontSize: 16, fontWeight: '400',
+                  color: accent, width: 22, flexShrink: 0,
+                  paddingTop: 4, letterSpacing: -0.16,
+                }}>{toRoman(i + 1)}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{
+                    fontFamily: displayFontReg,
+                    fontSize: 20, fontWeight: '400',
+                    color: ink, lineHeight: 24, letterSpacing: -0.3,
+                    textDecorationLine: done ? 'line-through' : 'none',
+                    textDecorationColor: inkWhisper,
+                  }}>{s.name}</Text>
+                  <Text style={{
+                    fontSize: 11, fontWeight: '500', letterSpacing: 0.3,
+                    color: inkSoft, marginTop: 6,
+                  }}>{s.ingredient}</Text>
                 </View>
-                {isScheduleExpanded
-                  ? <ChevronUp size={16} color="#1D3A44" />
-                  : <ChevronDown size={16} color="#1D3A44" />
-                }
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  flexShrink: 0, paddingTop: 6,
+                }}>
+                  {done ? (
+                    <View style={{
+                      width: 18, height: 18, borderRadius: 9,
+                      backgroundColor: inkWhisper,
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Svg width={10} height={10} viewBox="0 0 10 10">
+                        <SvgPath d="M2 5L4.2 7L8 3" stroke="#fff" strokeWidth={1.4}
+                          fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    </View>
+                  ) : (
+                    <Text style={{
+                      fontSize: 11, fontWeight: '500', letterSpacing: 0.3, color: inkSoft,
+                    }}>{s.waitTime ?? ''}</Text>
+                  )}
+                  <Svg width={7} height={12} viewBox="0 0 7 12">
+                    <SvgPath d="M1 1L6 6L1 11" stroke={accent} strokeWidth={1.2}
+                      fill="none" strokeLinecap="round" />
+                  </Svg>
+                </View>
               </TouchableOpacity>
-              {isScheduleExpanded && (
-                <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
-                  <Text style={{ fontSize: 13, color: '#6B7280', lineHeight: 20 }}>
-                    {protocol.introduction_schedule}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Barra de progresso */}
-          {total > 0 && (
-            <View style={{ marginBottom: 20 }}>
-              <Text style={{ fontSize: 13, color: Colors.muted, marginBottom: 8 }}>
-                {completed} de {total} {completed === 1 ? 'passo concluído' : 'passos concluídos'}
-              </Text>
-              <View style={{ height: 6, borderRadius: 3, backgroundColor: '#F0F0F0' }}>
-                <Animated.View
-                  style={{
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: Colors.scanBtn,
-                    width: progressAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  }}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* Cards pendentes */}
-          <View style={{ gap: 12 }}>
-            {pendingSteps.map(({ step, index }) => renderStepCard(step, index, false))}
-          </View>
-
-          {/* Seção "Concluídos hoje" */}
-          {completedSteps.length > 0 && (
-            <View style={{ marginTop: 20 }}>
-              <TouchableOpacity
-                onPress={() => setIsCompletedExpanded((prev) => !prev)}
-                activeOpacity={0.7}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}
-              >
-                <Text style={{ fontSize: 13, color: Colors.muted, fontWeight: '600' }}>
-                  ✓ Concluídos hoje ({completedSteps.length})
-                </Text>
-                {isCompletedExpanded
-                  ? <ChevronUp size={16} color={Colors.muted} />
-                  : <ChevronDown size={16} color={Colors.muted} />
-                }
-              </TouchableOpacity>
-
-              {isCompletedExpanded && (
-                <View style={{ gap: 10 }}>
-                  {completedSteps.map(({ step, index }) => renderStepCard(step, index, true))}
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Card de celebração */}
-          {allDone && (
-            <Animated.View
-              style={{
-                opacity: celebrationAnim,
-                transform: [{
-                  scale: celebrationAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.85, 1],
-                  }),
-                }],
-                backgroundColor: '#E8F5E9',
-                borderWidth: 1.5,
-                borderColor: '#4CAF50',
-                borderRadius: 20,
-                padding: 24,
-                alignItems: 'center',
-                marginTop: 20,
-              }}
-            >
-              <CheckCircle size={48} color="#4CAF50" />
-              <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44', marginTop: 12, textAlign: 'center' }}>
-                Rotina de {isMorning ? 'Manhã' : 'Noite'} concluída!
-              </Text>
-              <Text style={{ fontSize: 14, color: Colors.muted, textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
-                Parabéns — você cuidou da sua pele hoje.
-              </Text>
-              {bothCompleted && streakDays > 0 && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 }}>
-                  <Flame size={18} color="#4CAF50" strokeWidth={2} />
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#4CAF50' }}>
-                    {streakDays} {streakDays === 1 ? 'dia consecutivo' : 'dias consecutivos'}
-                  </Text>
-                </View>
-              )}
-            </Animated.View>
-          )}
-
-          {/* Observação noturna */}
-          {!isMorning && protocol?.introduction_warnings && (
-            <View
-              style={{
-                borderRadius: 12,
-                padding: 16,
-                backgroundColor: '#FDFDFD',
-                borderWidth: 1,
-                borderColor: '#F0F0F0',
-                marginTop: completedSteps.length > 0 || allDone ? 16 : 4,
-              }}
-            >
-              <Text style={{ fontSize: 13, color: '#8A8A8E', lineHeight: 20 }}>
-                <Text style={{ fontWeight: '700', color: '#1D3A44' }}>Observação: </Text>
-                {protocol.introduction_warnings}
-              </Text>
-            </View>
-          )}
-
+            );
+          })}
         </View>
       </ScrollView>
 
-      {/* Step Detail Modal — preservado intacto */}
-      <Modal
-        visible={showStepDetail}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowStepDetail(false)}
-      >
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <TouchableOpacity
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-            activeOpacity={1}
-            onPress={() => setShowStepDetail(false)}
-          />
-          <View
-            style={{
-              backgroundColor: Colors.white,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              padding: 24,
-              maxHeight: '80%',
-            }}
+      {/* CTA flutuante */}
+      <View style={{
+        position: 'absolute', left: 0, right: 0,
+        bottom: 112, paddingHorizontal: 24, zIndex: 25,
+      }}>
+        <TouchableOpacity
+          onPress={() => { setRitualStep(0); setRitualDone(false); setRitualOpen(true); }}
+          activeOpacity={0.9}
+          style={{
+            backgroundColor: accent, borderRadius: 100,
+            paddingVertical: 18, paddingHorizontal: 24,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+            shadowColor: accent,
+            shadowOffset: { width: 0, height: 14 },
+            shadowOpacity: 0.22, shadowRadius: 32, elevation: 8,
+          }}
+        >
+          <Text style={{
+            color: '#fff', fontFamily: displayFont,
+            fontSize: 14, fontWeight: '400', letterSpacing: -0.07,
+          }}>Começar minha rotina</Text>
+          <Svg width={13} height={13} viewBox="0 0 14 14" fill="none">
+            <SvgPath d="M3 7h8m0 0L7.5 3.5M11 7L7.5 10.5"
+              stroke="#fff" strokeWidth={1.3}
+              strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </TouchableOpacity>
+      </View>
+
+      {/* BOTTOM SHEET — detalhes do passo */}
+      {currentOpenStep != null && openStep !== null && (
+        <>
+          <Pressable
+            onPress={() => setOpenStep(null)}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }}
           >
-            {/* Handle */}
-            <View
-              style={{
-                width: 40,
-                height: 4,
-                backgroundColor: Colors.disabled,
-                borderRadius: 999,
-                alignSelf: 'center',
-                marginBottom: 24,
-              }}
+            <BlurView
+              intensity={isPM ? 30 : 20}
+              tint={isPM ? 'dark' : 'light'}
+              style={StyleSheet.absoluteFill}
             />
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {selectedStep && (
-                <>
-                  <Text style={{ fontSize: 20, fontWeight: '800', color: '#1D3A44', marginBottom: 4 }}>
-                    {selectedStep.name}
+            <View style={{
+              ...StyleSheet.absoluteFillObject,
+              backgroundColor: isPM ? 'rgba(0,0,0,0.35)' : 'rgba(43,39,36,0.18)',
+            }} />
+          </Pressable>
+          <Animated.View style={{
+            position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50,
+            backgroundColor: isPM ? '#1A1F2E' : '#FFFFFF',
+            borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            paddingBottom: insets.bottom + 24,
+            shadowColor: '#000', shadowOffset: { width: 0, height: -12 },
+            shadowOpacity: 0.12, shadowRadius: 40,
+            maxHeight: '78%',
+            transform: [{ translateY: sheetSlide }],
+          }}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ padding: 14, paddingHorizontal: 28 }}
+            >
+              <View style={{
+                width: 36, height: 4, borderRadius: 2,
+                backgroundColor: inkHair,
+                alignSelf: 'center', marginBottom: 20,
+              }} />
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 14 }}>
+                <Text style={{
+                  fontFamily: displayFont, fontSize: 18, fontWeight: '400',
+                  color: accent, letterSpacing: -0.18,
+                }}>{toRoman(openStep + 1)}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{
+                    fontSize: 9, fontWeight: '600', letterSpacing: 2.5,
+                    color: accent, textTransform: 'uppercase',
+                  }}>
+                    Passo {openStep + 1}{currentOpenStep.waitTime ? ` · ${currentOpenStep.waitTime}` : ''}
                   </Text>
-                  <Text style={{ fontSize: 13, color: '#8A8A8E', marginBottom: 16 }}>
-                    {selectedStep.ingredient}
-                  </Text>
-                  <Text style={{ fontSize: 14, color: '#8A8A8E', marginBottom: 24, lineHeight: 20 }}>
-                    {selectedStep.instruction}
-                  </Text>
+                  <Text style={{
+                    fontFamily: displayFontReg,
+                    fontSize: 28, fontWeight: '400',
+                    color: ink, lineHeight: 31, letterSpacing: -0.56,
+                    marginTop: 6,
+                  }}>{currentOpenStep.name}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setOpenStep(null)}
+                  style={{
+                    width: 30, height: 30, borderRadius: 15,
+                    backgroundColor: inkHair,
+                    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}
+                >
+                  <Svg width={12} height={12} viewBox="0 0 12 12">
+                    <SvgPath d="M2 2L10 10M10 2L2 10"
+                      stroke={inkSoft} strokeWidth={1.3} strokeLinecap="round" />
+                  </Svg>
+                </TouchableOpacity>
+              </View>
 
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#1D3A44', marginBottom: 16 }}>
-                    Passo a passo:
-                  </Text>
+              <View style={{
+                marginTop: 24, paddingVertical: 16,
+                borderTopWidth: 0.5, borderBottomWidth: 0.5,
+                borderColor: inkHair,
+              }}>
+                <Text style={{
+                  fontFamily: displayFont,
+                  fontSize: 17, fontWeight: '400',
+                  color: ink, lineHeight: 24, letterSpacing: -0.17,
+                }}>
+                  {currentOpenStep.instruction
+                    ? currentOpenStep.instruction.charAt(0).toUpperCase() + currentOpenStep.instruction.slice(1)
+                    : ''}
+                </Text>
+              </View>
 
-                  <View style={{ gap: 16, marginBottom: 24 }}>
-                    {getSubSteps(selectedStep).map((subStep, index) => (
-                      <View key={index} style={{ flexDirection: 'row', gap: 12 }}>
-                        <View
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: 999,
-                            backgroundColor: Colors.scanBtn,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                            shadowColor: Colors.scanBtn,
-                            shadowOffset: { width: 0, height: 2 },
-                            shadowOpacity: 0.25,
-                            shadowRadius: 8,
-                          }}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.white }}>
-                            {index + 1}
-                          </Text>
-                        </View>
-                        <Text style={{ fontSize: 14, color: '#1D3A44', lineHeight: 22, flex: 1, paddingTop: 3 }}>
-                          {subStep}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
+              <View style={{ marginTop: 22 }}>
+                <Text style={{
+                  fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
+                  color: inkSoft, textTransform: 'uppercase',
+                }}>Como aplicar</Text>
+                <Text style={{ fontSize: 14, color: ink, lineHeight: 22, marginTop: 8 }}>
+                  {currentOpenStep.steps && currentOpenStep.steps.length > 0
+                    ? currentOpenStep.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')
+                    : currentOpenStep.instruction}
+                </Text>
+              </View>
 
-                  <TouchableOpacity
-                    onPress={() => setShowStepDetail(false)}
-                    activeOpacity={0.85}
-                    style={{
-                      height: 52,
-                      borderRadius: 999,
-                      backgroundColor: Colors.scanBtn,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      shadowColor: Colors.scanBtn,
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.4,
-                      shadowRadius: 24,
-                      elevation: 6,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.white }}>
-                      Entendi
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              )}
+              <View style={{ marginTop: 22 }}>
+                <Text style={{
+                  fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
+                  color: inkSoft, textTransform: 'uppercase',
+                }}>Ativos</Text>
+                <Text style={{ fontSize: 14, color: ink, lineHeight: 22, marginTop: 8 }}>
+                  {currentOpenStep.ingredient}
+                </Text>
+              </View>
+
+              <View style={{ marginTop: 22, paddingBottom: 8 }}>
+                <Text style={{
+                  fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
+                  color: inkSoft, textTransform: 'uppercase',
+                }}>Por que para você</Text>
+                <Text style={{ fontSize: 14, color: ink, lineHeight: 22, marginTop: 8 }}>
+                  {skinScore != null
+                    ? `Sua análise apontou score ${skinScore} — ${currentOpenStep.name} é o ponto-chave deste passo na sua rotina atual.`
+                    : `${currentOpenStep.name} foi selecionado com base no seu perfil de pele.`}
+                </Text>
+              </View>
             </ScrollView>
+          </Animated.View>
+        </>
+      )}
+
+      {/* CERIMÔNIA OVERLAY */}
+      {ritualOpen && (
+        ritualDone ? (
+          <Animated.View style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60,
+            overflow: 'hidden',
+            opacity: celebScreenOpacity,
+            transform: [{ scale: celebScreenScale }],
+          }}>
+            <LinearGradient colors={celebBgColors} style={StyleSheet.absoluteFill} />
+            {isPM && <NightSky />}
+
+            {/* Masthead */}
+            <View style={{
+              paddingTop: insets.top + 20, paddingHorizontal: 28,
+              flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+              zIndex: 2,
+            }}>
+              <Text style={{ fontFamily: cerimFont, fontSize: 12, letterSpacing: 1.2, color: celebSubtleColor }}>
+                niks · {isPM ? 'noite' : 'manhã'}
+              </Text>
+              <Text style={{ fontFamily: cerimFontReg, fontSize: 12, letterSpacing: 1.92, color: celebSubtleColor, textTransform: 'uppercase' }}>
+                {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            </View>
+
+            {/* Centro: orb + texto */}
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, zIndex: 2 }}>
+
+              {/* Orb 220×220 com glow, outer ring, body Skia, craters PM, checkmark */}
+              <Animated.View style={{
+                width: 220, height: 220, marginBottom: 48,
+                alignItems: 'center', justifyContent: 'center',
+                opacity: celebOrbOpacity,
+                transform: [{ scale: celebOrbScale }],
+              }}>
+                {/* Glow radial */}
+                <Canvas style={{ position: 'absolute', width: 300, height: 300, top: -40, left: -40 }}>
+                  <Circle cx={150} cy={150} r={130}>
+                    <RadialGradient
+                      c={vec(150, 150)} r={130}
+                      colors={isPM
+                        ? ['rgba(245,230,211,0.25)', 'rgba(245,230,211,0)']
+                        : ['rgba(251,123,107,0.33)', 'rgba(251,123,107,0)']}
+                    />
+                    <BlurMask blur={24} style="normal" />
+                  </Circle>
+                </Canvas>
+                {/* Outer ring */}
+                <View style={{
+                  position: 'absolute', width: 252, height: 252, borderRadius: 126,
+                  top: -16, left: -16,
+                  borderWidth: 1,
+                  borderColor: isPM ? 'rgba(245,230,211,0.18)' : 'rgba(251,123,107,0.25)',
+                }} />
+                {/* Orb body */}
+                <Canvas style={{ width: 220, height: 220, position: 'absolute' }}>
+                  <Circle cx={110} cy={110} r={110}>
+                    <RadialGradient
+                      c={vec(77, 77)} r={198}
+                      colors={isPM
+                        ? ['#FAF3E3', '#E8D9B8', '#B8A685']
+                        : ['#FFD4B8', accent, '#E85D4E']}
+                    />
+                  </Circle>
+                  {isPM && (
+                    <>
+                      <Circle cx={141.8} cy={123.2} r={7.7}>
+                        <RadialGradient c={vec(138.8, 120.2)} r={7.7}
+                          colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                      <Circle cx={82.6} cy={162.8} r={5.5}>
+                        <RadialGradient c={vec(79.6, 159.8)} r={5.5}
+                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                      <Circle cx={168.3} cy={143.0} r={4.4}>
+                        <RadialGradient c={vec(165.3, 140.0)} r={4.4}
+                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                      <Circle cx={116.6} cy={196.9} r={3.3}>
+                        <RadialGradient c={vec(113.6, 193.9)} r={3.3}
+                          colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                    </>
+                  )}
+                </Canvas>
+                {/* Checkmark sobreposto */}
+                <View style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Svg width={48} height={48} viewBox="0 0 48 48" fill="none">
+                    <SvgPath d="M14 24.5L21 31.5L34 17"
+                      stroke={isPM ? '#1D3A44' : '#FFF8F3'}
+                      strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </View>
+              </Animated.View>
+
+              {/* Eyebrow: linha + "rotina concluída" + linha */}
+              <Animated.View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20,
+                opacity: celebEyebrowAnim,
+                transform: [{ translateY: celebEyebrowAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+              }}>
+                <View style={{ width: 28, height: 1, backgroundColor: celebRuleColor }} />
+                <Text style={{ fontFamily: cerimFont, fontSize: 13, letterSpacing: 1.04, color: celebSubtleColor, textTransform: 'lowercase' }}>
+                  rotina concluída
+                </Text>
+                <View style={{ width: 28, height: 1, backgroundColor: celebRuleColor }} />
+              </Animated.View>
+
+              {/* Título */}
+              <Animated.Text style={{
+                fontFamily: cerimFontReg, fontSize: 44, lineHeight: 46,
+                color: celebTextColor, textAlign: 'center', letterSpacing: -0.88,
+                marginBottom: 20,
+                opacity: celebTitleAnim,
+                transform: [{ translateY: celebTitleAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+              }}>
+                <Text style={{ fontFamily: cerimFont }}>{isPM ? 'Boa' : 'Bem'}</Text>
+                {isPM ? ' noite,\n' : ' feita,\n'}
+                <Text>{isPM ? 'sua pele descansa.' : 'sua pele agradece.'}</Text>
+              </Animated.Text>
+
+              {/* Subtexto */}
+              <Animated.Text style={{
+                fontFamily: cerimFontReg, fontSize: 15, lineHeight: 23.25,
+                color: celebSubtleColor, textAlign: 'center', maxWidth: 280,
+                opacity: celebSubtextoAnim,
+                transform: [{ translateY: celebSubtextoAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+              }}>
+                {isPM
+                  ? 'Quatro gestos para selar o dia. Agora é a noite que cuida — descanse.'
+                  : 'Quatro gestos simples, feitos com intenção. Leve essa calma pro resto do dia.'}
+              </Animated.Text>
+            </View>
+
+            {/* Rodapé: data + CTA "voltar ao protocolo" */}
+            <Animated.View style={{
+              paddingHorizontal: 28, paddingBottom: insets.bottom + 40,
+              zIndex: 2,
+              opacity: celebFooterAnim,
+              transform: [{ translateY: celebFooterAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+            }}>
+              <Text style={{
+                fontFamily: cerimFont, fontSize: 13, letterSpacing: 0.13,
+                color: celebSubtleColor, textAlign: 'center', marginBottom: 20, textTransform: 'lowercase',
+              }}>
+                {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </Text>
+              <TouchableOpacity
+                onPress={() => { setRitualOpen(false); setRitualDone(false); }}
+                activeOpacity={0.88}
+                style={{
+                  backgroundColor: celebCtaBg, borderRadius: 100,
+                  paddingVertical: 20, paddingHorizontal: 24,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 12 },
+                  shadowOpacity: isPM ? 0.4 : 0.22, shadowRadius: 40,
+                }}
+              >
+                <Text style={{ color: celebCtaText, fontFamily: cerimFont, fontSize: 15, letterSpacing: -0.075 }}>
+                  voltar ao protocolo
+                </Text>
+                <Svg width={14} height={14} viewBox="0 0 16 16" fill="none">
+                  <SvgPath d="M6 3L11 8L6 13" stroke={celebCtaText} strokeWidth={1.5}
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </TouchableOpacity>
+            </Animated.View>
+          </Animated.View>
+        ) : (
+          <View style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60,
+            overflow: 'hidden',
+          }}>
+            <LinearGradient colors={rtBg} style={StyleSheet.absoluteFill} />
+            {isPM && <NightSky />}
+            {/* Vinheta diurna — radial-gradient(ellipse at 50% 110%, ...) */}
+            {!isPM && (
+              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.5)']}
+                  start={{ x: 0.5, y: 0.3 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+            )}
+
+            <View style={{
+              paddingTop: insets.top + 20, paddingHorizontal: 24,
+              flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+              zIndex: 5,
+            }}>
+              <TouchableOpacity
+                onPress={() => setRitualOpen(false)}
+                style={{
+                  width: 36, height: 36, borderRadius: 18,
+                  backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
+                  alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                  <SvgPath d="M18 6L6 18M6 6l12 12" stroke={rtInk} strokeWidth={2} strokeLinecap="round" />
+                </Svg>
+              </TouchableOpacity>
+
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 7,
+                paddingVertical: 8, paddingHorizontal: 14, borderRadius: 100,
+                backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
+              }}>
+                {isPM ? (
+                  <Svg width={12} height={12} viewBox="0 0 14 14" fill="none">
+                    <SvgPath d="M11 8.5 A 5 5 0 1 1 5.5 3 A 4 4 0 0 0 11 8.5 Z"
+                      stroke={rtInk} strokeWidth={0.8} strokeLinejoin="round" />
+                  </Svg>
+                ) : (
+                  <Svg width={12} height={12} viewBox="0 0 14 14" fill="none">
+                    <SvgCircle cx={7} cy={7} r={2.4} stroke={rtInk} strokeWidth={0.8} />
+                    <SvgLine x1={7} y1={1} x2={7} y2={2.8} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                    <SvgLine x1={7} y1={11.2} x2={7} y2={13} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                    <SvgLine x1={1} y1={7} x2={2.8} y2={7} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                    <SvgLine x1={11.2} y1={7} x2={13} y2={7} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                  </Svg>
+                )}
+                <Text style={{
+                  fontFamily: cerimFont, fontSize: 13, color: rtInk, letterSpacing: -0.07,
+                }}>{isPM ? 'rotina da noite' : 'rotina da manhã'}</Text>
+              </View>
+
+              <View style={{
+                width: 36, height: 36, borderRadius: 18,
+                backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                  <SvgPath d="M11 5L6 9H2v6h4l5 4V5z" stroke={rtInk} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                  <SvgPath d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke={rtInk} strokeWidth={1.5} strokeLinecap="round" />
+                </Svg>
+              </View>
+            </View>
+
+            <View style={{
+              paddingTop: 24, paddingHorizontal: 48,
+              flexDirection: 'row', gap: 10, zIndex: 5,
+            }}>
+              {steps.map((_, i) => (
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => setRitualStep(i)}
+                  style={{
+                    flex: 1, height: 1.5, borderRadius: 1,
+                    backgroundColor: i <= ritualStep ? rtInk : rtInkHair,
+                    opacity: i === ritualStep ? 1 : (i < ritualStep ? 0.9 : 0.4),
+                  }}
+                />
+              ))}
+            </View>
+
+            <View style={{ paddingTop: 40, paddingHorizontal: 24, alignItems: 'center', zIndex: 5 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 24, height: 0.5, backgroundColor: rtInkHair }} />
+                <Text style={{
+                  fontSize: 10, fontWeight: '500', letterSpacing: 2.5,
+                  color: rtInkSoft, textTransform: 'uppercase',
+                }}>
+                  Passo {ritualStep + 1} · {steps.length}{ritualCurrentStep?.waitTime ? `  ·  ${ritualCurrentStep.waitTime}` : ''}
+                </Text>
+                <View style={{ width: 24, height: 0.5, backgroundColor: rtInkHair }} />
+              </View>
+            </View>
+
+            <View style={{ paddingTop: 28, alignItems: 'center', zIndex: 5 }}>
+              <View style={{ width: 220, height: 220, alignItems: 'center', justifyContent: 'center' }}>
+                <Animated.View style={{
+                  position: 'absolute',
+                  width: 260, height: 260, borderRadius: 130,
+                  borderWidth: 0.5,
+                  borderColor: isPM ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
+                  transform: [{ scale: orbBreath1 }],
+                }} />
+                <Animated.View style={{
+                  position: 'absolute',
+                  width: 300, height: 300, borderRadius: 150,
+                  borderWidth: 0.5,
+                  borderColor: isPM ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.3)',
+                  transform: [{ scale: orbBreath2 }],
+                }} />
+                <Canvas style={{ width: 200, height: 200, position: 'absolute' }}>
+                  <Circle cx={100} cy={100} r={100}>
+                    <RadialGradient
+                      c={vec(70, 60)}
+                      r={180}
+                      colors={isPM
+                        ? ['#FFFFFF', '#F4EEE4', '#D8CDB8', '#A89676']
+                        : ['rgba(255,255,255,0.9)', 'rgba(255,230,220,0.7)', 'rgba(251,123,107,0.4)']}
+                    />
+                  </Circle>
+                  {isPM && (
+                    <>
+                      <Circle cx={143} cy={160} r={11}>
+                        <RadialGradient c={vec(140, 157)} r={11}
+                          colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                      <Circle cx={93} cy={198} r={8}>
+                        <RadialGradient c={vec(91, 196)} r={8}
+                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                      <Circle cx={172} cy={178} r={5.5}>
+                        <RadialGradient c={vec(171, 177)} r={5.5}
+                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                    </>
+                  )}
+                </Canvas>
+                <Text style={{
+                  position: 'absolute',
+                  fontFamily: cerimFont,
+                  fontSize: 84, fontWeight: '400',
+                  color: isPM ? '#3D2F1F' : '#1D3A44',
+                  letterSpacing: -3.36,
+                  textShadowColor: isPM ? 'rgba(255,255,255,0.4)' : 'transparent',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 0,
+                }}>
+                  {String(ritualStep + 1).padStart(2, '0')}
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ paddingTop: 36, paddingHorizontal: 32, alignItems: 'center', zIndex: 5 }}>
+              {/* Título partido — 1ª palavra italic + vírgula + restante normal */}
+              <Text style={{
+                fontFamily: cerimFontReg,
+                fontSize: 38, fontWeight: '400',
+                color: rtInk, letterSpacing: -0.95, textAlign: 'center', lineHeight: 40,
+              }}>
+                <Text style={{ fontFamily: cerimFont }}>{cerimTitleFirst},</Text>
+                {cerimTitleRest ? ` ${cerimTitleRest}` : ''}
+              </Text>
+
+              {/* Divider com dot — igual ao Quietude */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 }}>
+                <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
+                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: accent }} />
+                <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
+              </View>
+
+              {/* Instrução (body text) */}
+              <Text style={{
+                fontSize: 14, color: rtInkSoft,
+                textAlign: 'center', lineHeight: 21.7, marginTop: 16, maxWidth: 280,
+              }}>{ritualCurrentStep?.instruction ?? ''}</Text>
+
+              {/* Chip de ingrediente — glass pill */}
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingVertical: 7, paddingHorizontal: 13, marginTop: 18, borderRadius: 100,
+                backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
+              }}>
+                <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
+                  <SvgPath d="M5.5 1.5C5.5 1.5 2.5 5 2.5 7a3 3 0 1 0 6 0C8.5 5 5.5 1.5 5.5 1.5z"
+                    stroke={rtInk} strokeWidth={0.9} fill="none" strokeLinejoin="round" />
+                </Svg>
+                <Text style={{ fontFamily: cerimFont, fontSize: 11, letterSpacing: 0.3, color: rtInk }}>
+                  {ritualCurrentStep?.ingredient ?? ''}
+                </Text>
+              </View>
+            </View>
+
+            <View style={{
+              position: 'absolute', left: 0, right: 0,
+              bottom: insets.bottom + 50,
+              paddingHorizontal: 24, zIndex: 10,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                {/* Prev — 54×54 glass */}
+                <TouchableOpacity
+                  onPress={() => setRitualStep(prev => Math.max(0, prev - 1))}
+                  activeOpacity={0.75}
+                  style={{
+                    width: 54, height: 54, borderRadius: 27, flexShrink: 0,
+                    backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
+                    alignItems: 'center', justifyContent: 'center',
+                    opacity: ritualStep === 0 ? 0.35 : 1,
+                  }}
+                >
+                  <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
+                    <SvgPath d="M10 3L5 8L10 13" stroke={rtInk} strokeWidth={1.5}
+                      strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </TouchableOpacity>
+
+                {/* Main CTA — check icon + texto + chevron */}
+                <TouchableOpacity
+                  onPress={() => {
+                    toggleStepCompletion(ritualStep);
+                    if (isRitualLast) {
+                      setRitualDone(true);
+                    } else {
+                      setRitualStep(prev => prev + 1);
+                    }
+                  }}
+                  activeOpacity={0.88}
+                  style={{
+                    flex: 1,
+                    backgroundColor: isPM ? '#FFFFFF' : '#1D3A44',
+                    borderRadius: 100,
+                    paddingVertical: 18, paddingHorizontal: 20,
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: isPM ? 0.4 : 0.25, shadowRadius: isPM ? 32 : 20,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{
+                      width: 28, height: 28, borderRadius: 14,
+                      backgroundColor: accent,
+                      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}>
+                      <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
+                        <SvgPath d="M3 7L5.8 9.5L11 4.5" stroke="#fff" strokeWidth={1.5}
+                          fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    </View>
+                    <Text style={{
+                      fontFamily: cerimFont, fontSize: 14,
+                      color: isPM ? '#1D3A44' : '#FFFFFF', letterSpacing: -0.07,
+                    }}>
+                      {isRitualLast ? 'Finalizar rotina' : 'Concluir este passo'}
+                    </Text>
+                  </View>
+                  <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
+                    <SvgPath d="M6 3L11 8L6 13" stroke={isPM ? '#1D3A44' : '#FFFFFF'}
+                      strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        )
+      )}
+    </View>
   );
 }
+
