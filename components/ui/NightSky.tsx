@@ -14,7 +14,7 @@ import Animated, {
   withSequence,
   Easing,
 } from 'react-native-reanimated';
-import { Canvas, Circle, BlurMask } from '@shopify/react-native-skia';
+import { Canvas, Oval, BlurMask, RadialGradient } from '@shopify/react-native-skia';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -37,6 +37,9 @@ interface StarData {
   shadowRadius: number;
   shadowColor: string | undefined;
   scaleAtPeak: boolean;
+  layer: 'far' | 'mid' | 'near';
+  outerGlowRadius: number;
+  outerGlowColor: string | undefined;
 }
 
 interface ShooterData {
@@ -57,7 +60,7 @@ function makeLayer(
   twinkleRange: [number, number],
   driftRange: [number, number],
   color: string,
-  layer: string,
+  layer: 'far' | 'mid' | 'near',
 ): StarData[] {
   return Array.from({ length: count }, (_, i) => {
     const s = seedBase + i;
@@ -84,6 +87,7 @@ function makeLayer(
         1000,
       driftDelay: ((s * 37) % 100) / 100 * 20000,
       color,
+      layer,
       shadowRadius:
         layer === 'near' ? size * 3 : layer === 'mid' ? 3 : 0,
       shadowColor:
@@ -93,6 +97,9 @@ function makeLayer(
             ? 'rgba(255, 248, 240, 0.6)'
             : undefined,
       scaleAtPeak: layer === 'near',
+      // near: anel de glow externo (CSS: 0 0 ${size*6}px rgba(255,245,224,0.4))
+      outerGlowRadius: layer === 'near' ? size * 6 : 0,
+      outerGlowColor: layer === 'near' ? 'rgba(255, 245, 224, 0.4)' : undefined,
     };
   });
 }
@@ -105,17 +112,33 @@ function StarDot({ star }: { star: StarData }) {
   const scale = useSharedValue(1);
 
   useEffect(() => {
-    opacity.value = withDelay(
-      star.twinkleDelay,
-      withRepeat(
-        withTiming(star.peakOp, {
-          duration: star.twinkleDur / 2,
-          easing: Easing.inOut(Easing.sin),
-        }),
-        -1,
-        true,
-      ),
-    );
+    // Mid: curva assimétrica do design (0%/100%→0.35, 45%→0.85, 55%→0.70)
+    if (star.layer === 'mid') {
+      opacity.value = withDelay(
+        star.twinkleDelay,
+        withRepeat(
+          withSequence(
+            withTiming(0.85, { duration: star.twinkleDur * 0.45, easing: Easing.inOut(Easing.sin) }),
+            withTiming(0.70, { duration: star.twinkleDur * 0.10, easing: Easing.inOut(Easing.sin) }),
+            withTiming(star.baseOp, { duration: star.twinkleDur * 0.45, easing: Easing.inOut(Easing.sin) }),
+          ),
+          -1,
+          false,
+        ),
+      );
+    } else {
+      opacity.value = withDelay(
+        star.twinkleDelay,
+        withRepeat(
+          withTiming(star.peakOp, {
+            duration: star.twinkleDur / 2,
+            easing: Easing.inOut(Easing.sin),
+          }),
+          -1,
+          true,
+        ),
+      );
+    }
 
     translateX.value = withDelay(
       star.driftDelay,
@@ -165,13 +188,42 @@ function StarDot({ star }: { star: StarData }) {
     ],
   }));
 
+  const glow = star.outerGlowRadius;
+
   return (
     <Animated.View
       style={[
         {
           position: 'absolute',
-          left: star.x,
-          top: star.y,
+          left: star.x - glow,
+          top: star.y - glow,
+          width: star.size + glow * 2,
+          height: star.size + glow * 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        animStyle,
+      ]}
+    >
+      {/* Anel externo difuso — near only (CSS: box-shadow 0 0 ${size*6}px 0.4) */}
+      {star.outerGlowColor != null && (
+        <View
+          style={{
+            position: 'absolute',
+            width: star.size,
+            height: star.size,
+            borderRadius: star.size / 2,
+            backgroundColor: 'rgba(255,245,224,0.02)',
+            shadowColor: '#FFF5E0',
+            shadowRadius: star.size * 6,
+            shadowOpacity: 0.4,
+            shadowOffset: { width: 0, height: 0 },
+          }}
+        />
+      )}
+      {/* Corpo da estrela com glow interno */}
+      <View
+        style={{
           width: star.size,
           height: star.size,
           borderRadius: star.size / 2,
@@ -180,14 +232,16 @@ function StarDot({ star }: { star: StarData }) {
           shadowRadius: star.shadowRadius,
           shadowOpacity: star.shadowColor ? 1 : 0,
           shadowOffset: { width: 0, height: 0 },
-        },
-        animStyle,
-      ]}
-    />
+        }}
+      />
+    </Animated.View>
   );
 }
 
 // ── ShootingStar ──────────────────────────────────────────────────
+// Tradução literal do CSS do design (direction-3-cerimonia.jsx):
+//   left: -5%  |  translateX: -100 → 600  |  dur: 16% do ciclo  |  ease-out
+//   opacity: 0%=0, 2%=0, 4%=1, 10%=1, 16%=0, 100%=0
 function ShootingStar({ sh }: { sh: ShooterData }) {
   const translateX = useSharedValue(-100);
   const opacity = useSharedValue(0);
@@ -199,9 +253,9 @@ function ShootingStar({ sh }: { sh: ShooterData }) {
       sh.delay,
       withRepeat(
         withSequence(
-          withTiming(W * 1.8, {
+          withTiming(600, {
             duration: d * 0.16,
-            easing: Easing.out(Easing.quad),
+            easing: Easing.bezier(0, 0, 0.58, 1),
           }),
           withDelay(d * 0.84, withTiming(-100, { duration: 0 })),
         ),
@@ -214,11 +268,11 @@ function ShootingStar({ sh }: { sh: ShooterData }) {
       sh.delay,
       withRepeat(
         withSequence(
-          withTiming(0, { duration: d * 0.02 }),   // 0–2% silêncio
-          withTiming(1, { duration: d * 0.02 }),   // 2–4% fade in
-          withTiming(1, { duration: d * 0.06 }),   // 4–10% visível
-          withTiming(0, { duration: d * 0.06 }),   // 10–16% fade out
-          withDelay(d * 0.84, withTiming(0, { duration: 0 })), // 16–100% pausa
+          withTiming(0, { duration: d * 0.02 }),
+          withTiming(1, { duration: d * 0.02 }),
+          withTiming(1, { duration: d * 0.06 }),
+          withTiming(0, { duration: d * 0.06 }),
+          withDelay(d * 0.84, withTiming(0, { duration: 0 })),
         ),
         -1,
         false,
@@ -231,18 +285,30 @@ function ShootingStar({ sh }: { sh: ShooterData }) {
     transform: [{ translateX: translateX.value }],
   }));
 
-  // Outer View fixa rotação; inner Animated.View faz o movimento
   return (
     <View
       style={{
         position: 'absolute',
         top: sh.topPct * H,
-        left: 0,
-        transform: [{ rotate: `${sh.angle}deg` }],
+        left: -W * 0.05,
         pointerEvents: 'none',
       }}
     >
-      <Animated.View style={[{ width: 90, height: 1 }, animStyle]}>
+      <Animated.View
+        style={[
+          {
+            width: 90,
+            height: 1,
+            backgroundColor: 'rgba(255,245,220,0.18)',
+            borderRadius: 1,
+            shadowColor: '#FFF5DC',
+            shadowRadius: 4,
+            shadowOpacity: 0.65,
+            shadowOffset: { width: 0, height: 0 },
+          },
+          animStyle,
+        ]}
+      >
         <LinearGradient
           colors={[
             'rgba(255,245,220,0)',
@@ -252,27 +318,34 @@ function ShootingStar({ sh }: { sh: ShooterData }) {
           locations={[0, 0.85, 1]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
-          style={{ flex: 1, borderRadius: 1 }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 1 }}
         />
       </Animated.View>
     </View>
   );
 }
 
-// ── Nebula — círculo difuso respirando (Skia + Reanimated) ─────────
+// ── Nebula — elipse difusa respirando (Skia Oval + RadialGradient + BlurMask) ─────
+// Porta do CSS: radial-gradient(ellipse, color 0%, transparent 65%) + filter:blur()
+// - Oval:           forma elíptica (width ≠ height), não circular
+// - RadialGradient: cor no centro → transparente em 65% do raio (como o CSS)
+// - BlurMask:       suaviza as bordas alfa (aproxima o filter:blur)
+// - pad:            canvas maior que o oval para blur não cortar nas bordas
 interface NebulaProps {
-  cx: number;
-  cy: number;
-  r: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
   color: string;
   blurSigma: number;
   dxPeak: number;
   dyPeak: number;
   scalePeak: number;
   duration: number;
+  baseOpacity: number;
 }
 
-function Nebula({ cx, cy, r, color, blurSigma, dxPeak, dyPeak, scalePeak, duration }: NebulaProps) {
+function Nebula({ left, top, width, height, color, blurSigma, dxPeak, dyPeak, scalePeak, duration, baseOpacity }: NebulaProps) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -284,7 +357,7 @@ function Nebula({ cx, cy, r, color, blurSigma, dxPeak, dyPeak, scalePeak, durati
   }, []);
 
   const style = useAnimatedStyle(() => ({
-    opacity: 0.85 + progress.value * 0.15,
+    opacity: baseOpacity + progress.value * (1 - baseOpacity),
     transform: [
       { translateX: progress.value * dxPeak },
       { translateY: progress.value * dyPeak },
@@ -292,12 +365,25 @@ function Nebula({ cx, cy, r, color, blurSigma, dxPeak, dyPeak, scalePeak, durati
     ],
   }));
 
+  const pad = blurSigma * 2;
+  const cW = width + pad * 2;
+  const cH = height + pad * 2;
+
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, style]} pointerEvents="none">
-      <Canvas style={StyleSheet.absoluteFill}>
-        <Circle cx={cx} cy={cy} r={r} color={color}>
+    <Animated.View
+      style={[{ position: 'absolute', left: left - pad, top: top - pad, width: cW, height: cH }, style]}
+      pointerEvents="none"
+    >
+      <Canvas style={{ width: cW, height: cH }}>
+        <Oval rect={{ x: pad, y: pad, width, height }}>
+          <RadialGradient
+            c={{ x: pad + width / 2, y: pad + height / 2 }}
+            r={Math.max(width, height) / 2}
+            colors={[color, 'rgba(0,0,0,0)']}
+            positions={[0, 0.65]}
+          />
           <BlurMask blur={blurSigma} style="normal" />
-        </Circle>
+        </Oval>
       </Canvas>
     </Animated.View>
   );
@@ -309,10 +395,10 @@ export default function NightSky() {
     () => [
       // FAR — 70 estrelas, brancas, pequenas, deriva lenta
       ...makeLayer(70, 100, [0.6, 1.2], [0.15, 0.4], [3, 6], [60, 120], '#FFFFFF', 'far'),
-      // MID — 35 estrelas, tom quente, glint sutil
+      // MID — 35 estrelas, tom quente, twinkle assimétrico
       ...makeLayer(35, 200, [1.0, 1.8], [0.35, 0.7], [2.5, 5], [40, 80], '#FFF8F0', 'mid'),
-      // NEAR — 14 estrelas, grandes, glow + scale pulse
-      ...makeLayer(14, 300, [1.8, 2.8], [0.6, 1.0], [2, 4], [30, 60], '#FFF5E0', 'near'),
+      // NEAR — 14 estrelas, grandes, glow duplo + scale pulse (baseOp 0.55 cf. design)
+      ...makeLayer(14, 300, [1.8, 2.8], [0.55, 1.0], [2, 4], [30, 60], '#FFF5E0', 'near'),
     ],
     [],
   );
@@ -325,21 +411,27 @@ export default function NightSky() {
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* Nebulosas respirando — 3 camadas */}
+      {/* Nebulosas respirando — elipses, posições cf. design reference CSS */}
+      {/* CSS: top:10% left:15% width:60% height:55% blur:12px */}
       <Nebula
-        cx={W * 0.45} cy={H * 0.32} r={W * 0.30}
+        left={W * 0.15} top={H * 0.10} width={W * 0.60} height={H * 0.55}
         color="rgba(140, 160, 220, 0.14)" blurSigma={12}
         dxPeak={12} dyPeak={-8} scalePeak={1.08} duration={22000}
+        baseOpacity={0.90}
       />
+      {/* CSS: top:35% left:45% width:55% height:50% blur:14px */}
       <Nebula
-        cx={W * 0.72} cy={H * 0.60} r={W * 0.275}
+        left={W * 0.45} top={H * 0.35} width={W * 0.55} height={H * 0.50}
         color="rgba(200, 150, 180, 0.12)" blurSigma={14}
         dxPeak={-10} dyPeak={10} scalePeak={1.10} duration={28000}
+        baseOpacity={0.80}
       />
+      {/* CSS: top:55% left:-5% width:50% height:45% blur:16px */}
       <Nebula
-        cx={W * 0.22} cy={H * 0.77} r={W * 0.25}
+        left={W * (-0.05)} top={H * 0.55} width={W * 0.50} height={H * 0.45}
         color="rgba(120, 180, 200, 0.10)" blurSigma={16}
         dxPeak={8} dyPeak={-6} scalePeak={1.06} duration={32000}
+        baseOpacity={0.85}
       />
 
       {/* Estrelas — 119 total */}

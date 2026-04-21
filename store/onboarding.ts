@@ -136,14 +136,17 @@ export type ProtocolStep = {
   name: string
   ingredient: string
   instruction: string
+  steps?: string[]
   color: string
   waitTime?: string | null
   product_suggestions?: string[]
+  schedule?: { label: string }
 }
 
 export type ProtocolResult = {
   morning: ProtocolStep[]
   night: ProtocolStep[]
+  dicas?: string[]
   introduction_warnings: string | null
   introduction_schedule?: string | null
   expected_timeline: {
@@ -193,6 +196,10 @@ export type OnboardingData = {
 }
 
 type AppStore = {
+  tabBarTheme: 'light' | 'dark'
+  setTabBarTheme: (theme: 'light' | 'dark') => void
+  tabBarVisible: boolean
+  setTabBarVisible: (visible: boolean) => void
   onboarding: OnboardingData
   setOnboardingField: <K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) => void
   scanSource: 'onboarding' | 'app'
@@ -238,6 +245,10 @@ const initialOnboarding: OnboardingData = {
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
+  tabBarTheme: 'light',
+  setTabBarTheme: (theme) => set({ tabBarTheme: theme }),
+  tabBarVisible: true,
+  setTabBarVisible: (visible) => set({ tabBarVisible: visible }),
   onboarding: initialOnboarding,
   scanSource: 'onboarding',
   scanResult: null,

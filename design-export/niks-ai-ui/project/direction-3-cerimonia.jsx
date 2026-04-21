@@ -183,7 +183,22 @@ function ProtocoloCerimonia({
 
   const [currentStep, setCurrentStep] = React.useState(initialStep);
   const [celebrationOpen, setCelebrationOpen] = React.useState(false);
-  const steps = mode === 'am' ? AM_STEPS : PM_STEPS;
+  const rawSteps = mode === 'am' ? IA_AM_STEPS : IA_PM_STEPS;
+  // Map IA structure into Cerimônia's expected shape: { t, s, ingredient, dur }
+  // `s` combines the IA `steps` array into flowing sentences + appends waitTime.
+  const steps = rawSteps.map((it) => {
+    const joined = (it.steps || []).join(' ');
+    const waitClause = it.waitTime
+      ? ` Aguardar ${it.waitTime} com o produto aplicado antes de passar para o próximo passo.`
+      : '';
+    return {
+      t: it.name,
+      s: joined + waitClause,
+      ingredient: it.ingredient,
+      // rough per-step duration label — scales with how many sub-steps
+      dur: `${Math.max(1, Math.round((it.steps?.length || 2) * 0.5))} min`,
+    };
+  });
   const s = steps[currentStep];
   const total = steps.length;
   const isPM = mode === 'pm';

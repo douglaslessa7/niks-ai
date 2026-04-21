@@ -47,6 +47,148 @@ const PM_STEPS = [
   { t: 'Creme noturno rico', s: 'Selar tudo. Pescoço também — sempre.', dur: '1 min', benefit: 'barreira lipídica para a noite', ingredient: 'Manteiga de karité · Peptídeos', note: 'abraço' },
 ];
 
+// ─── Dados do output real da IA (Quietude v4) ───
+const IA_AM_STEPS = [
+  {
+    name: 'Gel de Limpeza',
+    ingredient: 'Gel de Limpeza com Ácido Salicílico 2%',
+    instruction: 'Aplique sobre o rosto úmido para desobstruir os poros dilatados detectados na zona T e reduzir a inflamação das pápulas na testa. O ácido salicílico limpa o excesso de sebo sem comprometer sua barreira que está íntegra.',
+    steps: [
+      'Molhe o rosto com água morna.',
+      'Massageie o gel suavemente por 60 segundos, focando na testa e nariz.',
+      'Enxágue abundantemente e seque sem esfregar.',
+    ],
+    waitTime: null,
+    schedule: null,
+    product_suggestions: ['La Roche-Posay Effaclar Concentrado', 'CeraVe SA Renewing Cleanser'],
+  },
+  {
+    name: 'Sérum Antioxidante',
+    ingredient: 'Sérum de Vitamina C 10%',
+    instruction: 'Aplique 3 a 4 gotas para neutralizar radicais livres e potencializar o brilho natural desejado. A vitamina C ajuda a prevenir que as manchas de HPI no queixo escureçam com a exposição solar moderada.',
+    steps: [
+      'Aplique as gotas na palma da mão.',
+      'Pressione suavemente sobre o rosto e pescoço.',
+      'Aguarde a absorção completa antes do próximo passo.',
+    ],
+    waitTime: '5–10 min',
+    schedule: null,
+    product_suggestions: ['Adcos Sérum-C 10', 'La Roche-Posay Pure Vitamin C10'],
+  },
+  {
+    name: 'Protetor Solar',
+    ingredient: 'Protetor Solar FPS 60 com Toque Seco',
+    instruction: 'Aplique generosamente como último passo. Como você raramente usa proteção e possui hiperpigmentação residual, este passo é inegociável para evitar que as manchas de acne se tornem permanentes.',
+    steps: [
+      'Aplique a quantidade de dois dedos para rosto e pescoço.',
+      'Espalhe uniformemente até a absorção total.',
+      'Reaplique se houver exposição solar direta prolongada.',
+    ],
+    waitTime: null,
+    schedule: null,
+    product_suggestions: ['Mantecorp Episol Sec FPS 60', 'La Roche-Posay Anthelios Airlicium'],
+  },
+];
+
+const IA_PM_STEPS = [
+  {
+    name: 'Gel de Limpeza',
+    ingredient: 'Gel de Limpeza Neutro',
+    instruction: 'Utilize uma limpeza suave para remover impurezas do dia. Como o cleanser da manhã já possui ativos esfoliantes, à noite priorizamos o repouso da barreira para receber os tratamentos renovadores.',
+    steps: [
+      'Aplique uma pequena quantidade no rosto úmido.',
+      'Massageie levemente para remover o protetor solar.',
+      'Enxágue com água fria.',
+    ],
+    waitTime: null,
+    schedule: null,
+    product_suggestions: ['CeraVe Hidratante Cremoso de Limpeza', 'Cetaphil Loção de Limpeza'],
+  },
+  {
+    name: 'Sérum de Tratamento',
+    ingredient: 'Sérum de Niacinamida 10%',
+    instruction: 'Aplique para controlar o brilho sebáceo na zona T e acalmar a inflamação da acne. A niacinamida é fundamental para uniformizar o tom das manchas no queixo e testa detectadas na análise.',
+    steps: [
+      'Espalhe 2-3 gotas por todo o rosto.',
+      'Foque nas áreas com manchas residuais e poros dilatados.',
+      'Deixe secar naturalmente.',
+    ],
+    waitTime: null,
+    schedule: null,
+    product_suggestions: ['The Ordinary Niacinamide 10% + Zinc 1%', 'Principia Niacinamida (NC-10)'],
+  },
+  {
+    name: 'Sérum Renovador',
+    ingredient: 'Sérum de Ácido Mandélico 10%',
+    instruction: 'Este AHA de molécula grande é ideal para seu fotótipo III, promovendo renovação celular sem irritar. Ele tratará a textura irregular e as marcas de acne, entregando o glow solicitado.',
+    steps: [
+      'Aplique apenas nas noites indicadas (Segunda, Quarta e Sexta).',
+      'Evite a área dos olhos e cantos do nariz.',
+      'Não combine com outros ácidos na mesma aplicação.',
+    ],
+    waitTime: '10–20 min',
+    schedule: { days: ['Seg', 'Qua', 'Sex'], label: 'Seg · Qua · Sex' },
+    product_suggestions: ['Creamy Ácido Mandélico + Alfa-Arbutin', 'The Ordinary Mandelic Acid 10% + HA'],
+  },
+  {
+    name: 'Sérum de Tratamento',
+    ingredient: 'Sérum de Ácido Azelaico 10%',
+    instruction: 'Ativo multitarefa que trata simultaneamente as pápulas inflamatórias e a hiperpigmentação pós-inflamatória. Ele inibe a tirosinase, clareando as manchas no queixo de forma segura.',
+    steps: [
+      'Aplique uma camada fina sobre as áreas com acne e manchas.',
+      'Pode causar um leve formigamento transitório nos primeiros usos.',
+      'Use nas noites em que não utilizar o Ácido Mandélico.',
+    ],
+    waitTime: null,
+    schedule: { days: ['Ter', 'Qui', 'Sáb', 'Dom'], label: 'Ter · Qui · Sáb · Dom' },
+    product_suggestions: ['Principia Ácido Azelaico (AL-10)', 'The Ordinary Azelaic Acid Suspension 10%'],
+  },
+  {
+    name: 'Hidratante',
+    ingredient: 'Hidratante com Ceramidas',
+    instruction: 'Finalize selando a hidratação e reforçando a integridade da barreira cutânea. Este passo compensa o uso dos ácidos e mantém a pele resiliente e macia.',
+    steps: [
+      'Aplique uma pequena quantidade após os tratamentos estarem secos.',
+      'Espalhe com movimentos ascendentes.',
+      'Certifique-se de cobrir todo o rosto.',
+    ],
+    waitTime: null,
+    schedule: null,
+    product_suggestions: ['CeraVe Loção Facial Hidratante', 'Neutrogena Hydro Boost Water Gel'],
+  },
+];
+
+// Dicas gerais da IA — prognóstico + advertências
+const IA_DICAS = [
+  {
+    kind: 'alerta',
+    title: 'O que esperar',
+    body: "Sua pele possui acne inflamatória e manchas que podem passar por um processo de 'purging' (piora temporária) nas semanas 2-4 com o uso de Ácido Salicílico e Mandélico; isso é normal e indica a limpeza dos poros. Como você raramente usa protetor solar, o sucesso deste protocolo depende 100% da adesão diária ao SPF 60, caso contrário as manchas de HPI no queixo podem escurecer permanentemente. Suspenda o uso e busque dermatologista se houver ardor persistente, vermelhidão intensa ou descamação em placas.",
+  },
+  {
+    kind: 'marco',
+    title: 'Semanas 1–2',
+    body: 'Redução visível na vermelhidão das pápulas inflamadas na testa e controle inicial do brilho sebáceo na zona T.',
+  },
+  {
+    kind: 'marco',
+    title: 'Semanas 3–4',
+    body: 'Melhora na textura da pele e poros menos visíveis. Início do clareamento das manchas de acne mais recentes.',
+  },
+  {
+    kind: 'marco',
+    title: 'Semanas 5–8',
+    body: 'Resultado significativo na uniformização do tom da pele (HPI) e redução drástica no surgimento de novas lesões de acne.',
+  },
+];
+
+// Cronograma de introdução (separado das dicas normais)
+const IA_CRONOGRAMA = [
+  { week: 'Semana 1', body: 'Use o Ácido Mandélico e o Ácido Azelaico apenas 1x na semana cada para testar tolerância.' },
+  { week: 'Semana 2', body: 'Introduza o Ácido Mandélico 2x na semana e o Azelaico 2x na semana em noites alternadas.' },
+  { week: 'Semana 3+', body: 'Siga o cronograma indicado no protocolo (Mandélico 3x/semana e Azelaico nas demais noites).' },
+];
+
 const VERSE = 'A pele lembra o cuidado. Cada gesto é uma conversa entre você e o tempo.';
 
 // Ambient soundscape names (for "ritual" mood)
@@ -191,4 +333,5 @@ function ProtoTabBar({ active = 'protocolo', theme = 'light' }) {
 
 Object.assign(window, {
   PROTO, AM_STEPS, PM_STEPS, VERSE, AMBIENTS, Icon, Divider, ProtoTabBar,
+  IA_AM_STEPS, IA_PM_STEPS, IA_DICAS, IA_CRONOGRAMA,
 });

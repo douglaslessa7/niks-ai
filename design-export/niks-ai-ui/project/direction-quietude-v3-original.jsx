@@ -173,8 +173,10 @@ function ProtocoloQuietudeV3Original({ accent = PROTO.coral, displayFont = PROTO
         </div>
       </div>
 
+
+
       {/* Steps — tocáveis, todos coloridos */}
-      <div style={{ padding: '48px 28px 0' }}>
+      <div style={{ padding: '24px 28px 0' }}>
         {steps.map((s, i) => {
           const done = i < doneCount;
           return (
@@ -379,7 +381,7 @@ function ProtocoloQuietudeV3Original({ accent = PROTO.coral, displayFont = PROTO
               </div>
             </div>
 
-            {/* Como aplicar */}
+            {/* Como aplicar — passos numerados */}
             <div style={{ marginTop: 22 }}>
               <div style={{
                 fontSize: 9, fontWeight: 600, letterSpacing: 2.2,

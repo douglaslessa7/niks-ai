@@ -322,7 +322,7 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 |---|---|---|---|
 | `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns, genero, idade, sun_exposure, hydration, sleep, sunscreen, objetivo } }` | Schema clínico completo — ver tipo `ScanResult` no store. Campos-chave: `skin_score`, `skin_type_detected`, `headline`, `acne`, `envelhecimento`, `pigmentacao`, `cicatrizes`, `rosacea`, `textura_poros`, `barrier_status`, `qualidade_foto`, `confianca_analise`, `prioridade_clinica`, `contraindicacoes`, `pontos_fortes: string[2]`, `pontos_fracos: string[3]`, `skin_strengths[2]`, `action_recommendations[4]`, `region_insights[]` (apenas regiões com condição relevante), `goal_alignment` (apenas se `objetivo` informado), `disclaimer` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
-| `generate-protocol` | ✅ | `{ scanResult, onboardingData }` | `{ morning[], night[], introduction_warnings, expected_timeline, introduction_schedule }` — cada item de `morning`/`night` contém: `id, name, ingredient, instruction, steps: string[], color, waitTime, product_suggestions` |
+| `generate-protocol` | ✅ | `{ scanResult, onboardingData }` | `{ morning[], night[], introduction_warnings, expected_timeline, introduction_schedule }` — cada item de `morning`/`night` contém: `id, name, ingredient, instruction, steps: string[], color, waitTime, product_suggestions`. **Não retorna `schedule`** — dias da semana vêm embutidos no campo `ingredient` como sufixo `(Seg/Qua/Sex)` e são parseados no cliente via `applySchedule` em `protocolo.tsx`. |
 | `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API |
 | `revenuecat-webhook` | ✅ | POST do RevenueCat — header `Authorization: Bearer REVENUECAT_WEBHOOK_SECRET` | Retorna sempre HTTP 200. Faz UPSERT em `subscriptions` com base no `app_user_id` (= `user_id` do Supabase). Trata: `INITIAL_PURCHASE`, `RENEWAL`, `TRIAL_STARTED`, `TRIAL_CONVERTED`, `TRIAL_CANCELLED`, `CANCELLATION`, `EXPIRATION`, `UNCANCELLATION` |
 
@@ -476,6 +476,8 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `selectedFoodResult: FoodReportResult | null` — resultado salvo de food scan selecionado na home; exibido sem re-análise em `food-report.tsx`; limpo ao sair da tela ou iniciar novo scan
 
 **Métodos:**
+- `setTabBarTheme(theme: 'light' | 'dark')` — alterna o tema visual do tab bar; chamado por `protocolo.tsx` via `useFocusEffect`
+- `setTabBarVisible(visible: boolean)` — esconde/mostra o tab bar; útil em telas onde o tab bar não deve aparecer
 - `setScanSource(source: 'onboarding' | 'app')` — chamado por `ScanModal.handleScanFace` antes de iniciar scan do app principal
 - `setOnboardingField(field, value)`
 - `setFoodImage(base64, mimeType)`
@@ -503,7 +505,7 @@ camera.tsx → setSkinImage(base64, uri) → navega → loading.tsx lê do store
 
 | Função | Método | Motivo |
 |---|---|---|
-| `analyze-skin` | `fetch` direto | payload contém imageBase64 grande |
+| `analyze-skin` | `fetch` direto + anon key hardcoded | payload contém imageBase64 grande; `getSession()` pode retornar `undefined` → `"Bearer undefined"` → 401 instantâneo |
 | `analyze-food` | `fetch` direto + anon key hardcoded | payload contém imageBase64 grande; `getSession()` pode retornar `undefined` → `"Bearer undefined"` → 401 instantâneo |
 | `generate-protocol` | `fetch` direto + anon key hardcoded | `supabase.functions.invoke` causa 401 pós-signup (sessão não está pronta no cliente) |
 
@@ -518,6 +520,7 @@ const response = await fetch(
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
+      'apikey': `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
     },
     body: JSON.stringify({ scanResult, onboardingData }),
   }
@@ -583,6 +586,67 @@ useEffect(() => { streakDaysRef.current = streakDays; }, [streakDays]);
 ```
 
 Refs atualmente necessárias em `protocolo.tsx`: `checkedItemsRef`, `stepsRef`, `celebrationTriggeredRef`, `morningStepsRef`, `nightStepsRef`, `streakDaysRef`, `lastCompletedAtRef`.
+
+---
+
+### 15. Numeral do orb da Cerimônia — `SkiaText` dentro do Canvas, não React Native `Text`
+
+O numeral (`01`–`0N`) exibido dentro do orb na overlay da Cerimônia é renderizado com `SkiaText` + `useFont` do `@shopify/react-native-skia`, **não** como `<Text>` nativo do React Native.
+
+**Por quê:** quando um `<Text>` nativo é posicionado como irmão de um `<Canvas>` Skia, o pipeline GPU do Skia composita na camada acima do layout nativo. Para glifos específicos do DM Serif Display Italic (especialmente "2" e "3" a 84pt), isso faz os dígitos aparecerem cortados. O problema **não afeta todos os dígitos** — depende do bounding box óptico do glifo.
+
+**Padrão aplicado em `protocolo.tsx`:**
+```typescript
+const cerimSkiaFont = useFont(require('../../assets/fonts/DMSerifDisplay-Italic.ttf'), 84);
+
+// Dentro do Canvas 200×200 (círculo cx=100, cy=100):
+const skiaTextW = cerimSkiaFont?.measureText(text).width ?? 95;
+const skiaCapH = Math.abs(cerimSkiaFont?.getMetrics().capHeight ?? 84 * 0.70);
+
+<SkiaText
+  x={(200 - skiaTextW) / 2}  // centraliza horizontalmente via measureText
+  y={100 + skiaCapH / 2}      // baseline = centro do orb + metade da cap height
+  text={text}
+  font={cerimSkiaFont}
+  color={...}
+/>
+```
+
+**Regra geral:** se precisar renderizar texto sobre um `Canvas` Skia na mesma hierarquia de layout, preferir `SkiaText` dentro do Canvas a um `<Text>` nativo irmão.
+
+---
+
+### 16. Dias da semana em steps do protocolo — parsing client-side do `ingredient`
+
+O backend (`generate-protocol`) **não retorna um campo `schedule`** nos steps. Quando um ativo deve ser usado apenas em dias específicos, a Edge Function embute essa informação como sufixo no campo `ingredient`:
+
+```
+"Sérum de Ácido Mandélico 10% (Seg/Qua/Sex)"
+```
+
+O cliente precisa parsear e separar esse dado antes de renderizar. Em `protocolo.tsx`, três funções fazem isso:
+
+```typescript
+function parseScheduleFromIngredient(ingredient: string): { label: string } | undefined {
+  const match = ingredient.match(/\(([^)]+)\)$/);
+  if (!match) return undefined;
+  const label = match[1].split('/').map(d => d.trim()).join(' · ');
+  return { label };
+}
+
+function stripScheduleFromIngredient(ingredient: string): string {
+  return ingredient.replace(/\s*\([^)]+\)$/, '').trim();
+}
+
+function applySchedule(step: any) {
+  const schedule = parseScheduleFromIngredient(step.ingredient ?? '');
+  return { ...step, schedule, ingredient: stripScheduleFromIngredient(step.ingredient ?? '') };
+}
+```
+
+`applySchedule` é chamado em **todos os três pontos de carregamento de dados** em `protocolo.tsx` (cache do store, Supabase direto, Edge Function fallback). Se esse mapeamento for esquecido em algum ponto, o badge de dias não aparece e o `ingredient` mostra o sufixo bruto ao usuário.
+
+**Consequência:** `ProtocolStep` no store tem `schedule?: { label: string }` mas esse campo nunca vem do banco — é sempre derivado no cliente. Se o backend mudar e passar a retornar `schedule` como campo separado, remover `applySchedule` e ler diretamente.
 
 ---
 
@@ -773,6 +837,7 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 - `components/layouts/QuizLayout.tsx`
 - `components/scan/ScanModal.tsx` — intercepta ambos os cards com `useAIConsent` antes de navegar; sem cooldown (scan de rosto sempre disponível)
 - `components/ui/AIConsentModal.tsx` — modal de consentimento de uso de IA (LGPD); bottom sheet animado com `Animated.spring`; backdrop não fecha o modal; link inline para Política de Privacidade
+- `components/ui/NightSky.tsx` — céu noturno animado: 119 estrelas em 3 camadas (FAR/MID/NEAR) com twinkle assimétrico e deriva via Reanimated v4; nebulosas via Skia `Canvas`+`Oval`+`RadialGradient` (cor→transparente em 65%)+`BlurMask` com canvas padded para blur não clipar nas bordas; 3 estrelas cadentes com `LinearGradient`; renderizado no modo noite da tela Protocolo
 
 
 **Telas — Onboarding (24 telas):**
@@ -928,7 +993,8 @@ niks-ai/
 │   │   ├── OptionCard.tsx         ✅
 │   │   ├── Pill.tsx               ✅
 │   │   ├── IOSWheelPicker.tsx     ✅
-│   │   └── AIConsentModal.tsx     ✅ modal de consentimento de IA (LGPD) — uma única vez por instalação
+│   │   ├── AIConsentModal.tsx     ✅ modal de consentimento de IA (LGPD) — uma única vez por instalação
+│   │   └── NightSky.tsx           ✅ céu noturno animado (Reanimated v4 + Skia) — modo noite do Protocolo
 │   ├── layouts/
 │   │   └── QuizLayout.tsx         ✅
 │   └── scan/
@@ -940,6 +1006,7 @@ niks-ai/
 ├── lib/notifications.ts           ✅ requestPushPermission() + savePushToken() — requer Apple Developer Program para token real
 ├── hooks/useAuth.ts               ✅
 ├── hooks/useAIConsent.ts          ✅ requestConsent(), handleAccept/Decline — AsyncStorage key: "ai_consent_accepted"
+├── assets/fonts/                  ✅ Playfair Display (variável, `[wght].ttf` + Italic) e DM Serif Display — registradas em `app.json` `"fonts"[]` para bundling + carregadas via `useFonts` em `protocolo.tsx`
 ├── assets/trust-hands.png         ⚠️ não usado — trust.tsx usa o componente SVG DoubleHeart inline (substituiu esta imagem)
 ├── lib/revenuecat.ts              ✅ initRevenueCat, getPackages, purchasePackage, restorePurchases, isSubscribed
 ├── lib/storeReview.ts             ✅ requestAppReview() — popup nativo via expo-store-review com fallback para App Store (id6760590018)
@@ -1027,9 +1094,12 @@ Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`:
 - **Container**: branco, `borderRadius: 20`, borda `#F0F0F0` (não mais pílula cinza)
 - **3 tabs**: `Scan` "scanear" · `Droplet` "protocolo" · `User` "perfil" (labels em minúsculo)
 - **Ativo**: coral `#FB7B6B` · **Inativo**: `#8A8A8E`
-- **Ícone**: tamanho 28, `strokeWidth: 1.5`, sem `fill`
+- **Ícone**: tamanho 24, `strokeWidth: 1.5`, sem `fill`
+- Posicionamento: `bottom: 20` (fixo, sem `useSafeAreaInsets`), `left/right: 16`
 - FAB laranja (`+`) **removido definitivamente**
 - Telas ocultas (`href: null`): `evolucao`, `set-name`, `skin-result`
+- **Visibilidade controlada pelo store:** `tabBarVisible` (bool) — `{tabBarVisible && <CustomTabBar />}`. Usar `setTabBarVisible(false/true)` para esconder/mostrar em telas específicas.
+- **Tema dark/light (modo noite do Protocolo):** lê `tabBarTheme` do store. Dark: bg `rgba(26,31,46,0.85)`, borda `rgba(255,255,255,0.08)`, ativo `#F9A898`, inativo `rgba(255,255,255,0.45)`, sombra `0 4px 20px rgba(0,0,0,0.4)`. `protocolo.tsx` usa `useFocusEffect` para setar `'dark'` ao ganhar foco no modo noite e resetar para `'light'` ao perder foco — **obrigatório `useFocusEffect` (não `useEffect`)** porque tabs não desmontam ao trocar de aba.
 
 ### Tela de Perfil (`app/(app)/perfil.tsx`)
 Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`. Layout (de cima para baixo):
@@ -1057,30 +1127,28 @@ Nova tela acessada ao tocar no Profile Header Card do perfil:
 - `paddingBottom` do botão = `useSafeAreaInsets().bottom + 80` para não ser coberto pela tab bar
 
 ### Tela de Protocolo (`app/(app)/protocolo.tsx`)
-Redesenhada com base no Figma Make `gZ5sSJErlJ3lcBTaqzwgjN` (Sessão 12). Layout:
-1. **Header** — "Seu Protocolo" (28px, font-800, `#1D3A44`)
-2. **Tab Toggle** — 2 botões pill com `Sun`/`Moon` (48px). Ativo: coral `#FB7B6B` sólido; Inativo: outline `#1D3A44`
-3. **Cronograma de Introdução** — card colapsável (começa fechado) com ícone `Calendar` coral; visível em ambas as abas; exibido apenas se `dicas[4]` (`introduction_schedule`) existir; posicionado entre o Tab Toggle e a barra de progresso
-4. **Barra de progresso** — texto "X de Y passos concluídos" + barra coral animada (`Animated.timing`, 400ms)
-4. **Cards de passo** — card branco `borderRadius: 16`, borda `#F0F0F0`:
-   - Círculo numerado 40×40 (coral manhã / `#1D3A44` noite) + nome + tag de dias opcional + ingredient + instruction
-   - Checkbox circular 24×24 no canto superior direito (vazio quando pendente; verde `#4CAF50` + ícone `Check` quando marcado)
-   - Ao marcar: círculo esquerdo anima para verde, card anima para `#E8F5E9`, haptic medium + som (`assets/sounds/check.mp3` via `expo-audio`), depois card sai com animação de opacidade + scaleY
-   - Botão "Ver passo a passo" (`#F0F9F5`, texto `#7CB69D`, ícone `Info`)
-5. **Seção "Concluídos hoje"** — colapsável (começa fechada); itens esmaecidos com risco no texto; toque desmarca o item
-6. **Card de celebração** — aparece ao concluir todos os passos do período; verde `#E8F5E9`, borda `#4CAF50`, ícone `CheckCircle`; mostra streak se ambas as rotinas do dia estiverem concluídas
-7. **Modal "Ver passo a passo"** — `Modal` nativo (`transparent + animationType: 'slide'`), handle + nome (título) + ingredient (subtítulo cinza) + instruction (texto narrativo) + lista numerada de sub-passos + botão "Entendi" coral. Sub-passos usam o campo `steps[]` da API; fallback para parsing de `instruction` em protocolos antigos sem o campo
-8. **Nota de Observação** (aba noite) — card `#FDFDFD` exibindo `protocol.introduction_warnings`
+Design editorial **Quietude v3** — referência: `design-export/niks-ai-ui/project/direction-quietude-v3-original.jsx`. Layout:
+
+1. **Masthead** — "NIKS" (10px, letra-spacing 2.8) + data formatada (UTC-3) no canto direito; `paddingTop = insets.top + 20`
+2. **Orb 132×132** — `Canvas` Skia com `Circle` + `RadialGradient`: AM coral (`['#FFE8DF','#F9C9B6','#E89178','#C86651']`), PM lua creme (`['#FFFFFF','#F4EEE4','#D8CDB8','#A89676']`). Highlight elíptico com `BlurMask blur=4`. PM: 5 círculos de cratera com `RadialGradient` escuro
+3. **Toggle manhã/noite** — texto serif italic + inline SVG (sol: `SvgCircle` + 8 `SvgLine` raios; lua: `SvgPath` crescente). Ativo: `borderBottomWidth: 0.5` accent coral
+4. **Título** — `"Manhã, N passos."` em PlayfairDisplay-Italic 38px, `letterSpacing: -0.95`. Score do último scan + duração total em 11px abaixo
+5. **Lista de passos** — linha por passo: barra accent 2px à esquerda, numeral romano coral italic, nome 20px PlayfairDisplay, ingredient 11px `inkSoft`. Duração ou `✓` + chevron SVG à direita. `opacity: 0.42` quando concluído
+6. **CTA flutuante** — `position: absolute, bottom: 120`, `borderRadius: 100`, bg accent coral, sombra coral 14px. Abre a **Cerimônia**
+
+**Bottom sheet (detalhe do passo):** `Animated.View` com `transform: [{translateY: sheetSlide}]`; spring 320ms. Contém numeral romano + nome + botão X (bg `inkHair`, theme-aware), benefit quote (italic 17px), "Como aplicar" (usa `step.steps[]` se presente; fallback `instruction`), "Ativos", "Por que para você" com nome do passo e score. Backdrop: `Pressable` + `BlurView` (intensity 30 PM / 20 AM, tint dark/light) fecha o sheet.
+
+**Cerimônia overlay (`ritualOpen`):** tela absoluta `zIndex: 60`. Ao abrir: `setTabBarVisible(false)`; ao fechar (X ou celebração): `setTabBarVisible(true)`. AM: Skia `Canvas` com dois `Group`+`RadialGradient` (um para o fundo, um para vinheta): fundo = `radial-gradient(ellipse at 50% 30%, colorA 0%, colorB 35%, colorC 100%)` — 5 conjuntos de cores cíclicos; vinheta = `radial-gradient(ellipse at 50% 110%, rgba(255,255,255,0.5) 0%, transparent 60%)`; ambos usam `Group transform=[{scaleY: ry/rx}]` para simular a elipse CSS em Skia (que só suporta gradiente circular). PM: `LinearGradient ['#0F1420','#1A1F2E','#2A1F28'] locations=[0, 0.45, 1]` + `<NightSky />`. Header: chip Fechar + chip modo (sol 8 raios/lua) + chip som. Barra de progresso: dots por passo. Orb 220×200 Skia com 2 anéis respiratórios via `Animated.loop` (`orbBreath1`, `orbBreath2`, offset 300ms). Numeral 84px serif inside orb. **Título** em `DMSerifDisplay` (não PlayfairDisplay): 1ª palavra italic + restante regular (ex: "Sérum Vitamina C"). **CTA duplo**: pill principal (`flex: 1`) com check circle coral + texto + chevron; pill prev 54×54 glass à esquerda (`opacity: 0.35` quando `ritualStep === 0`). Último passo → `ritualDone = true` → **tela de celebração** `CerimoniaCelebration`: PM = Skia `RadialGradient` `ellipse at 50% 30%` cores `['#1a2332','#0a1420','#050a12']` stops `[0, 0.6, 1]` (mesma técnica Group+scaleY); AM = `LinearGradient ['#FFF8F3','#FFEFE4']`. Skia orb 220×220 + anel + glow + craters (PM) + checkmark SVG sobreposto, 8 Animated.Values staggered (orb spring 900ms → eyebrow 400ms → título 550ms → subtexto 700ms → rodapé 850ms), CTA "voltar ao protocolo" → `setTabBarVisible(true); setRitualOpen(false); setRitualDone(false)`
+
+**Sistema de tema:** `isPM = period === 'night'`; `ink`, `inkSoft`, `inkHair`, `inkWhisper` mudam entre claro e escuro. Fontes serif carregadas via `useFonts`: PlayfairDisplay-Regular/Italic + DMSerifDisplay-Regular/Italic
+
+**Skin score:** buscado separadamente de `skin_scans` (`select('skin_score').order('created_at', desc).limit(1)`) e exibido no cabeçalho. Fallback ao `useAppStore().scanResult?.skin_score` se não houver registro
 
 **Estado de conclusão (AsyncStorage):** chave `protocolo_check_YYYY-MM-DD_morning` e `protocolo_check_YYYY-MM-DD_night` — valor: JSON array de índices marcados. Reseta automaticamente no novo dia. Estado independente por período.
 
-**Lógica de streak:** `streak_days` em `users` só é incrementado quando **manhã E noite** estão ambas 100% concluídas no mesmo dia. Usa `last_protocol_completed_at` para garantir que sobe apenas uma vez por dia. Streak exibido somente se `bothCompleted === true`.
+**Lógica de streak:** `streak_days` em `users` só é incrementado quando **manhã E noite** estão ambas 100% concluídas no mesmo dia. Usa `last_protocol_completed_at` para garantir que sobe apenas uma vez por dia.
 
-**Som:** `assets/sounds/check.mp3` carregado via `useAudioPlayer` de `expo-audio`. Tocado a cada item marcado junto com o haptic.
-
-**Tag de dias da semana:** helper `getDayTag(step)` detecta padrões de dias em `ingredient` (ex: `(Seg/Qua/Sex)`) e `waitTime` via regex. Se detectado, exibe badge coral `#FFF5F4` ao lado do nome. `isTimeWait()` separa tempos reais (ex: "5 min") de schedules de dias para exibição correta.
-
-**Overflow prevention:** `flex: 1, minWidth: 0` no container + `flexWrap: 'wrap'` na linha nome+tag + `flexShrink: 1` em todos os `Text` — nenhum texto gerado pela IA vaza fora do card branco.
+**Som:** `assets/sounds/check.mp3` carregado via `useAudioPlayer` de `expo-audio`. Tocado a cada item marcado junto com haptic.
 
 ---
 

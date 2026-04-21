@@ -71,8 +71,7 @@ export default function Loading() {
     // Chama a Edge Function
     const runAnalysis = async () => {
       try {
-        const session = await supabase.auth.getSession();
-        const token = session.data.session?.access_token ?? SUPABASE_ANON_KEY;
+        const token = SUPABASE_ANON_KEY;
         const response = await fetch(
           `${SUPABASE_URL}/functions/v1/analyze-skin`,
           {
@@ -80,6 +79,7 @@ export default function Loading() {
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`,
+              'apikey': SUPABASE_ANON_KEY,
             },
             body: JSON.stringify({
               imageBase64: skinImageBase64,

@@ -63,23 +63,16 @@
 <script type="text/babel" src="ios-frame.jsx"></script>
 <script type="text/babel" src="niks-primitives.jsx"></script>
 <script type="text/babel" src="niks-protocolo-shared.jsx"></script>
-<script type="text/babel" src="direction-1-editorial.jsx"></script>
 <script type="text/babel" src="direction-2-clinica.jsx"></script>
-<script type="text/babel" src="direction-atelier.jsx"></script>
-<script type="text/babel" src="direction-silencio.jsx"></script>
-<script type="text/babel" src="direction-respiro.jsx"></script>
-<script type="text/babel" src="direction-clinica-white.jsx"></script>
 <script type="text/babel" src="direction-quietude.jsx"></script>
-<script type="text/babel" src="direction-quietude-v2.jsx"></script>
 <script type="text/babel" src="direction-3-cerimonia.jsx"></script>
 <script type="text/babel" src="direction-quietude-v3.jsx"></script>
 <script type="text/babel" src="direction-quietude-v3-original.jsx"></script>
-<script type="text/babel" src="direction-4-vitrine.jsx"></script>
+<script type="text/babel" src="direction-quietude-v4-ia.jsx"></script>
 <script type="text/babel" src="direction-5-constelacao.jsx"></script>
-<script type="text/babel" src="direction-6-couture.jsx"></script>
-<script type="text/babel" src="direction-7-diario.jsx"></script>
 
 <script type="text/babel" data-presets="react">
+
 
 const { useState, useEffect } = React;
 
@@ -187,6 +180,13 @@ function App() {
 
   const directions = [
   {
+    key: 'quietude-v4-ia',
+    title: '★ Quietude v4 — output da IA',
+    subtitle: 'Mesma linguagem editorial da v3 original, mas consumindo os dados reais do output da IA (name, ingredient, instruction, steps, schedule, product_suggestions + dicas e cronograma).',
+    Cmp: ProtocoloQuietudeV4IA,
+    note: 'Card do passo mostra nome + ingrediente completo + badge de dias quando aplicável. Bottom sheet segue a ordem pedida: nome → especificação → parágrafo de instrução → passos numerados → sugestões de produto. Dicas colapsáveis ao final, com o cronograma de introdução gradual separado das notas de prognóstico.'
+  },
+  {
     key: 'quietude-v3',
     title: '★ Quietude v3 — com toggle e detalhes',
     subtitle: 'Toggle AM/PM embutido como "manhã · noite" em serif italic sob o orb. Toque em qualquer passo abre bottom sheet com detalhes completos.',
@@ -201,13 +201,6 @@ function App() {
     note: 'Versão anterior preservada. Título maior respirando com mais padding, sem forçar nowrap.'
   },
   {
-    key: 'quietude-v2',
-    title: 'Quietude v2',
-    subtitle: 'Versão anterior — sem toggle ainda, sem detalhes expandidos.',
-    Cmp: ProtocoloQuietudeV2,
-    note: 'Referência para comparação.'
-  },
-  {
     key: 'quietude',
     title: 'Quietude — original',
     subtitle: 'Versão anterior (off-white, "rito da manhã", "quatro gestos", 72 min, só passo atual colorido).',
@@ -215,38 +208,10 @@ function App() {
     note: 'Para comparação lado-a-lado.'
   },
   {
-    key: 'clinica-white',
-    title: 'Clínica — fundo branco',
-    subtitle: 'A direção 3 original, mas com fundo branco puro. Cards viraram creme para ganhar profundidade.',
-    Cmp: ProtocoloClinicaWhite,
-    note: 'Exato mesmo layout da Clínica original, só o fundo trocado para branco. Para você ver se a mudança limpa respira mais.'
-  },
-  {
     key: 'clinica',
     title: 'Clínica — original (cream)',
     subtitle: 'A versão que você preferiu. Mantida como âncora de comparação.',
     Cmp: ProtocoloClinica,
-    note: 'Referência.'
-  },
-  {
-    key: 'silencio',
-    title: 'Silêncio — minimalismo (descartada)',
-    subtitle: 'Foi longe demais.',
-    Cmp: ProtocoloSilencio,
-    note: 'Mantida para contraste.'
-  },
-  {
-    key: 'respiro',
-    title: 'Respiro — página de livro (descartada)',
-    subtitle: 'Foi longe demais.',
-    Cmp: ProtocoloRespiro,
-    note: 'Mantida para contraste.'
-  },
-  {
-    key: 'atelier',
-    title: 'Atelier — carregada (descartada)',
-    subtitle: 'Mantida só para contexto histórico.',
-    Cmp: ProtocoloAtelier,
     note: 'Referência.'
   },
   {
@@ -258,41 +223,12 @@ function App() {
     mock: (p) => <ProtocoloCerimonia {...p} currentStep={p.mode === 'am' ? 2 : 2} />
   },
   {
-    key: 'editorial',
-    title: '01 · Editorial de beleza',
-    subtitle: 'Sephora-esque levado ao ritual. Eyebrow minúsculo, serif gigante, muito whitespace.',
-    Cmp: ProtocoloEditorial,
-    note: 'A mais próxima da sua referência original. Mantida para contexto.'
-  },
-  {
-    key: 'couture',
-    title: '02 · Couture (black + coral)',
-    subtitle: 'Masthead preto, coral imperativo, números em serif de 76px.',
-    Cmp: ProtocoloCouture,
-    note: 'Preto puro como cor de ação. Mantida para contexto.'
-  },
-  {
-    key: 'vitrine',
-    title: '05 · Vitrine de perfumaria',
-    subtitle: 'Carrossel horizontal. Cada passo é um frasco. Foco no atual, próximos em preview.',
-    Cmp: ProtocoloVitrine,
-    note: 'Cada frasco é um objeto precioso. Desfoca o próximo/anterior como uma vitrine real.',
-    mock: (p) => <ProtocoloVitrine {...p} currentStep={p.mode === 'am' ? 2 : 2} />
-  },
-  {
     key: 'constelacao',
     title: '06 · Constelação (céu noturno)',
     subtitle: 'A mais radical. Pele é um céu. Cada passo é uma estrela. Escuro em PM, aurora em AM.',
     Cmp: ProtocoloConstelacao,
     note: 'Luxo como observatório privado. Nada a ver com checklist. Pode conviver com outra direção se quiser.',
     mock: (p) => <ProtocoloConstelacao {...p} expandedStep={p.mode === 'am' ? 2 : 2} />
-  },
-  {
-    key: 'diario',
-    title: '07 · Diário da pele',
-    subtitle: 'Streak de 14 dias + entradas com timestamps. Ritual como prática de escrita.',
-    Cmp: ProtocoloDiario,
-    note: 'Adiciona contexto longitudinal. A constância vira a "medalha" em vez do check do dia.'
   }];
 
 

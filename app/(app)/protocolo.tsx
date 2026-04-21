@@ -1,9 +1,10 @@
 import {
   View, Text, TouchableOpacity, ScrollView,
-  ActivityIndicator, Animated, Pressable, StyleSheet,
+  ActivityIndicator, Animated, Pressable, StyleSheet, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAppStore, ProtocolResult } from '../../store/onboarding';
 import { BASE_PROTOCOLS } from '../../constants/protocols';
@@ -22,8 +23,9 @@ import Svg, {
 } from 'react-native-svg';
 // Skia — radial gradient fiel ao orb + nebulosas do NightSky
 import {
-  Canvas, Circle,
+  Canvas, Circle, Rect, Group,
   RadialGradient, vec, BlurMask,
+  Text as SkiaText, useFont,
 } from '@shopify/react-native-skia';
 import NightSky from '../../components/ui/NightSky';
 
@@ -36,11 +38,13 @@ interface Step {
   color: string;
   waitTime?: string | null;
   product_suggestions?: string[];
+  schedule?: { label: string };
 }
 
 interface Protocol {
   morning: Step[];
   night: Step[];
+  dicas?: string[];
   introduction_warnings: string | null;
   introduction_schedule?: string | null;
   expected_timeline: {
@@ -50,8 +54,30 @@ interface Protocol {
   };
 }
 
+function parseScheduleFromIngredient(ingredient: string): { label: string } | undefined {
+  const match = ingredient.match(/\(([^)]+)\)$/);
+  if (!match) return undefined;
+  const raw = match[1];
+  const days = raw.split('/').map(d => d.trim());
+  const label = days.join(' · ');
+  return { label };
+}
+
+function stripScheduleFromIngredient(ingredient: string): string {
+  return ingredient.replace(/\s*\([^)]+\)$/, '').trim();
+}
+
+function applySchedule(step: any) {
+  const schedule = parseScheduleFromIngredient(step.ingredient ?? '');
+  return {
+    ...step,
+    schedule,
+    ingredient: stripScheduleFromIngredient(step.ingredient ?? ''),
+  };
+}
+
 export default function Protocolo() {
-  const { scanResult, onboarding, protocolResult: cachedProtocol, setProtocolResult } = useAppStore();
+  const { scanResult, onboarding, protocolResult: cachedProtocol, setProtocolResult, setTabBarTheme, setTabBarVisible } = useAppStore();
   const [period, setPeriod] = useState<'morning' | 'night'>('morning');
   const [protocol, setProtocol] = useState<Protocol | null>(null);
   const [morningSteps, setMorningSteps] = useState<Step[]>([]);
@@ -62,6 +88,8 @@ export default function Protocolo() {
   const [showStepDetail, setShowStepDetail] = useState(false);
 
   const [isScheduleExpanded, setIsScheduleExpanded] = useState(false);
+  const [dicasOpen, setDicasOpen] = useState(false);
+  const [cronoOpen, setCronoOpen] = useState(false);
 
   // Progress & gamification state
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
@@ -95,7 +123,10 @@ export default function Protocolo() {
   });
   const displayFont = fontsLoaded ? 'PlayfairDisplay-Italic' : undefined;
   const displayFontReg = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
+  // Skia font para o numeral do orb — renderizado dentro do Canvas para evitar clipping
+  const cerimSkiaFont = useFont(require('../../assets/fonts/DMSerifDisplay-Italic.ttf'), 84);
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   // ── Novos states — Quietude v3 ─────────────────────────────────────
   const [skinScore, setSkinScore] = useState<number | null>(null);
@@ -109,6 +140,9 @@ export default function Protocolo() {
   const orbBreath2 = useRef(new Animated.Value(1)).current;
   // Bottom sheet slide-in
   const sheetSlide = useRef(new Animated.Value(500)).current;
+  // Fade-in das seções colapsíveis de recomendações
+  const dicasFadeAnim = useRef(new Animated.Value(0)).current;
+  const cronoFadeAnim = useRef(new Animated.Value(0)).current;
 
   // Animated values por card (arrays mutáveis)
   const cardOpacityRef = useRef<Animated.Value[]>([]);
@@ -136,6 +170,7 @@ export default function Protocolo() {
   const inkSoft = isPM ? 'rgba(255,255,255,0.65)' : 'rgba(43,39,36,0.55)';
   const inkHair = isPM ? 'rgba(255,255,255,0.14)' : 'rgba(43,39,36,0.10)';
   const inkWhisper = isPM ? 'rgba(255,255,255,0.42)' : 'rgba(43,39,36,0.35)';
+  const surfaceSoft = isPM ? 'rgba(255,255,255,0.035)' : 'rgba(43,39,36,0.025)';
 
   // ── Helpers ────────────────────────────────────────────────────────
   const toRoman = (n: number) =>
@@ -170,6 +205,15 @@ export default function Protocolo() {
   useEffect(() => { streakDaysRef.current = streakDays; }, [streakDays]);
   useEffect(() => { lastCompletedAtRef.current = lastCompletedAt; }, [lastCompletedAt]);
 
+  // Sincroniza o tema do tab bar: dark só enquanto esta tela está focada no modo noite.
+  // useFocusEffect garante que o cleanup roda ao sair da tela (não só ao desmontar).
+  useFocusEffect(
+    useCallback(() => {
+      setTabBarTheme(period === 'night' ? 'dark' : 'light');
+      return () => { setTabBarTheme('light'); };
+    }, [period])
+  );
+
   // Rebuild animated values quando steps muda de tamanho ou período troca
   useEffect(() => {
     const count = steps.length;
@@ -202,6 +246,21 @@ export default function Protocolo() {
       }).start();
     }
   }, [openStep]);
+
+  // Fade-in das seções colapsíveis de recomendações
+  useEffect(() => {
+    if (dicasOpen) {
+      dicasFadeAnim.setValue(0);
+      Animated.timing(dicasFadeAnim, { toValue: 1, duration: 320, useNativeDriver: true }).start();
+    }
+  }, [dicasOpen]);
+
+  useEffect(() => {
+    if (cronoOpen) {
+      cronoFadeAnim.setValue(0);
+      Animated.timing(cronoFadeAnim, { toValue: 1, duration: 320, useNativeDriver: true }).start();
+    }
+  }, [cronoOpen]);
 
   // Celebration screen — staggered entrances (fiel a cerimonia-celebration-*-in)
   useEffect(() => {
@@ -379,8 +438,9 @@ export default function Protocolo() {
       if (cachedProtocol) {
         const withoutCompleted: Protocol = {
           ...cachedProtocol,
-          morning: (cachedProtocol.morning as any[]).map((s) => ({ ...s })),
-          night: (cachedProtocol.night as any[]).map((s) => ({ ...s })),
+          morning: (cachedProtocol.morning as any[]).map(applySchedule),
+          night: (cachedProtocol.night as any[]).map(applySchedule),
+          dicas: (cachedProtocol as any).dicas ?? [],
         };
         setProtocol(withoutCompleted);
         setMorningSteps(withoutCompleted.morning);
@@ -401,8 +461,9 @@ export default function Protocolo() {
 
         if (saved?.rotina_am && saved?.rotina_pm) {
           const fromDb: Protocol = {
-            morning: saved.rotina_am,
-            night: saved.rotina_pm,
+            morning: (saved.rotina_am as any[]).map(applySchedule),
+            night: (saved.rotina_pm as any[]).map(applySchedule),
+            dicas: saved.dicas ?? [],
             introduction_warnings: saved.dicas?.[0] ?? null,
             expected_timeline: {
               two_weeks: saved.dicas?.[1] ?? '',
@@ -450,8 +511,9 @@ export default function Protocolo() {
 
       const protocol: Protocol = {
         ...data,
-        morning: (data.morning as any[]).map((s) => ({ ...s })),
-        night: (data.night as any[]).map((s) => ({ ...s })),
+        morning: (data.morning as any[]).map(applySchedule),
+        night: (data.night as any[]).map(applySchedule),
+        dicas: (data as any).dicas ?? [],
       };
 
       setProtocol(protocol);
@@ -569,16 +631,37 @@ export default function Protocolo() {
   // ── Computed vars para o return ───────────────────────────────────
   const currentOpenStep = openStep !== null ? steps[openStep] : null;
 
-  const dayGradients: [string, string, string][] = [
+  const iaDicas: { kind: string; title: string; body: string }[] = [
+    protocol?.dicas?.[0] ? { kind: 'alerta', title: 'O que esperar', body: protocol.dicas[0] } : null,
+    protocol?.dicas?.[1] ? { kind: 'marco', title: 'Semana 1', body: protocol.dicas[1] } : null,
+    protocol?.dicas?.[2] ? { kind: 'marco', title: 'Semana 2', body: protocol.dicas[2] } : null,
+    protocol?.dicas?.[3] ? { kind: 'marco', title: 'Semana 3+', body: protocol.dicas[3] } : null,
+  ].filter((d): d is { kind: string; title: string; body: string } => d !== null);
+
+  const iaCronograma = (() => {
+    const raw = protocol?.dicas?.[4];
+    if (!raw) return [];
+    const matches = [...raw.matchAll(/Semana\s+(\d+\+?(?:\s+em diante)?)\s*:/gi)];
+    if (matches.length < 2) return [{ week: 'Introdução gradual', body: raw }];
+    return matches.map((m, i) => {
+      const start = m.index! + m[0].length;
+      const end = matches[i + 1]?.index ?? raw.length;
+      const label = m[1].toLowerCase().includes('diante') ? '3+' : `${m[1]}`;
+      return {
+        week: `Semana ${label}`,
+        body: raw.slice(start, end).trim().replace(/\.$/, '') + '.',
+      };
+    });
+  })();
+
+  const dayGradients: string[][] = [
     ['#FDE8E1', '#FBD5CA', '#F5B8A8'],
     ['#FEF0E6', '#FADBC7', '#EBB497'],
     ['#FCEAE5', '#F8C9B9', '#E89F8B'],
     ['#FFEDE8', '#FFD4C5', '#FB9F89'],
     ['#FFE5DD', '#FBBFAE', '#E88770'],
   ];
-  const rtBg: [string, string, string] = isPM
-    ? ['#0F1420', '#1A1F2E', '#2A1F28']
-    : dayGradients[ritualStep % dayGradients.length];
+  const currentDayColors = dayGradients[ritualStep % dayGradients.length];
   const rtInk = isPM ? '#FFFFFF' : '#1D3A44';
   const rtInkSoft = isPM ? 'rgba(255,255,255,0.65)' : '#486269';
   const rtInkHair = isPM ? 'rgba(255,255,255,0.18)' : 'rgba(29,58,68,0.2)';
@@ -590,12 +673,18 @@ export default function Protocolo() {
   // Cerimônia usa DM Serif Display (diferente da tela principal que usa Playfair)
   const cerimFont = fontsLoaded ? 'DMSerifDisplay-Italic' : undefined;
   const cerimFontReg = fontsLoaded ? 'DMSerifDisplay-Regular' : undefined;
+  // Posicionamento do numeral Skia dentro do Canvas 200×200 (cx=100, cy=100)
+  const stepText = String(ritualStep + 1).padStart(2, '0');
+  const skiaTextW = cerimSkiaFont?.measureText(stepText).width ?? 95;
+  const skiaTextX = (200 - skiaTextW) / 2;
+  const rawCapH = cerimSkiaFont ? cerimSkiaFont.getMetrics().capHeight : 0;
+  const skiaCapH = rawCapH ? Math.abs(rawCapH) : 84 * 0.70;
+  const skiaTextY = 100 + skiaCapH / 2;
   // Título partido: 1ª palavra italic + vírgula + restante normal
   const cerimTitleParts = (ritualCurrentStep?.name ?? '').split(' ');
   const cerimTitleFirst = cerimTitleParts[0] ?? '';
   const cerimTitleRest = cerimTitleParts.slice(1).join(' ');
   // Tema da tela de celebração (CerimoniaCelebration)
-  const celebBgColors: string[] = isPM ? ['#1a2332', '#0a1420', '#050a12'] : ['#FFF8F3', '#FFEFE4'];
   const celebTextColor = isPM ? '#F5E6D3' : '#1D3A44';
   const celebSubtleColor = isPM ? 'rgba(245,230,211,0.6)' : 'rgba(29,58,68,0.55)';
   const celebRuleColor = isPM ? 'rgba(245,230,211,0.25)' : 'rgba(29,58,68,0.2)';
@@ -785,6 +874,7 @@ export default function Protocolo() {
             color: ink, lineHeight: 40,
             letterSpacing: -0.95,
             textAlign: 'center',
+            alignSelf: 'stretch',
           }}>
             <Text style={{ fontFamily: displayFont }}>{periodWord} </Text>
             {stepsCountWord} passos.
@@ -803,12 +893,12 @@ export default function Protocolo() {
             fontSize: 11, fontWeight: '500', letterSpacing: 0.4,
             color: inkSoft, marginTop: 20,
           }}>
-            {[totalLabel, skinScore != null ? `score ${skinScore}` : null].filter(Boolean).join('  ·  ')}
+            {[`${steps.length} etapas`, skinScore != null ? `score ${skinScore}` : null].filter(Boolean).join('  ·  ')}
           </Text>
         </View>
 
         {/* Steps list */}
-        <View style={{ paddingTop: 48, paddingHorizontal: 28 }}>
+        <View style={{ paddingTop: 32, paddingHorizontal: 28 }}>
           {steps.map((s, i) => {
             const done = checkedItems.has(i);
             return (
@@ -847,6 +937,23 @@ export default function Protocolo() {
                     fontSize: 11, fontWeight: '500', letterSpacing: 0.3,
                     color: inkSoft, marginTop: 6,
                   }}>{s.ingredient}</Text>
+                  {s.schedule && (
+                    <View style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 6,
+                      marginTop: 10,
+                      paddingVertical: 4, paddingLeft: 8, paddingRight: 10,
+                      borderWidth: 0.5, borderColor: accent, borderRadius: 100,
+                      alignSelf: 'flex-start',
+                      backgroundColor: isPM ? 'rgba(251,123,107,0.06)' : 'rgba(251,123,107,0.04)',
+                    }}>
+                      <Svg width={8} height={8} viewBox="0 0 8 8">
+                        <SvgCircle cx={4} cy={4} r={1.5} fill={accent} />
+                      </Svg>
+                      <Text style={{ fontFamily: displayFont, fontStyle: 'italic', fontSize: 12, color: accent, letterSpacing: -0.06 }}>
+                        {s.schedule.label}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 <View style={{
                   flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -877,15 +984,182 @@ export default function Protocolo() {
             );
           })}
         </View>
+
+        {/* ═══ RECOMENDAÇÕES ═══ */}
+        {(iaDicas.length > 0 || iaCronograma.length > 0) && (
+          <View style={{ paddingTop: 48, paddingHorizontal: 28 }}>
+
+            {/* Header da seção */}
+            <View style={{ alignItems: 'center', marginBottom: 24 }}>
+              <Text style={{
+                fontSize: 9, fontWeight: '600', letterSpacing: 2.8,
+                color: accent, textTransform: 'uppercase',
+              }}>Recomendações</Text>
+              <Text style={{
+                fontFamily: displayFont, fontSize: 22, fontWeight: '400',
+                color: ink, letterSpacing: -0.33, marginTop: 6,
+              }}>O que esperar do seu protocolo</Text>
+            </View>
+
+            {/* Prognóstico — colapsível */}
+            {iaDicas.length > 0 && (
+              <>
+                <TouchableOpacity
+                  onPress={() => setDicasOpen(!dicasOpen)}
+                  activeOpacity={0.75}
+                  style={{
+                    borderTopWidth: 0.5, borderTopColor: inkHair,
+                    borderBottomWidth: 0.5, borderBottomColor: inkHair,
+                    paddingVertical: 18,
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: displayFontReg, fontSize: 17, fontWeight: '400', color: ink, letterSpacing: -0.17 }}>
+                      <Text style={{ fontFamily: displayFont, color: accent }}>{'Prognóstico'}</Text>
+                      {` · ${iaDicas.length} nota${iaDicas.length !== 1 ? 's' : ''}`}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: inkSoft, marginTop: 4 }}>
+                      Marcos de evolução e um aviso importante.
+                    </Text>
+                  </View>
+                  <Svg width={12} height={7} viewBox="0 0 12 7" style={{ marginLeft: 12, transform: [{ rotate: dicasOpen ? '180deg' : '0deg' }] }}>
+                    <SvgPath d="M1 1L6 6L11 1" stroke={inkSoft} strokeWidth={1} fill="none" strokeLinecap="round" />
+                  </Svg>
+                </TouchableOpacity>
+
+                {dicasOpen && (
+                  <Animated.View style={{
+                    paddingVertical: 4,
+                    opacity: dicasFadeAnim,
+                    transform: [{ translateY: dicasFadeAnim.interpolate({ inputRange: [0, 1], outputRange: [-4, 0] }) }],
+                  }}>
+                    {iaDicas.map((d, i) => {
+                      const isAlert = d.kind === 'alerta';
+                      return (
+                        <View key={i} style={{
+                          paddingVertical: 20,
+                          borderBottomWidth: i < iaDicas.length - 1 ? 0.5 : 0,
+                          borderBottomColor: inkHair,
+                        }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                            {isAlert ? (
+                              <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 3 }}>
+                                <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
+                                  <SvgPath d="M5.5 1L10 9.5H1L5.5 1Z" stroke={accent} strokeWidth={0.8} strokeLinejoin="round" />
+                                  <SvgLine x1={5.5} y1={4.5} x2={5.5} y2={6.5} stroke={accent} strokeWidth={0.8} strokeLinecap="round" />
+                                  <SvgCircle cx={5.5} cy={7.8} r={0.5} fill={accent} />
+                                </Svg>
+                              </View>
+                            ) : (
+                              <Text style={{
+                                fontFamily: displayFont, fontSize: 13, fontWeight: '400',
+                                color: accent, width: 14, flexShrink: 0, letterSpacing: -0.065,
+                              }}>{toRoman(i)}</Text>
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <Text style={{
+                                fontFamily: isAlert ? displayFont : displayFontReg,
+                                fontSize: 18, fontWeight: '400',
+                                color: ink, lineHeight: 22, letterSpacing: -0.27,
+                              }}>{d.title}</Text>
+                              <Text style={{
+                                fontSize: 13, color: inkSoft, lineHeight: 21, marginTop: 8,
+                              }}>{d.body}</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </Animated.View>
+                )}
+              </>
+            )}
+
+            {/* Introdução gradual — colapsível */}
+            {iaCronograma.length > 0 && (
+              <>
+                <TouchableOpacity
+                  onPress={() => setCronoOpen(!cronoOpen)}
+                  activeOpacity={0.75}
+                  style={{
+                    borderBottomWidth: 0.5, borderBottomColor: inkHair,
+                    paddingVertical: 18,
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: displayFontReg, fontSize: 17, fontWeight: '400', color: ink, letterSpacing: -0.17 }}>
+                      <Text style={{ fontFamily: displayFont, color: accent }}>{'Introdução gradual'}</Text>
+                      {` · ${iaCronograma.length} semana${iaCronograma.length !== 1 ? 's' : ''}`}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: inkSoft, marginTop: 4 }}>
+                      Como introduzir os ácidos sem agredir a pele.
+                    </Text>
+                  </View>
+                  <Svg width={12} height={7} viewBox="0 0 12 7" style={{ marginLeft: 12, transform: [{ rotate: cronoOpen ? '180deg' : '0deg' }] }}>
+                    <SvgPath d="M1 1L6 6L11 1" stroke={inkSoft} strokeWidth={1} fill="none" strokeLinecap="round" />
+                  </Svg>
+                </TouchableOpacity>
+
+                {cronoOpen && (
+                  <Animated.View style={{
+                    paddingVertical: 4,
+                    opacity: cronoFadeAnim,
+                    transform: [{ translateY: cronoFadeAnim.interpolate({ inputRange: [0, 1], outputRange: [-4, 0] }) }],
+                  }}>
+                    {/* Timeline horizontal de dots */}
+                    <View style={{ paddingTop: 26, paddingBottom: 10, paddingHorizontal: 10 }}>
+                      <View style={{
+                        position: 'absolute', left: 10, right: 10, top: 36,
+                        height: 0.5, backgroundColor: inkHair,
+                      }} />
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+                        {iaCronograma.map((c, i) => (
+                          <View key={i} style={{ alignItems: 'center', gap: 10 }}>
+                            <View style={{
+                              width: 9, height: 9, borderRadius: 4.5,
+                              backgroundColor: accent,
+                            }} />
+                            <Text style={{
+                              fontFamily: displayFont, fontSize: 12, fontWeight: '400',
+                              color: accent, letterSpacing: -0.06,
+                            }}>{c.week}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+
+                    {/* Lista */}
+                    {iaCronograma.map((c, i) => (
+                      <View key={i} style={{
+                        flexDirection: 'row', gap: 16, paddingVertical: 18,
+                        borderBottomWidth: i < iaCronograma.length - 1 ? 0.5 : 0,
+                        borderBottomColor: inkHair,
+                      }}>
+                        <Text style={{
+                          fontFamily: displayFont, fontSize: 15, fontWeight: '400',
+                          color: accent, width: 72, flexShrink: 0, letterSpacing: -0.075,
+                        }}>{c.week}</Text>
+                        <Text style={{ fontSize: 13, color: ink, lineHeight: 21, flex: 1 }}>{c.body}</Text>
+                      </View>
+                    ))}
+                  </Animated.View>
+                )}
+              </>
+            )}
+
+          </View>
+        )}
       </ScrollView>
 
-      {/* CTA flutuante */}
-      <View style={{
+      {/* CTA flutuante — sem fundo, container transparente */}
+      <View pointerEvents="box-none" style={{
         position: 'absolute', left: 0, right: 0,
-        bottom: 112, paddingHorizontal: 24, zIndex: 25,
+        bottom: 120, paddingHorizontal: 24, zIndex: 25,
       }}>
         <TouchableOpacity
-          onPress={() => { setRitualStep(0); setRitualDone(false); setRitualOpen(true); }}
+          onPress={() => { setRitualStep(0); setRitualDone(false); setTabBarVisible(false); setRitualOpen(true); }}
           activeOpacity={0.9}
           style={{
             backgroundColor: accent, borderRadius: 100,
@@ -920,10 +1194,9 @@ export default function Protocolo() {
               tint={isPM ? 'dark' : 'light'}
               style={StyleSheet.absoluteFill}
             />
-            <View style={{
-              ...StyleSheet.absoluteFillObject,
+            <View style={[StyleSheet.absoluteFill, {
               backgroundColor: isPM ? 'rgba(0,0,0,0.35)' : 'rgba(43,39,36,0.18)',
-            }} />
+            }]} />
           </Pressable>
           <Animated.View style={{
             position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 50,
@@ -937,13 +1210,16 @@ export default function Protocolo() {
           }}>
             <ScrollView
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 14, paddingHorizontal: 28 }}
+              contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 28, paddingBottom: 100 }}
             >
+              {/* Handle */}
               <View style={{
                 width: 36, height: 4, borderRadius: 2,
                 backgroundColor: inkHair,
                 alignSelf: 'center', marginBottom: 20,
               }} />
+
+              {/* Header */}
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 14 }}>
                 <Text style={{
                   fontFamily: displayFont, fontSize: 18, fontWeight: '400',
@@ -954,7 +1230,7 @@ export default function Protocolo() {
                     fontSize: 9, fontWeight: '600', letterSpacing: 2.5,
                     color: accent, textTransform: 'uppercase',
                   }}>
-                    Passo {openStep + 1}{currentOpenStep.waitTime ? ` · ${currentOpenStep.waitTime}` : ''}
+                    Passo {openStep + 1}{currentOpenStep.waitTime ? ` · aguardar ${currentOpenStep.waitTime}` : ''}
                   </Text>
                   <Text style={{
                     fontFamily: displayFontReg,
@@ -962,12 +1238,35 @@ export default function Protocolo() {
                     color: ink, lineHeight: 31, letterSpacing: -0.56,
                     marginTop: 6,
                   }}>{currentOpenStep.name}</Text>
+                  {/* Ingredient */}
+                  <Text style={{
+                    fontSize: 12, fontWeight: '500', letterSpacing: 0.3,
+                    color: inkSoft, marginTop: 8, lineHeight: 18,
+                  }}>{currentOpenStep.ingredient}</Text>
+                  {/* Schedule badge */}
+                  {currentOpenStep.schedule && (
+                    <View style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 6,
+                      marginTop: 10,
+                      paddingVertical: 4, paddingLeft: 8, paddingRight: 10,
+                      borderWidth: 0.5, borderColor: accent, borderRadius: 100,
+                      alignSelf: 'flex-start',
+                      backgroundColor: isPM ? 'rgba(251,123,107,0.06)' : 'rgba(251,123,107,0.04)',
+                    }}>
+                      <Svg width={8} height={8} viewBox="0 0 8 8">
+                        <SvgCircle cx={4} cy={4} r={1.5} fill={accent} />
+                      </Svg>
+                      <Text style={{ fontFamily: displayFont, fontStyle: 'italic', fontSize: 12, color: accent, letterSpacing: -0.06 }}>
+                        {currentOpenStep.schedule.label}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 <TouchableOpacity
                   onPress={() => setOpenStep(null)}
                   style={{
                     width: 30, height: 30, borderRadius: 15,
-                    backgroundColor: inkHair,
+                    backgroundColor: isPM ? 'rgba(255,255,255,0.08)' : 'rgba(43,39,36,0.05)',
                     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                   }}
                 >
@@ -978,55 +1277,95 @@ export default function Protocolo() {
                 </TouchableOpacity>
               </View>
 
+              {/* Instrução */}
               <View style={{
-                marginTop: 24, paddingVertical: 16,
+                marginTop: 24, paddingVertical: 18,
                 borderTopWidth: 0.5, borderBottomWidth: 0.5,
                 borderColor: inkHair,
               }}>
                 <Text style={{
-                  fontFamily: displayFont,
-                  fontSize: 17, fontWeight: '400',
-                  color: ink, lineHeight: 24, letterSpacing: -0.17,
+                  fontFamily: displayFontReg,
+                  fontSize: 15, fontWeight: '400',
+                  color: ink, lineHeight: 25, letterSpacing: -0.045,
                 }}>
                   {currentOpenStep.instruction
                     ? currentOpenStep.instruction.charAt(0).toUpperCase() + currentOpenStep.instruction.slice(1)
                     : ''}
+                  {currentOpenStep.waitTime ? (
+                    <Text style={{ color: accent }}>
+                      {` Aguardar ${currentOpenStep.waitTime} com o produto aplicado antes de passar para o próximo produto.`}
+                    </Text>
+                  ) : null}
                 </Text>
               </View>
 
-              <View style={{ marginTop: 22 }}>
+              {/* Como aplicar — numerais 54px italic serif */}
+              <View style={{ marginTop: 24 }}>
                 <Text style={{
                   fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
                   color: inkSoft, textTransform: 'uppercase',
                 }}>Como aplicar</Text>
-                <Text style={{ fontSize: 14, color: ink, lineHeight: 22, marginTop: 8 }}>
-                  {currentOpenStep.steps && currentOpenStep.steps.length > 0
-                    ? currentOpenStep.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')
-                    : currentOpenStep.instruction}
-                </Text>
+                <View style={{ marginTop: 12 }}>
+                  {(currentOpenStep.steps && currentOpenStep.steps.length > 0
+                    ? currentOpenStep.steps
+                    : [currentOpenStep.instruction]
+                  ).map((instruction, idx, arr) => (
+                    <View key={idx} style={{
+                      flexDirection: 'row', gap: 4, paddingVertical: 12,
+                      alignItems: 'center',
+                      borderBottomWidth: idx < arr.length - 1 ? 0.5 : 0,
+                      borderBottomColor: inkHair,
+                    }}>
+                      <Text style={{
+                        fontFamily: displayFont, fontSize: 54, fontWeight: '400',
+                        color: accent, width: 56, flexShrink: 0,
+                        letterSpacing: -1.62, lineHeight: 54,
+                      }}>{idx + 1}</Text>
+                      <Text style={{ fontSize: 14, color: ink, lineHeight: 20, flex: 1 }}>{instruction}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
 
-              <View style={{ marginTop: 22 }}>
-                <Text style={{
-                  fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
-                  color: inkSoft, textTransform: 'uppercase',
-                }}>Ativos</Text>
-                <Text style={{ fontSize: 14, color: ink, lineHeight: 22, marginTop: 8 }}>
-                  {currentOpenStep.ingredient}
-                </Text>
-              </View>
-
-              <View style={{ marginTop: 22, paddingBottom: 8 }}>
-                <Text style={{
-                  fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
-                  color: inkSoft, textTransform: 'uppercase',
-                }}>Por que para você</Text>
-                <Text style={{ fontSize: 14, color: ink, lineHeight: 22, marginTop: 8 }}>
-                  {skinScore != null
-                    ? `Sua análise apontou score ${skinScore} — ${currentOpenStep.name} é o ponto-chave deste passo na sua rotina atual.`
-                    : `${currentOpenStep.name} foi selecionado com base no seu perfil de pele.`}
-                </Text>
-              </View>
+              {/* Sugestões de produto */}
+              {currentOpenStep.product_suggestions && currentOpenStep.product_suggestions.length > 0 && (
+                <View style={{ marginTop: 26 }}>
+                  <Text style={{
+                    fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
+                    color: inkSoft, textTransform: 'uppercase',
+                  }}>Sugestões de produto</Text>
+                  <View style={{ marginTop: 12 }}>
+                    {currentOpenStep.product_suggestions.map((prod, idx) => (
+                      <View key={idx} style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 14,
+                        paddingVertical: 14, paddingHorizontal: 16,
+                        marginTop: idx === 0 ? 0 : 8,
+                        backgroundColor: surfaceSoft,
+                        borderWidth: 0.5, borderColor: inkHair,
+                        borderRadius: 10,
+                      }}>
+                        {/* Mini frasco placeholder */}
+                        <View style={{
+                          width: 32, height: 40, borderRadius: 4,
+                          backgroundColor: 'rgba(251,123,107,0.12)',
+                          borderWidth: 0.5, borderColor: 'rgba(251,123,107,0.25)',
+                          flexShrink: 0,
+                        }}>
+                          <View style={{
+                            position: 'absolute', top: -3, left: 9,
+                            width: 14, height: 5, borderRadius: 1,
+                            backgroundColor: accent, opacity: 0.6,
+                          }} />
+                        </View>
+                        <Text style={{
+                          fontSize: 13, fontWeight: '500', color: ink,
+                          lineHeight: 18, flex: 1,
+                        }}>{prod}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </ScrollView>
           </Animated.View>
         </>
@@ -1041,7 +1380,20 @@ export default function Protocolo() {
             opacity: celebScreenOpacity,
             transform: [{ scale: celebScreenScale }],
           }}>
-            <LinearGradient colors={celebBgColors} style={StyleSheet.absoluteFill} />
+            {isPM ? (
+              <Canvas style={StyleSheet.absoluteFill}>
+                <Rect x={0} y={0} width={screenWidth} height={screenHeight}>
+                  <RadialGradient
+                    c={vec(screenWidth * 0.5, screenHeight * 0.3)}
+                    r={screenWidth * 1.5}
+                    colors={['#1a2332', '#0a1420', '#050a12']}
+                    positions={[0, 0.6, 1]}
+                  />
+                </Rect>
+              </Canvas>
+            ) : (
+              <LinearGradient colors={['#FFF8F3', '#FFEFE4']} style={StyleSheet.absoluteFill} />
+            )}
             {isPM && <NightSky />}
 
             {/* Masthead */}
@@ -1099,20 +1451,20 @@ export default function Protocolo() {
                   </Circle>
                   {isPM && (
                     <>
-                      <Circle cx={141.8} cy={123.2} r={7.7}>
-                        <RadialGradient c={vec(138.8, 120.2)} r={7.7}
+                      <Circle cx={90.6} cy={68.6} r={7}>
+                        <RadialGradient c={vec(85.7, 63.7)} r={7}
                           colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']} />
                       </Circle>
-                      <Circle cx={82.6} cy={162.8} r={5.5}>
-                        <RadialGradient c={vec(79.6, 159.8)} r={5.5}
+                      <Circle cx={141.4} cy={119.4} r={5}>
+                        <RadialGradient c={vec(137.9, 115.9)} r={5}
                           colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0)']} />
                       </Circle>
-                      <Circle cx={168.3} cy={143.0} r={4.4}>
-                        <RadialGradient c={vec(165.3, 140.0)} r={4.4}
+                      <Circle cx={70} cy={153.6} r={4}>
+                        <RadialGradient c={vec(67.2, 150.8)} r={4}
                           colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0)']} />
                       </Circle>
-                      <Circle cx={116.6} cy={196.9} r={3.3}>
-                        <RadialGradient c={vec(113.6, 193.9)} r={3.3}
+                      <Circle cx={58} cy={95.4} r={3}>
+                        <RadialGradient c={vec(55.9, 93.3)} r={3}
                           colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0)']} />
                       </Circle>
                     </>
@@ -1184,7 +1536,7 @@ export default function Protocolo() {
                 {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
               </Text>
               <TouchableOpacity
-                onPress={() => { setRitualOpen(false); setRitualDone(false); }}
+                onPress={() => { setTabBarVisible(true); setRitualOpen(false); setRitualDone(false); }}
                 activeOpacity={0.88}
                 style={{
                   backgroundColor: celebCtaBg, borderRadius: 100,
@@ -1209,19 +1561,39 @@ export default function Protocolo() {
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60,
             overflow: 'hidden',
           }}>
-            <LinearGradient colors={rtBg} style={StyleSheet.absoluteFill} />
-            {isPM && <NightSky />}
-            {/* Vinheta diurna — radial-gradient(ellipse at 50% 110%, ...) */}
-            {!isPM && (
-              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                <LinearGradient
-                  colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.5)']}
-                  start={{ x: 0.5, y: 0.3 }}
-                  end={{ x: 0.5, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-              </View>
+            {isPM ? (
+              <LinearGradient
+                colors={['#0F1420', '#1A1F2E', '#2A1F28']}
+                locations={[0, 0.45, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+            ) : (
+              <Canvas style={StyleSheet.absoluteFill}>
+                {/* ellipse at 50% 30%: rx=50%w, ry=70%h — scaleY converte círculo em elipse */}
+                <Group transform={[{ scaleY: (screenHeight * 0.7) / (screenWidth * 0.5) }]}>
+                  <Rect x={0} y={0} width={screenWidth} height={(screenWidth * 0.5 * screenHeight) / (screenHeight * 0.7)}>
+                    <RadialGradient
+                      c={vec(screenWidth * 0.5, (screenHeight * 0.3 * screenWidth * 0.5) / (screenHeight * 0.7))}
+                      r={screenWidth * 0.5}
+                      colors={currentDayColors}
+                      positions={[0, 0.35, 1]}
+                    />
+                  </Rect>
+                </Group>
+                {/* vinheta: ellipse at 50% 110%: rx=50%w, ry=110%h — centro abaixo da tela */}
+                <Group transform={[{ scaleY: (screenHeight * 1.1) / (screenWidth * 0.5) }]}>
+                  <Rect x={0} y={0} width={screenWidth} height={(screenWidth * 0.5 * screenHeight) / (screenHeight * 1.1)}>
+                    <RadialGradient
+                      c={vec(screenWidth * 0.5, screenWidth * 0.5)}
+                      r={screenWidth * 0.5}
+                      colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0)']}
+                      positions={[0, 0.6]}
+                    />
+                  </Rect>
+                </Group>
+              </Canvas>
             )}
+            {isPM && <NightSky />}
 
             <View style={{
               paddingTop: insets.top + 20, paddingHorizontal: 24,
@@ -1229,7 +1601,7 @@ export default function Protocolo() {
               zIndex: 5,
             }}>
               <TouchableOpacity
-                onPress={() => setRitualOpen(false)}
+                onPress={() => { setTabBarVisible(true); setRitualOpen(false); }}
                 style={{
                   width: 36, height: 36, borderRadius: 18,
                   backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
@@ -1258,6 +1630,10 @@ export default function Protocolo() {
                     <SvgLine x1={7} y1={11.2} x2={7} y2={13} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
                     <SvgLine x1={1} y1={7} x2={2.8} y2={7} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
                     <SvgLine x1={11.2} y1={7} x2={13} y2={7} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                    <SvgLine x1={2.76} y1={2.76} x2={4.04} y2={4.04} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                    <SvgLine x1={9.96} y1={9.96} x2={11.24} y2={11.24} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                    <SvgLine x1={11.24} y1={2.76} x2={9.96} y2={4.04} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
+                    <SvgLine x1={4.04} y1={9.96} x2={2.76} y2={11.24} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
                   </Svg>
                 )}
                 <Text style={{
@@ -1335,33 +1711,38 @@ export default function Protocolo() {
                   </Circle>
                   {isPM && (
                     <>
-                      <Circle cx={143} cy={160} r={11}>
-                        <RadialGradient c={vec(140, 157)} r={11}
+                      <Circle cx={141} cy={71} r={11}>
+                        <RadialGradient c={vec(133.3, 63.3)} r={11}
                           colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']} />
                       </Circle>
-                      <Circle cx={93} cy={198} r={8}>
-                        <RadialGradient c={vec(91, 196)} r={8}
+                      <Circle cx={68} cy={123} r={8}>
+                        <RadialGradient c={vec(62.4, 117.4)} r={8}
                           colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0)']} />
                       </Circle>
-                      <Circle cx={172} cy={178} r={5.5}>
-                        <RadialGradient c={vec(171, 177)} r={5.5}
+                      <Circle cx={165.5} cy={95.5} r={5.5}>
+                        <RadialGradient c={vec(161.65, 91.65)} r={5.5}
                           colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                      <Circle cx={119.5} cy={152.5} r={4.5}>
+                        <RadialGradient c={vec(116.35, 149.35)} r={4.5}
+                          colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0)']} />
+                      </Circle>
+                      <Circle cx={88.5} cy={53.5} r={3.5}>
+                        <RadialGradient c={vec(86.05, 51.05)} r={3.5}
+                          colors={['rgba(0,0,0,0.04)', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0)']} />
                       </Circle>
                     </>
                   )}
+                  {cerimSkiaFont && (
+                    <SkiaText
+                      x={skiaTextX}
+                      y={skiaTextY}
+                      text={stepText}
+                      font={cerimSkiaFont}
+                      color={isPM ? '#3D2F1F' : '#1D3A44'}
+                    />
+                  )}
                 </Canvas>
-                <Text style={{
-                  position: 'absolute',
-                  fontFamily: cerimFont,
-                  fontSize: 84, fontWeight: '400',
-                  color: isPM ? '#3D2F1F' : '#1D3A44',
-                  letterSpacing: -3.36,
-                  textShadowColor: isPM ? 'rgba(255,255,255,0.4)' : 'transparent',
-                  textShadowOffset: { width: 0, height: 1 },
-                  textShadowRadius: 0,
-                }}>
-                  {String(ritualStep + 1).padStart(2, '0')}
-                </Text>
               </View>
             </View>
 
@@ -1372,7 +1753,7 @@ export default function Protocolo() {
                 fontSize: 38, fontWeight: '400',
                 color: rtInk, letterSpacing: -0.95, textAlign: 'center', lineHeight: 40,
               }}>
-                <Text style={{ fontFamily: cerimFont }}>{cerimTitleFirst},</Text>
+                <Text style={{ fontFamily: cerimFont }}>{cerimTitleFirst}</Text>
                 {cerimTitleRest ? ` ${cerimTitleRest}` : ''}
               </Text>
 
@@ -1386,8 +1767,8 @@ export default function Protocolo() {
               {/* Instrução (body text) */}
               <Text style={{
                 fontSize: 14, color: rtInkSoft,
-                textAlign: 'center', lineHeight: 21.7, marginTop: 16, maxWidth: 280,
-              }}>{ritualCurrentStep?.instruction ?? ''}</Text>
+                textAlign: 'center', lineHeight: 21.7, marginTop: 16, maxWidth: 320,
+              }}>{(ritualCurrentStep?.steps ?? []).join(' ') + (ritualCurrentStep?.waitTime ? ` Aguardar ${ritualCurrentStep.waitTime} com o produto aplicado antes de passar para o próximo passo.` : '')}</Text>
 
               {/* Chip de ingrediente — glass pill */}
               <View style={{
@@ -1407,7 +1788,7 @@ export default function Protocolo() {
 
             <View style={{
               position: 'absolute', left: 0, right: 0,
-              bottom: insets.bottom + 50,
+              bottom: insets.bottom + 16,
               paddingHorizontal: 24, zIndex: 10,
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
