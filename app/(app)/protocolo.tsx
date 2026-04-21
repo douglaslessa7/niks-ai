@@ -435,12 +435,12 @@ export default function Protocolo() {
       setError(null);
 
       // 1. Tentar carregar do cache do store (gerado na protocol-loading)
-      if (cachedProtocol) {
+      if (cachedProtocol && Array.isArray(cachedProtocol.dicas) && cachedProtocol.dicas.length > 0) {
         const withoutCompleted: Protocol = {
           ...cachedProtocol,
           morning: (cachedProtocol.morning as any[]).map(applySchedule),
           night: (cachedProtocol.night as any[]).map(applySchedule),
-          dicas: (cachedProtocol as any).dicas ?? [],
+          dicas: cachedProtocol.dicas ?? [],
         };
         setProtocol(withoutCompleted);
         setMorningSteps(withoutCompleted.morning);
@@ -460,17 +460,23 @@ export default function Protocolo() {
           .single();
 
         if (saved?.rotina_am && saved?.rotina_pm) {
+          const rawDicas = saved.dicas;
+          const dicas = Array.isArray(rawDicas)
+            ? rawDicas
+            : typeof rawDicas === 'string'
+            ? JSON.parse(rawDicas)
+            : [];
           const fromDb: Protocol = {
             morning: (saved.rotina_am as any[]).map(applySchedule),
             night: (saved.rotina_pm as any[]).map(applySchedule),
-            dicas: saved.dicas ?? [],
-            introduction_warnings: saved.dicas?.[0] ?? null,
+            dicas: dicas,
+            introduction_warnings: dicas?.[0] ?? null,
             expected_timeline: {
-              two_weeks: saved.dicas?.[1] ?? '',
-              one_month: saved.dicas?.[2] ?? '',
-              three_months: saved.dicas?.[3] ?? '',
+              two_weeks: dicas?.[1] ?? '',
+              one_month: dicas?.[2] ?? '',
+              three_months: dicas?.[3] ?? '',
             },
-            introduction_schedule: saved.dicas?.[4] ?? null,
+            introduction_schedule: dicas?.[4] ?? null,
           };
           setProtocolResult(fromDb as ProtocolResult);
           setProtocol(fromDb);
