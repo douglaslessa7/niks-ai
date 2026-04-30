@@ -81,7 +81,7 @@ export default function Welcome() {
       <View style={{ paddingHorizontal: 24, paddingBottom: 16, gap: 12 }}>
         <CTAButton
           text="Começar"
-          to="/(onboarding)/concerns"
+          to="/(onboarding)/social-intro"
           onPress={() => track('onboarding_step_completed', { step_number: 1, step_name: 'Tela Inicial', step_total: 23 })}
         />
         <View className="items-center flex-row justify-center gap-1">

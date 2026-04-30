@@ -227,6 +227,9 @@ export default function Signup() {
       >
         {/* Heading */}
         <View className="mb-8">
+          <Text className="text-[13px] font-semibold text-[#9CA3AF] tracking-wide uppercase mb-1">
+            Último passo: onde salvamos seu protocolo?
+          </Text>
           <Text className="text-[28px] font-bold text-[#1A1A1A] leading-tight tracking-tight">
             Salve seu progresso
           </Text>

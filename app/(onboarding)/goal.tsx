@@ -35,7 +35,7 @@ export default function Goal() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => {
       track('onboarding_step_completed', { step_number: 18, step_name: 'Objetivo Principal', step_total: 23 });
-      router.push('/(scan)/scan-prep');
+      router.push('/(onboarding)/food-analysis');
     }, 300);
   }, []);
 

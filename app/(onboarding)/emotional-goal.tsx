@@ -1,8 +1,4 @@
-// SQL to run in Supabase Dashboard:
-// ALTER TABLE users ADD COLUMN IF NOT EXISTS allergy_type text;
-// ALTER TABLE users ADD COLUMN IF NOT EXISTS allergy_description text;
-
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,39 +9,40 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { Colors } from '../../constants/colors';
 
-type AllergyType = 'none' | 'sensitive' | 'reaction';
-
-const OPTIONS: { label: string; value: AllergyType }[] = [
-  { label: 'Não tenho alergias/sensibilidade', value: 'none' },
-  { label: 'Tenho pele muito sensível/reativa em geral', value: 'sensitive' },
-  { label: 'Já tive reação a algum ativo/produto', value: 'reaction' },
+const OPTIONS: string[] = [
+  'Parar de ter medo de tirar fotos',
+  'Sair de casa sem maquiagem',
+  'Postar selfies sem editar',
+  'Me olhar no espelho e gostar do que vejo',
+  'Parar de evitar encontros por causa da pele',
+  'Me sentir eu mesma de novo',
+  'Ter confiança em ambientes com luz forte',
+  'Finalmente ter uma rotina que funciona',
 ];
 
-const HINT_COLOR = '#C0B8B5';
-
-export default function Allergies() {
-  const [selected, setSelected] = useState<AllergyType | null>(null);
+export default function EmotionalGoal() {
+  const [selected, setSelected] = useState<string[]>([]);
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
   const router = useRouter();
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_name: 'allergies' });
+    track('onboarding_step_viewed', { step_number: 16, step_name: 'Motivação Emocional', step_total: 28 });
   }, []);
 
-  const handleSelect = useCallback((value: AllergyType) => {
-    setSelected(value);
-    setOnboardingField('allergy_type', value);
+  const toggle = (item: string) => {
+    setSelected((prev) => {
+      const next = prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item];
+      setOnboardingField('emotional_goals', next);
+      return next;
+    });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setTimeout(() => {
-      track('onboarding_step_completed', { step_name: 'allergies' });
-      if (value === 'reaction') {
-        router.push('/(onboarding)/allergies-detail');
-      } else {
-        router.push('/(onboarding)/pain-validation');
-      }
-    }, 300);
-  }, []);
+  };
+
+  const handleContinue = () => {
+    track('onboarding_step_completed', { step_number: 16, step_name: 'Motivação Emocional', step_total: 28, emotional_goals: selected });
+    router.push('/(onboarding)/goal-validation');
+  };
 
   return (
     <LinearGradient
@@ -80,14 +77,14 @@ export default function Allergies() {
 
             <View style={{ marginTop: 16 }}>
               <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
-                <View style={{ height: 2, width: '86%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
+                <View style={{ height: 2, width: '74%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
               </View>
             </View>
           </View>
 
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
+            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 16 }}
             showsVerticalScrollIndicator={false}
           >
             {/* Label */}
@@ -99,7 +96,7 @@ export default function Allergies() {
               textTransform: 'uppercase',
               marginBottom: 8,
             }}>
-              Sua saúde
+              Sua motivação
             </Text>
 
             {/* Title */}
@@ -110,7 +107,7 @@ export default function Allergies() {
               lineHeight: 31,
               marginBottom: 8,
             }}>
-              Você tem alguma alergia ou sensibilidade a produtos de skincare?
+              O que vai mudar quando sua pele estiver no lugar?
             </Text>
 
             {/* Subtitle */}
@@ -120,18 +117,18 @@ export default function Allergies() {
               lineHeight: 20,
               marginBottom: 28,
             }}>
-              Isso garante que nenhum ativo problemático entre no seu protocolo.
+              Pode escolher mais de uma
             </Text>
 
-            {/* Options */}
+            {/* Vertical list */}
             <View style={{ gap: 10 }}>
-              {OPTIONS.map(({ label, value }) => {
-                const isSelected = selected === value;
+              {OPTIONS.map((option) => {
+                const isSelected = selected.includes(option);
                 return (
                   <TouchableOpacity
-                    key={value}
+                    key={option}
                     activeOpacity={0.8}
-                    onPress={() => handleSelect(value)}
+                    onPress={() => toggle(option)}
                     style={{
                       backgroundColor: Colors.white,
                       borderRadius: 100,
@@ -142,21 +139,15 @@ export default function Allergies() {
                       justifyContent: 'space-between',
                       borderWidth: 1.5,
                       borderColor: isSelected ? Colors.scanBtn : 'transparent',
-                      shadowColor: isSelected ? Colors.scanBtn : Colors.black,
+                      shadowColor: isSelected ? Colors.scanBtn : '#000',
                       shadowOffset: { width: 0, height: 2 },
                       shadowOpacity: isSelected ? 0.15 : 0.06,
                       shadowRadius: isSelected ? 12 : 8,
                       elevation: 2,
                     }}
                   >
-                    <Text style={{
-                      fontSize: 15,
-                      fontWeight: '500',
-                      color: Colors.tabActive,
-                      flex: 1,
-                      marginRight: 12,
-                    }}>
-                      {label}
+                    <Text style={{ fontSize: 15, fontWeight: '500', color: Colors.tabActive, flex: 1, marginRight: 12 }}>
+                      {option}
                     </Text>
                     {isSelected && (
                       <View style={{
@@ -175,12 +166,31 @@ export default function Allergies() {
                 );
               })}
             </View>
-
-            <Text style={{ fontSize: 11, color: HINT_COLOR, textAlign: 'center', marginTop: 12 }}>
-              Toque para selecionar e avançar
-            </Text>
-
           </ScrollView>
+
+          {/* CTA Button — fixed outside ScrollView */}
+          <View style={{ paddingHorizontal: 18, paddingBottom: 32, paddingTop: 8 }}>
+            <TouchableOpacity
+              onPress={handleContinue}
+              disabled={selected.length === 0}
+              activeOpacity={0.8}
+              style={{
+                backgroundColor: selected.length === 0 ? '#E5E7EB' : Colors.scanBtn,
+                borderRadius: 100,
+                paddingVertical: 16,
+                alignItems: 'center',
+                opacity: selected.length === 0 ? 0.6 : 1,
+              }}
+            >
+              <Text style={{
+                fontSize: 16,
+                fontWeight: '600',
+                color: selected.length === 0 ? Colors.gray : Colors.white,
+              }}>
+                Continuar
+              </Text>
+            </TouchableOpacity>
+          </View>
 
         </View>
       </SafeAreaView>

@@ -29,7 +29,7 @@ export default function Sunscreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => {
       track('onboarding_step_completed', { step_number: 9, step_name: 'Protetor Solar', step_total: 23 });
-      router.push('/(onboarding)/social-proof');
+      router.push('/(onboarding)/skincare-routine');
     }, 300);
   }, []);
 

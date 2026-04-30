@@ -190,6 +190,7 @@ export type OnboardingData = {
   skincare_routine_description?: string | null
   allergy_type?: 'none' | 'sensitive' | 'reaction' | null
   allergy_description?: string | null
+  emotional_goals?: string[] | null
 }
 
 type AppStore = {
@@ -235,6 +236,7 @@ const initialOnboarding: OnboardingData = {
   skincare_routine_description: null,
   allergy_type: null,
   allergy_description: null,
+  emotional_goals: null,
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -306,6 +308,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         sleep: onboarding.sleep,
         sunscreen: onboarding.sunscreen,
         birthday: onboarding.birthday,
+        emotional_goals: onboarding.emotional_goals ?? null,
+        food_analysis: onboarding.food_analysis ?? null,
+        commitment: onboarding.commitment ?? null,
       })
 
     if (userError) throw userError

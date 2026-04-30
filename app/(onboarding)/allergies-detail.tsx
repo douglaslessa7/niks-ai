@@ -19,7 +19,7 @@ export default function AllergiesDetail() {
 
   const handleContinue = () => {
     track('onboarding_step_completed', { step_name: 'allergies_detail' });
-    router.push('/(onboarding)/protocol-loading');
+    router.push('/(onboarding)/pain-validation');
   };
 
   return (

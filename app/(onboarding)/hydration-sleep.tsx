@@ -97,7 +97,7 @@ export default function HydrationSleep() {
 
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
+            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 16 }}
             showsVerticalScrollIndicator={false}
           >
             {/* Label */}
@@ -173,7 +173,10 @@ export default function HydrationSleep() {
               </ScrollView>
             </View>
 
-            {/* CTA Button */}
+          </ScrollView>
+
+          {/* CTA Button */}
+          <View style={{ paddingHorizontal: 18, paddingBottom: 32, paddingTop: 8 }}>
             <TouchableOpacity
               onPress={handleContinue}
               disabled={isDisabled}
@@ -190,7 +193,7 @@ export default function HydrationSleep() {
                 Continuar
               </Text>
             </TouchableOpacity>
-          </ScrollView>
+          </View>
 
         </View>
       </SafeAreaView>

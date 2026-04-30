@@ -80,10 +80,10 @@ export default function Notifications() {
         {/* Heading */}
         <View className="mt-10 mb-4">
           <Text className="text-[32px] font-bold text-[#1A1A1A] leading-tight tracking-tight mb-2">
-            Ative as notificações
+            Ative as notificações e acelere seus resultados
           </Text>
           <Text className="text-[#9CA3AF] text-[17px]">
-            Lembraremos você nos melhores momentos para cuidar da pele.
+            Quem ativa tem 3x mais chances de manter a rotina e atingir os objetivos
           </Text>
         </View>
 

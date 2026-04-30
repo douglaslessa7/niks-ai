@@ -358,7 +358,7 @@ export default function SocialProof() {
         <Animated.View style={btnStyle} className="pb-8">
           <CTAButton
             text="Continuar"
-            to="/(onboarding)/food-analysis"
+            to="/(onboarding)/sun-exposure"
             onPress={() =>
               track('onboarding_step_completed', {
                 step_number: 10,

@@ -43,7 +43,7 @@ export default function Frequency() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => {
       track('onboarding_step_completed', { step_number: 6, step_name: 'Frequência de Skincare', step_total: 23 });
-      router.push('/(onboarding)/sun-exposure');
+      router.push('/(onboarding)/social-proof');
     }, 300);
   }, []);
 

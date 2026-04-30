@@ -35,7 +35,7 @@ export default function Concerns() {
 
   const handleContinue = () => {
     track('onboarding_step_completed', { step_number: 2, step_name: 'Preocupações de Pele', step_total: 23 });
-    router.push('/(onboarding)/gender');
+    router.push('/(onboarding)/skin-type');
   };
 
   return (
@@ -78,7 +78,7 @@ export default function Concerns() {
 
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
+            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 16 }}
             showsVerticalScrollIndicator={false}
           >
             {/* Label */}
@@ -101,7 +101,7 @@ export default function Concerns() {
               lineHeight: 31,
               marginBottom: 8,
             }}>
-              Qual é sua principal preocupação?
+              O que mais te incomoda quando você se olha no espelho?
             </Text>
 
             {/* Subtitle */}
@@ -111,7 +111,7 @@ export default function Concerns() {
               lineHeight: 20,
               marginBottom: 28,
             }}>
-              Selecione uma ou mais opções.
+              Sem julgamento. Seja honesta.
             </Text>
 
             {/* 2-column grid */}
@@ -163,7 +163,10 @@ export default function Concerns() {
               })}
             </View>
 
-            {/* CTA Button */}
+          </ScrollView>
+
+          {/* CTA Button */}
+          <View style={{ paddingHorizontal: 18, paddingBottom: 32, paddingTop: 8 }}>
             <TouchableOpacity
               onPress={handleContinue}
               disabled={selected.length === 0}
@@ -184,7 +187,7 @@ export default function Concerns() {
                 Continuar
               </Text>
             </TouchableOpacity>
-          </ScrollView>
+          </View>
 
         </View>
       </SafeAreaView>

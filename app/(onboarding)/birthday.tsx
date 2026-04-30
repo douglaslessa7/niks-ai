@@ -37,7 +37,7 @@ export default function Birthday() {
 
   const handleContinue = () => {
     track('onboarding_step_completed', { step_number: 4, step_name: 'Data de Nascimento', step_total: 23 });
-    router.push('/(onboarding)/skin-type');
+    router.push('/(onboarding)/concerns');
   };
 
   return (
@@ -109,7 +109,7 @@ export default function Birthday() {
               color: Colors.gray,
               lineHeight: 20,
             }}>
-              Sua idade será usada para calibrar seu plano.
+              A idade muda tudo: sua pele aos 20 não precisa do mesmo que aos 35
             </Text>
 
             <View style={{ flex: 1 }} />
