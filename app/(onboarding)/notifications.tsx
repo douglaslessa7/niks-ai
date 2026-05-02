@@ -14,7 +14,7 @@ export default function Notifications() {
 
   const navigateToApp = async () => {
     if (__DEV__) {
-      router.replace('/(app)/home');
+      router.replace('/(onboarding)/nome');
       return;
     }
 
@@ -26,7 +26,7 @@ export default function Notifications() {
       const info = await Promise.race([infoPromise, timeoutPromise]);
 
       if (info && isSubscribed(info)) {
-        router.replace('/(app)/home');
+        router.replace('/(onboarding)/nome');
       } else {
         router.replace('/(onboarding)/paywall-soft');
       }

@@ -16,12 +16,12 @@ export default function PaywallSoft() {
     try {
       const info = await getCustomerInfo();
       if (isSubscribed(info)) {
-        router.replace('/(app)/home');
+        router.replace('/(onboarding)/nome');
       } else {
-        router.replace('/(app)/home'); // guard de (app)/_layout.tsx barra se não assinou
+        router.replace('/(onboarding)/nome'); // guard de (app)/_layout.tsx barra se não assinou
       }
     } catch {
-      router.replace('/(app)/home');
+      router.replace('/(onboarding)/nome');
     }
   };
 
@@ -39,7 +39,7 @@ export default function PaywallSoft() {
     },
     onError: async () => {
       // SDK falhou — deixa o guard de (app)/_layout.tsx decidir
-      router.replace('/(app)/home');
+      router.replace('/(onboarding)/nome');
     },
   });
 

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>NIKS AI — Home</title>
+<link rel="stylesheet" href="niks-tokens.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500;1,9..144,600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  html,body { margin:0; padding:0; background:#f0eee9; font-family: 'Inter', -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="niks-primitives.jsx"></script>
+<script type="text/babel" src="niks-protocolo-shared.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="home-screen.jsx"></script>
+<script type="text/babel" src="home-horizonte.jsx"></script>
+<script type="text/babel" src="home-horizonte-reformulado.jsx"></script>
+<script type="text/babel" src="home-horizonte-immersion.jsx"></script>
+<script type="text/babel" src="home-horizonte-serena.jsx"></script>
+<script type="text/babel" src="home-diario.jsx"></script>
+
+<script type="text/babel">
+
+// ───────────────────────────────────────────────────────────────
+// Tweakable defaults — persisted via EDITMODE markers
+// ───────────────────────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "displayFont": "playfair",
+  "accent": "#FB7B6B",
+  "mode": "am"
+}/*EDITMODE-END*/;
+
+const FONT_STACKS = {
+  cormorant: "'Cormorant Garamond', 'Times New Roman', serif",
+  fraunces:  "'Fraunces', 'Playfair Display', serif",
+  playfair:  "'Playfair Display', 'Times New Roman', serif",
+  dmserif:   "'DM Serif Display', 'Playfair Display', serif",
+};
+
+const FONT_OPTIONS = [
+  { key: 'cormorant', label: 'Cormorant' },
+  { key: 'fraunces',  label: 'Fraunces'  },
+  { key: 'playfair',  label: 'Playfair'  },
+  { key: 'dmserif',   label: 'DM Serif'  },
+];
+
+const COLOR_OPTIONS = [
+  { key: '#FB7B6B', label: 'coral' },
+  { key: '#E53E3E', label: 'vermelho' },
+  { key: '#C0674F', label: 'terracota' },
+  { key: '#7B2D3E', label: 'vinho' },
+  { key: '#1D3A44', label: 'azul-petróleo' },
+  { key: '#C9A84C', label: 'dourado' },
+];
+
+// ───────────────────────────────────────────────────────────────
+// Device frame
+// ───────────────────────────────────────────────────────────────
+function DeviceFrame({ children, dark = false }) {
+  const W = 393, H = 852;
+  return (
+    <div style={{
+      width: W, height: H, borderRadius: 44,
+      position: 'relative', overflow: 'hidden',
+      background: dark ? '#000' : '#fff',
+      boxShadow: '0 40px 80px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.08)',
+    }}>
+      <div style={{
+        position: 'absolute', top: 11, left: '50%', transform: 'translateX(-50%)',
+        width: 120, height: 34, borderRadius: 22, background: '#000', zIndex: 70,
+      }}/>
+      {children}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 8, zIndex: 80,
+        display: 'flex', justifyContent: 'center', pointerEvents: 'none',
+      }}>
+        <div style={{
+          width: 134, height: 5, borderRadius: 100,
+          background: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.25)',
+        }}/>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
+// TWEAKS PANEL
+// ───────────────────────────────────────────────────────────────
+function TweaksPanel({ tweaks, setTweaks, visible }) {
+  if (!visible) return null;
+
+  const patch = (k, v) => {
+    setTweaks((t) => ({ ...t, [k]: v }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [k]: v } }, '*');
+  };
+
+  const panelStyle = {
+    position: 'fixed', right: 20, bottom: 20, zIndex: 10000,
+    width: 288,
+    background: 'rgba(255,255,255,0.96)',
+    backdropFilter: 'blur(16px) saturate(180%)',
+    WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+    borderRadius: 18,
+    border: '0.5px solid rgba(43,39,36,0.12)',
+    boxShadow: '0 18px 48px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.06)',
+    padding: '18px 18px 16px',
+    fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
+    color: '#2B2724',
+  };
+
+  const sectionLabelStyle = {
+    fontSize: 9, fontWeight: 600, letterSpacing: 2,
+    color: 'rgba(43,39,36,0.5)', textTransform: 'uppercase',
+    marginBottom: 10,
+  };
+
+  const pillBtn = (active) => ({
+    padding: '7px 12px',
+    borderRadius: 100,
+    border: `0.5px solid ${active ? tweaks.accent : 'rgba(43,39,36,0.14)'}`,
+    background: active ? tweaks.accent : 'transparent',
+    color: active ? '#fff' : '#2B2724',
+    fontSize: 12, fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 180ms ease',
+    whiteSpace: 'nowrap',
+  });
+
+  return (
+    <div style={panelStyle}>
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 16,
+      }}>
+        <div style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: 2.4,
+          color: tweaks.accent, textTransform: 'uppercase',
+        }}>Tweaks</div>
+        <div style={{ fontSize: 11, color: 'rgba(43,39,36,0.5)' }}>
+          ajuste rápido
+        </div>
+      </div>
+
+      {/* 1. FONT */}
+      <div style={{ marginBottom: 18 }}>
+        <div style={sectionLabelStyle}>Fonte display (serif)</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {FONT_OPTIONS.map(f => {
+            const active = tweaks.displayFont === f.key;
+            return (
+              <button key={f.key}
+                onClick={() => patch('displayFont', f.key)}
+                style={{
+                  ...pillBtn(active),
+                  fontFamily: FONT_STACKS[f.key],
+                  fontStyle: 'italic',
+                  fontSize: 14, padding: '6px 14px',
+                }}>
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 2. ACCENT */}
+      <div style={{ marginBottom: 18 }}>
+        <div style={sectionLabelStyle}>Cor de destaque</div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {COLOR_OPTIONS.map(c => {
+            const active = tweaks.accent === c.key;
+            return (
+              <button key={c.key}
+                title={c.label}
+                onClick={() => patch('accent', c.key)}
+                style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: c.key,
+                  border: active ? `2px solid #fff` : `0.5px solid rgba(0,0,0,0.15)`,
+                  boxShadow: active
+                    ? `0 0 0 2px ${c.key}, 0 2px 8px ${c.key}66`
+                    : '0 1px 3px rgba(0,0,0,0.08)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 180ms ease',
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. MODE */}
+      <div>
+        <div style={sectionLabelStyle}>Modo</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[
+            { key: 'am',   label: '☀️ Manhã' },
+            { key: 'dusk', label: '🌅 Entardecer' },
+            { key: 'pm',   label: '🌙 Noite' },
+          ].map(m => {
+            const active = tweaks.mode === m.key;
+            return (
+              <button key={m.key}
+                onClick={() => patch('mode', m.key)}
+                style={{
+                  ...pillBtn(active),
+                  flex: 1, padding: '9px 8px', fontSize: 11.5,
+                }}>
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────
+// App
+// ───────────────────────────────────────────────────────────────
+function App() {
+  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
+  const [tweaksVisible, setTweaksVisible] = React.useState(false);
+
+  // Edit-mode protocol — register listener, then announce availability
+  React.useEffect(() => {
+    const handler = (e) => {
+      const d = e.data;
+      if (!d || typeof d !== 'object') return;
+      if (d.type === '__activate_edit_mode')   setTweaksVisible(true);
+      if (d.type === '__deactivate_edit_mode') setTweaksVisible(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const displayFont = FONT_STACKS[tweaks.displayFont] || FONT_STACKS.playfair;
+  const accent = tweaks.accent;
+  const modeOverride = tweaks.mode; // 'am' | 'pm'
+
+  // Forward tweaks to every home variant so all artboards update in sync.
+  const homeProps = { displayFont, accent, modeOverride };
+
+  return (
+    <>
+      <DesignCanvas>
+        {/* ════════ Horizonte Reformulado — DESIGN UNIFICADO (4 estados) ════════
+             Tela única que muda dinamicamente. Hero = constrained (definitivo).
+             Menu/FAB = integrated (do "Reformulado" original).
+             Os 4 estados cruzam ritual (em andamento ↔ concluído) com refeições
+             (com refeições do dia ↔ vazio). Esta é a referência completa para
+             implementação. */}
+        <DCSection id="horizonte-reformulado" title="Horizonte · Reformulado — referência de implementação" subtitle="Tela única em 4 estados. Hero, menu e FAB são idênticos em todos. O que muda: card de skincare (próximo passo ↔ concluído) e seção de refeições (com refeições ↔ vazio).">
+          <DCArtboard id="hr-state-1" label="Estado 1 — Rotina em andamento + refeições do dia" width={393} height={852}>
+            <DeviceFrame dark={modeOverride === 'pm'}>
+              <HomeHorizonteReformulado {...homeProps} mealsState="filled" ritualComplete={false} fabVariant="integrated" heroVariant="editorial"/>
+            </DeviceFrame>
+          </DCArtboard>
+          <DCArtboard id="hr-state-2" label="Estado 2 — Rotina em andamento + sem refeições" width={393} height={852}>
+            <DeviceFrame dark={modeOverride === 'pm'}>
+              <HomeHorizonteReformulado {...homeProps} mealsState="empty" ritualComplete={false} fabVariant="integrated" heroVariant="editorial"/>
+            </DeviceFrame>
+          </DCArtboard>
+          <DCArtboard id="hr-state-3" label="Estado 3 — Rotina concluída + refeições do dia" width={393} height={852}>
+            <DeviceFrame dark={modeOverride === 'pm'}>
+              <HomeHorizonteReformulado {...homeProps} mealsState="filled" ritualComplete={true} fabVariant="integrated" heroVariant="editorial"/>
+            </DeviceFrame>
+          </DCArtboard>
+          <DCArtboard id="hr-state-4" label="Estado 4 — Rotina concluída + sem refeições" width={393} height={852}>
+            <DeviceFrame dark={modeOverride === 'pm'}>
+              <HomeHorizonteReformulado {...homeProps} mealsState="empty" ritualComplete={true} fabVariant="integrated" heroVariant="editorial"/>
+            </DeviceFrame>
+          </DCArtboard>
+        </DCSection>
+
+      </DesignCanvas>
+
+      <TweaksPanel tweaks={tweaks} setTweaks={setTweaks} visible={tweaksVisible}/>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

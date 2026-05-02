@@ -233,18 +233,6 @@ end_date timestamptz,                 -- expiration_at_ms / 1000
 trial_end_date timestamptz,           -- trial_end_at_ms / 1000
 updated_at timestamptz DEFAULT now()
 ```
-Migration aplicada manualmente via SQL Editor do Supabase Dashboard:
-```sql
-ALTER TABLE subscriptions
-  ADD COLUMN IF NOT EXISTS rc_original_app_user_id text,
-  ADD COLUMN IF NOT EXISTS trial_end_date timestamptz,
-  ADD COLUMN IF NOT EXISTS end_date timestamptz,
-  ADD COLUMN IF NOT EXISTS start_date timestamptz,
-  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
-CREATE INDEX IF NOT EXISTS subscriptions_user_id_idx ON subscriptions(user_id);
-CREATE INDEX IF NOT EXISTS subscriptions_status_idx ON subscriptions(status);
-```
-
 **Schema da tabela `protocolos`:**
 ```sql
 id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -285,29 +273,16 @@ streak_days int4 DEFAULT 0,         -- dias consecutivos com AMBAS as rotinas (m
 last_protocol_completed_at timestamptz  -- última vez que o streak foi incrementado (evita duplo incremento no mesmo dia)
 ```
 
-Migration aplicada:
-```sql
-ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days int4 DEFAULT 0;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_protocol_completed_at timestamptz;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS pregnancy_status text;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS skincare_routine_type text;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS skincare_routine_description text;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS allergy_type text;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS allergy_description text;
-```
-
 **Colunas extras na tabela `skin_scans`:**
 ```sql
 full_result jsonb  -- objeto ScanResult completo retornado pela analyze-skin
 ```
-Migration aplicada: `ALTER TABLE skin_scans ADD COLUMN IF NOT EXISTS full_result jsonb;` 
 
 **Colunas extras na tabela `food_scans`:**
 ```sql
 meal_name text, meal_score int4, meal_label text, meal_summary text, image_url text,
 full_result jsonb  -- objeto FoodAnalysisResult completo retornado pela analyze-food
 ```
-Migration aplicada: `ALTER TABLE food_scans ADD COLUMN IF NOT EXISTS full_result jsonb;`
 
 **Storage bucket:** `scans` — **PRIVADO** — com policies de upload/leitura por `user_id`.
 
@@ -370,7 +345,6 @@ Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → 
   - Skip nonce checks ativado no Supabase (obrigatório para iOS)
 - **Apple Sign In:** ✅ funcionando — `signInWithApple` em `hooks/useAuth.ts` (com nonce via `expo-crypto`); `signup.tsx` e `login.tsx` conectados
   - Team ID: `FZRSWCG9BR` | Key ID: `CM6P7WPAP2`
-  - ⚠️ **JWT secret key expira em setembro/2026** — regenerar com o script do README e atualizar no Supabase Dashboard (Authentication → Providers → Apple → Secret Key)
 - **Exclusão de conta:** `deleteAccount` em `hooks/useAuth.ts` — chama `supabase.rpc('delete_user')` + signOut do Google + `supabase.auth.signOut()`. Requer a SQL function `delete_user()` deployada no Supabase.
 - **E-mail + Senha:** ✅ funcionando — `signInWithEmail` e `signUpWithEmail` em `hooks/useAuth.ts`
   - Confirmação de e-mail: infraestrutura implementada e pronta. Atualmente **desativada** no Supabase Dashboard — ativar quando aprovado na App Store.
@@ -513,14 +487,15 @@ camera.tsx → setSkinImage(base64, uri) → navega → loading.tsx lê do store
 
 Exemplo para `generate-protocol` (`fetch` direto com anon key):
 ```typescript
+const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 const response = await fetch(
   'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/generate-protocol',
   {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
-      'apikey': `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
+      'Authorization': `Bearer ${ANON_KEY}`,
+      'apikey': ANON_KEY,
     },
     body: JSON.stringify({ scanResult, onboardingData }),
   }
@@ -558,7 +533,7 @@ A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 
 **Erro em `app/(scan)/loading.tsx`:** equivalente — erros após 2 retries exibem estado inline (sem `Alert`) com botão que chama `router.back()`, levando o usuário de volta à câmera para tirar uma nova foto.
 
-### 8. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
+### 7. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
 
 O bucket `scans` é privado. `getPublicUrl()` retorna uma URL que responde 403. **Sempre usar `createSignedUrl(path, 31536000)`** (TTL de 1 ano) para gerar a URL que vai para `foto_url` no banco.
 
@@ -571,9 +546,7 @@ Isso se aplica em: `store/onboarding.ts` (`uploadScanPhoto`), `app/(scan)/loadin
 
 ---
 
----
-
-### 10. Refs obrigatórias em callbacks assíncronas de animação (`protocolo.tsx`)
+### 8. Refs obrigatórias em callbacks assíncronas de animação (`protocolo.tsx`)
 
 Qualquer valor de state (`useState`) capturado dentro de callbacks assíncronas — especialmente `Animated.timing().start(callback)` e `setTimeout` — é **estale**: reflete o valor do render em que a função foi criada, não o valor atual.
 
@@ -589,7 +562,7 @@ Refs atualmente necessárias em `protocolo.tsx`: `checkedItemsRef`, `stepsRef`, 
 
 ---
 
-### 15. Numeral do orb da Cerimônia — `SkiaText` dentro do Canvas, não React Native `Text`
+### 9. Numeral do orb da Cerimônia — `SkiaText` dentro do Canvas, não React Native `Text`
 
 O numeral (`01`–`0N`) exibido dentro do orb na overlay da Cerimônia é renderizado com `SkiaText` + `useFont` do `@shopify/react-native-skia`, **não** como `<Text>` nativo do React Native.
 
@@ -616,7 +589,7 @@ const skiaCapH = Math.abs(cerimSkiaFont?.getMetrics().capHeight ?? 84 * 0.70);
 
 ---
 
-### 16. Dias da semana em steps do protocolo — parsing client-side do `ingredient`
+### 10. Dias da semana em steps do protocolo — parsing client-side do `ingredient`
 
 O backend (`generate-protocol`) **não retorna um campo `schedule`** nos steps. Quando um ativo deve ser usado apenas em dias específicos, a Edge Function embute essa informação como sufixo no campo `ingredient`:
 
@@ -650,6 +623,33 @@ function applySchedule(step: any) {
 
 ---
 
+### 11. Debug de modo dia/noite em `home.tsx` — 5 toques no masthead "NIKS"
+
+A home tem um modo de debug que alterna entre AM (manhã) e PM (noite) para facilitar testes visuais durante o desenvolvimento. Ele é **completamente invisível para o usuário final**.
+
+**Como ativar:** tocar 5 vezes seguidas no texto "NIKS" do masthead (canto superior esquerdo). Cada sequência de 5 toques dentro de 2 segundos avança o ciclo: `auto → am → pm → auto`.
+
+**Implementação em `app/(app)/home.tsx`:**
+- O texto "NIKS" é envolto em `<TouchableOpacity activeOpacity={1}>` — sem feedback visual
+- Um `useRef` conta os toques; um `setTimeout` de 2s reseta o contador se o intervalo entre toques for longo
+- O estado `debugMode: 'am' | 'pm' | null` permanece em `Home` e substitui `new Date().getHours()` no cálculo do `ctx`
+
+**Por que não usar `__DEV__`:** o modo debug foi mantido em produção intencionalmente para permitir que o time veja os dois estados da tela (fundo escuro/estrelas vs. fundo branco) num dispositivo físico sem precisar de build separado.
+
+> ⚠️ **Não adicionar botão visível.** O trigger de 5 toques é a interface deliberada. Se parecer que "sumiu o botão de debug", é porque foi substituído por este mecanismo.
+
+---
+
+### 12. React Native iOS — `lineHeight` menor que `fontSize` corta glifos
+
+No iOS, se `lineHeight < fontSize` o runtime **clippa os glifos ao line box** — o topo de letras altas (ex: "O", "A") fica cortado. No CSS/web isso não acontece: o texto simplesmente vaza além do line box sem ser clipado.
+
+**Regra:** em React Native iOS, `lineHeight` deve ser **≥ `fontSize`** em qualquer texto.
+
+Exemplo concreto em `HeroEditorial` (home.tsx): o design de referência web usa `lineHeight: 0.95` (= 51.3px para 54px de fonte). No app, usar `lineHeight: 54` (igual ao `fontSize`). Para compensar o espaço extra no layout, ajustar o `marginTop` do elemento seguinte subtraindo a diferença (`18 - (54 - 51.3) ≈ 13`).
+
+---
+
 ### 13. Contexto de scan: app vs onboarding (`scanSource`)
 
 O scan facial é iniciado de dois lugares distintos e segue fluxos diferentes:
@@ -670,7 +670,7 @@ O scan facial é iniciado de dois lugares distintos e segue fluxos diferentes:
 
 ---
 
-### 9. Consentimento de uso de IA — uma única vez por instalação (LGPD)
+### 14. Consentimento de uso de IA — uma única vez por instalação (LGPD)
 
 Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentimento informando que a foto é processada pelo Google Gemini. Após aceite, o consentimento é salvo em `AsyncStorage` com a chave `"ai_consent_accepted"` (valor `"true"`) e o modal nunca mais aparece.
 
@@ -688,26 +688,32 @@ Antes de qualquer scan (facial ou alimentar), o app exibe um modal de consentime
 
 ---
 
-### 11. Guard de assinatura — Superwall + RevenueCat
+### 15. Guard de assinatura — Superwall + RevenueCat
 
 O paywall é gerenciado pelo **Superwall** (`expo-superwall`). O `<SuperwallProvider>` está em `app/_layout.tsx` (raiz), logo abaixo do `<MixpanelProvider>` — acima de `GestureHandlerRootView` e `SafeAreaProvider`.
 
 **API Key iOS:** `pk_4iUsZwW_-ME9WdK3IcXYp`  
 **Placement identifier:** `paywall_onboarding`
 
-O acesso ao app é verificado em 5 pontos, em ordem. Em todos eles, o RevenueCat (`getCustomerInfo` + `isSubscribed`) determina se o usuário tem acesso:
+O acesso ao app é verificado em 5 pontos de assinatura + 1 guard de nome, em ordem. Os guards de assinatura usam RevenueCat (`getCustomerInfo` + `isSubscribed`):
 
 - `app/index.tsx` — ao abrir o app com sessão ativa → não-assinante: `registerPlacement` direto
 - `app/(onboarding)/_layout.tsx` — ao entrar no onboarding com sessão ativa → assinante já vai direto para home
 - `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login → não-assinante: `registerPlacement` direto
 - `app/(onboarding)/protocol-loading.tsx` — ao concluir geração do protocolo → aciona `registerPlacement` antes de navegar para `notifications`
-- **`app/(app)/_layout.tsx`** — guard definitivo: não-assinante aciona `registerPlacement`; assinante: `setReady(true)` → tabs renderizam
+- **`app/(app)/_layout.tsx`** — guard definitivo de assinatura: não-assinante aciona `registerPlacement`; assinante: `setReady(true)` → tabs renderizam
 
-> ⚠️ **Bypass para desenvolvimento (`__DEV__`):** Todos os pontos acima têm um bypass condicional que é ativado automaticamente no simulador/Metro. Além disso, `app/(onboarding)/notifications.tsx` também tem bypass em `navigateToApp()` — vai direto para `/(app)/home` sem chamar RevenueCat (sem esse bypass, a tela de notificações esperava 8s pelo timeout do RevenueCat antes de avançar para o paywall):
+**Guard de nome em `app/(app)/_layout.tsx` (executa antes do guard de assinatura):** ao entrar no app com sessão ativa, o layout consulta `users.nome`. Se estiver vazio, redireciona para `/(onboarding)/nome` **independentemente do status de assinatura**. Isso cobre usuários existentes que nunca definiram nome. Só depois dessa verificação o fluxo de assinatura é avaliado.
+
+**Tela `app/(onboarding)/nome.tsx`:** pergunta "Como você quer ser chamado?" com campo único de nome. Sem botão de voltar e sem opção de pular — a única saída é inserir um nome e apertar "Continuar". Salva em `users.nome` e navega para `/(app)/home`. Alcançada por dois caminhos:
+1. Novos usuários: `notifications.tsx` → `paywall-soft.tsx` → `nome.tsx` → `/(app)/home`
+2. Usuários existentes sem nome: `(app)/_layout.tsx` redireciona diretamente para `nome.tsx`
+
+> ⚠️ **Bypass para desenvolvimento (`__DEV__`):** Todos os pontos acima têm um bypass condicional que é ativado automaticamente no simulador/Metro. Além disso, `app/(onboarding)/notifications.tsx` também tem bypass em `navigateToApp()` — vai direto para `/(onboarding)/nome` (não para `/(app)/home`) sem chamar RevenueCat:
 > ```typescript
 > if (__DEV__) {
 >   // pula RevenueCat e Superwall — vai direto para o destino
->   setReady(true); // ou router.replace('/(app)/home')
+>   setReady(true); // ou router.replace('/(onboarding)/nome')
 >   return;
 > }
 > ```
@@ -746,7 +752,7 @@ Arquivo com UI customizada de paywall (planos mensal/anual, trial de 3 dias, int
 
 ---
 
-### 12. Analytics — Mixpanel
+### 16. Analytics — Mixpanel
 
 **SDK:** `mixpanel-react-native` com `useNative=true` (usa o MixpanelSDK nativo iOS — obrigatório para build Xcode).
 
@@ -819,63 +825,6 @@ onPress={() => track('onboarding_step_completed', { step_number: N, step_name: '
 
 > ⚠️ `useMixpanel()` só funciona em componentes React descendentes do `<MixpanelProvider>`. Usar o hook por padrão. **Exceção:** `lib/revenuecat.ts` importa `mixpanel` diretamente do `mixpanelClient` porque não é um componente React — qualquer outra função utilitária fora do contexto React deve seguir o mesmo padrão.
 
----
-
-## STATUS DO PROJETO
-
-### ✅ CONCLUÍDO
-
-**Setup completo:** Expo, NativeWind v4, Expo Router, todas as dependências, app.json, variáveis de ambiente.
-
-**Componentes base:**
-- `components/ui/CTAButton.tsx`
-- `components/ui/ProgressBar.tsx`
-- `components/ui/BackButton.tsx`
-- `components/ui/OptionCard.tsx`
-- `components/ui/Pill.tsx`
-- `components/ui/IOSWheelPicker.tsx`
-- `components/layouts/QuizLayout.tsx`
-- `components/scan/ScanModal.tsx` — intercepta ambos os cards com `useAIConsent` antes de navegar; sem cooldown (scan de rosto sempre disponível)
-- `components/ui/AIConsentModal.tsx` — modal de consentimento de uso de IA (LGPD); bottom sheet animado com `Animated.spring`; backdrop não fecha o modal; link inline para Política de Privacidade
-- `components/ui/NightSky.tsx` — céu noturno animado: 119 estrelas em 3 camadas (FAR/MID/NEAR) com twinkle assimétrico e deriva via Reanimated v4; nebulosas via Skia `Canvas`+`Oval`+`RadialGradient` (cor→transparente em 65%)+`BlurMask` com canvas padded para blur não clipar nas bordas; 3 estrelas cadentes com `LinearGradient`; renderizado no modo noite da tela Protocolo
-
-
-**Telas — Onboarding (24 telas):**
-`concerns` → `gender` → `pregnancy`\* → `birthday` → `skin-type` → `frequency` → `sun-exposure` → `hydration-sleep` → `sunscreen` → `social-proof` → `food-analysis` → `goal` → `trust` → `plan-preview` → `signup` → `skincare-routine` → `skincare-routine-detail`\* → `allergies` → `allergies-detail`\* → `protocol-loading` → `paywall-soft` → `notifications`
-
-> \* Telas condicionais: `pregnancy` só para gênero Feminino; `skincare-routine-detail` só para `complement`/`prescribed`; `allergies-detail` só para `reaction`.
-
-> ⚠️ `final-loading.tsx` existe no projeto mas está **fora do fluxo** — `goal.tsx` navega diretamente para `trust`. A tela não faz nenhum processamento real (era animação pura de 3.8s). Não remover o arquivo; apenas não está na rota ativa.
-
-> ⚠️ `paywall-detailed.tsx` existe no projeto mas está **fora do fluxo** — é dead code do fluxo anterior ao Superwall. Nenhuma tela navega para ela. Não remover; o arquivo contém a lógica de compra RevenueCat direta caso o Superwall seja retirado no futuro.
-
-**Tela de Login (acesso direto da Welcome):**
-`login` — standalone, acessada pelo botão "Entrar" na Welcome screen. Mesmo padrão visual do `signup.tsx`: `LinearGradient` rosa→branco, botão voltar circular, campos com borda `Colors.scanBtn` ao focar, botões pill. Sem barra de progresso (não é etapa do onboarding).
-
-**Telas — Scan flow (7 telas):**
-`scan-prep` → `camera` → `loading` → `rate-us` → `results` → `food-scan-intro` → `food-camera` → `food-report`
-
-**`food-report.tsx` — modo duplo:**
-- **Nova análise** (`selectedFoodResult === null`): chama `analyze-food`, salva resultado em `food_scans` (incluindo `full_result` jsonb + foto no Storage), exibe resultado
-- **Visualização salva** (`selectedFoodResult !== null`): exibe `full_result` do store instantaneamente, sem chamada à IA; botão "Voltar para tela inicial" (coral, ArrowLeft) via `router.replace`
-
-**Telas — App principal (8 arquivos):**
-`(app)/_layout.tsx` (tab bar sem FAB), `home.tsx`, `skin-result.tsx` (resultado da análise facial in-app — exibe o schema clínico completo: acne, barreira cutânea, pigmentação, textura/poros, oleosidade, envelhecimento, área periocular, fotótipo Fitzpatrick, condições secundárias, prioridade clínica e contraindicações; todos os campos novos são opcionais para compatibilidade com scans antigos), `protocolo.tsx`, `analise.tsx`, `evolucao.tsx` (oculta), `perfil.tsx`, `set-name.tsx` (definir nome do usuário)
-
-**Integrações:**
-- `lib/supabase.ts` ✅
-- `hooks/useAuth.ts` ✅
-- `store/onboarding.ts` ✅
-- Supabase Auth (Google Sign In) ✅
-- Supabase Auth (E-mail + Senha) ✅
-- Banco de dados + RLS + trigger ✅
-- Edge Functions (analyze-skin, analyze-food, generate-protocol, send-notifications) ✅
-- `app/(scan)/food-camera.tsx` ✅
-- `app/(onboarding)/protocol-loading.tsx` ✅ — gera protocolo + salva em `protocolos`
-- `(app)/protocolo.tsx` ✅ — carrega do cache/Supabase antes de regenerar
-- Push Notifications ✅ — `lib/notifications.ts` + `notifications.tsx` + Edge Function `send-notifications` + 3 jobs `pg_cron`
-- RevenueCat ✅ — `lib/revenuecat.ts` + `hooks/useSubscription.ts`; entitlement `premium`; produtos `br.com.niksai.app.mensal.notrial` e `br.com.niksai.app.anual.notrial`; offering `default` configurado no Dashboard
-
 **⚠️ GOTCHA — In-App Purchase Capability:** Sem a capability ativada no Xcode, `getOfferings()` falha silenciosamente em builds de produção (`.catch` engole o erro → `pkg = null` → alerta "Produto não disponível"). No simulador não acontece. **Localização:** Xcode → Target NIKSAI → Signing & Capabilities → `+ Capability` → In-App Purchase
 
 ---
@@ -898,37 +847,6 @@ Welcome
 Fluxo de comida (dentro do app principal):
   analise.tsx → food-camera (setFoodImage) → food-report (analyze-food) → protocolo (generate-protocol)
 ```
-
-### Valores de progresso do onboarding (ProgressBar)
-
-O scan flow é inserido entre `goal` e `trust` — `goal` é respondido **antes** do scan.
-
-| Tela | Progress | Observação |
-|---|---|---|
-| concerns | 8% | |
-| gender | 16% | |
-| pregnancy | 20% | Condicional — só exibida se gênero = Feminino |
-| birthday | 24% | |
-| skin-type | 32% | |
-| frequency | 36% | |
-| sun-exposure | 40% | |
-| hydration-sleep | 44% | |
-| sunscreen | 52% | |
-| social-proof | 56% | |
-| food-analysis | 60% | |
-| ~~commitment~~ | ~~64%~~ | ⚠️ dead code — `food-analysis` navega direto para `goal` |
-| goal | 80% | ⚠️ valor deve ser ajustado para ~68% (antes do scan); navega para `scan-prep` |
-| **→ SCAN FLOW ENTRA AQUI** | — | scan-prep → camera → loading → rate-us → results |
-| trust | 88% | |
-| plan-preview | 92% | |
-| signup | 96% | |
-| skincare-routine | 88% | Após signup — coleta rotina atual de skincare |
-| skincare-routine-detail | 90% | Condicional — só se `skincare_routine_type` = `complement` ou `prescribed` |
-| allergies | 92% | |
-| allergies-detail | 94% | Condicional — só se `allergy_type` = `reaction` |
-| protocol-loading | sem progress bar | gera e salva protocolo no Supabase |
-| paywall-soft | sem progress bar | entrega controle ao Superwall SDK — sem UI própria |
-| notifications | sem progress bar | |
 
 ---
 
@@ -968,8 +886,8 @@ niks-ai/
 │   │   ├── paywall-detailed.tsx   ⚠️ dead code — UI customizada do fluxo pré-Superwall, fora da rota ativa
 │   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase
 │   ├── (app)/
-│   │   ├── _layout.tsx            ✅ Tab bar: scanear/protocolo/perfil (sem FAB, sem evolução)
-│   │   ├── home.tsx               ✅ Novo design: Hoje + Scanear + Skin Card; "Ver resultado" → skin-result
+│   │   ├── _layout.tsx            ✅ Tab bar: início/rotina/perfil — tab bar oculta em /home (home tem barra própria)
+│   │   ├── home.tsx               ✅ Design Horizonte Reformulado: hero editorial, contexto AM/PM/noite, ritual card, scans recentes, refeições, FAB coral
 │   │   ├── skin-result.tsx        ✅ Tela de resultado da análise facial (in-app, métricas reais)
 │   │   ├── protocolo.tsx          ✅
 │   │   ├── analise.tsx            ✅
@@ -1000,13 +918,13 @@ niks-ai/
 │   └── scan/
 │       └── ScanModal.tsx          ✅
 ├── constants/colors.ts            ✅
-├── constants/protocols.ts         ✅ templates base por tipo de pele (normal/seca/oleosa/mista) — IA ajusta
+├── constants/protocols.ts         ⚠️ legado — `baseProtocol` é enviado no fallback de `protocolo.tsx` mas ignorado pela Edge Function `generate-protocol`
 ├── store/onboarding.ts            ✅
 ├── lib/supabase.ts                ✅
 ├── lib/notifications.ts           ✅ requestPushPermission() + savePushToken() — requer Apple Developer Program para token real
 ├── hooks/useAuth.ts               ✅
 ├── hooks/useAIConsent.ts          ✅ requestConsent(), handleAccept/Decline — AsyncStorage key: "ai_consent_accepted"
-├── assets/fonts/                  ✅ Playfair Display (variável, `[wght].ttf` + Italic) e DM Serif Display — registradas em `app.json` `"fonts"[]` para bundling + carregadas via `useFonts` em `protocolo.tsx`
+├── assets/fonts/                  ✅ Playfair Display (variável, `[wght].ttf` + Italic) e DM Serif Display — registradas em `app.json` `"fonts"[]` para bundling + carregadas via `useFonts` em `protocolo.tsx` e `home.tsx`. **A chave passada ao `useFonts` (ex: `'PlayfairDisplay-Italic'`, `'PlayfairDisplay-Regular'`) é o `fontFamily` correto nos styles** — não usar a convenção expo-google-fonts (`PlayfairDisplay_400Regular_Italic`), que não funciona com fontes locais
 ├── assets/trust-hands.png         ⚠️ não usado — trust.tsx usa o componente SVG DoubleHeart inline (substituiu esta imagem)
 ├── lib/revenuecat.ts              ✅ initRevenueCat, getPackages, purchasePackage, restorePurchases, isSubscribed
 ├── lib/storeReview.ts             ✅ requestAppReview() — popup nativo via expo-store-review com fallback para App Store (id6760590018)
@@ -1050,22 +968,40 @@ react-native-reanimated
 
 ---
 
-## DESIGN SYSTEM — HOME SCREEN (Sessão 6)
+## DESIGN SYSTEM — HOME SCREEN (Sessão 22)
 
 ### Tela Home (`app/(app)/home.tsx`)
-Redesenhada com base no Figma Make `sxih7FXdLGWu1lKovpOjIa`. Layout (de cima para baixo):
-1. **Top Bar** — Logo NIKS AI (sem ícone de configurações)
-2. **Seção "Hoje"** — Cards de refeições reais do Supabase (`food_scans`, filtrado por dia com reset às 2h30); empty state com ilustração de cards empilhados quando não há refeições. Ao clicar: carrega `full_result` do banco → abre `food-report.tsx` instantaneamente sem chamar a IA
-3. **Botão "Scanear"** — Full-width coral (`#FB7B6B`), abre `ScanModal`
-4. **Carrossel de Scans** — `FlatList` horizontal com os últimos 5 scans do usuário (buscados via `useFocusEffect` da tabela `skin_scans`). Cada slide: foto (280px, gradient overlay), data, badge com score, dots de paginação dinâmicos, botão "Ver resultado". Estado vazio: card cinza "Nenhuma análise ainda".
+Reescrita com base no design **Horizonte Reformulado** (`design-export/design-reference/home-horizonte-reformulado.jsx`). O heroVariant aprovado é `'editorial'` (VAR 3).
+
+**Sistema de contexto temporal (`getTimeContext`):**
+- `5–12h` → `orbVariant: 'dawn'`, saudação "Bom dia" (`isDark = false`)
+- `12–18h` → `orbVariant: 'dusk'`, saudação "Boa tarde" (`isDark = false`)
+- `18–5h` → `orbVariant: 'night'`, saudação "Boa noite" (`isDark = true`)
+
+O flag `isDark` controla: fundo gradient escuro, céu noturno animado, tema do `ScanModal` e `tabBarTheme` via `useAppStore.getState().setTabBarTheme(...)`.
+
+**Nome do usuário:** buscado de `users.nome` (coluna Supabase). Fallback: `user_metadata.full_name` → `user_metadata.name` → `'você'`. Não usar `user_metadata` como fonte primária — o nome é salvo via `set-name.tsx` em `users.nome`.
+
+**Componentes inline:**
+1. **`HomeOrb`** — View circular com `LinearGradient`. Variante dawn (`#FFD6C8→#FB7B6B→#F4A57A`), dusk (`#FFAD88→#C96BAE→#8B5CF6`), night (`#2D3B6E→#1A2040→#4A2060`).
+2. **`ReformuladoNightSky`** — Fundo animado (modo noite): 56 estrelas SVG fixas (`react-native-svg`) + 3 estrelas cadentes via Reanimated (`withRepeat + withSequence + withTiming + withDelay`).
+3. **`HeroEditorial`** (VAR 3) — Orb absoluto `right: -110, top: 110, size: 320`. **Obrigatório `overflow: 'visible'` no container** para não clipar o orb. Masthead `"NIKS · {formatDateShort(today)}"` onde `formatDateShort` retorna `"28 abr · ter"` (dia + mês minúsculo + dia da semana abreviado, ex: `"28 abr · ter"`) + saudação 54px: "Olá," em `PlayfairDisplay-Italic`, nome em `PlayfairDisplay-Regular` (dois `<Text>` separados — React Native não suporta italic e regular dentro do mesmo `<Text>`, mesmo com `fontStyle`).
+4. **`RitualCard`** — Estado em andamento: próximo passo + progress bar segmentada + CTA "Começar agora". Estado concluído: título "concluído." coral + todos os segmentos coral + CTA "Ver resumo". Ambos navegam para `/(app)/protocolo`.
+5. **`ScansRecentes`** — `ScrollView` horizontal, `snapToInterval: 208`. Cada `ScanCard` (196px): foto, badge de score, delta de evolução, botão "Ver resultado". `ScanCard` é um componente separado (obrigatório — `useState` não pode estar dentro de `.map()`).
+6. **`RefeicoesSección`** — Estado preenchido: lista de refeições do dia com score. Estado vazio: CTA coral "Escanear refeição".
+7. **`FAB`** — Botão coral 68×68px (`position: 'absolute', right: 20, bottom: 102, zIndex: 30`) dentro de `home.tsx`. Abre `ScanModal`. Não é parte da tab bar.
+
+**Data fetching:** Tudo dentro de um único `useFocusEffect` (`let active = true` + `return () => { active = false }`). Busca em sequência: `users.nome`, `food_scans` do dia (reset 2h30), últimos 5 `skin_scans` (com repair de `foto_url`), `protocolos` + `AsyncStorage` para estado do ritual.
+
+**Estado do ritual (AsyncStorage):** Mesma chave e lógica de `protocolo.tsx` — `protocolo_check_YYYY-MM-DD_morning` / `_night`, com deslocamento de -3h para o "dia" do protocolo (`getProtocolDate()`). `ritualComplete = done >= total`.
 
 ### ScanModal (`components/scan/ScanModal.tsx`)
-Redesenhado com base no Figma Make `sxih7FXdLGWu1lKovpOjIa`. Bottom sheet vertical com:
-- Handle + Título "Escolha o tipo de scan" + Subtítulo
-- Card **"Scanear Alimento"** (Utensils coral + badge verde "⭐ MAIS USADO" + chevron)
-- Card **"Scanear Rosto"** (Camera coral + chevron) — sempre disponível, sem cooldown
-- Botão **"Cancelar"** (card branco)
-- Animação: `Animated.spring` translateY (slide up)
+Redesenhado com visual **ScanTypeSheet** (Horizonte Reformulado). Aceita prop `isDark` (novo):
+- Modo noite: `<NightSkyStatic />` (56 estrelas SVG fixas, sem cadentes) como fundo absoluto
+- Header centralizado: eyebrow "NOVO SCAN" coral + título PlayfairDisplay 28px + divisor com ponto coral
+- Dois cards com stripe esquerda coral 2px: "Scanear refeição" (badge "mais usado" italic serif) + "Scanear rosto"
+- Lógica de navegação preservada integralmente (`useAIConsent`, `router.push`, `setScanSource`)
+- Animação: `Animated.spring` slide-up (igual ao anterior)
 
 ### Tela de Resultado Facial — App (`app/(app)/skin-result.tsx`)
 Tela dedicada acessada via "Ver resultado" na home. Usa `Animated.ScrollView` com efeito parallax — foto fixada atrás do scroll, conteúdo desliza por cima. Ver Decisão #14 para detalhes de arquitetura.
@@ -1092,13 +1028,13 @@ Tela dedicada acessada via "Ver resultado" na home. Usa `Animated.ScrollView` co
 ### Tab Bar (`app/(app)/_layout.tsx`)
 Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`:
 - **Container**: branco, `borderRadius: 20`, borda `#F0F0F0` (não mais pílula cinza)
-- **3 tabs**: `Scan` "scanear" · `Droplet` "protocolo" · `User` "perfil" (labels em minúsculo)
+- **3 tabs**: `Home` "início" · `Droplet` "rotina" · `User` "perfil" (labels em minúsculo)
 - **Ativo**: coral `#FB7B6B` · **Inativo**: `#8A8A8E`
-- **Ícone**: tamanho 24, `strokeWidth: 1.5`, sem `fill`
-- Posicionamento: `bottom: 20` (fixo, sem `useSafeAreaInsets`), `left/right: 16`
-- FAB laranja (`+`) **removido definitivamente**
+- **Ícone ativo**: SVG customizado sólido — `HomeFilled`, `DropletFilled`, `UserFilled` (lucide-react-native não tem variante filled; as três são componentes inline em `_layout.tsx` usando `react-native-svg`) com `fill={activeColor}`. **Ícone inativo**: lucide outline, tamanho 24, `strokeWidth: 1.5`
+- Posicionamento: `bottom: 20 + insets.bottom` (`useSafeAreaInsets` obrigatório para não sobrepor o home indicator do iPhone), `left/right: 16`
+- FAB laranja global removido da tab bar; a home screen tem seu próprio FAB coral (68×68px) interno à tela, não vinculado à tab bar
 - Telas ocultas (`href: null`): `evolucao`, `set-name`, `skin-result`
-- **Visibilidade controlada pelo store:** `tabBarVisible` (bool) — `{tabBarVisible && <CustomTabBar />}`. Usar `setTabBarVisible(false/true)` para esconder/mostrar em telas específicas.
+- **Visibilidade controlada pelo store:** `tabBarVisible` (bool) — `{tabBarVisible && pathname !== '/home' && <CustomTabBar />}`. Usar `setTabBarVisible(false/true)` para esconder/mostrar em telas específicas. Exceção permanente: `/home` nunca exibe a `CustomTabBar` — a home tem sua própria barra inferior (`HomeBottomBar`).
 - **Tema dark/light (modo noite do Protocolo):** lê `tabBarTheme` do store. Dark: bg `rgba(26,31,46,0.85)`, borda `rgba(255,255,255,0.08)`, ativo `#F9A898`, inativo `rgba(255,255,255,0.45)`, sombra `0 4px 20px rgba(0,0,0,0.4)`. `protocolo.tsx` usa `useFocusEffect` para setar `'dark'` ao ganhar foco no modo noite e resetar para `'light'` ao perder foco — **obrigatório `useFocusEffect` (não `useEffect`)** porque tabs não desmontam ao trocar de aba.
 
 ### Tela de Perfil (`app/(app)/perfil.tsx`)
@@ -1152,7 +1088,7 @@ Design editorial **Quietude v3** — referência: `design-export/niks-ai-ui/proj
 
 ---
 
-### 14. Parallax hero em `skin-result.tsx` — foto fixa + scroll por cima
+### 17. Parallax hero em `skin-result.tsx` — foto fixa + scroll por cima
 
 A tela `skin-result.tsx` usa `Animated.ScrollView` para criar efeito parallax: a foto do rosto fica fixada no fundo e o card de conteúdo desliza por cima dela ao rolar.
 
@@ -1192,5 +1128,28 @@ const overlayTranslateY = scrollY.interpolate({
 
 ---
 
-*Última atualização: Sessão 21 — Abril 2026*
-*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto).*
+### 18. `HomeBottomBar` em `home.tsx` — tab bar + FAB como irmãos (não em `_layout.tsx`)
+
+A home screen tem sua própria barra inferior (`HomeBottomBar`) que combina tab bar e FAB como componentes irmãos dentro do mesmo `View`. Isso é obrigatório — **não mover o FAB de volta para `_layout.tsx`**.
+
+**Motivo:** Em React Native, `zIndex` só funciona entre elementos dentro do mesmo contexto de empilhamento (mesmo pai). Se a tab bar fica em `_layout.tsx` (nível pai) e o FAB fica em `home.tsx` (nível filho dentro de `<Tabs>`), o elemento do pai sempre renderiza por cima do filho, independente dos valores de `zIndex`. O FAB ficaria permanentemente atrás da tab bar.
+
+**Estrutura correta (`home.tsx`):**
+```
+<View flex:1>                    ← root da home screen
+  {/* conteúdo da tela */}
+  <HomeBottomBar>
+    <View zIndex:20>             ← tab bar (ProtoTabBar)
+    <TouchableOpacity zIndex:30> ← FAB coral (acima da tab bar)
+  </HomeBottomBar>
+</View>
+```
+
+**Irmãos sob o mesmo pai → `zIndex` funciona.** FAB em `zIndex: 30` > tab bar em `zIndex: 20` ✅
+
+**Posicionamento:** Tab bar: `bottom: 20 + insets.bottom`. FAB: `bottom: 102 + insets.bottom, right: 20` (68×68px, `borderRadius: 34`).
+
+---
+
+*Última atualização: Sessão 22 — Abril 2026*
+*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto). `home.tsx` reescrita com design Horizonte Reformulado: contexto temporal AM/PM/noite, HeroEditorial VAR 3, céu noturno animado, ritual card, FAB coral. Tab bar: labels atualizados para início/rotina/perfil; `ScanModal` redesenhado como ScanTypeSheet com prop `isDark`.*
