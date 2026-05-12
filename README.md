@@ -699,14 +699,14 @@ O acesso ao app é verificado em 5 pontos de assinatura + 1 guard de nome, em or
 
 - `app/index.tsx` — ao abrir o app com sessão ativa → não-assinante: `registerPlacement` direto
 - `app/(onboarding)/_layout.tsx` — ao entrar no onboarding com sessão ativa → assinante já vai direto para home
-- `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login → não-assinante: `registerPlacement` direto
+- `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login → não-assinante: `router.replace('/(onboarding)/paywall-soft')`
 - `app/(onboarding)/protocol-loading.tsx` — ao concluir geração do protocolo → aciona `registerPlacement` antes de navegar para `notifications`
-- **`app/(app)/_layout.tsx`** — guard definitivo de assinatura: não-assinante aciona `registerPlacement`; assinante: `setReady(true)` → tabs renderizam
+- **`app/(app)/_layout.tsx`** — guard definitivo de assinatura (**fail closed**): não-assinante, timeout ou erro → `router.replace('/(onboarding)/paywall-soft')`; o app **nunca renderiza** para não-assinantes (`setReady(true)` só é chamado após assinatura confirmada via `Promise.race` de 8s)
 
 **Guard de nome em `app/(app)/_layout.tsx` (executa antes do guard de assinatura):** ao entrar no app com sessão ativa, o layout consulta `users.nome`. Se estiver vazio, redireciona para `/(onboarding)/nome` **independentemente do status de assinatura**. Isso cobre usuários existentes que nunca definiram nome. Só depois dessa verificação o fluxo de assinatura é avaliado.
 
-**Tela `app/(onboarding)/nome.tsx`:** pergunta "Como você quer ser chamado?" com campo único de nome. Sem botão de voltar e sem opção de pular — a única saída é inserir um nome e apertar "Continuar". Salva em `users.nome` e navega para `/(app)/home`. Alcançada por dois caminhos:
-1. Novos usuários: `notifications.tsx` → `paywall-soft.tsx` → `nome.tsx` → `/(app)/home`
+**Tela `app/(onboarding)/nome.tsx`:** pergunta "Como você quer ser chamado?" com campo único de nome. Sem botão de voltar e sem opção de pular — a única saída é inserir um nome e apertar "Continuar". Usa `upsert` (não `update`) com `onConflict: 'id'` para garantir que a row é criada caso não exista. **Navega para `/(app)/home` somente se o save for bem-sucedido** — o `router.replace` está dentro do `try`, não no `finally`. Se falhar, exibe `Alert` e mantém o usuário na tela para tentar novamente. Isso previne o loop: save silencioso → navigate → layout recheca → nome vazio → redireciona de volta. Alcançada por dois caminhos:
+1. Novos usuários: `notifications.tsx` → `paywall-soft.tsx` (se não assinou) → assina → `/(app)/home` → layout redireciona para `nome.tsx`
 2. Usuários existentes sem nome: `(app)/_layout.tsx` redireciona diretamente para `nome.tsx`
 
 > ⚠️ **Bypass para desenvolvimento (`__DEV__`):** Todos os pontos acima têm um bypass condicional que é ativado automaticamente no simulador/Metro. Além disso, `app/(onboarding)/notifications.tsx` também tem bypass em `navigateToApp()` — vai direto para `/(onboarding)/nome` (não para `/(app)/home`) sem chamar RevenueCat:
@@ -719,9 +719,11 @@ O acesso ao app é verificado em 5 pontos de assinatura + 1 guard de nome, em or
 > ```
 > Em produção (`__DEV__ === false`) o comportamento é idêntico ao descrito acima. **Se o Superwall sumir no simulador, é esperado** — não é um bug.
 
-O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` travar (rede lenta), o timer dispara e aciona o Superwall. `setReady(true)` é chamado **antes** de `registerPlacement` em todos os caminhos — o Superwall aparece como overlay sobre as tabs em vez de bloquear o render com `null`.
+O guard em `(app)/_layout.tsx` usa `Promise.race` com **timeout de 8s**: se `getCustomerInfo()` travar (rede lenta), o race resolve com `null` e o usuário é enviado para `paywall-soft`. `setReady(true)` só é chamado se a assinatura for confirmada dentro do prazo — **o app nunca renderiza com `null` de resultado**.
 
-**`usePlacement`** deve ser chamado em componentes descendentes do `SuperwallProvider`. Em `(app)/_layout.tsx`, isso é garantido porque o provider está na raiz.
+> **Cache de assinatura entre remounts:** o store Zustand tem o campo `subscriptionVerified: boolean`. Após a primeira verificação bem-sucedida do RevenueCat na sessão, esse flag é setado como `true`. Em remounts do `(app)/_layout.tsx` dentro da mesma sessão (ex: fluxo `nome.tsx` → `/(app)/home` causa unmount/remount do layout), o check do RevenueCat é pulado — vai direto para `setReady(true)`. Isso elimina a tela branca de até 8s que ocorria nesses remounts. O flag reseta automaticamente ao fechar o app (Zustand em memória, sem persistência).
+
+**`usePlacement`** deve ser chamado em componentes descendentes do `SuperwallProvider`. Em `paywall-soft.tsx`, isso é garantido porque o provider está na raiz.
 
 > ⚠️ **Import gotcha:** `expo-superwall` exporta apenas `SuperwallProvider`, hooks e tipos. Para usar a API de classe (`Superwall.shared.*`), importe de `expo-superwall/compat`:
 > ```typescript
@@ -737,18 +739,18 @@ O guard em `(app)/_layout.tsx` tem um **timeout de 8s**: se `getCustomerInfo()` 
 
 ```typescript
 const { registerPlacement } = usePlacement({
-  onDismiss: async () => await navigateToApp(),  // usuário fechou (assinou, restaurou ou dispensou)
-  onSkip: async () => await navigateToApp(),      // Superwall não exibiu (holdout, já assinante)
-  onError: async () => router.replace('/(app)/home'),
+  onDismiss: async () => await handleAfterPaywall(),  // usuário fechou (assinou, restaurou ou dispensou)
+  onSkip: async () => await handleAfterPaywall(),      // Superwall não exibiu (holdout, já assinante)
+  onError: async () => registerPlacement({ placement: 'paywall_onboarding' }), // SDK falhou → reapresenta
 });
 ```
 
-`navigateToApp()` verifica o RevenueCat: assinante → `/(app)/home`; não-assinante → `/(onboarding)/paywall-soft` (o guard de `(app)/_layout.tsx` barra na sequência).
+`handleAfterPaywall()` verifica o RevenueCat: assinante → `/(app)/home`; não-assinante ou erro → **reapresenta o paywall** (`registerPlacement` novamente). O usuário fica bloqueado em `paywall-soft` até assinar — não há saída sem assinatura.
 
 **Por que esta abordagem:** `registerPlacement` retorna uma `Promise<void>` que resolve **imediatamente** após registrar o placement com o SDK nativo — **não** após o paywall ser fechado. A navegação pós-paywall deve sempre acontecer nos callbacks `onDismiss`/`onSkip`/`onError`, nunca após `await registerPlacement`.
 
-**`paywall-detailed.tsx` — dead code (não está no fluxo ativo):**
-Arquivo com UI customizada de paywall (planos mensal/anual, trial de 3 dias, integração RevenueCat direta). Era o paywall antes do Superwall ser integrado. Nenhuma tela navega para ela atualmente. Mantida no projeto como fallback caso o Superwall seja removido.
+**`paywall-detailed.tsx` — removido do projeto:**
+Era o paywall customizado (planos mensal/anual, trial de 3 dias, integração RevenueCat direta) do fluxo anterior ao Superwall. Arquivo deletado — não existe mais no projeto.
 
 ---
 
@@ -790,9 +792,9 @@ lib/mixpanel/
 | `onboarding_started` | `(onboarding)/_layout.tsx` | `onboarding_version`, `total_steps: 23` |
 | `onboarding_step_viewed` | mount de cada tela do onboarding (steps 2–23) | `step_number`, `step_name`, `step_total: 23` |
 | `onboarding_step_completed` | botão "Continuar" de cada tela | `step_number`, `step_name`, `step_total: 23` |
-| `onboarding_completed` | `paywall-detailed.tsx` mount (dead code — dispara caso a tela seja reativada) | `$duration` (calculado pelo SDK via `timeEvent`) |
+| `onboarding_completed` | ⚠️ **não disparado atualmente** — estava em `paywall-detailed.tsx` (deletado); mover para `paywall-soft.tsx` se necessário | `$duration` (calculado pelo SDK via `timeEvent`) |
 | `paywall_viewed` | `paywall-soft.tsx` mount | `screen: 'soft'` |
-| `plan_selected` | toque nos cards de plano em `paywall-detailed.tsx` (dead code) | `plan: 'mensal' \| 'anual'` |
+| `plan_selected` | ⚠️ **não disparado atualmente** — estava em `paywall-detailed.tsx` (deletado) | `plan: 'mensal' \| 'anual'` |
 | `purchase_initiated` | `lib/revenuecat.ts` antes do SDK de compra | `plan: 'mensal' \| 'anual'` |
 | `purchase_completed` | `lib/revenuecat.ts` após compra bem-sucedida | `plan: 'mensal' \| 'anual'` |
 | `purchase_failed` | `lib/revenuecat.ts` em erro de compra | `plan`, `error: string` |
@@ -805,7 +807,7 @@ lib/mixpanel/
 | `food_scan_completed` | `(scan)/food-report.tsx` após `analyze-food` | `meal_score: number`, `meal_label: string` |
 | `food_scan_failed` | `(scan)/food-report.tsx` em erro | `error: string` |
 
-**`onboarding_completed` — efeitos colaterais (em `paywall-detailed.tsx` mount — dead code; mover para `paywall-soft.tsx` se o Superwall for removido):**
+**`onboarding_completed` — efeitos colaterais (⚠️ não disparado atualmente — estava em `paywall-detailed.tsx`, arquivo deletado; mover para `paywall-soft.tsx` quando necessário):**
 ```typescript
 setUserProperties({ onboarding_completed: true, onboarding_completed_at: ISO })
 registerSuperProperties({ onboarding_completed: true })
@@ -845,7 +847,7 @@ Welcome
     → E-mail + Senha / Google / Apple → verifica assinatura (RevenueCat) → assinante: home | não-assinante: paywall-soft
 
 Fluxo de comida (dentro do app principal):
-  analise.tsx → food-camera (setFoodImage) → food-report (analyze-food) → protocolo (generate-protocol)
+  Home → ScanModal → food-camera (setFoodImage) → food-report (analyze-food)
 ```
 
 ---
@@ -883,11 +885,10 @@ niks-ai/
 │   │   ├── allergies-detail.tsx   ✅ condicional — descrição do ativo/produto que causou reação
 │   │   ├── protocol-loading.tsx   ✅ gera protocolo + salva no Supabase
 │   │   ├── paywall-soft.tsx       ✅ gateway para Superwall — spinner sem UI própria
-│   │   ├── paywall-detailed.tsx   ⚠️ dead code — UI customizada do fluxo pré-Superwall, fora da rota ativa
 │   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase
 │   ├── (app)/
 │   │   ├── _layout.tsx            ✅ Tab bar: início/rotina/perfil — tab bar oculta em /home (home tem barra própria)
-│   │   ├── home.tsx               ✅ Design Horizonte Reformulado: hero editorial, contexto AM/PM/noite, ritual card, scans recentes, refeições, FAB coral
+│   │   ├── home.tsx               ✅ Design Horizonte Reformulado: hero editorial, contexto manhã (4h–18h) / noite (18h–4h), ritual card, scans recentes, refeições, FAB coral
 │   │   ├── skin-result.tsx        ✅ Tela de resultado da análise facial (in-app, métricas reais)
 │   │   ├── protocolo.tsx          ✅
 │   │   ├── analise.tsx            ✅
@@ -898,6 +899,7 @@ niks-ai/
 │       ├── scan-prep.tsx          ✅
 │       ├── camera.tsx             ✅
 │       ├── food-camera.tsx        ✅
+│       ├── food-scan-intro.tsx    ⚠️ arquivo mantido mas fora do fluxo ativo — foi removido do caminho ScanModal → food-camera para reduzir fricção
 │       ├── loading.tsx            ✅
 │       ├── rate-us.tsx            ✅ tela de avaliação (entre loading e results)
 │       ├── results.tsx            ✅
@@ -1035,11 +1037,11 @@ Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`:
 - FAB laranja global removido da tab bar; a home screen tem seu próprio FAB coral (68×68px) interno à tela, não vinculado à tab bar
 - Telas ocultas (`href: null`): `evolucao`, `set-name`, `skin-result`
 - **Visibilidade controlada pelo store:** `tabBarVisible` (bool) — `{tabBarVisible && pathname !== '/home' && <CustomTabBar />}`. Usar `setTabBarVisible(false/true)` para esconder/mostrar em telas específicas. Exceção permanente: `/home` nunca exibe a `CustomTabBar` — a home tem sua própria barra inferior (`HomeBottomBar`).
-- **Tema dark/light (modo noite do Protocolo):** lê `tabBarTheme` do store. Dark: bg `rgba(26,31,46,0.85)`, borda `rgba(255,255,255,0.08)`, ativo `#F9A898`, inativo `rgba(255,255,255,0.45)`, sombra `0 4px 20px rgba(0,0,0,0.4)`. `protocolo.tsx` usa `useFocusEffect` para setar `'dark'` ao ganhar foco no modo noite e resetar para `'light'` ao perder foco — **obrigatório `useFocusEffect` (não `useEffect`)** porque tabs não desmontam ao trocar de aba.
+- **Tema dark/light:** lê `tabBarTheme` do store. Dark: bg `rgba(26,31,46,0.85)`, borda `rgba(255,255,255,0.08)`, ativo `#F9A898`, inativo `rgba(255,255,255,0.45)`, sombra `0 4px 20px rgba(0,0,0,0.4)`. **Regra:** cada tela que seta `tabBarTheme` é responsável por resetar para `'light'` no cleanup do `useFocusEffect` — **obrigatório `useFocusEffect` (não `useEffect`)** porque tabs não desmontam ao trocar de aba. `protocolo.tsx` seta `'dark'` no modo noite e reseta no blur. `home.tsx` seta `'dark'` ou `'light'` conforme o horário e **também reseta para `'light'` no blur** (`return () => { active = false; setTabBarTheme('light'); }`) — sem esse reset, navegar da home noturna para perfil deixa a tab bar presa no modo escuro.
 
 ### Tela de Perfil (`app/(app)/perfil.tsx`)
 Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`. Layout (de cima para baixo):
-1. **Top Bar** — "NIKS AI" (sem ícone de configurações)
+1. **Top Bar** — "NIKS" (sem ícone de configurações)
 2. **Profile Header Card** (clicável → `set-name.tsx`):
    - Avatar coral 60×60 com inicial do nome (ou `?` se não definido)
    - Badge Crown dourado + "Premium"
@@ -1149,7 +1151,55 @@ A home screen tem sua própria barra inferior (`HomeBottomBar`) que combina tab 
 
 **Posicionamento:** Tab bar: `bottom: 20 + insets.bottom`. FAB: `bottom: 102 + insets.bottom, right: 20` (68×68px, `borderRadius: 34`).
 
+### 19. `react-native-svg` — `fill="none"` obrigatório em `<Path>` stroke-only
+
+Em browser SVG, `fill="none"` definido no elemento pai `<svg>` é herdado por todos os filhos. Em `react-native-svg` **essa herança não ocorre** — cada `<Path>` tem `fill` preto por padrão, independente do que está no `<Svg>` pai.
+
+**Consequência prática:** qualquer `<Path>` que deveria ser apenas contorno (chevron, checkmark, seta, ícone de linha) aparece como uma forma preta preenchida no dispositivo — o mesmo código funciona no browser e quebra no app.
+
+**Regra:** em todo `<Path>` stroke-only, sempre definir `fill="none"` diretamente no elemento `<Path>`, nunca confiar em herança do pai.
+
+```tsx
+// ❌ Funciona no browser, quebra no react-native-svg
+<Svg viewBox="0 0 20 20" fill="none">
+  <Path d="M4 10l4 4 8-8" stroke="#065F46" strokeWidth={2} />
+</Svg>
+
+// ✅ Correto para react-native-svg
+<Svg viewBox="0 0 20 20">
+  <Path d="M4 10l4 4 8-8" fill="none" stroke="#065F46" strokeWidth={2} />
+</Svg>
+```
+
+Afeta todos os ícones de `food-report.tsx`: checkmarks em `HighlightRow`, ícones de atenção em `WatchOutRow`, chevrons em `CollapsibleSection` e `FoodCard`, seta da substitution card.
+
+### 20. `overflow: 'hidden'` e shadow são mutuamente exclusivos na mesma `View`
+
+Em CSS, `overflow: hidden` e `box-shadow` coexistem sem problema — a sombra renderiza fora do elemento normalmente. Em React Native (iOS e Android), **`overflow: 'hidden'` na mesma `View` que carrega as propriedades `shadow*` corta a sombra completamente**, tornando o card plano mesmo com valores corretos de sombra.
+
+**Consequência prática:** cards com `borderRadius` + `overflow: 'hidden'` (para clipar conteúdo interno, ex: accordions) perdem toda a elevação visual. O mesmo código que parece elevado no design HTML fica completamente plano no app.
+
+**Regra:** separar sempre em duas `View`s aninhadas:
+
+```tsx
+// ❌ Sombra clipada — card plano no device
+<View style={{ borderRadius: 22, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 10 }}>
+  {/* conteúdo */}
+</View>
+
+// ✅ Sombra visível
+<View style={{ borderRadius: 22, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+  {/* View externa: só sombra, sem overflow */}
+  <View style={{ borderRadius: 22, borderWidth: 0.5, borderColor: 'rgba(43,39,36,0.06)', overflow: 'hidden' }}>
+    {/* View interna: overflow hidden + borda, sem shadow */}
+    {/* conteúdo */}
+  </View>
+</View>
+```
+
+Aplicado em `food-report.tsx` nos componentes `CollapsibleSection` e `FoodCard`. A `View` externa carrega a sombra; a `View` interna carrega o `overflow: 'hidden'` e a borda.
+
 ---
 
-*Última atualização: Sessão 22 — Abril 2026*
-*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto). `home.tsx` reescrita com design Horizonte Reformulado: contexto temporal AM/PM/noite, HeroEditorial VAR 3, céu noturno animado, ritual card, FAB coral. Tab bar: labels atualizados para início/rotina/perfil; `ScanModal` redesenhado como ScanTypeSheet com prop `isDark`.*
+*Última atualização: Sessão 24 — Maio 2026*
+*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto). `home.tsx` reescrita com design Horizonte Reformulado: contexto temporal AM/PM/noite, HeroEditorial VAR 3, céu noturno animado, ritual card, FAB coral. Tab bar: labels atualizados para início/rotina/perfil; `ScanModal` redesenhado como ScanTypeSheet com prop `isDark`. Bug corrigido: `home.tsx` agora reseta `tabBarTheme` para `'light'` no blur do `useFocusEffect`. Decisão 20 adicionada: padrão de duas Views para shadow + overflow em React Native.*

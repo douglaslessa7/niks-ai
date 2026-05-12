@@ -200,6 +200,8 @@ type AppStore = {
   setTabBarTheme: (theme: 'light' | 'dark') => void
   tabBarVisible: boolean
   setTabBarVisible: (visible: boolean) => void
+  subscriptionVerified: boolean
+  setSubscriptionVerified: (v: boolean) => void
   onboarding: OnboardingData
   setOnboardingField: <K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) => void
   scanSource: 'onboarding' | 'app'
@@ -249,6 +251,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setTabBarTheme: (theme) => set({ tabBarTheme: theme }),
   tabBarVisible: true,
   setTabBarVisible: (visible) => set({ tabBarVisible: visible }),
+  subscriptionVerified: false,
+  setSubscriptionVerified: (v) => set({ subscriptionVerified: v }),
   onboarding: initialOnboarding,
   scanSource: 'onboarding',
   scanResult: null,

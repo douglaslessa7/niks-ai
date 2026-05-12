@@ -36,13 +36,12 @@ type SkinScan = {
   created_at: string;
 };
 
-type OrbVariant = 'dawn' | 'dusk' | 'night';
+type OrbVariant = 'dawn' | 'night';
 type TimeCtx = { mode: 'am' | 'pm'; orbVariant: OrbVariant; greeting: string; period: string };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function getTimeContext(hour: number): TimeCtx {
-  if (hour >= 5 && hour < 12)  return { mode: 'am', orbVariant: 'dawn',  greeting: 'Bom dia',   period: 'manhã' };
-  if (hour >= 12 && hour < 18) return { mode: 'pm', orbVariant: 'dusk',  greeting: 'Boa tarde', period: 'entardecer' };
+  if (hour >= 4 && hour < 18) return { mode: 'am', orbVariant: 'dawn', greeting: 'Bom dia', period: 'manhã' };
   return { mode: 'pm', orbVariant: 'night', greeting: 'Boa noite', period: 'noite' };
 }
 
@@ -74,7 +73,6 @@ function getTodayStart(): Date {
 // Stops dos gradientes orb — extraídos de home-screen.jsx linha 56-59
 const ORB_STOPS: Record<OrbVariant, Array<[string, string]>> = {
   dawn:  [['#FFEFE4','0%'],['#F9C9B6','30%'],['#E89178','70%'],['#C86651','100%']],
-  dusk:  [['#FFDCCB','0%'],['#E59A82','35%'],['#A85A6B','75%'],['#4A2E4A','100%']],
   night: [['#FFFFFF','0%'],['#F4EEE4','30%'],['#D8CDB8','60%'],['#A89676','100%']],
 };
 
@@ -83,7 +81,6 @@ const ORB_STOPS: Record<OrbVariant, Array<[string, string]>> = {
 // RN não suporta múltiplas sombras nem inset — usar o drop shadow principal
 const ORB_SHADOW: Record<OrbVariant, object> = {
   dawn:  { shadowColor: '#E89178', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.32, shadowRadius: 48, elevation: 8  },
-  dusk:  { shadowColor: '#A85A6B', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.35, shadowRadius: 48, elevation: 8  },
   night: { shadowColor: '#000000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.45, shadowRadius: 48, elevation: 12 },
 };
 
@@ -926,7 +923,7 @@ export default function Home() {
         }
       })();
 
-      return () => { active = false; };
+      return () => { active = false; setTabBarTheme('light'); };
     }, [isDark]),
   );
 

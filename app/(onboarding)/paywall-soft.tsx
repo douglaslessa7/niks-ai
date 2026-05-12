@@ -12,40 +12,39 @@ export default function PaywallSoft() {
 
   track('paywall_viewed', { screen: 'soft' });
 
-  const navigateToApp = async () => {
+  const handleAfterPaywall = async () => {
     try {
       const info = await getCustomerInfo();
       if (isSubscribed(info)) {
-        router.replace('/(onboarding)/nome');
-      } else {
-        router.replace('/(onboarding)/nome'); // guard de (app)/_layout.tsx barra se não assinou
+        // Assinante confirmado — entra no app (layout checa nome e redireciona se necessário)
+        router.replace('/(app)/home');
+        return;
       }
     } catch {
-      router.replace('/(onboarding)/nome');
+      // ignora erro — vai reapresentar o paywall
     }
+    // Não assinou — reapresenta o paywall (bloqueio total)
+    registerPlacement({ placement: 'paywall_onboarding' });
   };
 
   const { registerPlacement } = usePlacement({
-    onPresent: () => {
-      // paywall visível — não faz nada, aguarda o usuário interagir
-    },
-    onDismiss: async (_paywallInfo, _result) => {
-      // usuário fechou o paywall (assinou, restaurou ou dispensou)
-      await navigateToApp();
+    onPresent: () => {},
+    onDismiss: async () => {
+      await handleAfterPaywall();
     },
     onSkip: async () => {
-      // Superwall não exibiu o paywall (holdout, sem audience match, já assinante)
-      await navigateToApp();
+      // Superwall decidiu não exibir (já assinante, holdout) — verifica e entra
+      await handleAfterPaywall();
     },
     onError: async () => {
-      // SDK falhou — deixa o guard de (app)/_layout.tsx decidir
-      router.replace('/(onboarding)/nome');
+      // SDK falhou — reapresenta (fail closed)
+      registerPlacement({ placement: 'paywall_onboarding' });
     },
   });
 
   useEffect(() => {
     if (__DEV__) {
-      navigateToApp();
+      router.replace('/(app)/home');
       return;
     }
 

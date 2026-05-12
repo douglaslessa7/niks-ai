@@ -1,0 +1,260 @@
+/* ============================================================
+   NIKS AI — colors_and_type.css
+   Single source of truth for tokens used across the design system.
+   Tokens lifted from designsystemniksai/{home,protocolo,skin-result,_layout}.tsx
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=DM+Serif+Display:ital@0;1&display=swap");
+
+:root {
+  /* ── Color: brand ─────────────────────────────────────────── */
+  --niks-coral:       #FB7B6B;   /* primary accent — CTAs, FAB, active tab, score numeral */
+  --niks-coral-soft:  #F9A898;   /* night-mode coral */
+  --niks-coral-tint:  rgba(251,123,107,0.06); /* coral wash for chip backgrounds */
+  --niks-coral-tint-2:rgba(251,123,107,0.18); /* coral pill background (badges) */
+
+  /* ── Color: ink (day) ─────────────────────────────────────── */
+  --niks-ink:        #2B2724;                    /* warm near-black */
+  --niks-ink-soft:   rgba(43,39,36,0.55);        /* secondary text */
+  --niks-ink-hair:   rgba(43,39,36,0.08);        /* dividers, tracks */
+  --niks-ink-whisper:rgba(43,39,36,0.35);        /* tertiary text, inactive */
+
+  /* ── Color: surface (day) ─────────────────────────────────── */
+  --niks-bg:         #FFFFFF;
+  --niks-surface:    #FFFFFF;
+  --niks-surface-hair: rgba(43,39,36,0.06);
+  --niks-placeholder: #F4EFE9;
+  --niks-placeholder-2: #C8C0B8;
+
+  /* ── Color: night ─────────────────────────────────────────── */
+  --niks-night-1:    #0F1420;
+  --niks-night-2:    #1A1F2E;
+  --niks-night-3:    #2A1F28;
+  --niks-night-bg:   linear-gradient(180deg, #0F1420 0%, #1A1F2E 45%, #2A1F28 100%);
+  --niks-night-ink:  #FFFFFF;
+  --niks-night-ink-soft: rgba(255,255,255,0.65);
+  --niks-night-ink-hair: rgba(255,255,255,0.10);
+  --niks-night-ink-whisper: rgba(255,255,255,0.42);
+  --niks-night-surface: rgba(255,255,255,0.04);
+  --niks-night-surface-hair: rgba(255,255,255,0.08);
+
+  /* ── Color: orb gradients (radial-gradient at 35% 30%) ────── */
+  --niks-orb-dawn:  radial-gradient(circle at 35% 30%, #FFEFE4 0%, #F9C9B6 30%, #E89178 70%, #C86651 100%);
+  --niks-orb-dusk:  radial-gradient(circle at 35% 30%, #FFDCCB 0%, #E59A82 35%, #A85A6B 75%, #4A2E4A 100%);
+  --niks-orb-night: radial-gradient(circle at 35% 30%, #FFFFFF 0%, #F4EEE4 30%, #D8CDB8 60%, #A89676 100%);
+
+  /* ── Color: semantic (sparingly used) ─────────────────────── */
+  --niks-green:  #4CAF50;
+  --niks-amber:  #F59E0B;
+  --niks-red:    #EF4444;
+  --niks-positive-50: #ECFDF5;
+  --niks-positive-700: #065F46;
+
+  /* ── Type families ────────────────────────────────────────── */
+  --niks-display: "Playfair Display", "Times New Roman", Georgia, serif;
+  --niks-display-alt: "DM Serif Display", "Playfair Display", Georgia, serif;
+  --niks-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+
+  /* ── Type scale (raw) ─────────────────────────────────────── */
+  --fs-eyebrow-xs: 9px;     /* tracked uppercase tiny */
+  --fs-eyebrow:    10px;    /* masthead, section labels */
+  --fs-eyebrow-md: 11px;    /* card eyebrows */
+  --fs-micro:      12px;    /* date strips, "ver tudo" */
+  --fs-meta:       13px;    /* secondary copy */
+  --fs-body:       14px;    /* card body */
+  --fs-body-lg:    15px;    /* hero subtext */
+  --fs-step:       18px;    /* ritual step name */
+  --fs-step-lg:    20px;    /* ritual step name (large) */
+  --fs-stat:       22px;    /* meal score */
+  --fs-card-h:     32px;    /* card headline (italic serif) */
+  --fs-display:    38px;    /* protocol headline */
+  --fs-hero:       54px;    /* greeting */
+  --fs-display-num:84px;    /* protocol orb numeral (Skia) */
+
+  /* ── Letter spacing ───────────────────────────────────────── */
+  --ls-eyebrow:    2.4px;   /* SKINCARE MATINAL */
+  --ls-eyebrow-lg: 2.8px;   /* NIKS masthead */
+  --ls-eyebrow-sm: 1.8px;   /* card eyebrow */
+  --ls-hero:       -1.89px; /* greeting */
+  --ls-display:    -0.95px; /* "Manhã, três passos." */
+  --ls-card-h:     -0.64px; /* card headline */
+  --ls-step:       -0.36px;
+  --ls-body:       -0.07px;
+
+  /* ── Line height ──────────────────────────────────────────── */
+  --lh-tight:    1.0;       /* hero, display */
+  --lh-headline: 1.05;      /* card headline */
+  --lh-body:     1.45;
+  --lh-meta:     1.45;
+
+  /* ── Spacing scale ────────────────────────────────────────── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  10px;
+  --sp-4:  14px;
+  --sp-5:  16px;
+  --sp-6:  20px;
+  --sp-7:  22px;
+  --sp-8:  28px;
+  --sp-9:  32px;
+  --sp-10: 44px;
+
+  /* ── Radii ────────────────────────────────────────────────── */
+  --r-chip: 14px;
+  --r-tab:  20px;
+  --r-card: 22px;
+  --r-card-lg: 24px;
+  --r-pill: 100px;
+
+  /* ── Shadows (light) ──────────────────────────────────────── */
+  --sh-card:       0 2px 14px rgba(43,39,36,0.05);
+  --sh-card-soft:  0 2px 10px rgba(43,39,36,0.04);
+  --sh-tab-light:  0 1px 4px rgba(0,0,0,0.06);
+  --sh-cta-coral:  0 8px 22px rgba(251,123,107,0.188);
+  --sh-fab-coral:  0 12px 28px rgba(251,123,107,0.33);
+  --sh-tab-dark:   0 4px 20px rgba(0,0,0,0.40);
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --border-hair: 0.5px solid var(--niks-surface-hair);
+  --border-hair-night: 0.5px solid var(--niks-night-surface-hair);
+}
+
+/* ============================================================
+   Semantic type styles — apply directly via class
+   ============================================================ */
+
+.niks-masthead {
+  font: 600 var(--fs-eyebrow)/1 var(--niks-ui);
+  letter-spacing: var(--ls-eyebrow-lg);
+  text-transform: uppercase;
+  color: var(--niks-ink-soft);
+}
+
+.niks-eyebrow {
+  font: 600 var(--fs-eyebrow-md)/1 var(--niks-ui);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--niks-ink-soft);
+}
+
+.niks-eyebrow-sm {
+  font: 600 var(--fs-eyebrow-xs)/1 var(--niks-ui);
+  letter-spacing: var(--ls-eyebrow-sm);
+  text-transform: uppercase;
+  color: var(--niks-ink-soft);
+}
+
+.niks-h1 {
+  font: 400 var(--fs-hero)/1 var(--niks-display);
+  letter-spacing: var(--ls-hero);
+  color: var(--niks-coral);
+  text-transform: lowercase;
+}
+
+.niks-h2 {
+  font: 400 var(--fs-display)/1.05 var(--niks-display);
+  letter-spacing: var(--ls-display);
+  color: var(--niks-ink);
+  text-transform: lowercase;
+}
+
+.niks-h3 {
+  font: 400 var(--fs-card-h)/1.05 var(--niks-display);
+  font-style: italic;
+  letter-spacing: var(--ls-card-h);
+  color: var(--niks-ink);
+}
+
+.niks-h4 {
+  font: 400 var(--fs-step-lg)/1.2 var(--niks-display);
+  letter-spacing: var(--ls-step);
+  color: var(--niks-ink);
+}
+
+.niks-flourish {
+  font: italic 400 var(--fs-body-lg)/1.5 var(--niks-display);
+  color: var(--niks-coral);
+  letter-spacing: -0.075px;
+}
+
+.niks-body {
+  font: 400 var(--fs-body)/var(--lh-body) var(--niks-ui);
+  letter-spacing: var(--ls-body);
+  color: var(--niks-ink);
+}
+
+.niks-meta {
+  font: 400 var(--fs-meta)/1.45 var(--niks-ui);
+  color: var(--niks-ink-soft);
+}
+
+.niks-micro {
+  font: 500 var(--fs-micro)/1.2 var(--niks-ui);
+  color: var(--niks-ink-soft);
+  letter-spacing: 0.3px;
+}
+
+.niks-link {
+  color: var(--niks-coral);
+  font: 500 var(--fs-micro)/1 var(--niks-ui);
+}
+
+.niks-num {
+  font: 400 var(--fs-stat)/1 var(--niks-display);
+  color: var(--niks-coral);
+  letter-spacing: -0.44px;
+}
+
+/* ============================================================
+   Reusable atoms
+   ============================================================ */
+
+.niks-card {
+  background: var(--niks-surface);
+  border: var(--border-hair);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-card);
+}
+
+.niks-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--niks-coral);
+  color: #fff;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 15px 22px;
+  font: 600 15px/1 var(--niks-ui);
+  letter-spacing: -0.075px;
+  box-shadow: var(--sh-cta-coral);
+  cursor: pointer;
+}
+
+.niks-cta-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--niks-coral);
+  border: 0.5px solid var(--niks-coral);
+  border-radius: var(--r-pill);
+  padding: 9px 14px;
+  font: 600 12px/1 var(--niks-ui);
+  letter-spacing: -0.06px;
+  cursor: pointer;
+}
+
+.niks-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0.5px solid var(--niks-coral);
+  background: var(--niks-coral-tint);
+  border-radius: var(--r-pill);
+  padding: 4px 10px 4px 8px;
+  color: var(--niks-coral);
+  font: italic 400 12px/1 var(--niks-display);
+}

@@ -68,11 +68,11 @@ export default function Welcome() {
           />
         </View>
         <Text style={{ fontSize: 22, fontWeight: '600', textAlign: 'center', marginTop: 24 }}>
-          <Text style={{ color: '#FB7B6B' }}>Bem-vindo </Text>
+          <Text style={{ color: '#FB7B6B' }}>Bem-vinda </Text>
           <Text style={{ color: '#1A1A1A' }}>ao</Text>
         </Text>
         <Text style={{ fontSize: 34, fontWeight: '800', color: '#1A1A1A', textAlign: 'center', marginTop: 4 }}>
-          NIKS AI
+          NIKS
         </Text>
         <Text style={{ fontSize: 22, color: '#9CA3AF', textAlign: 'center', marginTop: 8, paddingHorizontal: 48 }}>
           A melhor forma de cuidar da sua pele

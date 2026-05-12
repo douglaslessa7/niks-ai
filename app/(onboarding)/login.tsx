@@ -12,7 +12,6 @@ import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../../hooks/useAuth';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
-import { usePlacement } from 'expo-superwall';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { Colors } from '../../constants/colors';
 
@@ -49,7 +48,6 @@ function GoogleIcon() {
 export default function Login() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, signInWithEmail, loading } = useAuth();
-  const { registerPlacement } = usePlacement();
   const { track, identify } = useMixpanel();
 
   const [email, setEmail] = useState('');
@@ -64,12 +62,13 @@ export default function Login() {
       const info = await getCustomerInfo();
       if (isSubscribed(info)) {
         router.replace('/(app)/home');
-      } else {
-        registerPlacement({ placement: 'paywall_onboarding' });
+        return;
       }
     } catch {
-      registerPlacement({ placement: 'paywall_onboarding' });
+      // ignora — vai para paywall
     }
+    // Não assinou — bloqueia no paywall
+    router.replace('/(onboarding)/paywall-soft');
   };
 
   const handleEmailContinue = () => {

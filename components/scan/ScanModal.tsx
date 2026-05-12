@@ -47,7 +47,7 @@ export function ScanModal({ isOpen, onClose, isDark = false }: ScanModalProps) {
   const opacity    = useRef(new Animated.Value(0)).current;
 
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
-  const { setScanSource } = useAppStore();
+  const { setScanSource, setSelectedFoodResult } = useAppStore();
 
   const [fontsLoaded] = useFonts({
     'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
@@ -85,7 +85,7 @@ export function ScanModal({ isOpen, onClose, isDark = false }: ScanModalProps) {
   const handleScanFood = () => {
     onClose();
     setTimeout(() => {
-      requestConsent(() => { router.push('/(scan)/food-scan-intro' as any); });
+      requestConsent(() => { setSelectedFoodResult(null); router.push('/(scan)/food-camera' as any); });
     }, 220);
   };
 

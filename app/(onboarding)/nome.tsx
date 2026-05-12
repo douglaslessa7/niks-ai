@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -32,14 +32,17 @@ export default function Nome() {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('users').update({ nome: trimmed }).eq('id', user.id);
-      }
+      if (!user) throw new Error('Sessão expirada');
+      const { error } = await supabase
+        .from('users')
+        .upsert({ id: user.id, nome: trimmed, email: user.email ?? '' }, { onConflict: 'id' });
+      if (error) throw error;
+      router.replace('/(app)/home');
     } catch (e) {
       console.warn('[Nome] Erro ao salvar nome:', e);
+      Alert.alert('Erro ao salvar', 'Não conseguimos salvar seu nome. Verifique sua conexão e tente novamente.');
     } finally {
       setLoading(false);
-      router.replace('/(app)/home');
     }
   };
 

@@ -4,7 +4,6 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Home, Droplet, User } from 'lucide-react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
-import { usePlacement } from 'expo-superwall';
 import { supabase } from '../../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { useAppStore } from '../../store/onboarding';
@@ -96,7 +95,8 @@ export default function AppLayout() {
   const pathname = usePathname();
   const [ready, setReady] = useState(false);
   const tabBarVisible = useAppStore((s) => s.tabBarVisible);
-  const { registerPlacement } = usePlacement();
+  const subscriptionVerified = useAppStore((s) => s.subscriptionVerified);
+  const setSubscriptionVerified = useAppStore((s) => s.setSubscriptionVerified);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -105,7 +105,7 @@ export default function AppLayout() {
         return;
       }
 
-      // Verifica se o usuário já tem nome definido — válido para todos (novos e existentes)
+      // Verifica se o usuário já tem nome definido
       try {
         const { data: userData } = await supabase
           .from('users')
@@ -118,33 +118,33 @@ export default function AppLayout() {
           return;
         }
       } catch {
-        // Em caso de erro não bloqueamos o usuário
+        // Em caso de erro não bloqueamos o nome check
       }
 
-      if (__DEV__) {
+      // Pula o check de assinatura se já foi verificado nesta sessão (evita tela branca no remount)
+      if (__DEV__ || subscriptionVerified) {
         setReady(true);
         return;
       }
 
-      const timer = setTimeout(() => {
-        setReady(true);
-        registerPlacement({ placement: 'paywall_onboarding' });
-      }, 8000);
-
+      // Guard de assinatura — fail closed: qualquer dúvida vai para o paywall
       try {
-        const info = await getCustomerInfo();
-        clearTimeout(timer);
-        if (!isSubscribed(info)) {
-          setReady(true);
-          registerPlacement({ placement: 'paywall_onboarding' });
+        const infoPromise = getCustomerInfo();
+        const timeoutPromise = new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), 8000)
+        );
+        const info = await Promise.race([infoPromise, timeoutPromise]);
+
+        if (!info || !isSubscribed(info)) {
+          router.replace('/(onboarding)/paywall-soft');
           return;
         }
       } catch {
-        clearTimeout(timer);
-        setReady(true);
-        registerPlacement({ placement: 'paywall_onboarding' });
+        router.replace('/(onboarding)/paywall-soft');
         return;
       }
+
+      setSubscriptionVerified(true);
       setReady(true);
     });
   }, []);

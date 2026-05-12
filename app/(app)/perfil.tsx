@@ -108,7 +108,7 @@ export default function Perfil() {
 
           {/* Top Bar */}
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 12 }}>
-            <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS AI</Text>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#1D3A44' }}>NIKS</Text>
           </View>
 
           <View style={{ paddingHorizontal: 24 }}>
