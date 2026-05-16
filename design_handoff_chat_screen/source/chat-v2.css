@@ -1,0 +1,119 @@
+/* ============================================================
+   NIKS Chat V2 — minimalist white, serif-forward
+   ============================================================ */
+
+/* V2 AI message — inline serif on white, smaller body-weight size */
+.niks-ai-msg-v2 {
+  font: 400 15px/1.55 var(--niks-display);
+  color: var(--niks-ink);
+  letter-spacing: -0.15px;
+  max-width: 100%;
+}
+.niks-ai-msg-v2 em,
+.niks-ai-msg-v2 i {
+  color: var(--niks-coral);
+  font-style: italic;
+}
+
+/* V2 AI message — action chips below */
+.niks-ai-actions-v2 {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.niks-action-v2 {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(43,39,36,0.08);
+  background: #FFFFFF;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(43,39,36,0.55);
+  transition: background 160ms ease, color 160ms ease;
+}
+.niks-action-v2:hover {
+  background: rgba(251,123,107,0.06);
+  color: var(--niks-coral);
+}
+
+/* Date / section divider */
+.niks-divider-v2 {
+  align-self: center;
+  font: 600 9px/1 var(--niks-ui);
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: rgba(43,39,36,0.42);
+  padding: 2px 0 8px;
+}
+
+/* ── V2.3 — featherlight coral hairline bubble ────────────── */
+.niks-ai-bubble-v23 {
+  background: #FFFFFF;
+  border: 0.5px solid var(--niks-coral);
+  border-radius: 4px 18px 18px 18px;
+  padding: 14px 18px 15px;
+  box-shadow:
+    0 1px 2px rgba(251,123,107,0.05),
+    0 6px 18px rgba(251,123,107,0.06);
+}
+
+/* ── V2.3b — editorial left rule (no enclosure) ───────────── */
+.niks-ai-rule-v23 {
+  position: relative;
+  padding-left: 16px;
+}
+.niks-ai-rule-v23::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: linear-gradient(180deg,
+    rgba(251,123,107,0) 0%,
+    var(--niks-coral) 14%,
+    var(--niks-coral) 86%,
+    rgba(251,123,107,0) 100%);
+}
+
+/* V2 suggestions grid wrapper — uses V1 SuggestionRow inside cells */
+.niks-suggest-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-content: start;
+}
+.niks-suggest-grid > .niks-suggest {
+  /* compact cards for 2-col layout: vertical stack, more breathing room */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px 14px;
+  min-height: 116px;
+}
+.niks-suggest-grid > .niks-suggest .niks-suggest-chev {
+  display: none;
+}
+.niks-suggest-grid > .niks-suggest .niks-suggest-text {
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+.niks-suggest-grid > .niks-suggest.niks-suggest--wide {
+  grid-column: 1 / -1;
+  /* full-width card — back to horizontal so the icon sits left like V1 */
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  min-height: 0;
+  padding: 14px 14px 14px 16px;
+}
+.niks-suggest-grid > .niks-suggest.niks-suggest--wide .niks-suggest-chev {
+  display: inline-flex;
+}
+.niks-suggest-grid > .niks-suggest.niks-suggest--wide .niks-suggest-text {
+  font-size: 14px;
+  line-height: 1.4;
+}

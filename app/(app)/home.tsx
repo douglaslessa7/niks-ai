@@ -2,9 +2,8 @@ import {
   View, Text, TouchableOpacity, ScrollView, Image,
   useWindowDimensions, StyleSheet,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { BlurView } from 'expo-blur';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFonts } from 'expo-font';
@@ -15,7 +14,6 @@ import Animated, {
   withRepeat, withSequence, withTiming, withDelay, Easing,
 } from 'react-native-reanimated';
 import { useAppStore, ScanResult } from '../../store/onboarding';
-import { ScanModal } from '../../components/scan/ScanModal';
 import { supabase } from '../../lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -334,136 +332,6 @@ function HeroEditorial({
 }
 
 // ── Tab bar icons — paths copiados literalmente de niks-protocolo-shared.jsx (Icon.home/homeFilled/protocol/protocolFilled/user/userFilled) ──
-function TabIconHome({ color, size = 24, filled }: { color: string; size?: number; filled: boolean }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M3 10.5L12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15V14H9v7.5H4.5A1.5 1.5 0 0 1 3 20z"
-        fill={filled ? color : 'none'}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap={filled ? undefined : 'round'}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-function TabIconProtocol({ color, size = 24, filled }: { color: string; size?: number; filled: boolean }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"
-        fill={filled ? color : 'none'}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap={filled ? undefined : 'round'}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-function TabIconUser({ color, size = 24, filled }: { color: string; size?: number; filled: boolean }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
-        fill={filled ? color : 'none'}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap={filled ? undefined : 'round'}
-        strokeLinejoin="round"
-      />
-      <Circle cx={12} cy={7} r={4} fill={filled ? color : 'none'} stroke={color} strokeWidth={1.5} />
-    </Svg>
-  );
-}
-
-// ── HomeBottomBar — ProtoTabBar + FAB copiados de HomeHorizonteReformulado ─────
-// Estrutura idêntica ao design de referência: tab bar e FAB são irmãos no mesmo
-// container, com zIndex: 20 e zIndex: 30 respectivamente (mesma lógica de empilhamento).
-// fabVariant = 'floating' (padrão do design de referência): FAB em bottom: 102, tab bar full width.
-function HomeBottomBar({ isDark, accent, onScanPress }: { isDark: boolean; accent: string; onScanPress: () => void }) {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-
-  // Cores — copiadas de ProtoTabBar (niks-protocolo-shared.jsx linhas 326-330)
-  const activeColor   = isDark ? '#F9A898' : accent;            // PROTO.coralSoft / PROTO.coral
-  const inactiveColor = isDark ? 'rgba(255,255,255,0.45)' : '#8A8A8E'; // PROTO.gray6
-  const bg     = isDark ? 'rgba(26,31,46,0.85)' : '#FFFFFF';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : '#F0F0F0';
-
-  const tabDefs = [
-    { key: 'home',      label: 'início', Icon: TabIconHome,     active: true  },
-    { key: 'protocolo', label: 'rotina', Icon: TabIconProtocol, active: false },
-    { key: 'perfil',    label: 'perfil', Icon: TabIconUser,     active: false },
-  ];
-
-  const tabItems = tabDefs.map((t) => {
-    const color = t.active ? activeColor : inactiveColor;
-    return (
-      <TouchableOpacity
-        key={t.key}
-        onPress={() => { if (t.key !== 'home') router.push(`/${t.key}` as any); }}
-        activeOpacity={0.8}
-        style={{ alignItems: 'center', paddingVertical: 4, gap: 4, minWidth: 52 }}
-      >
-        <t.Icon color={color} size={24} filled={t.active} />
-        <Text style={{ fontSize: 12, color, fontWeight: t.active ? '600' : '400' }}>{t.label}</Text>
-      </TouchableOpacity>
-    );
-  });
-
-  // Conteúdo interno do tab bar (reutilizado em light e dark)
-  const tabContent = (
-    <View style={{
-      backgroundColor: bg,
-      borderWidth: 1, borderColor: border, borderRadius: 20,
-      flexDirection: 'row', justifyContent: 'space-around',
-      paddingVertical: 10, paddingHorizontal: 8,
-    }}>
-      {tabItems}
-    </View>
-  );
-
-  return (
-    <>
-      <View style={{
-        position: 'absolute', left: 16, right: 92, bottom: 20, zIndex: 20,
-        borderRadius: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: isDark ? 4 : 1 },
-        shadowOpacity: isDark ? 0.4 : 0.06,
-        shadowRadius: isDark ? 20 : 4,
-        elevation: isDark ? 8 : 2,
-      }}>
-        {isDark ? (
-          <BlurView intensity={50} tint="dark" style={{ borderRadius: 20, overflow: 'hidden' }}>
-            {tabContent}
-          </BlurView>
-        ) : (
-          tabContent
-        )}
-      </View>
-
-      <TouchableOpacity
-        onPress={onScanPress}
-        activeOpacity={0.88}
-        style={{
-          position: 'absolute', right: 20, bottom: 24, zIndex: 30,
-          width: 68, height: 68, borderRadius: 34,
-          backgroundColor: accent,
-          alignItems: 'center', justifyContent: 'center',
-          shadowColor: accent, shadowOffset: { width: 0, height: 12 },
-          shadowOpacity: 0.33, shadowRadius: 28, elevation: 12,
-        }}
-      >
-        <Svg width={26} height={26} viewBox="0 0 24 24">
-          <Path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
-        </Svg>
-      </TouchableOpacity>
-    </>
-  );
-}
 
 // ── Inline SVG icons ──────────────────────────────────────────────────────────
 function IconCheck() {
@@ -789,8 +657,7 @@ function RefeicoesSection({
 // ── Home ──────────────────────────────────────────────────────────────────────
 export default function Home() {
   const router = useRouter();
-  const { setSelectedScan, setSelectedFoodResult, setTabBarTheme } = useAppStore();
-  const [scanOpen, setScanOpen] = useState(false);
+  const { setSelectedScan, setSelectedFoodResult, setTabBarTheme, setScanModalOpen } = useAppStore();
   const [debugMode, setDebugMode] = useState<'am' | 'pm' | null>(null); // DEBUG — remover antes do release
 
   const hour = debugMode === 'am' ? 9 : debugMode === 'pm' ? 22 : new Date().getHours();
@@ -1008,16 +875,10 @@ export default function Home() {
               if (meal.full_result) setSelectedFoodResult(meal.full_result);
               router.push('/(scan)/food-report' as any);
             }}
-            onScanPress={() => setScanOpen(true)}
+            onScanPress={() => setScanModalOpen(true)}
           />
         </ScrollView>
       </SafeAreaView>
-
-      {/* Menu inferior — ProtoTabBar + FAB copiados do design de referência (HomeHorizonteReformulado).
-          Irmãos no mesmo container, zIndex: 20 e 30, exatamente como no reference. */}
-      <HomeBottomBar isDark={isDark} accent={accent} onScanPress={() => setScanOpen(true)} />
-
-      <ScanModal isOpen={scanOpen} onClose={() => setScanOpen(false)} isDark={isDark} />
     </View>
   );
 }

@@ -200,6 +200,8 @@ type AppStore = {
   setTabBarTheme: (theme: 'light' | 'dark') => void
   tabBarVisible: boolean
   setTabBarVisible: (visible: boolean) => void
+  scanModalOpen: boolean
+  setScanModalOpen: (open: boolean) => void
   subscriptionVerified: boolean
   setSubscriptionVerified: (v: boolean) => void
   onboarding: OnboardingData
@@ -222,6 +224,8 @@ type AppStore = {
   setSelectedScan: (scan: { result: ScanResult; imageUri: string } | null) => void
   selectedFoodResult: FoodReportResult | null
   setSelectedFoodResult: (result: FoodReportResult | null) => void
+  niksChatMode: 'empty' | 'active'
+  setNiksChatMode: (mode: 'empty' | 'active') => void
   saveToSupabase: (userId: string) => Promise<void>
   reset: () => void
 }
@@ -251,6 +255,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setTabBarTheme: (theme) => set({ tabBarTheme: theme }),
   tabBarVisible: true,
   setTabBarVisible: (visible) => set({ tabBarVisible: visible }),
+  scanModalOpen: false,
+  setScanModalOpen: (open) => set({ scanModalOpen: open }),
   subscriptionVerified: false,
   setSubscriptionVerified: (v) => set({ subscriptionVerified: v }),
   onboarding: initialOnboarding,
@@ -288,6 +294,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setSelectedScan: (scan) => set({ selectedScan: scan }),
 
   setSelectedFoodResult: (result) => set({ selectedFoodResult: result }),
+
+  niksChatMode: 'empty',
+  setNiksChatMode: (mode) => set({ niksChatMode: mode }),
 
   saveToSupabase: async (userId: string) => {
     const { onboarding, scanResult, scanImageUri, skinImageBase64 } = get()

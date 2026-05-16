@@ -71,6 +71,13 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 
 - **NativeWind (`className`)** para estilo — `StyleSheet.create()` só em último caso absoluto
   - **Exceção — telas redesenhadas:** `scan-prep`, `rate-us`, `trust`, `plan-preview`, `signup`, `login`, `skincare-routine`, `skincare-routine-detail`, `allergies`, `allergies-detail` e outras telas redesenhadas usam **inline styles + `Colors` constants** (não NativeWind). Padrão: `LinearGradient` rosa→branco como fundo, botão voltar circular `rgba(255,255,255,0.85)` com `ChevronLeft`, barra de progresso manual, botões pill `borderRadius: 100`, campos de texto com borda `Colors.scanBtn` ao focar. Novas telas do onboarding devem seguir esse padrão, não o `QuizLayout`.
+  - **Exceção — tela `niks-chat.tsx`:** usa **inline styles + tokens do design system NIKS** (não `Colors` constants, não NativeWind). Os tokens são constantes locais definidas no topo do arquivo (`CORAL = '#FB7B6B'`, `INK = '#2B2724'`, `INK_SOFT`, `INK_WHISPER`, `INK_HAIR`, `SURFACE_HAIR`). Fonte serif `PlayfairDisplay-Regular` para o corpo das mensagens NIKS e `PlayfairDisplay-Italic` para spans em itálico inline. O design de referência pixel-perfect está em `design_handoff_chat_screen/` — os dois estados definitivos são `ChatEmptyScreen` (`source/chat-screens.jsx`) e `ChatActiveScreenV23` (`source/chat-screens-v2.jsx`). Não aplicar o padrão onboarding (sem LinearGradient rosa, sem `Colors`) nessa tela.
+    - **Modo noturno (`isDark`):** a tela tem dois temas — claro (padrão) e noturno. `isDark` é derivado de `new Date().getHours() >= 18 || hour < 4`, calculado a cada `useFocusEffect`. Em modo noturno: fundo `LinearGradient` escuro (`#0F1420→#1A1F2E→#2A1F28`) + `<NightSky />` de estrelas/meteoros, e todos os tokens de cor mudam (`ink`, `inkSoft`, `inkHair`, etc.). O `MiniOrb` também muda para a paleta lunar (bege-acinzentado em vez de coral) **e adiciona 5 crateras de lua**, cujas posições são definidas em coordenadas relativas a um orb de referência de 132px (copiadas do orb do Protocolo) e escaladas via `size / 132` para qualquer tamanho. `setTabBarTheme('dark')` é chamado via `useFocusEffect` para escurecer o tab bar enquanto a tela está focada.
+    - **`ChatInputBar` é `position: 'absolute'`** (não in-flow) dentro de um `View style={{ flex: 1 }}` que vive dentro do `KeyboardAvoidingView`. Isso é obrigatório: a tab bar customizada de `_layout.tsx` também é absoluta e cobre qualquer input in-flow. O KAV ainda levanta o input corretamente quando o teclado abre porque o View pai encolhe. **Nunca mover o ChatInputBar para o fluxo normal.**
+    - **Dois estados: `mode: 'empty' | 'active'`.** No estado `active`, renderizar o array `messages[]` carregado do banco (tabela `coach_messages`, via `coach_conversations` do dia). Cada item do array é `{ id, role, content, isStreaming?, imageUris?: string[] }`. Suporta até 5 fotos por mensagem. Regras de render: `role === 'user'` → `UserBubble` (+ um `UserPhotoBubble` por item em `imageUris`, se houver); `role === 'assistant' && content === '' && isStreaming` → `TypingDots`; `role === 'assistant' && content !== ''` → `NiksMessage`. **Nunca hardcodar mensagens de conversa** — o design prototype tinha mensagens ilustrativas que foram implementadas como definitivas por engano; esse erro já foi corrigido.
+    - **Persistência de modo entre navegações:** `niksChatMode: 'empty' | 'active'` no `useAppStore` controla o que o `useFocusEffect` faz ao ganhar foco. Default `'empty'` → cold start (app fechado/reaberto) sempre mostra a tela inicial. App backgroundado preserva o valor em memória → conversa ativa é restaurada ao voltar. `sendMessage`, `handleSuggestionPress` e `loadConversation` chamam `setNiksChatMode('active')`; o botão voltar chama `setNiksChatMode('empty')`. Esse estado está no store (não em `useRef` local) precisamente para sobreviver ao ciclo de vida do componente sem ser resetado por remounts, mas ser descartado no cold start junto com todo o store in-memory.
+    - **Botão voltar:** oculto no estado `empty`; no estado `active` volta para `empty` chamando `setNiksChatMode('empty')` no store e resetando `messages[]` — **não** chama `router.back()`.
+    - **Botão de histórico (topo direito):** abre painel flutuante com as últimas 5 conversas do usuário (`coach_conversations` ordenadas por `created_at desc`). Cada item exibe o título (primeiros 80 chars da primeira mensagem do usuário) e o tempo relativo da última mensagem (`Xm`, `Xh`, `Xd`, `Xmm`). Ao tocar em um item, carrega as mensagens daquela conversa e entra em modo `active`.
 - **Expo Router** para navegação — `useRouter()`, `router.push()`, `router.back()`
 - **TypeScript** em tudo — nunca JavaScript puro
 - **Nunca inventar cores** — usar sempre `constants/colors.ts`
@@ -79,6 +86,7 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 - **Portrait only** — nunca landscape
 - **Max width 393px** — iPhone 14 Pro
 - **Store usa `useAppStore`** (de `store/onboarding.ts`) — não `useOnboardingStore`
+- **Para abrir o modal de scan a partir de qualquer tela**, usar `setScanModalOpen(true)` do store — o `ScanModal` e o `GlobalBottomBar` (tab pill + FAB) são renderizados em `_layout.tsx` e se aplicam a todas as abas
 - **Imagens viajam pelo Zustand** — nunca via `router.push` params (truncamento no bridge do RN)
 - **`fetch` direto** para Edge Functions grandes — `supabase.functions.invoke` trunca payloads
 
@@ -220,6 +228,10 @@ Chamada via `supabase.rpc('delete_user')` no client. O `SECURITY DEFINER` permit
 - `food_scans` — histórico de análises de comida
 - `protocolos` — rotina AM/PM gerada pelo `generate-protocol`
 - `subscriptions` — sync RevenueCat (atualizada via webhook `revenuecat-webhook`)
+- `coach_conversations` — criada por `niks-chat.tsx` em `sendMessage` (quando não há conversa ativa ou `mode === 'empty'`) e em `handleSuggestionPress` (respostas pré-definidas); o `useFocusEffect` apenas busca a conversa mais recente — **nunca cria**; agrupa mensagens em `coach_messages`
+- `coach_messages` — histórico de mensagens do chat com a NIKS (lido e escrito por `niks-chat`)
+- `coach_memories` — memórias de longo prazo extraídas das conversas pelo `niks-chat`
+- `coach_protocol_suggestions` — propostas de alteração de protocolo aguardando aprovação da usuária
 
 **Schema da tabela `subscriptions`:**
 ```sql
@@ -284,7 +296,45 @@ meal_name text, meal_score int4, meal_label text, meal_summary text, image_url t
 full_result jsonb  -- objeto FoodAnalysisResult completo retornado pela analyze-food
 ```
 
-**Storage bucket:** `scans` — **PRIVADO** — com policies de upload/leitura por `user_id`.
+**Storage buckets:**
+- `scans` — **PRIVADO** — fotos de scan facial. Policies de upload/leitura por `user_id`. Sempre usar `createSignedUrl` (não `getPublicUrl`).
+- `coach-images` — **PRIVADO** — fotos enviadas no chat com a NIKS. Path: `{userId}/{timestamp}.jpg`. URL assinada com TTL de 1 ano gerada por `niks-chat`.
+
+**Schema da tabela `coach_messages`:**
+```sql
+id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+conversation_id uuid NOT NULL,
+user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+role text NOT NULL,                  -- 'user' | 'assistant'
+content text NOT NULL,
+image_url text,                      -- NULL, URL única (legado), ou JSON array de URLs assinadas (múltiplas fotos)
+client_message_id text,              -- identificador do cliente; sem UNIQUE constraint no banco — salvo via insert direto
+created_at timestamptz DEFAULT now()
+```
+
+**Schema da tabela `coach_memories`:**
+```sql
+id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+type text NOT NULL,                  -- 'allergy' | 'sensitivity' | 'pregnancy_status' | 'medication' | 'product_reaction' | 'preference' | 'routine_note' | 'skin_observation'
+value text NOT NULL,
+confidence float4 NOT NULL,
+is_active boolean DEFAULT true,      -- false quando substituída por memória mais recente do mesmo type
+created_at timestamptz DEFAULT now()
+```
+
+**Schema da tabela `coach_protocol_suggestions`:**
+```sql
+id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+conversation_id uuid NOT NULL,
+reason text NOT NULL,                -- justificativa clínica extraída da resposta da NIKS
+proposed_changes jsonb NOT NULL,     -- { action, step_name, period, duration_days, details }
+status text DEFAULT 'pending',       -- 'pending' | 'applied' | 'rejected'
+approved_at timestamptz,             -- preenchido quando applied
+applied_at timestamptz,              -- preenchido quando applied
+created_at timestamptz DEFAULT now()
+```
 
 ### Edge Functions deployadas
 
@@ -300,6 +350,8 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 | `generate-protocol` | ✅ | `{ scanResult, onboardingData }` | `{ morning[], night[], introduction_warnings, expected_timeline, introduction_schedule }` — cada item de `morning`/`night` contém: `id, name, ingredient, instruction, steps: string[], color, waitTime, product_suggestions`. **Não retorna `schedule`** — dias da semana vêm embutidos no campo `ingredient` como sufixo `(Seg/Qua/Sex)` e são parseados no cliente via `applySchedule` em `protocolo.tsx`. |
 | `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API |
 | `revenuecat-webhook` | ✅ | POST do RevenueCat — header `Authorization: Bearer REVENUECAT_WEBHOOK_SECRET` | Retorna sempre HTTP 200. Faz UPSERT em `subscriptions` com base no `app_user_id` (= `user_id` do Supabase). Trata: `INITIAL_PURCHASE`, `RENEWAL`, `TRIAL_STARTED`, `TRIAL_CONVERTED`, `TRIAL_CANCELLED`, `CANCELLATION`, `EXPIRATION`, `UNCANCELLATION` |
+| `niks-chat` | ✅ | Header `Authorization: Bearer <session_token>` (JWT do usuário autenticado — **não** a ANON_KEY). Body: `{ conversationId, message?, images?: Array<{base64: string, mimeType: string}>, clientMessageId? }` — `message` e `images` são ambos opcionais, mas pelo menos um deve estar presente. `userId` **não vai no body** — é extraído internamente do JWT via `auth.getUser()`. | Stream `text/plain; charset=utf-8` — resposta da NIKS em tempo real. Pós-stream via `waitUntil`: salva resposta em `coach_messages`; depois bifurca — se havia sugestão pendente (`context.pendingSuggestion`), chama `checkApprovalIntent` (detecta "sim"/"não" na mensagem do usuário via Gemini e aplica/rejeita a sugestão); caso contrário, extrai memórias em `coach_memories` e detecta nova proposta em `coach_protocol_suggestions`. |
+| `approve-coach-protocol-change` | ✅ | Header `Authorization: Bearer <session_token>` (JWT do usuário). Body: `{ suggestion_id, approved: boolean }`. `user_id` **não vai no body** — extraído do JWT. | `{ success: true, action: 'rejected' \| 'applied', protocol? }` — aplica ou rejeita manualmente uma proposta pendente em `coach_protocol_suggestions`. Se `approved: true`, modifica `rotina_am`/`rotina_pm` em `protocolos` (add/remove/pause com base em `proposed_changes`) e marca `status: 'applied'`. |
 
 **Configuração do webhook no RevenueCat Dashboard:**
 - RevenueCat Dashboard → Project → Integrations → Webhooks
@@ -310,11 +362,12 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - `analyze-skin`: `gemini-3-flash-preview` (mais rápido, custo menor)
 - `analyze-food`: `gemini-2.5-pro` (mais preciso para tarefas complexas)
 - `generate-protocol`: `gemini-3-flash-preview`
+- `niks-chat`: `gemini-3-flash-preview` (streaming para a resposta principal + pós-stream via `waitUntil`: se havia sugestão pendente → 1 chamada não-streaming para `checkApprovalIntent`; caso contrário → 2 chamadas para `extractAndSave` + `checkForSuggestion`)
 
 Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → Edge Functions → Secrets).
 
 **Secrets necessários no Supabase Dashboard (Project Settings → Edge Functions → Secrets):**
-- `GEMINI_API_KEY` — usado por `analyze-skin`, `analyze-food`, `generate-protocol`
+- `GEMINI_API_KEY` — usado por `analyze-skin`, `analyze-food`, `generate-protocol`, `niks-chat`
 - `REVENUECAT_WEBHOOK_SECRET` — usado por `revenuecat-webhook` para validar o header `Authorization`
 
 **Configuração Gemini nas Edge Functions:**
@@ -327,6 +380,7 @@ Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → 
 - **Retry interno de Gemini 503 em `analyze-skin` e `analyze-food`:** o Gemini retorna 503 `UNAVAILABLE` com frequência sob alta demanda. Ambas as Edge Functions têm loop de **3 tentativas** com **3s de espera** entre elas antes de retornar erro ao app — não remover esse loop.
 - `generate-protocol` gera o protocolo **do zero** com um system prompt dermatológico clínico extenso (hierarquia clínica, regras cronobiológicas, incompatibilidades, adaptações por fotótipo). Não usa mais `BASE_PROTOCOLS` nem recebe `baseProtocol` — o campo é ignorado se enviado
 - **`generate-protocol` usa SSE streaming (`streamGenerateContent?alt=sse`)** para evitar o IDLE_TIMEOUT de 150s da Supabase Edge Runtime — se a geração demorar mais que 150s sem tráfego de dados, a Supabase encerra a conexão. A função transmite os chunks SSE do Gemini em tempo real como `text/plain; charset=utf-8`. No cliente (`protocol-loading.tsx`), a resposta é lida com `response.text()` seguido de `JSON.parse()` — **nunca usar `response.json()` aqui**, pois o Content-Type não é `application/json`. O retry em 503 também foi refatorado para verificar `resp.ok` antes de ler o body, evitando consumir o stream em caso de erro.
+- **`niks-chat` usa `TransformStream` + `EdgeRuntime.waitUntil`:** o stream Gemini passa por um `TransformStream` que intercepta cada chunk inline — reenvia para o cliente imediatamente e acumula o texto em memória. Quando o stream fecha (`flush`), uma Promise se resolve com o texto completo, e `waitUntil` executa 3 tarefas sem bloquear a resposta: (1) salva a mensagem da NIKS em `coach_messages`, (2) chama Gemini não-streaming para extrair memórias duradouras (`coach_memories`), (3) detecta a frase-gatilho `"Posso incluir isso no seu protocolo?"` e, se presente, chama Gemini não-streaming para estruturar a proposta (`coach_protocol_suggestions`). **Não usar `ReadableStream.tee()`** no lugar do `TransformStream` — o `tee()` cria dois leitores com backpressure acoplado: quando um leitor consome o stream em memória (rápido) enquanto o outro é limitado pela rede do cliente (lento), a fila interna do tee cresce indefinidamente no Deno Edge Runtime e causa corte da mensagem no meio do streaming. A função valida o JWT no início via `auth.getUser()` (criando um cliente com ANON_KEY + header Authorization do request) para derivar `userId` com segurança — depois usa a service role key para as operações no banco, bypassando RLS nas escritas em `coach_messages`.
 
 ### Push Notifications (`pg_cron`)
 
@@ -450,7 +504,7 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `selectedFoodResult: FoodReportResult | null` — resultado salvo de food scan selecionado na home; exibido sem re-análise em `food-report.tsx`; limpo ao sair da tela ou iniciar novo scan
 
 **Métodos:**
-- `setTabBarTheme(theme: 'light' | 'dark')` — alterna o tema visual do tab bar; chamado por `protocolo.tsx` via `useFocusEffect`
+- `setTabBarTheme(theme: 'light' | 'dark')` — alterna o tema visual do tab bar; chamado por `protocolo.tsx` e `niks-chat.tsx` via `useFocusEffect` (cada tela seta dark ao focar e reseta para light ao sair)
 - `setTabBarVisible(visible: boolean)` — esconde/mostra o tab bar; útil em telas onde o tab bar não deve aparecer
 - `setScanSource(source: 'onboarding' | 'app')` — chamado por `ScanModal.handleScanFace` antes de iniciar scan do app principal
 - `setOnboardingField(field, value)`
@@ -887,12 +941,13 @@ niks-ai/
 │   │   ├── paywall-soft.tsx       ✅ gateway para Superwall — spinner sem UI própria
 │   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase
 │   ├── (app)/
-│   │   ├── _layout.tsx            ✅ Tab bar: início/rotina/perfil — tab bar oculta em /home (home tem barra própria)
+│   │   ├── _layout.tsx            ✅ Tab bar customizada: início/rotina/niks/perfil — oculta em /home (home usa HomeBottomBar própria que também tem as 4 abas: início/rotina/niks/perfil + FAB)
 │   │   ├── home.tsx               ✅ Design Horizonte Reformulado: hero editorial, contexto manhã (4h–18h) / noite (18h–4h), ritual card, scans recentes, refeições, FAB coral
 │   │   ├── skin-result.tsx        ✅ Tela de resultado da análise facial (in-app, métricas reais)
-│   │   ├── protocolo.tsx          ✅
+│   │   ├── protocolo.tsx          ✅ Auto-sincroniza o período (manhã/noite) com o horário do sistema via useFocusEffect ao focar — usuário ainda pode trocar manualmente; ao re-focar a tela, o período volta ao horário atual (decisão intencional: evitar que a tela apareça no modo errado quando o app já está no tema noturno)
 │   │   ├── analise.tsx            ✅
 │   │   ├── evolucao.tsx           🚫 oculta (href: null) — removida da tab bar
+│   │   ├── niks-chat.tsx          ✅ Chat com a NIKS AI — dois estados: empty (boas-vindas) e active (conversa); suporta modo noturno (≥18h) com NightSky + MiniOrb lunar; design handoff em design_handoff_chat_screen/
 │   │   ├── perfil.tsx             ✅ redesenhado (Figma cFsFcVSjOMkTdHIJpHgSDk): nome dinâmico, email, notificações, suporte
 │   │   └── set-name.tsx           ✅ definir nome/sobrenome → salva em users.nome no Supabase
 │   └── (scan)/
@@ -914,7 +969,7 @@ niks-ai/
 │   │   ├── Pill.tsx               ✅
 │   │   ├── IOSWheelPicker.tsx     ✅
 │   │   ├── AIConsentModal.tsx     ✅ modal de consentimento de IA (LGPD) — uma única vez por instalação
-│   │   └── NightSky.tsx           ✅ céu noturno animado (Reanimated v4 + Skia) — modo noite do Protocolo
+│   │   └── NightSky.tsx           ✅ céu noturno animado (Reanimated v4 + Skia) — usado em modo noite do Protocolo e da NIKS Chat
 │   ├── layouts/
 │   │   └── QuizLayout.tsx         ✅
 │   └── scan/
@@ -1027,12 +1082,40 @@ Tela dedicada acessada via "Ver resultado" na home. Usa `Animated.ScrollView` co
 
 **Dados lidos do Zustand:** `selectedScan` (carrossel da home) com fallback para `scanResult`/`scanImageUri` (scan flow direto). `selectedScan` é limpo no `useEffect` de desmontagem.
 
+### Tela NIKS Chat (`app/(app)/niks-chat.tsx`)
+Chat com a NIKS AI. Acessada pela 4ª aba "niks" do menu inferior. Design handoff pixel-perfect em `design_handoff_chat_screen/` — os dois estados definitivos são `ChatEmptyScreen` (`source/chat-screens.jsx`) e `ChatActiveScreenV23` (`source/chat-screens-v2.jsx`).
+
+**Dois estados controlados por `mode: 'empty' | 'active'`:**
+
+**Estado empty (boas-vindas):**
+- `AnimatedMiniOrb` 68px centralizado com animação de "respiro" (scale 1→1.04→1, 4.8s, infinito via Reanimated)
+- Eyebrow `"NIKS · SUA COACH DE PELE"` em 9px uppercase sans-serif
+- Saudação `"olá, {firstName}."` em PlayfairDisplay-Italic 38px coral + subtítulo `"como posso te ajudar hoje?"` em PlayfairDisplay-Italic 17px
+- 5 suggestion cards com cascade de entrada (opacity 0→1 + translateY 6→0, delay de 60ms por card) — tocar em qualquer card aciona `setMode('active')`
+- `firstName` buscado de `users.nome` via `useFocusEffect` + `supabase.auth.getUser()` (mesmo padrão de `home.tsx`)
+
+**Estado active (conversa em andamento):**
+- Thread fixa com: timestamp `"HOJE · HH:MM"`, 2 mensagens NIKS, 1 bubble do usuário texto, 1 bubble do usuário foto (placeholder visual), indicador de digitação → resposta streamada
+- Streaming simulado: 1.5s de `TypingDots` → texto completo exibido char-a-char a cada 28ms + ScrollView auto-scroll; caret piscante durante o streaming, desaparece ao concluir
+- **⚠️ Não há integração real com IA** — o texto streamado é um placeholder estático (`NIKS_STREAM_TEXT`). A lógica real de chat precisa ser implementada quando o backend estiver pronto
+
+**Componentes internos (não reutilizados em outras telas):**
+- `MiniOrb` — SVG com `RadialGradient` dawn (circle at 35% 30%, stops `#FFEFE4→#F9C9B6→#E89178→#C86651`). IDs únicos por tamanho para evitar conflito de SVG: `mgOrbG_68`/`mgOrbG_28`
+- `NiksMessage` — bubble com borda hairline coral 0.5px, `borderTopLeftRadius: 4` (canto de fala), restante 18px. Texto em PlayfairDisplay-Regular 15px. Suporta `<Text>` filhos para italic inline (e.g., nome do usuário em PlayfairDisplay-Italic coral)
+- `UserBubble` — bubble coral sólido com `borderTopRightRadius: 4`
+- `TypingDots` — 3 dots com pulse staggerado (delays 0/180/360ms) dentro de bubble hairline
+- `SuggestionCard` — linha horizontal com ícone 32×32 + texto + chevron. Usa `TouchableOpacity` (não `Pressable`) para garantir `flexDirection: 'row'` correto no RN 0.83
+
+**Estilo:** inline styles + tokens NIKS locais (`CORAL`, `INK`, `INK_SOFT`, `INK_WHISPER`, `INK_HAIR`, `SURFACE_HAIR`). Não usa `Colors` constants nem NativeWind.
+
+---
+
 ### Tab Bar (`app/(app)/_layout.tsx`)
 Redesenhada com base no Figma Make `cFsFcVSjOMkTdHIJpHgSDk`:
 - **Container**: branco, `borderRadius: 20`, borda `#F0F0F0` (não mais pílula cinza)
-- **3 tabs**: `Home` "início" · `Droplet` "rotina" · `User` "perfil" (labels em minúsculo)
+- **4 tabs**: `Home` "início" · `Droplet` "rotina" · `Sparkles` "niks" · `User` "perfil" (labels em minúsculo)
 - **Ativo**: coral `#FB7B6B` · **Inativo**: `#8A8A8E`
-- **Ícone ativo**: SVG customizado sólido — `HomeFilled`, `DropletFilled`, `UserFilled` (lucide-react-native não tem variante filled; as três são componentes inline em `_layout.tsx` usando `react-native-svg`) com `fill={activeColor}`. **Ícone inativo**: lucide outline, tamanho 24, `strokeWidth: 1.5`
+- **Ícone ativo**: SVG customizado sólido — `HomeFilled`, `DropletFilled`, `SparklesFilled`, `UserFilled` (lucide-react-native não tem variante filled; os quatro são componentes inline em `_layout.tsx` usando `react-native-svg`) com `fill={activeColor}`. **Ícone inativo**: lucide outline, tamanho 24, `strokeWidth: 1.5`
 - Posicionamento: `bottom: 20 + insets.bottom` (`useSafeAreaInsets` obrigatório para não sobrepor o home indicator do iPhone), `left/right: 16`
 - FAB laranja global removido da tab bar; a home screen tem seu próprio FAB coral (68×68px) interno à tela, não vinculado à tab bar
 - Telas ocultas (`href: null`): `evolucao`, `set-name`, `skin-result`

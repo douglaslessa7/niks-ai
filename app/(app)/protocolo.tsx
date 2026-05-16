@@ -76,9 +76,14 @@ function applySchedule(step: any) {
   };
 }
 
+function getTimePeriod(): 'morning' | 'night' {
+  const h = new Date().getHours();
+  return (h >= 18 || h < 4) ? 'night' : 'morning';
+}
+
 export default function Protocolo() {
   const { scanResult, onboarding, protocolResult: cachedProtocol, setProtocolResult, setTabBarTheme, setTabBarVisible } = useAppStore();
-  const [period, setPeriod] = useState<'morning' | 'night'>('morning');
+  const [period, setPeriod] = useState<'morning' | 'night'>(getTimePeriod);
   const [protocol, setProtocol] = useState<Protocol | null>(null);
   const [morningSteps, setMorningSteps] = useState<Step[]>([]);
   const [nightSteps, setNightSteps] = useState<Step[]>([]);
@@ -204,6 +209,13 @@ export default function Protocolo() {
   useEffect(() => { nightStepsRef.current = nightSteps; }, [nightSteps]);
   useEffect(() => { streakDaysRef.current = streakDays; }, [streakDays]);
   useEffect(() => { lastCompletedAtRef.current = lastCompletedAt; }, [lastCompletedAt]);
+
+  // Auto-sincroniza período com horário do sistema ao focar a tela (mantém toggle manual)
+  useFocusEffect(
+    useCallback(() => {
+      setPeriod(getTimePeriod());
+    }, [])
+  );
 
   // Sincroniza o tema do tab bar: dark só enquanto esta tela está focada no modo noite.
   // useFocusEffect garante que o cleanup roda ao sair da tela (não só ao desmontar).

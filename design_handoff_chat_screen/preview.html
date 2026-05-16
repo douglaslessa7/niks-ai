@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NIKS Chat — Definitive Screens (Preview)</title>
+  <link rel="stylesheet" href="source/tokens.css" />
+  <link rel="stylesheet" href="source/chat.css" />
+  <link rel="stylesheet" href="source/chat-v2.css" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #EAE6DF; min-height: 100%; }
+    body {
+      font-family: var(--niks-ui);
+      color: var(--niks-ink);
+      -webkit-font-smoothing: antialiased;
+      padding: 60px 40px 80px;
+      display: flex;
+      gap: 60px;
+      justify-content: center;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .frame {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    .frame-label {
+      font: 500 13px/1 var(--niks-ui);
+      color: rgba(43,39,36,0.65);
+      letter-spacing: -0.07px;
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div id="screen-1"></div>
+    <div class="frame-label">estado inicial — definitivo</div>
+  </div>
+  <div class="frame">
+    <div id="screen-2"></div>
+    <div class="frame-label">conversa em andamento — definitiva</div>
+  </div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="source/phone.jsx"></script>
+  <script type="text/babel" src="source/chat-components.jsx"></script>
+  <script type="text/babel" src="source/chat-screens.jsx"></script>
+  <script type="text/babel" src="source/chat-screens-v2.jsx"></script>
+
+  <script type="text/babel">
+    // Definitive Screen 1: ChatEmptyScreen (from chat-screens.jsx)
+    ReactDOM.createRoot(document.getElementById('screen-1')).render(<ChatEmptyScreen />);
+    // Definitive Screen 2: ChatActiveScreenV23 (from chat-screens-v2.jsx) — coral hairline bubble variant
+    ReactDOM.createRoot(document.getElementById('screen-2')).render(<ChatActiveScreenV23 />);
+  </script>
+</body>
+</html>
