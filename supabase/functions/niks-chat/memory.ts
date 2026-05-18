@@ -18,8 +18,13 @@ type ExtractedMemory = {
   confidence: number
 }
 
-function stripMarkdown(text: string): string {
-  return text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+// Extracts the outermost JSON object from a string, handling markdown fences
+// and any preamble text the model may have added before the JSON.
+function extractJSON(text: string): string {
+  const start = text.indexOf('{')
+  const end   = text.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return text
+  return text.slice(start, end + 1)
 }
 
 export async function extractAndSave(
@@ -54,7 +59,28 @@ Resposta da NIKS: ${assistantResponse}`
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 512 },
+        generationConfig: {
+          maxOutputTokens: 1024,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'object',
+            properties: {
+              memories: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type:       { type: 'string' },
+                    value:      { type: 'string' },
+                    confidence: { type: 'number' },
+                  },
+                  required: ['type', 'value', 'confidence'],
+                },
+              },
+            },
+            required: ['memories'],
+          },
+        },
         safetySettings: SAFETY_SETTINGS,
       }),
     })
@@ -65,10 +91,19 @@ Resposta da NIKS: ${assistantResponse}`
     }
 
     const data = await resp.json()
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    const candidate   = data?.candidates?.[0]
+    const finishReason = candidate?.finishReason
+
+    // Skip parse when the model was cut off — avoids SyntaxError on truncated JSON
+    if (finishReason && finishReason !== 'STOP') {
+      console.warn('memory.ts: Gemini finishReason', finishReason, '— skipping parse')
+      return
+    }
+
+    const raw = candidate?.content?.parts?.[0]?.text
     if (!raw) return
 
-    const parsed = JSON.parse(stripMarkdown(raw)) as { memories: ExtractedMemory[] }
+    const parsed = JSON.parse(extractJSON(raw)) as { memories: ExtractedMemory[] }
     const qualified = parsed.memories.filter(m => m.confidence >= 0.75)
 
     for (const memory of qualified) {

@@ -25,8 +25,13 @@ type SuggestionPayload = {
   }
 }
 
-function stripMarkdown(text: string): string {
-  return text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+// Extracts the outermost JSON object from a string, handling markdown fences
+// and any preamble text the model may have added before the JSON.
+function extractJSON(text: string): string {
+  const start = text.indexOf('{')
+  const end   = text.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return text
+  return text.slice(start, end + 1)
 }
 
 export async function checkForSuggestion(
@@ -71,7 +76,28 @@ Resposta da NIKS: ${assistantResponse}`
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 512 },
+        generationConfig: {
+          maxOutputTokens: 1024,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'object',
+            properties: {
+              reason: { type: 'string' },
+              proposed_changes: {
+                type: 'object',
+                properties: {
+                  action:        { type: 'string' },
+                  step_name:     { type: 'string' },
+                  period:        { type: 'string' },
+                  duration_days: { type: 'integer' },
+                  details:       { type: 'string' },
+                },
+                required: ['action', 'step_name', 'details'],
+              },
+            },
+            required: ['reason', 'proposed_changes'],
+          },
+        },
         safetySettings: SAFETY_SETTINGS,
       }),
     })
@@ -82,10 +108,18 @@ Resposta da NIKS: ${assistantResponse}`
     }
 
     const data = await resp.json()
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    const candidate    = data?.candidates?.[0]
+    const finishReason = candidate?.finishReason
+
+    if (finishReason && finishReason !== 'STOP') {
+      console.warn('protocol-actions.ts: checkForSuggestion finishReason', finishReason, '— skipping parse')
+      return
+    }
+
+    const raw = candidate?.content?.parts?.[0]?.text
     if (!raw) return
 
-    const parsed = JSON.parse(stripMarkdown(raw)) as SuggestionPayload
+    const parsed = JSON.parse(extractJSON(raw)) as SuggestionPayload
 
     await supabase.from('coach_protocol_suggestions').insert({
       user_id: userId,
@@ -163,7 +197,20 @@ Mensagem da usuária: ${userMessage}`
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 512 },
+        generationConfig: {
+          maxOutputTokens: 64,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'object',
+            properties: {
+              intent: {
+                type: 'string',
+                enum: ['approved', 'rejected', 'unclear'],
+              },
+            },
+            required: ['intent'],
+          },
+        },
         safetySettings: SAFETY_SETTINGS,
       }),
     })
@@ -174,10 +221,18 @@ Mensagem da usuária: ${userMessage}`
     }
 
     const data = await resp.json()
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    const candidate    = data?.candidates?.[0]
+    const finishReason = candidate?.finishReason
+
+    if (finishReason && finishReason !== 'STOP') {
+      console.warn('protocol-actions.ts: checkApprovalIntent finishReason', finishReason, '— skipping parse')
+      return
+    }
+
+    const raw = candidate?.content?.parts?.[0]?.text
     if (!raw) return
 
-    const { intent } = JSON.parse(stripMarkdown(raw)) as { intent: 'approved' | 'rejected' | 'unclear' }
+    const { intent } = JSON.parse(extractJSON(raw)) as { intent: 'approved' | 'rejected' | 'unclear' }
 
     if (intent === 'unclear') return
 

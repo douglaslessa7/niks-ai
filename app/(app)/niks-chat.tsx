@@ -531,6 +531,15 @@ function ChatInputBar({
   const inputColor   = isDark ? '#FFFFFF' : INK;
   const placeholderC = isDark ? 'rgba(255,255,255,0.32)' : INK_WHISPER;
 
+  const LINE_HEIGHT = 20;
+  const MAX_INPUT_HEIGHT = LINE_HEIGHT * 4;
+  const [contentHeight, setContentHeight] = useState(LINE_HEIGHT);
+  const isMultiline = contentHeight > LINE_HEIGHT + 4;
+
+  useEffect(() => {
+    if (!value) setContentHeight(LINE_HEIGHT);
+  }, [value]);
+
   return (
     <View style={{
       paddingTop: 12, paddingHorizontal: 16, paddingBottom,
@@ -565,13 +574,13 @@ function ChatInputBar({
           ))}
         </ScrollView>
       )}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: isMultiline ? 'flex-end' : 'center', gap: 10 }}>
         {/* Pill */}
         <View style={{
-          flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4,
+          flex: 1, flexDirection: 'row', alignItems: isMultiline ? 'flex-end' : 'center', gap: 4,
           backgroundColor: pillBg,
           borderWidth: 0.5, borderColor: pillBorder,
-          borderRadius: 100,
+          borderRadius: isMultiline ? 22 : 100,
           paddingTop: 8, paddingBottom: 8, paddingLeft: 14, paddingRight: 8,
           minHeight: 44,
         }}>
@@ -606,14 +615,20 @@ function ChatInputBar({
             onChangeText={onChangeText}
             placeholder="pergunte algo…"
             placeholderTextColor={placeholderC}
+            multiline
+            onContentSizeChange={(e) => {
+              setContentHeight(e.nativeEvent.contentSize.height);
+            }}
             style={{
               flex: 1,
               fontFamily: value ? undefined : fontItalic,
               fontStyle: value ? 'normal' : 'italic',
               fontSize: 15,
+              lineHeight: LINE_HEIGHT,
               color: inputColor,
               paddingVertical: 0,
               paddingLeft: 8, paddingRight: 6,
+              maxHeight: MAX_INPUT_HEIGHT,
             }}
           />
         </View>
@@ -662,6 +677,17 @@ const PREDEFINED_RESPONSES: Record<string, string> = {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+function formatConversationDate(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const isToday = d.toDateString() === now.toDateString()
+  const dayLabel = isToday
+    ? 'HOJE'
+    : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return `${dayLabel} · ${time}`
+}
+
 function formatRelativeTime(iso: string): string {
   const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
   if (diffMin < 1)  return 'agora'
@@ -729,6 +755,7 @@ export default function NiksChat() {
   const [historyVisible,       setHistoryVisible]       = useState(false);
   const [historyConversations, setHistoryConversations] = useState<HistoryConversation[]>([]);
   const [historyLoading,       setHistoryLoading]       = useState(false);
+  const [conversationTime,     setConversationTime]     = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -796,6 +823,7 @@ export default function NiksChat() {
               imageUris,
             }
           }))
+          setConversationTime(msgs[0].created_at)
           setMode('active')
         } else if (chatMode !== 'empty') {
           setMessages([])
@@ -812,6 +840,7 @@ export default function NiksChat() {
     setNiksChatMode('empty')
     setMode('empty')
     setMessages([])
+    setConversationTime(null)
   }
 
   const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
@@ -833,6 +862,7 @@ export default function NiksChat() {
       if (convError || !newConv?.id) return
       activeConvId = newConv.id
       setConversationId(activeConvId)
+      setConversationTime(new Date().toISOString())
     }
 
     const userMsgId       = `user_${Date.now()}`
@@ -847,17 +877,51 @@ export default function NiksChat() {
     setMode('active')
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) return
+    const showSendError = (msg: string) => {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantMsgId
+          ? { ...m, content: msg, isStreaming: false }
+          : m
+      ))
+    }
+
+    // Obtain a valid token before sending. Only refresh when the token is
+    // about to expire (<5 min) to avoid the extra network round-trip on
+    // every message while still handling clock-skew / near-expiry cases.
+    let accessToken: string | null = null
+
+    try {
+      const { data: { session: current } } = await supabase.auth.getSession()
+      const expiresAt = current?.expires_at ?? 0
+      const nowSecs   = Math.floor(Date.now() / 1000)
+
+      if (current?.access_token && expiresAt - nowSecs > 300) {
+        accessToken = current.access_token
+      } else {
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
+        accessToken = (!refreshError && refreshed.session?.access_token)
+          ? refreshed.session.access_token
+          : (current?.access_token ?? null)
+      }
+    } catch {
+      const { data: { session } } = await supabase.auth.getSession()
+      accessToken = session?.access_token ?? null
+    }
+
+    if (!accessToken) {
+      showSendError('Ocorreu um erro. Tente novamente.')
+      return
+    }
 
     let lastLength = 0
     const xhr = new XMLHttpRequest()
     xhr.open('POST', FUNCTION_URL)
-    xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
     xhr.setRequestHeader('apikey', ANON_KEY)
     xhr.setRequestHeader('Content-Type', 'application/json')
 
     xhr.onprogress = () => {
+      if (xhr.status !== 200) return
       const chunk = xhr.responseText.slice(lastLength)
       lastLength = xhr.responseText.length
       if (!chunk) return
@@ -868,8 +932,20 @@ export default function NiksChat() {
     }
 
     xhr.onload = () => {
+      if (xhr.status !== 200) {
+        setMessages(prev => prev.map(m =>
+          m.id === assistantMsgId
+            ? { ...m, content: 'Ocorreu um erro. Tente novamente.', isStreaming: false }
+            : m
+        ))
+        return
+      }
+      // Always use the full responseText to guarantee no truncation,
+      // regardless of whether onprogress fired for every chunk.
       setMessages(prev => prev.map(m =>
-        m.id === assistantMsgId ? { ...m, isStreaming: false } : m
+        m.id === assistantMsgId
+          ? { ...m, content: xhr.responseText, isStreaming: false }
+          : m
       ))
     }
 
@@ -877,6 +953,18 @@ export default function NiksChat() {
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
           ? { ...m, content: 'Ocorreu um erro. Tente novamente.', isStreaming: false }
+          : m
+      ))
+    }
+
+    // Image analysis requires more time (upload + multimodal inference).
+    // Supabase Edge Functions run up to ~150s, so give the client enough
+    // headroom: 120s with images, 90s for text-only.
+    xhr.timeout = images && images.length > 0 ? 120000 : 90000
+    xhr.ontimeout = () => {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantMsgId
+          ? { ...m, content: 'A resposta demorou muito. Tente novamente.', isStreaming: false }
           : m
       ))
     }
@@ -905,6 +993,7 @@ export default function NiksChat() {
 
       const activeConvId = newConv.id
       setConversationId(activeConvId)
+      setConversationTime(new Date().toISOString())
 
       await supabase.from('coach_messages').insert([
         { conversation_id: activeConvId, user_id: userId, role: 'user',      content: text },
@@ -1021,6 +1110,7 @@ export default function NiksChat() {
     if (!msgs || msgs.length === 0) return
 
     setConversationId(convId)
+    setConversationTime(msgs[0].created_at)
     setMessages(msgs.map(msg => {
       let imageUris: string[] | undefined
       if (msg.image_url) {
@@ -1177,7 +1267,7 @@ export default function NiksChat() {
                 color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(43,39,36,0.42)',
                 paddingTop: 2, paddingBottom: 8,
               }}>
-                HOJE · 21:48
+                {conversationTime ? formatConversationDate(conversationTime) : ''}
               </Text>
 
               {messages.map(m => {

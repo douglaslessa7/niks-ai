@@ -82,7 +82,23 @@ export class GeminiModel implements ChatModel {
         try {
           while (true) {
             const { done, value } = await reader.read()
-            if (done) break
+
+            if (done) {
+              // Flush quaisquer bytes ainda no decoder e processa linhas restantes no buffer
+              sseBuffer += decoder.decode()
+              const remainingLines = sseBuffer.split('\n')
+              for (const line of remainingLines) {
+                if (!line.startsWith('data: ')) continue
+                const payload = line.slice(6).trim()
+                if (!payload || payload === '[DONE]') continue
+                try {
+                  const parsed = JSON.parse(payload)
+                  const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text
+                  if (text != null) controller.enqueue(encoder.encode(text))
+                } catch { /* chunk malformado */ }
+              }
+              break
+            }
 
             sseBuffer += decoder.decode(value, { stream: true })
             const lines = sseBuffer.split('\n')
