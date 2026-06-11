@@ -15,6 +15,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAppStore, ScanResult } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
+import { useAIConsent } from '../../hooks/useAIConsent';
+import { AIConsentModal } from '../../components/ui/AIConsentModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type FoodScan = {
@@ -370,11 +372,11 @@ function IconPlus({ accent }: { accent: string }) {
 // ── RitualCard ───────────────────────────────────────────────────────────────
 function RitualCard({
   ritualComplete, ctx, nextStep, doneSoFar, total,
-  displayFont, accent, ink, inkSoft, inkHair, surface, surfaceHair, isDark,
+  displayFont, displayFontReg, latoFont, accent, ink, inkSoft, inkHair, surface, surfaceHair, isDark,
   onPress,
 }: {
   ritualComplete: boolean; ctx: TimeCtx; nextStep: string;
-  doneSoFar: number; total: number; displayFont: string | undefined;
+  doneSoFar: number; total: number; displayFont: string | undefined; displayFontReg: string | undefined; latoFont: string | undefined;
   accent: string; ink: string; inkSoft: string; inkHair: string;
   surface: string; surfaceHair: string; isDark: boolean; onPress: () => void;
 }) {
@@ -428,7 +430,7 @@ function RitualCard({
         </>
       ) : (
         <>
-          <Text style={{ fontFamily: displayFont, fontSize: 32, fontWeight: '400', color: ink, lineHeight: 33.6, letterSpacing: -0.64, fontStyle: 'italic', marginTop: 16 }}>
+          <Text style={{ fontFamily: displayFontReg, fontSize: 32, fontWeight: '400', color: ink, lineHeight: 33.6, letterSpacing: -0.64, fontStyle: 'italic', marginTop: 16 }}>
             {nextStep || 'Configure seu protocolo'}
           </Text>
           <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '400', color: inkSoft, letterSpacing: -0.065 }}>
@@ -451,9 +453,9 @@ function RitualCard({
 
 // ── ScanCard — extraído para componente próprio (useState não pode ficar em map) ──
 function ScanCard({
-  scan, delta, displayFont, accent, ink, inkSoft, surface, surfaceHair, isDark, onPress,
+  scan, delta, displayFont, latoFont, accent, ink, inkSoft, surface, surfaceHair, isDark, onPress,
 }: {
-  scan: SkinScan; delta: number; displayFont: string | undefined;
+  scan: SkinScan; delta: number; displayFont: string | undefined; latoFont: string | undefined;
   accent: string; ink: string; inkSoft: string; surface: string;
   surfaceHair: string; isDark: boolean; onPress: () => void;
 }) {
@@ -476,8 +478,8 @@ function ScanCard({
 
         {/* Score badge */}
         <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: isDark ? 'rgba(15,20,32,0.72)' : 'rgba(255,255,255,0.92)', borderWidth: 0.5, borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(43,39,36,0.06)', borderRadius: 14, paddingVertical: 6, paddingLeft: 11, paddingRight: 10, flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
-          <Text style={{ fontFamily: displayFont, fontSize: 20, fontWeight: '400', color: ink, lineHeight: 20, letterSpacing: -0.4 }}>{score}</Text>
-          <Text style={{ fontFamily: displayFont, fontSize: 11, fontWeight: '400', color: inkSoft, fontStyle: 'italic' }}>/100</Text>
+          <Text style={{ fontFamily: latoFont, fontSize: 20, fontWeight: '400', color: ink, lineHeight: 20, letterSpacing: -0.4 }}>{score}</Text>
+          <Text style={{ fontFamily: latoFont, fontSize: 11, fontWeight: '400', color: inkSoft, fontStyle: 'italic' }}>/100</Text>
         </View>
 
         {/* Delta */}
@@ -492,7 +494,7 @@ function ScanCard({
       <View style={{ padding: 14, gap: 12 }}>
         <View>
           <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, color: inkSoft, textTransform: 'uppercase' }}>Scan facial</Text>
-          <Text style={{ fontFamily: displayFont, fontSize: 18, fontWeight: '400', color: ink, letterSpacing: -0.36, lineHeight: 19.8, marginTop: 4, fontStyle: 'italic' }}>
+          <Text style={{ fontFamily: latoFont, fontSize: 18, fontWeight: '400', color: ink, letterSpacing: -0.36, lineHeight: 19.8, marginTop: 4, fontStyle: 'italic' }}>
             {dateStr}
           </Text>
         </View>
@@ -507,9 +509,9 @@ function ScanCard({
 
 // ── ScansRecentes ─────────────────────────────────────────────────────────────
 function ScansRecentes({
-  scans, displayFont, accent, ink, inkSoft, surface, surfaceHair, isDark, onVerResultado,
+  scans, displayFont, latoFont, accent, ink, inkSoft, surface, surfaceHair, isDark, onVerResultado,
 }: {
-  scans: SkinScan[]; displayFont: string | undefined; accent: string;
+  scans: SkinScan[]; displayFont: string | undefined; latoFont: string | undefined; accent: string;
   ink: string; inkSoft: string; surface: string; surfaceHair: string;
   isDark: boolean; onVerResultado: (scan: SkinScan) => void;
 }) {
@@ -543,6 +545,7 @@ function ScansRecentes({
             scan={scan}
             delta={delta}
             displayFont={displayFont}
+            latoFont={latoFont}
             accent={accent}
             ink={ink}
             inkSoft={inkSoft}
@@ -559,10 +562,10 @@ function ScansRecentes({
 
 // ── RefeicoesSection ─────────────────────────────────────────────────────────
 function RefeicoesSection({
-  meals, displayFont, accent, ink, inkSoft, inkHair, surface, surfaceHair, isDark,
+  meals, displayFont, latoFont, accent, ink, inkSoft, inkHair, surface, surfaceHair, isDark,
   onMealPress, onScanPress,
 }: {
-  meals: FoodScan[]; displayFont: string | undefined; accent: string;
+  meals: FoodScan[]; displayFont: string | undefined; latoFont: string | undefined; accent: string;
   ink: string; inkSoft: string; inkHair: string; surface: string;
   surfaceHair: string; isDark: boolean;
   onMealPress: (meal: FoodScan) => void; onScanPress: () => void;
@@ -602,14 +605,14 @@ function RefeicoesSection({
                   <Text style={{ fontSize: 14, fontWeight: '500', color: ink, lineHeight: 17.5, letterSpacing: -0.07 }} numberOfLines={1}>
                     {m.meal_name}
                   </Text>
-                  <Text style={{ marginTop: 4, fontFamily: displayFont, fontSize: 12, color: inkSoft, fontStyle: 'italic' }}>
+                  <Text style={{ marginTop: 4, fontFamily: displayFont, fontSize: 12, color: inkSoft }}>
                     {new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                   </Text>
                 </View>
 
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 1, flexShrink: 0 }}>
-                  <Text style={{ fontFamily: displayFont, fontSize: 22, fontWeight: '400', color: '#FB7B6B', letterSpacing: -0.44, lineHeight: 22 }}>{m.meal_score}</Text>
-                  <Text style={{ fontFamily: displayFont, fontSize: 12, color: inkSoft, fontStyle: 'italic' }}>/100</Text>
+                  <Text style={{ fontFamily: latoFont, fontSize: 22, fontWeight: '400', color: '#FB7B6B', letterSpacing: -0.44, lineHeight: 22 }}>{m.meal_score}</Text>
+                  <Text style={{ fontFamily: latoFont, fontSize: 12, color: inkSoft, fontStyle: 'italic' }}>/100</Text>
                 </View>
               </TouchableOpacity>
             ))}
@@ -629,7 +632,7 @@ function RefeicoesSection({
         ) : (
           /* Empty state */
           <View style={{ marginTop: 16, paddingTop: 22, borderTopWidth: 0.5, borderTopColor: inkHair }}>
-            <Text style={{ fontFamily: displayFont, fontSize: 22, fontWeight: '400', color: ink, letterSpacing: -0.44, lineHeight: 25.3, maxWidth: 260 }}>
+            <Text style={{ fontFamily: latoFont, fontSize: 22, fontWeight: '400', color: ink, letterSpacing: -0.44, lineHeight: 25.3, maxWidth: 260 }}>
               <Text style={{ fontStyle: 'italic' }}>{'nenhuma refeição\n'}</Text>
               {'escaneada '}
               <Text style={{ color: accent }}>{'hoje '}</Text>
@@ -657,7 +660,8 @@ function RefeicoesSection({
 // ── Home ──────────────────────────────────────────────────────────────────────
 export default function Home() {
   const router = useRouter();
-  const { setSelectedScan, setSelectedFoodResult, setTabBarTheme, setScanModalOpen } = useAppStore();
+  const { setSelectedScan, setSelectedFoodResult, setSelectedFoodImageUrl, setTabBarTheme, setScanModalOpen } = useAppStore();
+  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
   const [debugMode, setDebugMode] = useState<'am' | 'pm' | null>(null); // DEBUG — remover antes do release
 
   const hour = debugMode === 'am' ? 9 : debugMode === 'pm' ? 22 : new Date().getHours();
@@ -678,6 +682,7 @@ export default function Home() {
   });
   const displayFont    = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined;
   const displayFontReg = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
+  const latoFont       = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
 
   const [firstName,      setFirstName]      = useState('');
   const [meals,          setMeals]          = useState<FoodScan[]>([]);
@@ -836,6 +841,8 @@ export default function Home() {
             doneSoFar={doneSoFar}
             total={ritualTotal}
             displayFont={displayFont}
+            displayFontReg={displayFontReg}
+            latoFont={latoFont}
             accent={accent}
             ink={ink}
             inkSoft={inkSoft}
@@ -849,6 +856,7 @@ export default function Home() {
           <ScansRecentes
             scans={scans}
             displayFont={displayFont}
+            latoFont={latoFont}
             accent={accent}
             ink={ink}
             inkSoft={inkSoft}
@@ -864,6 +872,7 @@ export default function Home() {
           <RefeicoesSection
             meals={meals}
             displayFont={displayFont}
+            latoFont={latoFont}
             accent={accent}
             ink={ink}
             inkSoft={inkSoft}
@@ -873,12 +882,14 @@ export default function Home() {
             isDark={isDark}
             onMealPress={(meal) => {
               if (meal.full_result) setSelectedFoodResult(meal.full_result);
+              setSelectedFoodImageUrl(meal.image_url ?? null);
               router.push('/(scan)/food-report' as any);
             }}
-            onScanPress={() => setScanModalOpen(true)}
+            onScanPress={() => requestConsent(() => { setSelectedFoodResult(null); router.push('/(scan)/food-camera' as any); })}
           />
         </ScrollView>
       </SafeAreaView>
+      <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
     </View>
   );
 }

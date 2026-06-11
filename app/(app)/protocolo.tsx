@@ -82,13 +82,14 @@ function getTimePeriod(): 'morning' | 'night' {
 }
 
 export default function Protocolo() {
-  const { scanResult, onboarding, protocolResult: cachedProtocol, setProtocolResult, setTabBarTheme, setTabBarVisible } = useAppStore();
+  const { scanResult, onboarding, protocolResult: cachedProtocol, setProtocolResult, setTabBarTheme, setTabBarVisible, protocolGenerating } = useAppStore();
   const [period, setPeriod] = useState<'morning' | 'night'>(getTimePeriod);
   const [protocol, setProtocol] = useState<Protocol | null>(null);
   const [morningSteps, setMorningSteps] = useState<Step[]>([]);
   const [nightSteps, setNightSteps] = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [awaitingGeneration, setAwaitingGeneration] = useState(false);
   const [selectedStep, setSelectedStep] = useState<Step | null>(null);
   const [showStepDetail, setShowStepDetail] = useState(false);
 
@@ -381,6 +382,14 @@ export default function Protocolo() {
     generateProtocol();
   }, []);
 
+  // Quando a geração em background terminar, recarregar o protocolo
+  useEffect(() => {
+    if (!protocolGenerating && awaitingGeneration) {
+      setAwaitingGeneration(false);
+      generateProtocol();
+    }
+  }, [protocolGenerating]);
+
   const getProtocolDate = () => {
     const now = new Date();
     now.setHours(now.getHours() - 3);
@@ -498,7 +507,13 @@ export default function Protocolo() {
         }
       }
 
-      // 3. Fallback: regenerar via Edge Function
+      // 3. Se a geração está em andamento em background, aguardar
+      if (protocolGenerating) {
+        setAwaitingGeneration(true);
+        return;
+      }
+
+      // 4. Fallback: regenerar via Edge Function
       if (!scanResult) {
         setError('Faça um scan de pele primeiro para gerar seu protocolo personalizado.');
         return;
@@ -659,12 +674,13 @@ export default function Protocolo() {
   const iaCronograma = (() => {
     const raw = protocol?.dicas?.[4];
     if (!raw) return [];
-    const matches = [...raw.matchAll(/Semana\s+(\d+\+?(?:\s+em diante)?)\s*:/gi)];
+    const matches = [...raw.matchAll(/(?:(?:Nas\s+)?Semanas?\s+([\d][\d\-–—]*\+?(?:\s+em diante)?)|A partir da semana\s+(\d+))\s*[,:]/gi)];
     if (matches.length < 2) return [{ week: 'Introdução gradual', body: raw }];
     return matches.map((m, i) => {
       const start = m.index! + m[0].length;
       const end = matches[i + 1]?.index ?? raw.length;
-      const label = m[1].toLowerCase().includes('diante') ? '3+' : `${m[1]}`;
+      const rawLabel = (m[1] ?? m[2]).trim().replace(/\s+em diante/, '');
+      const label = m[2] ? `${m[2]}+` : rawLabel;
       return {
         week: `Semana ${label}`,
         body: raw.slice(start, end).trim().replace(/\.$/, '') + '.',
@@ -715,6 +731,20 @@ export default function Protocolo() {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color={Colors.scanBtn} />
+      </View>
+    );
+  }
+
+  if (awaitingGeneration) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+        <ActivityIndicator size="large" color={Colors.scanBtn} />
+        <Text style={{ marginTop: 20, fontSize: 16, fontWeight: '600', color: '#1D3A44', textAlign: 'center', letterSpacing: -0.3 }}>
+          Preparando seu protocolo...
+        </Text>
+        <Text style={{ marginTop: 8, fontSize: 14, color: 'rgba(29,58,68,0.55)', textAlign: 'center', lineHeight: 21 }}>
+          Estamos ajeitando os últimos detalhes da sua rotina de skin care. Isso pode levar alguns instantes.
+        </Text>
       </View>
     );
   }
@@ -1014,7 +1044,7 @@ export default function Protocolo() {
                 color: accent, textTransform: 'uppercase',
               }}>Recomendações</Text>
               <Text style={{
-                fontFamily: displayFont, fontSize: 22, fontWeight: '400',
+                fontFamily: displayFontReg, fontSize: 22, fontWeight: '400',
                 color: ink, letterSpacing: -0.33, marginTop: 6,
               }}>O que esperar do seu protocolo</Text>
             </View>
@@ -1034,7 +1064,7 @@ export default function Protocolo() {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontFamily: displayFontReg, fontSize: 17, fontWeight: '400', color: ink, letterSpacing: -0.17 }}>
-                      <Text style={{ fontFamily: displayFont, color: accent }}>{'Prognóstico'}</Text>
+                      <Text style={{ fontFamily: displayFontReg, color: accent }}>{'Prognóstico'}</Text>
                       {` · ${iaDicas.length} nota${iaDicas.length !== 1 ? 's' : ''}`}
                     </Text>
                     <Text style={{ fontSize: 11, color: inkSoft, marginTop: 4 }}>
@@ -1077,7 +1107,7 @@ export default function Protocolo() {
                             )}
                             <View style={{ flex: 1 }}>
                               <Text style={{
-                                fontFamily: isAlert ? displayFont : displayFontReg,
+                                fontFamily: displayFontReg,
                                 fontSize: 18, fontWeight: '400',
                                 color: ink, lineHeight: 22, letterSpacing: -0.27,
                               }}>{d.title}</Text>
@@ -1108,7 +1138,7 @@ export default function Protocolo() {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontFamily: displayFontReg, fontSize: 17, fontWeight: '400', color: ink, letterSpacing: -0.17 }}>
-                      <Text style={{ fontFamily: displayFont, color: accent }}>{'Introdução gradual'}</Text>
+                      <Text style={{ fontFamily: displayFontReg, color: accent }}>{'Introdução gradual'}</Text>
                       {` · ${iaCronograma.length} semana${iaCronograma.length !== 1 ? 's' : ''}`}
                     </Text>
                     <Text style={{ fontSize: 11, color: inkSoft, marginTop: 4 }}>
@@ -1140,7 +1170,7 @@ export default function Protocolo() {
                               backgroundColor: accent,
                             }} />
                             <Text style={{
-                              fontFamily: displayFont, fontSize: 12, fontWeight: '400',
+                              fontFamily: displayFontReg, fontSize: 12, fontWeight: '400',
                               color: accent, letterSpacing: -0.06,
                             }}>{c.week}</Text>
                           </View>
@@ -1156,7 +1186,7 @@ export default function Protocolo() {
                         borderBottomColor: inkHair,
                       }}>
                         <Text style={{
-                          fontFamily: displayFont, fontSize: 15, fontWeight: '400',
+                          fontFamily: displayFontReg, fontSize: 15, fontWeight: '400',
                           color: accent, width: 72, flexShrink: 0, letterSpacing: -0.075,
                         }}>{c.week}</Text>
                         <Text style={{ fontSize: 13, color: ink, lineHeight: 21, flex: 1 }}>{c.body}</Text>
@@ -1189,8 +1219,8 @@ export default function Protocolo() {
           }}
         >
           <Text style={{
-            color: '#fff', fontFamily: displayFont,
-            fontSize: 14, fontWeight: '400', letterSpacing: -0.07,
+            color: '#fff',
+            fontSize: 15, fontWeight: '600', letterSpacing: -0.075,
           }}>Começar minha rotina</Text>
           <Svg width={13} height={13} viewBox="0 0 14 14" fill="none">
             <SvgPath d="M3 7h8m0 0L7.5 3.5M11 7L7.5 10.5"

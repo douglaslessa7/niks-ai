@@ -2,22 +2,48 @@ import { useEffect, useRef } from 'react';
 import { View, ActivityIndicator, InteractionManager } from 'react-native';
 import { useRouter } from 'expo-router';
 import { usePlacement } from 'expo-superwall';
+import Purchases from 'react-native-purchases';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
+import { supabase } from '../../lib/supabase';
+import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function PaywallSoft() {
   const router = useRouter();
   const hasRegistered = useRef(false);
   const { track } = useMixpanel();
+  const setSubscriptionVerified = useAppStore((s) => s.setSubscriptionVerified);
 
   track('paywall_viewed', { screen: 'soft' });
 
   const handleAfterPaywall = async () => {
     try {
-      const info = await getCustomerInfo();
+      let info = await getCustomerInfo();
+
+      // Fallback: se o cache do RC não mostrar assinatura ativa, sincroniza
+      // com a App Store. Isso cobre: (1) cache desatualizado pós-compra,
+      // (2) usuário anônimo comprou mas RC foi trocado para usuário identificado
+      // sem transferir a assinatura, (3) onPurchase retornou 'failed' mas a
+      // Apple processou o pagamento normalmente.
+      if (!isSubscribed(info)) {
+        try {
+          info = await Purchases.restorePurchases();
+        } catch {
+          // Se o restore falhar, info continua com o valor anterior
+        }
+      }
+
       if (isSubscribed(info)) {
-        // Assinante confirmado — entra no app (layout checa nome e redireciona se necessário)
-        router.replace('/(app)/home');
+        // Assinante confirmada — marca no store para (app)/_layout.tsx não re-verificar
+        setSubscriptionVerified(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          // Usuária já tem conta (reengajamento) — vai direto para home
+          router.replace('/(app)/home');
+        } else {
+          // Nova usuária — precisa criar a conta
+          router.replace('/(onboarding)/signup');
+        }
         return;
       }
     } catch {
@@ -44,7 +70,7 @@ export default function PaywallSoft() {
 
   useEffect(() => {
     if (__DEV__) {
-      router.replace('/(app)/home');
+      router.replace('/(onboarding)/signup');
       return;
     }
 

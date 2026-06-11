@@ -1,6 +1,7 @@
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput,
   KeyboardAvoidingView, Platform, Keyboard, Image, StyleSheet,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -126,9 +127,23 @@ function AnimatedMiniOrb({ size, isDark = false }: { size: number; isDark?: bool
 }
 
 // ── ChatHeader ────────────────────────────────────────────────────────────────
-function ChatHeader({ showBack, onBack, onHistoryPress, isDark = false }: {
+function ChatHeader({ showBack, onBack, onHistoryPress, isDark = false, onDebugToggle }: {
   showBack: boolean; onBack: () => void; onHistoryPress: () => void; isDark?: boolean;
+  onDebugToggle: () => void;
 }) {
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleNiksTap = () => {
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 2000);
+    if (tapCountRef.current >= 5) {
+      tapCountRef.current = 0;
+      onDebugToggle();
+    }
+  };
+
   const iconColor = isDark ? 'rgba(255,255,255,0.55)' : INK_SOFT;
   const textColor = isDark ? '#FFFFFF' : INK;
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(43,39,36,0.05)';
@@ -155,24 +170,27 @@ function ChatHeader({ showBack, onBack, onHistoryPress, isDark = false }: {
         <View style={{ width: 30, height: 30 }} />
       )}
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Svg width={6} height={6} viewBox="0 0 6 6">
-          <Defs>
-            <RadialGradient id="niksHdrDot" cx="35%" cy="30%" r="100%" gradientUnits="objectBoundingBox">
-              <Stop offset="0%"   stopColor="#FFEFE4" />
-              <Stop offset="70%"  stopColor="#E89178" />
-              <Stop offset="100%" stopColor="#C86651" />
-            </RadialGradient>
-          </Defs>
-          <Circle cx={3} cy={3} r={3} fill="url(#niksHdrDot)" />
-        </Svg>
-        <Text style={{
-          fontSize: 11, fontWeight: '600', letterSpacing: 3.2,
-          textTransform: 'uppercase', color: textColor,
-        }}>
-          NIKS
-        </Text>
-      </View>
+      {/* 5 toques no título "NIKS" alternam dia/noite — mesmo mecanismo da Home */}
+      <TouchableOpacity onPress={handleNiksTap} activeOpacity={1}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Svg width={6} height={6} viewBox="0 0 6 6">
+            <Defs>
+              <RadialGradient id="niksHdrDot" cx="35%" cy="30%" r="100%" gradientUnits="objectBoundingBox">
+                <Stop offset="0%"   stopColor="#FFEFE4" />
+                <Stop offset="70%"  stopColor="#E89178" />
+                <Stop offset="100%" stopColor="#C86651" />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={3} cy={3} r={3} fill="url(#niksHdrDot)" />
+          </Svg>
+          <Text style={{
+            fontSize: 11, fontWeight: '600', letterSpacing: 3.2,
+            textTransform: 'uppercase', color: textColor,
+          }}>
+            NIKS
+          </Text>
+        </View>
+      </TouchableOpacity>
 
       <TouchableOpacity onPress={onHistoryPress} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
         <Svg width={19} height={19} viewBox="0 0 24 24">
@@ -621,8 +639,7 @@ function ChatInputBar({
             }}
             style={{
               flex: 1,
-              fontFamily: value ? undefined : fontItalic,
-              fontStyle: value ? 'normal' : 'italic',
+              fontStyle: 'normal',
               fontSize: 15,
               lineHeight: LINE_HEIGHT,
               color: inputColor,
@@ -726,15 +743,16 @@ export default function NiksChat() {
   const fontItalic = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined;
 
   const { setTabBarTheme, setNiksChatMode } = useAppStore();
-  const [isDark, setIsDark] = useState(isNightTime);
+  const [debugMode, setDebugMode] = useState<'am' | 'pm' | null>(null);
+  const [autoNight, setAutoNight] = useState(isNightTime);
+  const isDark = debugMode !== null ? (debugMode === 'pm') : autoNight;
 
   useFocusEffect(
     useCallback(() => {
-      const dark = isNightTime();
-      setIsDark(dark);
-      setTabBarTheme(dark ? 'dark' : 'light');
+      setAutoNight(isNightTime());
+      setTabBarTheme(isDark ? 'dark' : 'light');
       return () => { setTabBarTheme('light'); };
-    }, [])
+    }, [isDark])
   );
 
   const ink         = isDark ? '#FFFFFF'                : INK;
@@ -1161,11 +1179,13 @@ export default function NiksChat() {
             onBack={handleBackToEmpty}
             onHistoryPress={loadHistory}
             isDark={isDark}
+            onDebugToggle={() => setDebugMode(prev => prev === null ? 'am' : prev === 'am' ? 'pm' : null)}
           />
 
           <View style={{ flex: 1 }}>
           {mode === 'empty' ? (
             // ── ESTADO INICIAL ──────────────────────────────────────────────
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <View style={{ flex: 1, backgroundColor: 'transparent' }}>
               {/* Welcome hero */}
               <View style={{
@@ -1173,17 +1193,8 @@ export default function NiksChat() {
                 alignItems: 'center',
               }}>
                 <View style={{ marginBottom: 22 }}>
-                  <AnimatedMiniOrb size={68} isDark={isDark} />
+                  <AnimatedMiniOrb size={84} isDark={isDark} />
                 </View>
-
-                {/* Eyebrow */}
-                <Text style={{
-                  fontSize: 9, fontWeight: '600', letterSpacing: 2.2,
-                  textTransform: 'uppercase', color: inkSoft,
-                  marginBottom: 14,
-                }}>
-                  NIKS · SUA COACH DE PELE
-                </Text>
 
                 {/* Greeting "olá, juliana." */}
                 <Text style={{
@@ -1234,6 +1245,7 @@ export default function NiksChat() {
                 style={{ flex: 1 }}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 144 }}
                 showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps='handled'
               >
                 {SUGGESTIONS.map((s, i) => (
                   <SuggestionCard
@@ -1247,6 +1259,7 @@ export default function NiksChat() {
                 ))}
               </ScrollView>
             </View>
+            </TouchableWithoutFeedback>
           ) : (
             // ── CONVERSA EM ANDAMENTO ───────────────────────────────────────
             <ScrollView

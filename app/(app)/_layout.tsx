@@ -4,7 +4,7 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { supabase } from '../../lib/supabase';
-import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
+import { getCustomerInfo, isSubscribed, loginRevenueCat } from '../../lib/revenuecat';
 import { useAppStore } from '../../store/onboarding';
 import { ScanModal } from '../../components/scan/ScanModal';
 
@@ -186,6 +186,14 @@ export default function AppLayout() {
         return;
       }
 
+      // Garante que o RC está logado com o usuário correto antes de verificar a assinatura
+      // (corrige race condition: _layout.tsx faz loginRevenueCat de forma assíncrona)
+      try {
+        await loginRevenueCat(session.user.id);
+      } catch {
+        // ignora — prossegue para o check de assinatura
+      }
+
       // Guard de assinatura — fail closed: qualquer dúvida vai para o paywall
       try {
         const infoPromise = getCustomerInfo();
@@ -221,8 +229,6 @@ export default function AppLayout() {
         <Tabs.Screen name="home" />
         <Tabs.Screen name="protocolo" />
         <Tabs.Screen name="niks-chat" />
-        <Tabs.Screen name="analise" options={{ href: null }} />
-        <Tabs.Screen name="evolucao" options={{ href: null }} />
         <Tabs.Screen name="perfil" />
         <Tabs.Screen name="set-name" options={{ href: null }} />
         <Tabs.Screen name="skin-result" options={{ href: null }} />

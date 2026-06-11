@@ -261,7 +261,7 @@ Schema obrigatório (respeite os nomes dos campos exatamente):
   "morning": [
     {
       "id": 1,
-      "name": "<REGRA UNIVERSAL: sempre inicie pelo tipo do produto (Gel de Limpeza, Sérum, Tônico, Hidratante, Óleo, Protetor Solar, Oclusivo, Esfoliante, Máscara) seguido do benefício principal quando necessário — ex: 'Gel de Limpeza', 'Sérum Antioxidante', 'Sérum de Tratamento', 'Hidratante', 'Protetor Solar com Cor'. PROIBIDO: nomes que não deixem claro o tipo do produto ('Antioxidante Uniformizador', 'Renovador Celular', 'Reparo de Barreira'). PROIBIDO: usar apenas o nome do ativo ('Niacinamida', 'Retinol', 'Ácido Mandélico'). Esta regra se aplica a qualquer produto, independente do protocolo.>",
+      "name": "<REGRA UNIVERSAL: nome CURTO — máximo 5 palavras. Tipo do produto + benefício principal apenas. PROIBIDO absolutamente: concentrações numéricas (10%, 0,3%, FPS 50+), nomes químicos completos (L-Ácido Ascórbico, Ácido Mandélico), múltiplos ativos com '+' (Vitamina C + Vitamina E + Ácido Ferúlico). As especificações completas vão APENAS no campo ingredient — nunca no name. Exemplos CORRETOS: 'Gel de Limpeza Suave', 'Sérum Antioxidante de Vitamina C', 'Sérum de Niacinamida', 'Sérum de Retinol', 'Hidratante com Ceramidas', 'Protetor Solar', 'Sérum de Ácido Azelaico'. Exemplos ERRADOS: 'Sérum Antioxidante de Vitamina C 10% L-Ácido Ascórbico + Vitamina E + Ácido Ferúlico', 'Sérum de Niacinamida 5% + Zinco 1%', 'Protetor Solar FPS 50+ com Óxidos de Ferro'. PROIBIDO: nomes que não deixem claro o tipo do produto. PROIBIDO: usar apenas o nome do ativo sem o tipo.>",
       "ingredient": "<REGRA UNIVERSAL: sempre [tipo do produto] + [ativo(s) principal(is) + concentração]. Esta regra se aplica a qualquer produto sem exceção. Lógica de formação: (1) identifique o tipo do produto — Gel de Limpeza, Sérum, Tônico, Loção, Creme, Hidratante, Gel-Creme, Óleo, Protetor Solar, Balm, Oclusivo; (2) adicione o ativo e concentração após 'com' ou 'de' — ex: 'Sérum de Retinol 0,3%', 'Hidratante com Ceramidas', 'Gel de Limpeza com Ácido Salicílico 2%', 'Protetor Solar FPS 50+ com Óxidos de Ferro', 'Oclusivo com Vaselina', 'Tônico com Ácido Glicólico 5%'; (3) para ativos não diários, adicione os dias no final entre parênteses — ex: 'Sérum de Ácido Mandélico 10% (Seg/Qua/Sex)'. PROIBIDO em qualquer circunstância: listar apenas o ativo sem o tipo do produto ('Ácido Mandélico 10%', 'Retinol 0,3%', 'Niacinamida 5%'). NUNCA use 'Filtro Solar' — sempre 'Protetor Solar'.>",
       "instruction": "<2–3 frases: como aplicar + justificativa clínica com base nos achados da ficha>",
       "steps": ["<etapa de aplicação 1 — frase imperativa curta, só ação>", "<etapa de aplicação 2>", "<etapa de aplicação 3 se necessário>"],
@@ -328,102 +328,52 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
 9. Use TODOS os campos disponíveis em onboardingData para personalizar o protocolo conforme as regras da seção "USO OBRIGATÓRIO DOS DADOS DO ONBOARDING"
 10. Retorne apenas JSON válido`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:streamGenerateContent?alt=sse&key=${Deno.env.get('GEMINI_API_KEY')}`
-
-    const geminiBody = JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: [{
-        role: 'user',
-        parts: [{ text: userMessage }],
-      }],
-      generationConfig: {
-        maxOutputTokens: 8192,
-        responseMimeType: 'application/json',
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
       },
-      safetySettings: [
-        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-      ],
+      body: JSON.stringify({
+        model: 'gpt-4.1-mini',
+        max_completion_tokens: 8192,
+        stream: false,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: userMessage,
+          },
+        ],
+      }),
     })
 
-    // Tenta obter resposta streaming do Gemini (retry em 503)
-    let geminiResponse: Response | null = null
-    let fetchError: string | null = null
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const resp = await fetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: geminiBody,
-      })
-
-      if (!resp.ok) {
-        const errBody = await resp.text()
-        const is503 = resp.status === 503 || errBody.includes('UNAVAILABLE')
-        if (is503 && attempt < 3) {
-          console.warn(`Gemini 503 (tentativa ${attempt}/3), aguardando 3s...`)
-          await new Promise(r => setTimeout(r, 3000))
-          continue
-        }
-        fetchError = `Gemini error ${resp.status}: ${errBody}`
-        break
-      }
-
-      geminiResponse = resp
-      break
-    }
-
-    if (!geminiResponse) {
-      console.error('Gemini indisponível após retries:', fetchError)
+    if (!openaiResponse.ok) {
+      const errBody = await openaiResponse.text()
+      console.error('OpenAI error:', openaiResponse.status, errBody)
       return new Response(
         JSON.stringify({ error: 'Erro interno ao gerar protocolo' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Transmite os chunks do Gemini (SSE) como texto simples para o cliente
-    // Isso mantém a conexão ativa e evita o IDLE_TIMEOUT de 150s da Supabase
-    const decoder = new TextDecoder()
-    const encoder = new TextEncoder()
+    const data = await openaiResponse.json()
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = geminiResponse!.body!.getReader()
-        let sseBuffer = ''
+    if (!data.choices || data.choices.length === 0) {
+      console.error('OpenAI returned no choices. Full response:', JSON.stringify(data))
+      return new Response(
+        JSON.stringify({ error: 'Erro interno ao gerar protocolo' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
+    const text = data.choices[0].message.content
 
-            sseBuffer += decoder.decode(value, { stream: true })
-            const lines = sseBuffer.split('\n')
-            sseBuffer = lines.pop() ?? ''
-
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue
-              const payload = line.slice(6).trim()
-              if (!payload || payload === '[DONE]') continue
-
-              try {
-                const parsed = JSON.parse(payload)
-                const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text
-                if (text) controller.enqueue(encoder.encode(text))
-              } catch {
-                // chunk SSE malformado, ignora
-              }
-            }
-          }
-        } finally {
-          reader.releaseLock()
-          controller.close()
-        }
-      },
-    })
-
-    return new Response(stream, {
+    return new Response(text, {
       headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
     })
   } catch (error) {

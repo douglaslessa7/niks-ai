@@ -13,7 +13,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function Camera() {
   const router = useRouter();
-  const { setSkinImage } = useAppStore();
+  const { setSkinImage, scanSource } = useAppStore();
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
@@ -29,7 +29,11 @@ export default function Camera() {
   const navigateToLoading = (base64: string, uri: string) => {
     track('onboarding_step_completed', { step_number: 14, step_name: 'Scan - Câmera', step_total: 23 });
     setSkinImage(base64, uri);
-    router.push('/(scan)/loading' as any);
+    if (scanSource === 'app') {
+      router.push('/(scan)/loading-dentro-app' as any);
+    } else {
+      router.push('/(scan)/loading' as any);
+    }
   };
 
   const handlePickImage = async () => {

@@ -1,16 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
-const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=' +
-  GEMINI_API_KEY
-
-const SAFETY_SETTINGS = [
-  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-]
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
 type ExtractedMemory = {
   type: string
@@ -18,8 +9,8 @@ type ExtractedMemory = {
   confidence: number
 }
 
-// Extracts the outermost JSON object from a string, handling markdown fences
-// and any preamble text the model may have added before the JSON.
+// Extracts the outermost JSON object from a string, handling any preamble
+// the model may have added before the JSON.
 function extractJSON(text: string): string {
   const start = text.indexOf('{')
   const end   = text.lastIndexOf('}')
@@ -54,56 +45,29 @@ Se não houver fatos relevantes a extrair, retorne: { "memories": [] }
 Mensagem da usuária: ${userMessage}
 Resposta da NIKS: ${assistantResponse}`
 
-    const resp = await fetch(GEMINI_URL, {
+    const resp = await fetch(OPENAI_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 1024,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'object',
-            properties: {
-              memories: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    type:       { type: 'string' },
-                    value:      { type: 'string' },
-                    confidence: { type: 'number' },
-                  },
-                  required: ['type', 'value', 'confidence'],
-                },
-              },
-            },
-            required: ['memories'],
-          },
-        },
-        safetySettings: SAFETY_SETTINGS,
+        model: 'gpt-4.1-mini',
+        max_tokens: 512,
+        stream: false,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
       }),
     })
 
     if (!resp.ok) {
-      console.error('memory.ts: Gemini error', resp.status, await resp.text())
+      console.error('memory.ts: OpenAI error', resp.status, await resp.text())
       return
     }
 
     const data = await resp.json()
-    const candidate   = data?.candidates?.[0]
-    const finishReason = candidate?.finishReason
-
-    // Skip parse when the model was cut off — avoids SyntaxError on truncated JSON
-    if (finishReason && finishReason !== 'STOP') {
-      console.warn('memory.ts: Gemini finishReason', finishReason, '— skipping parse')
-      return
-    }
-
-    const raw = candidate?.content?.parts?.[0]?.text
-    if (!raw) return
-
-    const parsed = JSON.parse(extractJSON(raw)) as { memories: ExtractedMemory[] }
+    const text = data.choices[0].message.content
+    const parsed = JSON.parse(extractJSON(text)) as { memories: ExtractedMemory[] }
     const qualified = parsed.memories.filter(m => m.confidence >= 0.75)
 
     for (const memory of qualified) {

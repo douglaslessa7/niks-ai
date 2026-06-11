@@ -34,11 +34,11 @@ App mobile de análise de pele por IA.
 | Estilo | NativeWind v4 + Tailwind CSS (sempre `className`, nunca `StyleSheet`) |
 | Navegação | Expo Router v3 (`useRouter`, `router.push`, `router.back`) |
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
-| IA | Gemini 3 Flash Preview (`analyze-skin`, `generate-protocol`) / Gemini 2.5 Pro (`analyze-food`) via Supabase Edge Functions |
+| IA | OpenAI (`analyze-skin`, `generate-protocol`, `niks-chat`, `generate-skin-preview`) / Gemini 2.5 Pro (`analyze-food`) via Supabase Edge Functions |
 | Pagamentos | RevenueCat (verificação de entitlement) + Superwall (apresentação do paywall) |
 | Analytics | Mixpanel (`mixpanel-react-native`, `useNative=true`) — `lib/mixpanel/` |
 | Camera | expo-camera + expo-image-picker |
-| Vídeo | expo-video (`useVideoPlayer` + `VideoView`) — usado na tela Welcome |
+| Vídeo | expo-video (`useVideoPlayer` + `VideoView`) — usado nas 5 telas de welcome (`app/index.tsx`) |
 | Estado global | Zustand (`useAppStore` em `store/onboarding.ts`) |
 
 **Localização do projeto:** `~/Desktop/niks-ai/`
@@ -70,9 +70,11 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 ## REGRAS DE DESENVOLVIMENTO (NUNCA VIOLAR)
 
 - **NativeWind (`className`)** para estilo — `StyleSheet.create()` só em último caso absoluto
-  - **Exceção — telas redesenhadas:** `scan-prep`, `rate-us`, `trust`, `plan-preview`, `signup`, `login`, `skincare-routine`, `skincare-routine-detail`, `allergies`, `allergies-detail` e outras telas redesenhadas usam **inline styles + `Colors` constants** (não NativeWind). Padrão: `LinearGradient` rosa→branco como fundo, botão voltar circular `rgba(255,255,255,0.85)` com `ChevronLeft`, barra de progresso manual, botões pill `borderRadius: 100`, campos de texto com borda `Colors.scanBtn` ao focar. Novas telas do onboarding devem seguir esse padrão, não o `QuizLayout`.
+  - **Exceção — telas de perguntas do onboarding (design system NIKS):** Todas as telas da jornada de perguntas (`birthday` até `social-proof`, incluindo `skincare-routine`, `allergies`, `goal-desire`, `scan-prep`, `loading`, `results`, `plan-preview`) usam **inline styles + tokens locais** — sem NativeWind, sem `Colors` constants. Tokens padrão definidos no topo de cada arquivo: `CREAM = '#FFFFFF'` (fundo branco, sem LinearGradient), `DEEP = '#1D3A44'`, `CORAL = '#FB7B6B'`, `CORAL_DEEP = '#E5654F'`, `DEEP_SOFT = 'rgba(29,58,68,0.55)'`, `DEEP_HAIR = 'rgba(29,58,68,0.10)'`. Estrutura padrão: **QHeader** (botão voltar 40×40 branco semitransparente + barra de progresso na mesma linha horizontal — `TOTAL = 14`, steps de 1 a 14: `birthday=1`, `gender/pregnancy=2`, `goal=3`, `goal-validation=4`, `concerns=5`, `skin-type=6`, `sun-exposure=7`, `hydration-sleep=8`, `skincare-routine/detail=9`, `allergies/detail=10`, `goal-desire=11`, `social-proof=12`, `rate-us=13`, `scan-prep=14`), **QTitleBlock** (eyebrow coral uppercase + título bold DEEP com destaque em Playfair Italic coral + subtítulo DEEP_SOFT), **OptionCards** (pill `borderRadius: 100`, borda CORAL + glow shadow quando selected), **PrimaryButton** (`height: 60`, `borderRadius: 100`, bg CORAL, shadow coral). Novas telas de pergunta do onboarding devem seguir esse sistema — não o `QuizLayout`, não `LinearGradient`, não `Colors`.
+  - **Exceção — telas de auth e utilitárias:** `login` e `paywall-soft` ainda usam inline styles + `Colors` constants com `LinearGradient` rosa→branco. Manter esse padrão ao editar essas telas.
+  - **Exceção — `signup`, `nome` e `notifications`:** essas três telas migraram para o **design system NIKS** (inline styles + tokens locais `DEEP/CORAL/CORAL_DEEP/DEEP_SOFT/CREAM`, fundo branco puro `#FFFFFF`, sem `LinearGradient`, sem `Colors` constants). Ao editar, seguir o mesmo padrão das telas de pergunta do onboarding.
   - **Exceção — tela `niks-chat.tsx`:** usa **inline styles + tokens do design system NIKS** (não `Colors` constants, não NativeWind). Os tokens são constantes locais definidas no topo do arquivo (`CORAL = '#FB7B6B'`, `INK = '#2B2724'`, `INK_SOFT`, `INK_WHISPER`, `INK_HAIR`, `SURFACE_HAIR`). Fonte serif `PlayfairDisplay-Regular` para o corpo das mensagens NIKS e `PlayfairDisplay-Italic` para spans em itálico inline. O design de referência pixel-perfect está em `design_handoff_chat_screen/` — os dois estados definitivos são `ChatEmptyScreen` (`source/chat-screens.jsx`) e `ChatActiveScreenV23` (`source/chat-screens-v2.jsx`). Não aplicar o padrão onboarding (sem LinearGradient rosa, sem `Colors`) nessa tela.
-    - **Modo noturno (`isDark`):** a tela tem dois temas — claro (padrão) e noturno. `isDark` é derivado de `new Date().getHours() >= 18 || hour < 4`, calculado a cada `useFocusEffect`. Em modo noturno: fundo `LinearGradient` escuro (`#0F1420→#1A1F2E→#2A1F28`) + `<NightSky />` de estrelas/meteoros, e todos os tokens de cor mudam (`ink`, `inkSoft`, `inkHair`, etc.). O `MiniOrb` também muda para a paleta lunar (bege-acinzentado em vez de coral) **e adiciona 5 crateras de lua**, cujas posições são definidas em coordenadas relativas a um orb de referência de 132px (copiadas do orb do Protocolo) e escaladas via `size / 132` para qualquer tamanho. `setTabBarTheme('dark')` é chamado via `useFocusEffect` para escurecer o tab bar enquanto a tela está focada.
+    - **Modo noturno (`isDark`):** a tela tem dois temas — claro (padrão) e noturno. `isDark` é derivado de `debugMode` (override de debug) ou `autoNight` (detectado por `isNightTime()` no `useFocusEffect`). O estado real é `autoNight: boolean` + `debugMode: 'am' | 'pm' | null`; `isDark` é a expressão derivada `debugMode !== null ? (debugMode === 'pm') : autoNight`. Em modo noturno: fundo `LinearGradient` escuro (`#0F1420→#1A1F2E→#2A1F28`) + `<NightSky />` de estrelas/meteoros, e todos os tokens de cor mudam (`ink`, `inkSoft`, `inkHair`, etc.). O `MiniOrb` também muda para a paleta lunar (bege-acinzentado em vez de coral) **e adiciona 5 crateras de lua**, cujas posições são definidas em coordenadas relativas a um orb de referência de 132px (copiadas do orb do Protocolo) e escaladas via `size / 132` para qualquer tamanho. `setTabBarTheme('dark')` é chamado via `useFocusEffect` (que tem `isDark` como dependência) para escurecer o tab bar — inclusive quando o debug alterna o tema.
     - **`ChatInputBar` é `position: 'absolute'`** (não in-flow) dentro de um `View style={{ flex: 1 }}` que vive dentro do `KeyboardAvoidingView`. Isso é obrigatório: a tab bar customizada de `_layout.tsx` também é absoluta e cobre qualquer input in-flow. O KAV ainda levanta o input corretamente quando o teclado abre porque o View pai encolhe. **Nunca mover o ChatInputBar para o fluxo normal.**
     - **Campo de texto do `ChatInputBar` é `multiline`** e cresce linha a linha até o máximo de 4 linhas (estilo WhatsApp) usando apenas `maxHeight`. Não tem `height` explícito — ver decisão técnica 17.
     - **Dois estados: `mode: 'empty' | 'active'`.** No estado `active`, renderizar o array `messages[]` carregado do banco (tabela `coach_messages`, via `coach_conversations` do dia). Cada item do array é `{ id, role, content, isStreaming?, imageUris?: string[] }`. Suporta até 5 fotos por mensagem. Regras de render: `role === 'user'` → `UserBubble` (+ um `UserPhotoBubble` por item em `imageUris`, se houver); `role === 'assistant' && content === '' && isStreaming` → `TypingDots`; `role === 'assistant' && content !== ''` → `NiksMessage`. **Nunca hardcodar mensagens de conversa** — o design prototype tinha mensagens ilustrativas que foram implementadas como definitivas por engano; esse erro já foi corrigido.
@@ -87,7 +89,7 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 - **Portrait only** — nunca landscape
 - **Max width 393px** — iPhone 14 Pro
 - **Store usa `useAppStore`** (de `store/onboarding.ts`) — não `useOnboardingStore`
-- **Para abrir o modal de scan a partir de qualquer tela**, usar `setScanModalOpen(true)` do store — o `ScanModal` e o `GlobalBottomBar` (tab pill + FAB) são renderizados em `_layout.tsx` e se aplicam a todas as abas
+- **Para abrir o modal de scan a partir de qualquer tela**, usar `setScanModalOpen(true)` do store — o `ScanModal` e o `GlobalBottomBar` (tab pill + FAB) são renderizados em `_layout.tsx` e se aplicam a todas as abas. **Exceção:** o botão "Escanear refeição" dentro do card `RefeicoesSection` em `home.tsx` navega **diretamente** para `/(scan)/food-camera` via `requestConsent(() => { setSelectedFoodResult(null); router.push('/(scan)/food-camera') })` — bypassa o `ScanModal` intencionalmente para não obrigar o usuário a escolher entre refeição e rosto quando o contexto já é claro.
 - **Imagens viajam pelo Zustand** — nunca via `router.push` params (truncamento no bridge do RN)
 - **`fetch` direto** para Edge Functions grandes — `supabase.functions.invoke` trunca payloads
 
@@ -107,7 +109,7 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 | Onboarding / auth original | `XrX2xnE32aNLOaFw5ayPM0` | Welcome, Login, Signup, telas de onboarding |
 | Home Screen + ScanModal | `sxih7FXdLGWu1lKovpOjIa` | `home.tsx` (tela principal), ScanModal bottom sheet |
 | Tab Bar + Home v2 | `cFsFcVSjOMkTdHIJpHgSDk` | Tab bar inferior, menu "scanear/protocolo/perfil" |
-| Onboarding quiz screens design | `kcw7wez680I06tnIMm1ZEz` | Trust, PlanPreview, Goal, Results (onboarding) e outras telas do quiz |
+| Onboarding quiz screens design | `kcw7wez680I06tnIMm1ZEz` | PlanPreview, Goal, Results (onboarding) e outras telas do quiz |
 | App principal v2 — Protocolo/Perfil | `gZ5sSJErlJ3lcBTaqzwgjN` | `protocolo.tsx` (redesign Sessão 12), perfil, home v3 — tudo em `home.tsx` |
 
 ### Paths do projeto principal (XrX2xnE32aNLOaFw5ayPM0)
@@ -202,6 +204,54 @@ export const Colors = {
 
 ---
 
+## SISTEMA DE FONTES
+
+Todas as fontes são arquivos `.ttf` locais em `assets/fonts/` — **não há pacotes `@expo-google-fonts/`** (o pacote `@expo-google-fonts/lato` está instalado mas não é usado; `latoFont` aponta para `PlayfairDisplay-Regular`).
+
+### Fontes disponíveis em `assets/fonts/`
+
+| Arquivo | Status |
+|---|---|
+| `PlayfairDisplay-Regular.ttf` | ✅ Fonte principal — usada em toda a app |
+| `PlayfairDisplay-Italic.ttf` | ✅ Fonte display — títulos grandes, destaques |
+| `DMSerifDisplay-Regular.ttf` | ✅ Fonte "cerimônia" — tela de celebração do protocolo |
+| `DMSerifDisplay-Italic.ttf` | ✅ Fonte "cerimônia" itálica + `cerimSkiaFont` no Canvas Skia |
+| `CormorantGaramond-Regular.ttf` | ⚠️ Disponível mas não carregada via `useFonts` em nenhuma tela |
+| `CormorantGaramond-Italic.ttf` | ⚠️ Disponível mas não carregada via `useFonts` em nenhuma tela |
+
+### Padrão de variáveis por tela
+
+Cada tela/componente que usa fontes personalizadas chama `useFonts` localmente (não há provider global de fontes) e define variáveis locais:
+
+```typescript
+const [fontsLoaded] = useFonts({
+  'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
+  'PlayfairDisplay-Italic':  require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+  'DMSerifDisplay-Regular':  require('../../assets/fonts/DMSerifDisplay-Regular.ttf'),
+  'DMSerifDisplay-Italic':   require('../../assets/fonts/DMSerifDisplay-Italic.ttf'),
+});
+const displayFont    = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined; // títulos/destaques
+const displayFontReg = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined; // texto normal serif
+const latoFont       = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined; // alias — aponta para Regular
+const cerimFont      = fontsLoaded ? 'DMSerifDisplay-Italic'   : undefined; // tela de celebração
+const cerimFontReg   = fontsLoaded ? 'DMSerifDisplay-Regular'  : undefined; // tela de celebração normal
+```
+
+> **Regra:** usar `undefined` (não `''`) quando as fontes ainda não carregaram — o React Native usa a fonte do sistema como fallback automático, evitando flash de layout.
+
+### Onde cada fonte é usada
+
+| Variável | Fonte real | Usada em |
+|---|---|---|
+| `displayFont` | PlayfairDisplay-Italic | Títulos grandes (54px), subtítulos em destaque, nomes de itálico em `home`, `protocolo`, `ScanModal` |
+| `displayFontReg` | PlayfairDisplay-Regular | Texto serif normal: próximo passo do ritual, "Prognóstico", "Introdução gradual", botão "Começar minha rotina", score e data nos cards de scan, score de refeição |
+| `latoFont` | PlayfairDisplay-Regular | Alias de `displayFontReg` — usado em `ScanCard`, `RefeicoesSection`, `RitualCard` |
+| `cerimFont` | DMSerifDisplay-Italic | Tela de celebração da Cerimônia em `protocolo.tsx` |
+| `cerimFontReg` | DMSerifDisplay-Regular | Tela de celebração da Cerimônia (texto normal) |
+| `cerimSkiaFont` | DMSerifDisplay-Italic via `useFont` | Numeral dentro do Canvas Skia — ver Decisão Técnica 9 |
+
+---
+
 ## SUPABASE
 
 | Campo | Valor |
@@ -268,7 +318,9 @@ updated_at timestamptz DEFAULT now()
 | `expected_timeline.three_months` | `dicas[3]` |
 | `introduction_schedule` | `dicas[4]` |
 
-> ⚠️ O array `dicas` usa índices fixos (nunca push condicional). `protocol-loading.tsx` monta o array com posições garantidas — se um campo for null, salva null na posição. Isso garante que `dicas[4]` seja sempre `introduction_schedule`.
+> ⚠️ O array `dicas` usa índices fixos (nunca push condicional). `lib/generateProtocol.ts` monta o array com posições garantidas — se um campo for null, salva null na posição. Isso garante que `dicas[4]` seja sempre `introduction_schedule`.
+
+> ⚠️ **Parsing de `dicas[4]` em `protocolo.tsx`:** o campo `introduction_schedule` pode vir em vários formatos dependendo do que a IA gerar. O regex de parsing suporta: `"Semana 1:"` (semana única), `"Semanas 1-2:"` ou `"Semanas 1–2:"` (intervalo, hífen ou en-dash), `"Nas semanas 3–4,"` (prefixo "Nas" + vírgula), `"A partir da semana 5:"` ou `"A partir da semana 5,"` (aberto, dois-pontos ou vírgula). Regex: `/(?:(?:Nas\s+)?Semanas?\s+([\d][\d\-–—]*\+?(?:\s+em diante)?)|A partir da semana\s+(\d+))\s*[,:]/gi`. Se o regex encontrar menos de 2 ocorrências, o texto é exibido inteiro como bloco único com label "Introdução gradual". Não alterar o formato do prompt sem verificar compatibilidade com esse regex.
 
 **Colunas extras na tabela `users`:**
 ```sql
@@ -279,7 +331,7 @@ sleep text, sunscreen text, birthday text,
 pregnancy_status text,              -- 'none' | 'pregnant' | 'breastfeeding' | 'trying' — só coletado para gênero Feminino
 skincare_routine_type text,         -- 'zero' | 'complement' | 'prescribed' | 'unsure'
 skincare_routine_description text,  -- texto livre (só coletado para complement/prescribed)
-allergy_type text,                  -- 'none' | 'sensitive' | 'reaction'
+allergy_type text,                  -- 'none' | 'sensitive' | 'reaction' | 'no_history'
 allergy_description text,           -- texto livre (só coletado para reaction)
 push_token text,                    -- token Expo Push Notifications (salvo na tela notifications.tsx)
 streak_days int4 DEFAULT 0,         -- dias consecutivos com AMBAS as rotinas (manhã + noite) concluídas
@@ -300,6 +352,7 @@ full_result jsonb  -- objeto FoodAnalysisResult completo retornado pela analyze-
 **Storage buckets:**
 - `scans` — **PRIVADO** — fotos de scan facial. Policies de upload/leitura por `user_id`. Sempre usar `createSignedUrl` (não `getPublicUrl`).
 - `coach-images` — **PRIVADO** — fotos enviadas no chat com a NIKS. Path: `{userId}/{timestamp}.jpg`. URL assinada com TTL de 1 ano gerada por `niks-chat`.
+- `skin-previews` — **PÚBLICO** — previews geradas pela `generate-skin-preview`. Usar `getPublicUrl` (não `createSignedUrl`). Path: `preview_{timestamp}.jpg`.
 
 **Schema da tabela `coach_messages`:**
 ```sql
@@ -346,13 +399,14 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 
 | Função | Status | Entrada | Saída |
 |---|---|---|---|
-| `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns, genero, idade, sun_exposure, hydration, sleep, sunscreen, objetivo } }` | Schema clínico completo — ver tipo `ScanResult` no store. Campos-chave: `skin_score`, `skin_type_detected`, `headline`, `acne`, `envelhecimento`, `pigmentacao`, `cicatrizes`, `rosacea`, `textura_poros`, `barrier_status`, `qualidade_foto`, `confianca_analise`, `prioridade_clinica`, `contraindicacoes`, `pontos_fortes: string[2]`, `pontos_fracos: string[3]`, `skin_strengths[2]`, `action_recommendations[4]`, `region_insights[]` (apenas regiões com condição relevante), `goal_alignment` (apenas se `objetivo` informado), `disclaimer` |
+| `analyze-skin` | ✅ | `{ imageBase64, skinProfile: { skin_type, concerns, genero, idade, sun_exposure, hydration, sleep, objetivo } }` | Schema clínico completo — ver tipo `ScanResult` no store. Campos-chave: `skin_score`, `skin_type_detected`, `headline`, `acne`, `envelhecimento`, `pigmentacao`, `cicatrizes`, `rosacea`, `textura_poros`, `barrier_status`, `qualidade_foto`, `confianca_analise`, `prioridade_clinica`, `contraindicacoes`, `pontos_fortes: string[2]`, `pontos_fracos: string[3]`, `skin_strengths[2]`, `action_recommendations[4]`, `region_insights[]` (apenas regiões com condição relevante), `goal_alignment` (apenas se `objetivo` informado), `disclaimer` |
 | `analyze-food` | ✅ | `{ imageBase64, mimeType, skinProfile: { skin_type, concerns } }` | `{ meal_score, meal_summary, foods[], highlights, watch_out, science_note, disclaimer }` |
 | `generate-protocol` | ✅ | `{ scanResult, onboardingData }` | `{ morning[], night[], introduction_warnings, expected_timeline, introduction_schedule }` — cada item de `morning`/`night` contém: `id, name, ingredient, instruction, steps: string[], color, waitTime, product_suggestions`. **Não retorna `schedule`** — dias da semana vêm embutidos no campo `ingredient` como sufixo `(Seg/Qua/Sex)` e são parseados no cliente via `applySchedule` em `protocolo.tsx`. |
 | `send-notifications` | ✅ | `{ type: 'morning_routine' \| 'night_routine' \| 'food_reminder', user_ids?: string[] }` | `{ sent: number, type }` — busca `push_token` dos usuários no Supabase e envia via Expo Push API |
 | `revenuecat-webhook` | ✅ | POST do RevenueCat — header `Authorization: Bearer REVENUECAT_WEBHOOK_SECRET` | Retorna sempre HTTP 200. Faz UPSERT em `subscriptions` com base no `app_user_id` (= `user_id` do Supabase). Trata: `INITIAL_PURCHASE`, `RENEWAL`, `TRIAL_STARTED`, `TRIAL_CONVERTED`, `TRIAL_CANCELLED`, `CANCELLATION`, `EXPIRATION`, `UNCANCELLATION` |
-| `niks-chat` | ✅ | Header `Authorization: Bearer <session_token>` (JWT do usuário autenticado — **não** a ANON_KEY). O token é obtido em `sendMessage` chamando **sempre** `supabase.auth.refreshSession()` antes do XHR — não `getSession()`. O `refreshSession()` garante um token fresco independentemente de clock skew ou race conditions internas do cliente Supabase. Se `refreshSession` falhar, usa `getSession()` como fallback. Body: `{ conversationId, message?, images?: Array<{base64: string, mimeType: string}>, clientMessageId? }` — `message` e `images` são ambos opcionais, mas pelo menos um deve estar presente. `userId` **não vai no body** — é extraído internamente via verificação local do JWT (`verifyJWT` com `crypto.subtle`, suportando HS256 via `NIKS_JWT_SECRET` e ES256/RS256 via `SUPABASE_JWKS`). | Stream `text/plain; charset=utf-8` — resposta da NIKS em tempo real. Pós-stream via `waitUntil`: salva resposta em `coach_messages`; depois bifurca — se havia sugestão pendente (`context.pendingSuggestion`), chama `checkApprovalIntent` (detecta "sim"/"não" na mensagem do usuário via Gemini e aplica/rejeita a sugestão); caso contrário, extrai memórias em `coach_memories` e detecta nova proposta em `coach_protocol_suggestions`. |
+| `niks-chat` | ✅ | Header `Authorization: Bearer <session_token>` (JWT do usuário autenticado — **não** a ANON_KEY). O token é obtido em `sendMessage` chamando **sempre** `supabase.auth.refreshSession()` antes do XHR — não `getSession()`. O `refreshSession()` garante um token fresco independentemente de clock skew ou race conditions internas do cliente Supabase. Se `refreshSession` falhar, usa `getSession()` como fallback. Body: `{ conversationId, message?, images?: Array<{base64: string, mimeType: string}>, clientMessageId? }` — `message` e `images` são ambos opcionais, mas pelo menos um deve estar presente. `userId` **não vai no body** — é extraído internamente via verificação local do JWT (`verifyJWT` com `crypto.subtle`, suportando HS256 via `NIKS_JWT_SECRET` e ES256/RS256 via `SUPABASE_JWKS`). | Stream `text/plain; charset=utf-8` — resposta da NIKS em tempo real. Pós-stream via `waitUntil`: salva resposta em `coach_messages`; depois bifurca — se havia sugestão pendente (`context.pendingSuggestion`), chama `checkApprovalIntent` (detecta "sim"/"não" na mensagem do usuário via OpenAI e aplica/rejeita a sugestão); caso contrário, extrai memórias em `coach_memories` e detecta nova proposta em `coach_protocol_suggestions`. |
 | `approve-coach-protocol-change` | ✅ | Header `Authorization: Bearer <session_token>` (JWT do usuário). Body: `{ suggestion_id, approved: boolean }`. `user_id` **não vai no body** — extraído do JWT. | `{ success: true, action: 'rejected' \| 'applied', protocol? }` — aplica ou rejeita manualmente uma proposta pendente em `coach_protocol_suggestions`. Se `approved: true`, modifica `rotina_am`/`rotina_pm` em `protocolos` (add/remove/pause com base em `proposed_changes`) e marca `status: 'applied'`. |
+| `generate-skin-preview` | ✅ | `{ image: string }` — base64 da foto do rosto (com ou sem prefixo `data:image/...`) | `{ preview_url: string }` — URL pública da preview no bucket `skin-previews`. Chama **OpenAI Images Edit API** (`gpt-image-2`) — única função do projeto que usa OpenAI (não Gemini). Faz upload do resultado em `skin-previews`. Requer secret `OPENAI_API_KEY`. |
 
 **Configuração do webhook no RevenueCat Dashboard:**
 - RevenueCat Dashboard → Project → Integrations → Webhooks
@@ -360,31 +414,33 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
 - Authorization header: `Bearer <valor do secret REVENUECAT_WEBHOOK_SECRET>`
 
 **Modelos de IA:**
-- `analyze-skin`: `gemini-3-flash-preview` (mais rápido, custo menor)
+- `analyze-skin`: **`gpt-5.4-mini` (OpenAI)** — `response_format: json_object`, `max_completion_tokens: 4096`, retry em HTTP 500/503
 - `analyze-food`: `gemini-2.5-pro` (mais preciso para tarefas complexas)
-- `generate-protocol`: `gemini-3-flash-preview`
-- `niks-chat`: `gemini-3-flash-preview` (streaming para a resposta principal + pós-stream via `waitUntil`: se havia sugestão pendente → 1 chamada não-streaming para `checkApprovalIntent`; caso contrário → 2 chamadas para `extractAndSave` + `checkForSuggestion`)
+- `generate-protocol`: **`gpt-4.1-mini` (OpenAI)** — `response_format: json_object`, `max_completion_tokens: 8192`, não usa streaming, retorna `text/plain; charset=utf-8` para compatibilidade com `response.text()` + `JSON.parse()` no cliente
+- `niks-chat`: **`gpt-4.1-mini` (OpenAI)** — streaming principal + pós-stream via `waitUntil`: se havia sugestão pendente → 1 chamada não-streaming para `checkApprovalIntent`; caso contrário → 2 chamadas para `extractAndSave` + `checkForSuggestion`
+- `generate-skin-preview`: **`gpt-image-2` via OpenAI Images Edit API**
 
 Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → Edge Functions → Secrets).
 
 **Secrets necessários no Supabase Dashboard (Project Settings → Edge Functions → Secrets):**
-- `GEMINI_API_KEY` — usado por `analyze-skin`, `analyze-food`, `generate-protocol`, `niks-chat`
+- `GEMINI_API_KEY` — usado por `analyze-food`
+- `OPENAI_API_KEY` — usado por `analyze-skin`, `generate-protocol`, `niks-chat` e `generate-skin-preview`
 - `REVENUECAT_WEBHOOK_SECRET` — usado por `revenuecat-webhook` para validar o header `Authorization`
 - `NIKS_JWT_SECRET` — usado por `niks-chat` para verificar JWTs HS256 (legacy JWT secret do Supabase). Valor: JWT secret do projeto (Supabase Dashboard → Project Settings → API → JWT Secret). **⚠️ O nome não pode começar com `SUPABASE_` — a CLI do Supabase bloqueia secrets com esse prefixo. Por isso o nome é `NIKS_JWT_SECRET` e não `SUPABASE_JWT_SECRET`.**
 - `SUPABASE_JWKS` — usado por `niks-chat` para verificar JWTs ES256/RS256 (novas JWT Signing Keys do Supabase). Valor: JSON completo das JWKS (Supabase Dashboard → Project Settings → API → JWT Signing Keys → "JWKS (public)"). **Se ausente e o projeto usar ES256/RS256, toda autenticação do `niks-chat` falha com 401.**
 
-**Configuração Gemini nas Edge Functions:**
-- `maxOutputTokens`: 4096 para `analyze-skin`; 4096 para `analyze-food`; 8192 para `generate-protocol`; 1024 para `extractAndSave` e `checkForSuggestion` do `niks-chat`; 64 para `checkApprovalIntent` do `niks-chat`
+**Configuração Gemini nas Edge Functions** (apenas `analyze-food` ainda usa Gemini):
+- `maxOutputTokens`: 4096 para `analyze-food`
 - `system_instruction` separa o system prompt do user message (equivalente ao `system` do Claude)
 - Imagens enviadas via `inlineData: { mimeType, data: base64 }` (não via URL)
-- `safetySettings` com `BLOCK_NONE` em todas as categorias — obrigatório em **todas as funções de análise de imagem** (`analyze-skin` e `analyze-food`), senão o Gemini bloqueia a requisição e não retorna `candidates`, causando crash
+- `safetySettings` com `BLOCK_NONE` em todas as categorias — obrigatório em `analyze-food`, senão o Gemini bloqueia a requisição e não retorna `candidates`, causando crash
 - JSON parsing: tenta extrair bloco ` ```json ``` ` primeiro, depois fallback para `\{[\s\S]*\}` — Gemini pode retornar markdown em vez de JSON puro
-- **JSON mode nas chamadas secundárias do `niks-chat`** (`extractAndSave`, `checkForSuggestion`, `checkApprovalIntent`): usam `responseMimeType: 'application/json'` + `responseSchema` no `generationConfig` para forçar constrained decoding — garante JSON válido sem preamble. Antes do `JSON.parse`, verificam `finishReason`: se não for `'STOP'`, pulam o parse silenciosamente. Isso evita `SyntaxError` quando o modelo é interrompido ou gera texto antes do JSON. Como defesa adicional, a função `extractJSON` localiza os delimitadores `{` e `}` no texto bruto antes de parsear.
+- **JSON mode nas chamadas secundárias do `niks-chat`** (`extractAndSave`, `checkForSuggestion`, `checkApprovalIntent`): usam `response_format: { type: 'json_object' }` da API OpenAI — garante JSON válido sem preamble (não há `finishReason` para checar). `max_tokens`: 512 para `extractAndSave`/`checkForSuggestion`; 128 para `checkApprovalIntent`. Como defesa adicional, a função `extractJSON` localiza os delimitadores `{` e `}` no texto antes de parsear.
 - Deploy com `--no-verify-jwt` — obrigatório, senão retorna `Invalid JWT`
-- **Retry interno de Gemini 503 em `analyze-skin` e `analyze-food`:** o Gemini retorna 503 `UNAVAILABLE` com frequência sob alta demanda. Ambas as Edge Functions têm loop de **3 tentativas** com **3s de espera** entre elas antes de retornar erro ao app — não remover esse loop.
+- **Retry em `analyze-food` (Gemini 503):** o Gemini retorna 503 `UNAVAILABLE` com frequência sob alta demanda — loop de **3 tentativas** com **3s de espera** antes de retornar erro ao app. `analyze-skin` (OpenAI) também tem retry de 3 tentativas, mas verifica `response.status` HTTP 500/503 em vez de inspecionar o body. Não remover nenhum dos dois loops.
 - `generate-protocol` gera o protocolo **do zero** com um system prompt dermatológico clínico extenso (hierarquia clínica, regras cronobiológicas, incompatibilidades, adaptações por fotótipo). Não usa mais `BASE_PROTOCOLS` nem recebe `baseProtocol` — o campo é ignorado se enviado
-- **`generate-protocol` usa SSE streaming (`streamGenerateContent?alt=sse`)** para evitar o IDLE_TIMEOUT de 150s da Supabase Edge Runtime — se a geração demorar mais que 150s sem tráfego de dados, a Supabase encerra a conexão. A função transmite os chunks SSE do Gemini em tempo real como `text/plain; charset=utf-8`. No cliente (`protocol-loading.tsx`), a resposta é lida com `response.text()` seguido de `JSON.parse()` — **nunca usar `response.json()` aqui**, pois o Content-Type não é `application/json`. O retry em 503 também foi refatorado para verificar `resp.ok` antes de ler o body, evitando consumir o stream em caso de erro.
-- **`niks-chat` usa `TransformStream` + `EdgeRuntime.waitUntil`:** o stream Gemini passa por um `TransformStream` que intercepta cada chunk inline — reenvia para o cliente imediatamente e acumula o texto em memória. Quando o stream fecha (`flush`), uma Promise se resolve com o texto completo, e `waitUntil` executa 3 tarefas sem bloquear a resposta: (1) salva a mensagem da NIKS em `coach_messages`, (2) chama Gemini não-streaming para extrair memórias duradouras (`coach_memories`), (3) detecta a frase-gatilho `"Posso incluir isso no seu protocolo?"` e, se presente, chama Gemini não-streaming para estruturar a proposta (`coach_protocol_suggestions`). **Não usar `ReadableStream.tee()`** no lugar do `TransformStream` — o `tee()` cria dois leitores com backpressure acoplado: quando um leitor consome o stream em memória (rápido) enquanto o outro é limitado pela rede do cliente (lento), a fila interna do tee cresce indefinidamente no Deno Edge Runtime e causa corte da mensagem no meio do streaming. A função lê o body completo com `await req.text()` **antes** de qualquer chamada de rede de saída — requests com imagens grandes (base64) deixam o stream de entrada aberto enquanto o runtime faz chamadas externas, causando o proxy a retornar HTML de erro em vez de JSON, o que resultava em 401 falso. O JWT é verificado localmente via `verifyJWT` (`crypto.subtle`) sem chamada de rede ao Supabase Auth — suporta HS256 (secret legado via `NIKS_JWT_SECRET`) e ES256/RS256 (novas JWT Signing Keys via `SUPABASE_JWKS`). **Por quê local e não `auth.getUser()`:** sob determinadas condições (requests com body grande, alta carga), o serviço Supabase Auth retornava respostas HTML em vez de JSON para `auth.getUser()`, causando 401 falsos em todas as mensagens. A verificação local elimina esse ponto de falha externo. Depois usa a service role key para as operações no banco, bypassando RLS nas escritas em `coach_messages`.
+- **`generate-protocol` usa OpenAI não-streaming** — retorna `text/plain; charset=utf-8` (não `application/json`) para manter compatibilidade com o cliente. No cliente (`lib/generateProtocol.ts`), a resposta é lida com `response.text()` seguido de `JSON.parse()` — **nunca usar `response.json()` aqui**, pois o Content-Type não é `application/json`.
+- **`niks-chat` usa `TransformStream` + `EdgeRuntime.waitUntil`:** o stream OpenAI passa por um `TransformStream` que intercepta cada chunk inline — reenvia para o cliente imediatamente e acumula o texto em memória. Quando o stream fecha (`flush`), uma Promise se resolve com o texto completo, e `waitUntil` executa 3 tarefas sem bloquear a resposta: (1) salva a mensagem da NIKS em `coach_messages`, (2) chama Gemini não-streaming para extrair memórias duradouras (`coach_memories`), (3) detecta a frase-gatilho `"Posso incluir isso no seu protocolo?"` e, se presente, chama Gemini não-streaming para estruturar a proposta (`coach_protocol_suggestions`). **Não usar `ReadableStream.tee()`** no lugar do `TransformStream` — o `tee()` cria dois leitores com backpressure acoplado: quando um leitor consome o stream em memória (rápido) enquanto o outro é limitado pela rede do cliente (lento), a fila interna do tee cresce indefinidamente no Deno Edge Runtime e causa corte da mensagem no meio do streaming. A função lê o body completo com `await req.text()` **antes** de qualquer chamada de rede de saída — requests com imagens grandes (base64) deixam o stream de entrada aberto enquanto o runtime faz chamadas externas, causando o proxy a retornar HTML de erro em vez de JSON, o que resultava em 401 falso. O JWT é verificado localmente via `verifyJWT` (`crypto.subtle`) sem chamada de rede ao Supabase Auth — suporta HS256 (secret legado via `NIKS_JWT_SECRET`) e ES256/RS256 (novas JWT Signing Keys via `SUPABASE_JWKS`). **Por quê local e não `auth.getUser()`:** sob determinadas condições (requests com body grande, alta carga), o serviço Supabase Auth retornava respostas HTML em vez de JSON para `auth.getUser()`, causando 401 falsos em todas as mensagens. A verificação local elimina esse ponto de falha externo. Depois usa a service role key para as operações no banco, bypassando RLS nas escritas em `coach_messages`.
 
 ### Push Notifications (`pg_cron`)
 
@@ -408,6 +464,62 @@ Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → 
   - Confirmação de e-mail: infraestrutura implementada e pronta. Atualmente **desativada** no Supabase Dashboard — ativar quando aprovado na App Store.
   - `emailRedirectTo: 'niks-ai://auth/confirm'` — configurado no `signUp` de `app/(onboarding)/signup.tsx`. O scheme `niks-ai` está em `app.json`.
   - Deep link handler em `app/_layout.tsx` suporta dois fluxos: PKCE (`code=` → `exchangeCodeForSession`) e token-based (`access_token=` no fragmento `#` → `setSession`). O `onAuthStateChange` detecta a sessão e redireciona automaticamente — sem navegação manual necessária.
+
+---
+
+## FLUXO DE ONBOARDING (ordem atual das telas)
+
+### Ponto de entrada — Welcome (`app/index.tsx`)
+
+5 telas swipeáveis antes das perguntas:
+
+| Screen | Texto principal |
+|---|---|
+| Screen 1 | "Bem-vinda ao NIKS" |
+| Screen 2 | "Seu glowup começa pela pele" |
+| Screen 3 | "Sua expert de pele sempre disponível" |
+| Screen 4 | "O que você come aparece na pele" |
+| Screen 5 | "Em poucas semanas você vai se olhar no espelho de um jeito diferente" |
+
+Cada screen exibe um vídeo animado (mockup do app) na área superior via `expo-video`. O vídeo só inicia quando o usuário chega naquela tela (`isActive` prop) — não toca em background enquanto as outras telas estão visíveis.
+
+> ⚠️ **Nomes de arquivos de assets**: nunca use caracteres especiais (ã, é, ç, etc.) em nomes de arquivos em `assets/`. O Metro Bundler falha silenciosamente ao resolver `require()` com esses caracteres — o vídeo/imagem simplesmente não carrega sem erro de build.
+
+Botão "Começar" em todas as screens → navega para `birthday.tsx`.
+
+### Telas ativas — em ordem
+
+| # | Arquivo | Pasta | Descrição |
+|---|---|---|---|
+| 1 | `birthday.tsx` | `(onboarding)` | "Quantos anos você tem?" — scroll picker de data |
+| 2 | `gender.tsx` | `(onboarding)` | "Qual seu gênero?" |
+| 3 | `pregnancy.tsx` | `(onboarding)` | "Alguns ativos precisam ser evitados em certas situações" — **condicional: só aparece se gênero = Feminino** |
+| 4 | `goal.tsx` | `(onboarding)` | Objetivo principal de skincare (multi-select) |
+| 5 | `goal-validation.tsx` | `(onboarding)` | "Você tem tudo para conseguir o que quer" — tela informativa com gráfico animado de evolução (sem interação, só botão Continuar) |
+| 6 | `concerns.tsx` | `(onboarding)` | "O que mais te incomoda na sua pele hoje?" — multi-seleção, máx 3 |
+| 7 | `skin-type.tsx` | `(onboarding)` | "Como você descreveria sua pele?" — tipo de pele |
+| 8 | `sun-exposure.tsx` | `(onboarding)` | Quanto tempo a usuária passa exposta ao sol por dia |
+| 9 | `hydration-sleep.tsx` | `(onboarding)` | Hidratação diária + horas de sono |
+| 10 | `skincare-routine.tsx` | `(onboarding)` | "Como está sua rotina de skincare hoje?" — 4 opções |
+| 11 | `skincare-routine-detail.tsx` | `(onboarding)` | "Quais produtos você já usa?" / "Quais produtos foram prescritos?" — **condicional: só para `complement` ou `prescribed`** |
+| 12 | `allergies.tsx` | `(onboarding)` | Alergias/sensibilidades a ativos |
+| 13 | `allergies-detail.tsx` | `(onboarding)` | "Qual ativo ou produto causou reação?" — **condicional: só para `reaction`** |
+| 14 | `goal-desire.tsx` | `(onboarding)` | "Qual é o seu verdadeiro objetivo?" — 6 opções emocionais; salva em `onboarding.goal_desire` no Zustand |
+| 15 | `social-proof.tsx` | `(onboarding)` | "Com o NIKS, você vai conseguir 3x mais rápido" |
+| 16 | `rate-us.tsx` | `(scan)` | "Avalie-nos" — reviews de usuárias em marquee + popup nativo de avaliação da App Store (`requestAppReview()`) → navega para `scan-prep` |
+| 17 | `scan-prep.tsx` | `(scan)` | Preparação para o scan facial |
+| 18 | `camera.tsx` | `(scan)` | Câmera — captura da foto |
+| 19 | `loading.tsx` | `(scan)` | Loading da análise de pele (chama `analyze-skin`) |
+| 20 | `results.tsx` | `(scan)` | "Relatório de Pele" — resultado completo do scan |
+| 21 | `plan-preview.tsx` | `(onboarding)` | "Sua rotina de skincare está pronta" → navega para `paywall-soft` |
+| 22 | `paywall-soft.tsx` | `(onboarding)` | Gateway para o Superwall (sem UI própria) — em `__DEV__` pula direto; após assinatura confirmada → navega para `signup` |
+| 23 | `signup.tsx` | `(onboarding)` | Criação de conta (e-mail, Google ou Apple) → dispara geração do protocolo em background via `lib/generateProtocol.ts` (fire-and-forget) → navega para `nome` |
+| 24 | `nome.tsx` | `(onboarding)` | "Como você quer ser chamada?" → salva em `users.nome` + navega para `notifications` |
+| 25 | `notifications.tsx` | `(onboarding)` | Permissão de notificações push → navega para `/(app)/home` |
+
+### Telas deletadas (não existem mais no projeto)
+
+`frequency.tsx`, `sunscreen.tsx`, `food-analysis.tsx`, `trust.tsx`, `commitment.tsx`, `protocol-loading.tsx`, `final-loading.tsx`, `food-scan-intro.tsx`, `analise.tsx`, `evolucao.tsx`
 
 ---
 
@@ -488,7 +600,7 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `skin_type_detected` ← cópia de `skin_type_sebaceous` (consumido em 7 lugares no app: Mixpanel, DB, UI, protocolo)
 - `skin_age` (top-level) ← cópia de `envelhecimento.skin_age` (consumido em 4 lugares: results.tsx, skin-result.tsx, loading.tsx, store)
 
-**Campos de onboarding:** `genero`, `pregnancy_status`, `birthday`, `skin_type`, `concerns[]`, `frequency`, `sun_exposure`, `hydration`, `sleep`, `sunscreen`, `objetivo`, `skincare_routine_type`, `skincare_routine_description`, `allergy_type`, `allergy_description`
+**Campos de onboarding:** `genero`, `pregnancy_status`, `birthday`, `skin_type`, `concerns[]`, `sun_exposure`, `hydration`, `sleep`, `objetivo`, `goal_desire`, `skincare_routine_type`, `skincare_routine_description`, `allergy_type`, `allergy_description`
 
 **Campos de imagem:**
 - `foodImageBase64: string | null`
@@ -504,8 +616,10 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `scanImageUri: string | null`
 - `skinScanId: string | null` — ID do registro inserido em `skin_scans` (para linkar ao protocolo)
 - `protocolResult: ProtocolResult | null` — protocolo gerado, cacheado em memória
+- `protocolGenerating: boolean` — `true` enquanto a geração do protocolo está rodando em background (disparada por `signup.tsx`); `protocolo.tsx` usa esse flag para exibir estado de espera em vez de tentar regenerar em paralelo
 - `selectedScan: { result: ScanResult; imageUri: string } | null` — scan selecionado no carrossel da home; limpo automaticamente ao sair de `skin-result.tsx`
 - `selectedFoodResult: FoodReportResult | null` — resultado salvo de food scan selecionado na home; exibido sem re-análise em `food-report.tsx`; limpo ao sair da tela ou iniciar novo scan
+- `skinPreviewUrl: string | null` — URL pública da preview de pele melhorada gerada por `generate-skin-preview`; populada de forma assíncrona por `loading.tsx` (fire-and-forget — pode ainda ser `null` quando `results.tsx` monta)
 
 **Métodos:**
 - `setTabBarTheme(theme: 'light' | 'dark')` — alterna o tema visual do tab bar; chamado por `protocolo.tsx` e `niks-chat.tsx` via `useFocusEffect` (cada tela seta dark ao focar e reseta para light ao sair)
@@ -516,8 +630,10 @@ Exporta `useAppStore` (não `useOnboardingStore`).
 - `setSkinImage(base64, uri)`
 - `setScanResult(result, imageUri)`
 - `setProtocolResult(result)` — armazena protocolo gerado para uso na aba `(app)/protocolo.tsx`
+- `setProtocolGenerating(v)` — setado `true` por `signup.tsx` antes de disparar a geração; setado `false` quando `lib/generateProtocol.ts` termina (sucesso ou falha)
 - `setSelectedScan(scan | null)` — define qual scan do carrossel abrir em `skin-result.tsx`
 - `setSelectedFoodResult(result | null)` — define/limpa o food scan selecionado para visualização em `food-report.tsx`
+- `setSkinPreviewUrl(url | null)` — salva a URL da preview de pele; chamado por `loading.tsx` após `generate-skin-preview` resolver (fire-and-forget)
 - `saveToSupabase(userId)` — salva `users` + `skin_scans` (com upload para Storage + `full_result`); captura e armazena o `skinScanId` retornado
 
 ---
@@ -569,27 +685,30 @@ Redimensionada para 512px + compress 0.5 via `expo-image-manipulator` antes de s
 ### 5. `results.tsx` (onboarding) mostra análise completa — navegação de volta bloqueada
 `app/(scan)/results.tsx` exibe o resultado completo do scan (mesma estrutura de `skin-result.tsx`: parallax hero, score ring, análise por região, condição geral, pontos fortes, etc.). As métricas **não** são mais borradas/bloqueadas — o usuário vê tudo no onboarding.
 
-**Navegação de volta bloqueada intencionalmente:** ao chegar em `results.tsx`, o usuário não pode voltar. Motivo: `rate-us.tsx` usa `router.replace` para chegar aqui, mas a tela de `loading.tsx` ainda estaria no stack — voltar travaria o usuário lá. Implementado com dois mecanismos:
+**Navegação de volta bloqueada intencionalmente:** ao chegar em `results.tsx`, o usuário não pode voltar. Motivo: `loading.tsx` usa `router.push` para chegar aqui — voltar retornaria o usuário à tela de loading, que é um beco sem saída. Implementado com dois mecanismos:
 - `<Stack.Screen options={{ gestureEnabled: false }} />` — desabilita swipe-back no iOS
 - `BackHandler.addEventListener('hardwareBackPress', () => true)` — bloqueia botão físico no Android
 
 ### 6. Geração e cache do protocolo personalizado
-O protocolo é gerado **uma única vez** na tela `protocol-loading` (logo após o signup). A função `generate-protocol` recebe `scanResult` e `onboardingData` — não recebe mais `baseProtocol` (a função determina o template base internamente com base em `skin_type_detected`). Salvo em dois lugares:
+O protocolo é gerado em background logo após o usuário criar a conta, em `signup.tsx` (fire-and-forget via `lib/generateProtocol.ts`). Não há tela de loading dedicada para isso — a geração roda em segundo plano enquanto o usuário avança para `nome` e `notifications`. A função `generate-protocol` recebe `scanResult` e `onboardingData`. Salvo em dois lugares:
 1. **Zustand store** (`protocolResult`) — para acesso imediato sem nova chamada à API
 2. **Supabase `protocolos`** — para persistência entre sessões
+
+**Detalhe crítico de closure em `signup.tsx`:** `skinScanId` é setado dentro de `saveToSupabase` (via `set({ skinScanId: ... })`). Para ler o valor correto logo depois, `startProtocolGeneration` usa `useAppStore.getState().skinScanId` — nunca a variável destrutarada do hook, que ainda estaria com o valor antigo (`null`) antes do próximo render.
+
+**`lib/generateProtocol.ts`:** utilitário que encapsula a chamada à Edge Function com retry (até 3 tentativas, delay 3s, somente para 503/UNAVAILABLE), salva no Supabase e chama `onSuccess`/`onFinally` ao terminar.
 
 A aba `(app)/protocolo.tsx` carrega na seguinte ordem de prioridade:
 1. Store cache (se ainda estiver na sessão)
 2. Supabase (busca o registro mais recente por `user_id`)
-3. Fallback: chama `generate-protocol` novamente via `fetch` direto (com JWT manual) — envia `baseProtocol` derivado de `constants/protocols.ts` + `scanResult` + `onboardingData`
+3. Se `protocolGenerating` for `true` → exibe estado `awaitingGeneration` ("Preparando seu protocolo...") e aguarda; quando o flag vira `false`, retenta automaticamente do passo 1
+4. Fallback: regenera via Edge Function — só chega aqui se não há nada no store nem no Supabase e nenhuma geração está em andamento
 
-**Fallback de `scanResult` em `protocol-loading.tsx`:** se `scanResult` estiver null no store ao montar (pode ocorrer em edge cases pós-signup), a tela busca automaticamente o scan mais recente do usuário em `skin_scans` via Supabase (`.order('created_at', { ascending: false }).limit(1)`) e popula o store antes de gerar o protocolo. Só aborta se o Supabase também não retornar nada.
+**Por que o flag `protocolGenerating` é necessário:** sem ele, se o usuário abrisse a aba Rotina enquanto a geração em background ainda não terminou (passos 1 e 2 falham), `protocolo.tsx` dispararia uma segunda geração em paralelo — duas linhas na tabela `protocolos` e chamadas duplicadas ao Gemini.
 
-**Retry automático em `protocol-loading.tsx`:** a chamada ao `generate-protocol` tenta até **3 vezes** com delay de 3s entre tentativas, mas **somente** para erros HTTP 503 ou mensagens `UNAVAILABLE`/`high demand` (sobrecarga do Gemini). Para outros erros, falha imediatamente. Durante a espera, o status text muda para "Estamos finalizando sua análise, aguarde um momento...". Outros tipos de erro não fazem retry — falham na primeira tentativa.
+**Erro em `app/(scan)/loading.tsx`:** erros após 2 retries exibem estado inline (sem `Alert`) com botão que chama `router.back()`, levando o usuário de volta à câmera para tirar uma nova foto.
 
-**Erro e retry manual em `protocol-loading.tsx`:** se todas as tentativas falharem, a tela exibe um estado de erro inline (não `Alert`) com botão "Tentar novamente". Ao tocar, o retry **reseta o fluxo inteiro** — percentage, currentStep, apiDone, statusText e retryCount voltam ao estado inicial, reiniciando a barra de progresso do zero. Isso é intencional: o usuário vê o progresso completo novamente em vez de uma barra travada.
-
-**Erro em `app/(scan)/loading.tsx`:** equivalente — erros após 2 retries exibem estado inline (sem `Alert`) com botão que chama `router.back()`, levando o usuário de volta à câmera para tirar uma nova foto.
+**Fire-and-forget em `loading.tsx`:** logo ao montar, `loading.tsx` também dispara `generate-skin-preview` **sem `await`**, em paralelo com `analyze-skin`. O resultado (`preview_url`) é salvo no store via `setSkinPreviewUrl`. Como não bloqueia a navegação, `skinPreviewUrl` pode ser `null` quando `results.tsx` monta — consumidores devem tratar esse caso.
 
 ### 7. Storage bucket `scans` é PRIVADO — usar `createSignedUrl`
 
@@ -620,30 +739,58 @@ Refs atualmente necessárias em `protocolo.tsx`: `checkedItemsRef`, `stepsRef`, 
 
 ---
 
-### 9. Numeral do orb da Cerimônia — `SkiaText` dentro do Canvas, não React Native `Text`
+### 9. Gradientes radiais — usar Skia, nunca `react-native-svg` `RadialGradient`
 
-O numeral (`01`–`0N`) exibido dentro do orb na overlay da Cerimônia é renderizado com `SkiaText` + `useFont` do `@shopify/react-native-skia`, **não** como `<Text>` nativo do React Native.
+**`react-native-svg`'s `RadialGradient` não renderiza neste projeto** (versão 15.x) — o elemento fica invisível/transparente sem erro de compilação. Qualquer gradiente radial deve ser feito com `@shopify/react-native-skia`.
 
-**Por quê:** quando um `<Text>` nativo é posicionado como irmão de um `<Canvas>` Skia, o pipeline GPU do Skia composita na camada acima do layout nativo. Para glifos específicos do DM Serif Display Italic (especialmente "2" e "3" a 84pt), isso faz os dígitos aparecerem cortados. O problema **não afeta todos os dígitos** — depende do bounding box óptico do glifo.
+**Padrão correto — `Canvas + Circle + RadialGradient + vec`:**
+```typescript
+import { Canvas, Circle, RadialGradient, vec, BlurMask } from '@shopify/react-native-skia';
 
-**Padrão aplicado em `protocolo.tsx`:**
+// Shadow no View wrapper FORA do Canvas (não no Animated.View diretamente):
+<View style={{ shadowColor: '#C86651', shadowOffset: { width: 0, height: 18 }, shadowOpacity: 0.45, shadowRadius: 25 }}>
+  <Canvas style={{ width: 140, height: 140 }}>
+    <Circle cx={70} cy={70} r={70}>
+      <RadialGradient
+        c={vec(49, 42)}   // ponto focal: 35%×140=49, 30%×140=42
+        r={120}
+        colors={['#FFEFE4', '#F9C9B6', '#E89178', '#C86651']}
+        positions={[0, 0.28, 0.68, 1]}
+      />
+    </Circle>
+    {/* Highlight especular com blur */}
+    <Circle cx={50} cy={29} r={22}>
+      <RadialGradient c={vec(50, 29)} r={22} colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']} />
+      <BlurMask blur={4} style="normal" />
+    </Circle>
+  </Canvas>
+</View>
+```
+
+**Onde este padrão é usado:**
+- `protocolo.tsx` — orb da Cerimônia (132×132, daytime/nighttime colors)
+- `app/(scan)/loading.tsx` — orb da análise de pele (140×140, skin-tone gradient)
+
+**Regra importante sobre shadow:** a shadow deve ficar no `View` imediatamente pai do `Canvas`, **não** no `Animated.View` externo (se houver). A Skia Canvas tem fundo transparente — o shadow só é projetado corretamente pelo conteúdo renderizado dentro dela quando há um `View` com shadow entre ela e o container animado.
+
+**Numeral do orb da Cerimônia — `SkiaText` em vez de `<Text>` nativo:**
+
+O numeral (`01`–`0N`) dentro do orb da Cerimônia é renderizado com `SkiaText` + `useFont`, **não** como `<Text>` nativo.
+
+**Por quê:** quando um `<Text>` nativo é irmão de um `<Canvas>` Skia, o pipeline GPU do Skia composita acima do layout nativo. Para glifos do DM Serif Display Italic a 84pt (especialmente "2" e "3"), o bounding box óptico faz os dígitos aparecerem cortados.
+
 ```typescript
 const cerimSkiaFont = useFont(require('../../assets/fonts/DMSerifDisplay-Italic.ttf'), 84);
 
-// Dentro do Canvas 200×200 (círculo cx=100, cy=100):
-const skiaTextW = cerimSkiaFont?.measureText(text).width ?? 95;
-const skiaCapH = Math.abs(cerimSkiaFont?.getMetrics().capHeight ?? 84 * 0.70);
-
+// Dentro do Canvas 200×200:
 <SkiaText
-  x={(200 - skiaTextW) / 2}  // centraliza horizontalmente via measureText
-  y={100 + skiaCapH / 2}      // baseline = centro do orb + metade da cap height
+  x={(200 - skiaTextW) / 2}
+  y={100 + skiaCapH / 2}
   text={text}
   font={cerimSkiaFont}
   color={...}
 />
 ```
-
-**Regra geral:** se precisar renderizar texto sobre um `Canvas` Skia na mesma hierarquia de layout, preferir `SkiaText` dentro do Canvas a um `<Text>` nativo irmão.
 
 ---
 
@@ -681,20 +828,25 @@ function applySchedule(step: any) {
 
 ---
 
-### 11. Debug de modo dia/noite em `home.tsx` — 5 toques no masthead "NIKS"
+### 11. Debug de modo dia/noite — 5 toques no texto "NIKS" (`home.tsx` e `niks-chat.tsx`)
 
-A home tem um modo de debug que alterna entre AM (manhã) e PM (noite) para facilitar testes visuais durante o desenvolvimento. Ele é **completamente invisível para o usuário final**.
+Duas telas têm modo de debug que alterna entre AM (manhã) e PM (noite) para facilitar testes visuais em dispositivo físico. **Completamente invisível para o usuário final. Funciona em TestFlight (produção).**
 
-**Como ativar:** tocar 5 vezes seguidas no texto "NIKS" do masthead (canto superior esquerdo). Cada sequência de 5 toques dentro de 2 segundos avança o ciclo: `auto → am → pm → auto`.
+**Como ativar:** tocar 5 vezes seguidas no texto "NIKS" dentro de 2 segundos. Ciclo: `auto → am → pm → auto`.
 
-**Implementação em `app/(app)/home.tsx`:**
+| Tela | Onde tocar |
+|---|---|
+| `app/(app)/home.tsx` | Texto "NIKS" no masthead (canto superior esquerdo) |
+| `app/(app)/niks-chat.tsx` | Título "NIKS" no `ChatHeader` (centro do header, ao lado do orb dot) |
+
+**Implementação (idêntica nas duas telas):**
 - O texto "NIKS" é envolto em `<TouchableOpacity activeOpacity={1}>` — sem feedback visual
-- Um `useRef` conta os toques; um `setTimeout` de 2s reseta o contador se o intervalo entre toques for longo
-- O estado `debugMode: 'am' | 'pm' | null` permanece em `Home` e substitui `new Date().getHours()` no cálculo do `ctx`
+- Um `useRef` conta os toques; um `setTimeout` de 2s reseta o contador
+- Estado `debugMode: 'am' | 'pm' | null` — em `home.tsx` substitui `new Date().getHours()` no cálculo do `ctx`; em `niks-chat.tsx` substitui `autoNight` no cálculo de `isDark`
 
-**Por que não usar `__DEV__`:** o modo debug foi mantido em produção intencionalmente para permitir que o time veja os dois estados da tela (fundo escuro/estrelas vs. fundo branco) num dispositivo físico sem precisar de build separado.
+**Por que não usar `__DEV__`:** mantido em produção intencionalmente para testar os dois estados visuais (fundo escuro/estrelas vs. fundo branco) num dispositivo físico sem build separado.
 
-> ⚠️ **Não adicionar botão visível.** O trigger de 5 toques é a interface deliberada. Se parecer que "sumiu o botão de debug", é porque foi substituído por este mecanismo.
+> ⚠️ **Não adicionar botão visível.** O trigger de 5 toques é a interface deliberada.
 
 ---
 
@@ -714,15 +866,19 @@ O scan facial é iniciado de dois lugares distintos e segue fluxos diferentes:
 
 | Origem | Fluxo |
 |---|---|
-| Onboarding (primeiro scan) | `scan-prep` (com barra de progresso) → `camera` → `loading` → `rate-us` → `results` (onboarding) |
-| App principal (`ScanModal`) | `scan-prep` (sem barra de progresso) → `camera` → `loading` → `/(app)/skin-result` (direto, pula rate-us) |
+| Onboarding | `scan-prep` (com barra de progresso) → `camera` → `loading` → `results` → `plan-preview` → `paywall-soft` → `signup` |
+| App principal (`ScanModal`) | `scan-prep` (sem barra de progresso) → `camera` → `loading-dentro-app` → `/(app)/skin-result` |
+
+**Duas telas de loading distintas — não consolidar:**
+- `loading.tsx` — usada no onboarding. Inclui o step "Montando seu protocolo personalizado" (faz sentido, pois o protocolo será gerado logo depois).
+- `loading-dentro-app.tsx` — usada no app principal (via FAB). **Não inclui** o step "Montando seu protocolo personalizado" (o protocolo já existe; mostrar esse step seria enganoso). Navega sempre para `/(app)/skin-result`.
 
 **Como funciona:**
 1. `ScanModal.handleScanFace` chama `setScanSource('app')` antes de navegar para `scan-prep`
 2. `scan-prep.tsx` lê `scanSource`: se `'app'`, renderiza sem `QuizLayout` (sem barra de progresso do onboarding)
-3. `loading.tsx` lê `scanSource` após análise concluída: se `'app'`, chama `setSelectedScan(null)` + `router.replace('/(app)/skin-result')`; se `'onboarding'`, segue para `/(scan)/rate-us`
+3. `camera.tsx` lê `scanSource` e navega: `'app'` → `loading-dentro-app`; `'onboarding'` → `loading`
 
-**Por que `setSelectedScan(null)` é obrigatório em `loading.tsx`:** `skin-result.tsx` usa `selectedScan?.result ?? scanResult`. Se `selectedScan` ainda estiver populado de uma visualização anterior do carrossel da home, a tela mostra o scan antigo em vez do recém-feito.
+**Por que `setSelectedScan(null)` é obrigatório em `loading-dentro-app.tsx`:** `skin-result.tsx` usa `selectedScan?.result ?? scanResult`. Se `selectedScan` ainda estiver populado de uma visualização anterior do carrossel da home, a tela mostra o scan antigo em vez do recém-feito.
 
 **Não confundir** com o retry de login do usuário no app: o guard de assinatura em `(app)/_layout.tsx` não depende de `scanSource`.
 
@@ -753,18 +909,19 @@ O paywall é gerenciado pelo **Superwall** (`expo-superwall`). O `<SuperwallProv
 **API Key iOS:** `pk_4iUsZwW_-ME9WdK3IcXYp`  
 **Placement identifier:** `paywall_onboarding`
 
-O acesso ao app é verificado em 5 pontos de assinatura + 1 guard de nome, em ordem. Os guards de assinatura usam RevenueCat (`getCustomerInfo` + `isSubscribed`):
+O acesso ao app é verificado em 3 pontos de assinatura + 1 guard de nome, em ordem. Os guards de assinatura usam RevenueCat (`getCustomerInfo` + `isSubscribed`):
 
-- `app/index.tsx` — ao abrir o app com sessão ativa → não-assinante: `registerPlacement` direto
+- `app/index.tsx` — ao abrir o app com sessão ativa → vai direto para `/(app)/home` (sem checar assinatura — delega para `AppLayout` evitar race condition com `loginRevenueCat`)
 - `app/(onboarding)/_layout.tsx` — ao entrar no onboarding com sessão ativa → assinante já vai direto para home
 - `app/(onboarding)/login.tsx` — `routeAfterLogin()` após qualquer método de login → não-assinante: `router.replace('/(onboarding)/paywall-soft')`
-- `app/(onboarding)/protocol-loading.tsx` — ao concluir geração do protocolo → aciona `registerPlacement` antes de navegar para `notifications`
 - **`app/(app)/_layout.tsx`** — guard definitivo de assinatura (**fail closed**): não-assinante, timeout ou erro → `router.replace('/(onboarding)/paywall-soft')`; o app **nunca renderiza** para não-assinantes (`setReady(true)` só é chamado após assinatura confirmada via `Promise.race` de 8s)
 
 **Guard de nome em `app/(app)/_layout.tsx` (executa antes do guard de assinatura):** ao entrar no app com sessão ativa, o layout consulta `users.nome`. Se estiver vazio, redireciona para `/(onboarding)/nome` **independentemente do status de assinatura**. Isso cobre usuários existentes que nunca definiram nome. Só depois dessa verificação o fluxo de assinatura é avaliado.
 
+**⚠️ Race condition crítica — loginRevenueCat vs getCustomerInfo:** `_layout.tsx` (raiz) chama `loginRevenueCat(userId)` de forma assíncrona (fire-and-forget). Se `getCustomerInfo()` for chamado ANTES de `loginRevenueCat` completar, o RevenueCat ainda estará em modo anônimo — e o usuário anônimo não tem assinatura, causando loop de paywall. **Solução:** `(app)/_layout.tsx` aguarda `loginRevenueCat(session.user.id)` (com await + try/catch) imediatamente antes de chamar `getCustomerInfo()`. O mesmo se aplica em `paywall-soft.tsx` quando há sessão ativa.
+
 **Tela `app/(onboarding)/nome.tsx`:** pergunta "Como você quer ser chamado?" com campo único de nome. Sem botão de voltar e sem opção de pular — a única saída é inserir um nome e apertar "Continuar". Usa `upsert` (não `update`) com `onConflict: 'id'` para garantir que a row é criada caso não exista. **Navega para `/(app)/home` somente se o save for bem-sucedido** — o `router.replace` está dentro do `try`, não no `finally`. Se falhar, exibe `Alert` e mantém o usuário na tela para tentar novamente. Isso previne o loop: save silencioso → navigate → layout recheca → nome vazio → redireciona de volta. Alcançada por dois caminhos:
-1. Novos usuários: `notifications.tsx` → `paywall-soft.tsx` (se não assinou) → assina → `/(app)/home` → layout redireciona para `nome.tsx`
+1. Novos usuários: `paywall-soft.tsx` → `signup.tsx` → `router.push('/(onboarding)/nome')` diretamente (após criar conta)
 2. Usuários existentes sem nome: `(app)/_layout.tsx` redireciona diretamente para `nome.tsx`
 
 > ⚠️ **Bypass para desenvolvimento (`__DEV__`):** Todos os pontos acima têm um bypass condicional que é ativado automaticamente no simulador/Metro. Além disso, `app/(onboarding)/notifications.tsx` também tem bypass em `navigateToApp()` — vai direto para `/(onboarding)/nome` (não para `/(app)/home`) sem chamar RevenueCat:
@@ -789,11 +946,33 @@ O guard em `(app)/_layout.tsx` usa `Promise.race` com **timeout de 8s**: se `get
 > ```
 > `refreshConfiguration()` **não existe** no wrapper JS — o equivalente disponível é `Superwall.shared.preloadAllPaywalls()`.
 
+**`CustomPurchaseControllerProvider` — obrigatório para integração Superwall + RevenueCat:**
+
+O `CustomPurchaseControllerProvider` (também exportado de `expo-superwall`) envolve o conteúdo logo abaixo do `SuperwallProvider` em `app/_layout.tsx`. Ele intercepta eventos de compra/restauração do Superwall e os delega para o RevenueCat SDK.
+
+**⚠️ Sem este provider, o Superwall processa compras via StoreKit diretamente** — o RevenueCat não é notificado. Quando `getCustomerInfo()` é chamado em seguida, retorna "não assinante" e o paywall reaparece em loop infinito.
+
+O controller implementado:
+```typescript
+const superwallPurchaseController = {
+  onPurchase: async ({ productId }) => {
+    // Encontra o package no RevenueCat pelo productId
+    const pkg = offerings.current?.availablePackages.find(p => p.product.identifier === productId);
+    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    // Retorna 'purchased' se o entitlement 'premium' ficou ativo
+  },
+  onPurchaseRestore: async () => {
+    const customerInfo = await Purchases.restorePurchases();
+    // Retorna 'restored' se o entitlement 'premium' ficou ativo
+  },
+};
+```
+
 #### `paywall-soft.tsx` — gateway para o Superwall (sem UI própria)
 
 `paywall-soft.tsx` **não é uma tela de paywall visual**. É um componente spinner (`ActivityIndicator`) que entrega o controle ao Superwall SDK. O Superwall exibe sua própria tela de paywall hospedada no dashboard — toda a UI, copy e design do paywall são configurados lá, não no código.
 
-`protocol-loading.tsx` chama `registerPlacement` ao terminar, o que aciona o Superwall. `paywall-soft.tsx` registra callbacks para saber quando o usuário interagiu:
+`plan-preview.tsx` navega para `paywall-soft.tsx`, que aciona o Superwall. `paywall-soft.tsx` registra callbacks para saber quando o usuário interagiu:
 
 ```typescript
 const { registerPlacement } = usePlacement({
@@ -803,7 +982,9 @@ const { registerPlacement } = usePlacement({
 });
 ```
 
-`handleAfterPaywall()` verifica o RevenueCat: assinante → `/(app)/home`; não-assinante ou erro → **reapresenta o paywall** (`registerPlacement` novamente). O usuário fica bloqueado em `paywall-soft` até assinar — não há saída sem assinatura.
+`handleAfterPaywall()` verifica o RevenueCat: chama `getCustomerInfo()` primeiro (cache local). **Se o cache não mostrar assinatura**, faz fallback com `Purchases.restorePurchases()` (sincroniza com Apple) — isso cobre: (a) cache desatualizado pós-compra, (b) usuário anônimo RC comprou mas o RC foi trocado para o usuário identificado sem transferir a assinatura (fluxo paywall → signup), (c) `onPurchase` retornou 'failed' mas Apple processou o pagamento. Se assinante confirmada → seta `subscriptionVerified(true)` no store → navega para `/(onboarding)/signup` (nova usuária sem sessão) ou `/(app)/home` (usuária existente com sessão); não-assinante após ambas as tentativas → **reapresenta o paywall** (`registerPlacement` novamente). O usuário fica bloqueado em `paywall-soft` até assinar — não há saída sem assinatura.
+
+**`signup.tsx` — `restorePurchases()` após `logIn()`:** após cada `Purchases.logIn(userId)` nos três métodos de autenticação (email, Google, Apple), é feito `await Purchases.restorePurchases()`. Isso garante que a assinatura comprada pelo usuário anônimo RC é transferida ao usuário RC identificado, mesmo que o usuário identificado já existisse no RevenueCat. Sem esse passo, em sessões subsequentes (após restart do app), `(app)/_layout.tsx` veria o usuário identificado sem assinatura → loop de paywall.
 
 **Por que esta abordagem:** `registerPlacement` retorna uma `Promise<void>` que resolve **imediatamente** após registrar o placement com o SDK nativo — **não** após o paywall ser fechado. A navegação pós-paywall deve sempre acontecer nos callbacks `onDismiss`/`onSkip`/`onError`, nunca após `await registerPlacement`.
 
@@ -860,8 +1041,8 @@ lib/mixpanel/
 | `user_logged_in` | `login.tsx` após qualquer login bem-sucedido | `method: 'email' \| 'google' \| 'apple'` |
 | `scan_completed` | `(scan)/loading.tsx` após `analyze-skin` | `skin_score: number`, `skin_type: string` |
 | `scan_failed` | `(scan)/loading.tsx` após esgotar 2 retries | `error: string` |
-| `protocol_generated` | `protocol-loading.tsx` após `generate-protocol` | — |
-| `protocol_failed` | `protocol-loading.tsx` em erro | `error: string` |
+| `protocol_generated` | `lib/generateProtocol.ts` callback `onSuccess` | — |
+| `protocol_failed` | `lib/generateProtocol.ts` callback `onFinally` em erro | `error: string` |
 | `food_scan_completed` | `(scan)/food-report.tsx` após `analyze-food` | `meal_score: number`, `meal_label: string` |
 | `food_scan_failed` | `(scan)/food-report.tsx` em erro | `error: string` |
 
@@ -915,23 +1096,69 @@ Para detectar se o campo já está em modo multiline (ex: mudar `borderRadius` o
 
 ---
 
+### 18. Telas de loading — headline com `adjustsFontSizeToFit` em vez de 3 `<Text>` separados
+
+O headline das telas de loading (`loading.tsx`, `loading-dentro-app.tsx`, `food-report.tsx`) é composto por prefixo em bold DEEP + palavra-destaque em PlayfairDisplay-Italic CORAL + "…".
+
+A abordagem anterior usava 3 `<Text>` separados em `flexDirection: 'row'`, com `flexShrink: 1` no prefixo. Em telas menores (iPhone 11, 375pt), o prefixo era truncado com "s..." pelo React Native antes da palavra-destaque aparecer.
+
+**Por que não funciona com 3 Texts em row:** `adjustsFontSizeToFit` em textos individuais numa row não coordena o scaling entre eles. Com `flexShrink: 1` apenas no prefixo, o RN trunca o prefixo ao invés de reduzir a fonte.
+
+**Estrutura correta:**
+```tsx
+<View style={{ width: '100%', alignItems: 'center', overflow: 'hidden' }}>
+  <Text
+    numberOfLines={1}
+    adjustsFontSizeToFit={true}
+    minimumFontScale={0.7}
+    allowFontScaling={false}
+    style={{ fontSize: 28, textAlign: 'center', ... }}
+  >
+    {prefix}{' '}
+    <Text style={{ fontFamily: 'PlayfairDisplay-Italic', color: CORAL }}>
+      {highlight}
+    </Text>
+    {'…'}
+  </Text>
+  {/* Shimmer como overlay absoluto — não wrapping só a palavra-destaque */}
+  <Animated.View pointerEvents="none" style={{ position: 'absolute', ... }}>
+    <LinearGradient ... />
+  </Animated.View>
+</View>
+```
+
+O `<View style={{ overflow: 'hidden' }}>` com `width: '100%'` é obrigatório — sem ele o `adjustsFontSizeToFit` não tem largura delimitada e não sabe quando ativar. O shimmer vira overlay absoluto sobre o container inteiro (não apenas sobre a palavra-destaque).
+
+---
+
 ## FLUXO COMPLETO DO APP
 
 ```
-→ [app aberto com sessão ativa] → spinner → verifica assinatura (RevenueCat) → assinante: home | não-assinante: paywall-soft (guard em (onboarding)/_layout.tsx também aplica a mesma lógica)
+→ [app aberto com sessão ativa] → spinner → verifica assinatura (RevenueCat) → assinante: home | não-assinante: paywall-soft
+  (guard em (onboarding)/_layout.tsx também aplica a mesma lógica)
 
-Welcome
-  → [botão "Começar"] Onboarding (19 telas) — setOnboardingField() em cada tela
-    → goal → scan-prep → camera (setSkinImage) → loading (analyze-skin) → rate-us → results → trust → plan-preview (skin_score real do store)
-    → signup (Google / Apple / E-mail+Senha → saveToSupabase) → skincare-routine → skincare-routine-detail* (se complement/prescribed) → allergies → allergies-detail* (se reaction) → protocol-loading (generate-protocol → INSERT protocolos) → paywall-soft (Superwall) → notifications
+Welcome (index.tsx — 5 telas swipeáveis)
+  → [botão "Começar"] Onboarding (24 telas) — setOnboardingField() em cada tela
+    birthday → gender → pregnancy* → goal → goal-validation → concerns → skin-type
+    → sun-exposure → hydration-sleep
+    → skincare-routine → skincare-routine-detail* (se complement/prescribed)
+    → allergies → allergies-detail* (se reaction)
+    → goal-desire → social-proof → rate-us
+    → scan-prep → camera (setSkinImage) → loading (analyze-skin) → results
+    → plan-preview → paywall-soft (Superwall) → signup (saveToSupabase + generateProtocol bg)
+    → nome → notifications → /(app)/home
 
-    → App principal (tabs)
+  (* = telas condicionais)
 
   → [botão "Entrar"] Login
-    → E-mail + Senha / Google / Apple → verifica assinatura (RevenueCat) → assinante: home | não-assinante: paywall-soft
+    → E-mail + Senha / Google / Apple → verifica assinatura (RevenueCat)
+    → assinante: home | não-assinante: paywall-soft
+
+Fluxo de scan facial (dentro do app principal):
+  ScanModal → scan-prep → camera → loading-dentro-app → /(app)/skin-result
 
 Fluxo de comida (dentro do app principal):
-  Home → ScanModal → food-camera (setFoodImage) → food-report (analyze-food)
+  Home (botão "Escanear refeição") ou ScanModal → food-camera (setFoodImage) → food-report (analyze-food)
 ```
 
 ---
@@ -942,55 +1169,51 @@ Fluxo de comida (dentro do app principal):
 niks-ai/
 ├── app/
 │   ├── _layout.tsx                ✅
-│   ├── index.tsx                  ✅ Welcome (vídeo em loop — assets/welcome-video.mp4)
+│   ├── index.tsx                  ✅ Welcome — 5 telas swipeáveis (Screens 1–4 com PhoneMockup, Screen 5 com WelcomeOrb estático); check de auth antes de exibir o fluxo
 │   ├── (onboarding)/
 │   │   ├── _layout.tsx            ✅
-│   │   ├── concerns.tsx           ✅
-│   │   ├── gender.tsx             ✅ navega para pregnancy (Feminino) ou birthday (outros)
-│   │   ├── pregnancy.tsx          ✅ condicional — só para gênero Feminino; entre gender e birthday
 │   │   ├── birthday.tsx           ✅
+│   │   ├── gender.tsx             ✅ navega para pregnancy (Feminino) ou goal (outros)
+│   │   ├── pregnancy.tsx          ✅ condicional — só para gênero Feminino; entre gender e goal
+│   │   ├── goal.tsx               ✅ multi-select até 3 objetivos
+│   │   ├── goal-validation.tsx    ✅ tela informativa — gráfico de potencial (sem interação, só Continuar)
+│   │   ├── concerns.tsx           ✅
 │   │   ├── skin-type.tsx          ✅
-│   │   ├── frequency.tsx          ✅
 │   │   ├── sun-exposure.tsx       ✅
-│   │   ├── hydration-sleep.tsx    ✅
-│   │   ├── sunscreen.tsx          ✅
-│   │   ├── social-proof.tsx       ✅
-│   │   ├── food-analysis.tsx      ✅
-│   │   ├── commitment.tsx         ⚠️ dead code — food-analysis navega direto para goal
-│   │   ├── goal.tsx               ✅
-│   │   ├── final-loading.tsx      ✅
-│   │   ├── trust.tsx              ✅
-│   │   ├── plan-preview.tsx       ✅
-│   │   ├── signup.tsx             ✅ fluxo dois passos (e-mail/senha + Google/Apple)
-│   │   ├── login.tsx              ✅ fluxo dois passos (e-mail/senha + Google/Apple)
-│   │   ├── skincare-routine.tsx   ✅ após signup — tipo de rotina atual (4 opções)
+│   │   ├── hydration-sleep.tsx    ✅ → navega para skincare-routine
+│   │   ├── skincare-routine.tsx   ✅ "Como está sua rotina de skincare hoje?" — 4 opções
 │   │   ├── skincare-routine-detail.tsx ✅ condicional — descrição dos produtos usados/prescritos
-│   │   ├── allergies.tsx          ✅ alergias/sensibilidades (3 opções)
-│   │   ├── allergies-detail.tsx   ✅ condicional — descrição do ativo/produto que causou reação
-│   │   ├── protocol-loading.tsx   ✅ gera protocolo + salva no Supabase
+│   │   ├── allergies.tsx          ✅ alergias/sensibilidades — navega para goal-desire
+│   │   ├── allergies-detail.tsx   ✅ condicional — ativo/produto que causou reação — navega para goal-desire
+│   │   ├── goal-desire.tsx        ✅ "Qual é o seu verdadeiro objetivo?" — 6 opções emocionais — navega para social-proof
+│   │   ├── social-proof.tsx       ✅ "Com o NIKS, você vai conseguir 3x mais rápido" — ⚠️ linha 212 navega para rate-us em vez de scan-prep (pendente corrigir)
+│   │   ├── plan-preview.tsx       ✅ "Sua rotina de skincare está pronta" → navega para paywall-soft
 │   │   ├── paywall-soft.tsx       ✅ gateway para Superwall — spinner sem UI própria
-│   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase
+│   │   ├── signup.tsx             ✅ criação de conta (e-mail/Google/Apple) → dispara generateProtocol em bg → navega para nome
+│   │   ├── login.tsx              ✅ fluxo dois passos (e-mail/senha + Google/Apple)
+│   │   ├── nome.tsx               ✅ "Como você quer ser chamada?" → salva users.nome → navega para notifications
+│   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase → navega para /(app)/home
 │   ├── (app)/
-│   │   ├── _layout.tsx            ✅ Tab bar customizada: início/rotina/niks/perfil — oculta em /home (home usa HomeBottomBar própria que também tem as 4 abas: início/rotina/niks/perfil + FAB)
-│   │   ├── home.tsx               ✅ Design Horizonte Reformulado: hero editorial, contexto manhã (4h–18h) / noite (18h–4h), ritual card, scans recentes, refeições, FAB coral
-│   │   ├── skin-result.tsx        ✅ Tela de resultado da análise facial (in-app, métricas reais)
-│   │   ├── protocolo.tsx          ✅ Auto-sincroniza o período (manhã/noite) com o horário do sistema via useFocusEffect ao focar — usuário ainda pode trocar manualmente; ao re-focar a tela, o período volta ao horário atual (decisão intencional: evitar que a tela apareça no modo errado quando o app já está no tema noturno)
-│   │   ├── analise.tsx            ✅
-│   │   ├── evolucao.tsx           🚫 oculta (href: null) — removida da tab bar
-│   │   ├── niks-chat.tsx          ✅ Chat com a NIKS AI — dois estados: empty (boas-vindas) e active (conversa); suporta modo noturno (≥18h) com NightSky + MiniOrb lunar; design handoff em design_handoff_chat_screen/
-│   │   ├── perfil.tsx             ✅ redesenhado (Figma cFsFcVSjOMkTdHIJpHgSDk): nome dinâmico, email, notificações, suporte
-│   │   └── set-name.tsx           ✅ definir nome/sobrenome → salva em users.nome no Supabase
+│   │   ├── _layout.tsx            ✅ Tab bar customizada: início/rotina/niks/perfil — oculta em /home (home usa HomeBottomBar própria)
+│   │   ├── home.tsx               ✅ Design Horizonte Reformulado: hero editorial, contexto manhã/noite, ritual card, scans recentes, refeições, FAB coral
+│   │   ├── skin-result.tsx        ✅ resultado da análise facial no app principal (métricas reais, parallax hero)
+│   │   ├── protocolo.tsx          ✅ rotina AM/PM com Cerimônia, streak, Skia orb, som de check
+│   │   ├── niks-chat.tsx          ✅ Chat com a NIKS AI — dois estados: empty / active; modo noturno (≥18h)
+│   │   ├── perfil.tsx             ✅ nome dinâmico, email, notificações, suporte, apagar conta
+│   │   └── set-name.tsx           ✅ editar nome/sobrenome → salva em users.nome no Supabase
 │   └── (scan)/
-│       ├── scan-prep.tsx          ✅
-│       ├── camera.tsx             ✅
+│       ├── scan-prep.tsx          ✅ preparação para o scan (com barra de progresso no onboarding; sem no app principal)
+│       ├── camera.tsx             ✅ → loading (onboarding) ou loading-dentro-app (app principal)
 │       ├── food-camera.tsx        ✅
-│       ├── food-scan-intro.tsx    ⚠️ arquivo mantido mas fora do fluxo ativo — foi removido do caminho ScanModal → food-camera para reduzir fricção
-│       ├── loading.tsx            ✅
-│       ├── rate-us.tsx            ✅ tela de avaliação (entre loading e results)
-│       ├── results.tsx            ✅
-│       ├── food-report.tsx        ✅
-│       └── protocolo.tsx          ✅
+│       ├── loading.tsx            ✅ loading do onboarding — inclui step "Montando seu protocolo"
+│       ├── loading-dentro-app.tsx ✅ loading do app principal — não inclui step de protocolo
+│       ├── rate-us.tsx            ✅ "Avalie-nos" — reviews em marquee + requestAppReview() → navega para scan-prep (onboarding) ou skin-result (app)
+│       ├── results.tsx            ✅ "Relatório de Pele" no onboarding → navega para plan-preview
+│       └── food-report.tsx        ✅
 ├── components/
+│   ├── onboarding/
+│   │   ├── PhoneMockup.tsx        ✅ iPhone 15 Pro mockup — frame titanium LinearGradient, dynamic island, side buttons
+│   │   └── WelcomeOrb.tsx         ✅ orb coral estático com halo (react-native-svg) — Screen 5 do Welcome
 │   ├── ui/
 │   │   ├── CTAButton.tsx          ✅
 │   │   ├── BackButton.tsx         ✅
@@ -999,22 +1222,31 @@ niks-ai/
 │   │   ├── Pill.tsx               ✅
 │   │   ├── IOSWheelPicker.tsx     ✅
 │   │   ├── AIConsentModal.tsx     ✅ modal de consentimento de IA (LGPD) — uma única vez por instalação
-│   │   └── NightSky.tsx           ✅ céu noturno animado (Reanimated v4 + Skia) — usado em modo noite do Protocolo e da NIKS Chat
+│   │   └── NightSky.tsx           ✅ céu noturno animado (Reanimated v4 + Skia) — Protocolo e NIKS Chat modo noite
 │   ├── layouts/
-│   │   └── QuizLayout.tsx         ✅
+│   │   └── QuizLayout.tsx         ⚠️ não utilizado — nenhum arquivo importa este componente
 │   └── scan/
 │       └── ScanModal.tsx          ✅
 ├── constants/colors.ts            ✅
-├── constants/protocols.ts         ⚠️ legado — `baseProtocol` é enviado no fallback de `protocolo.tsx` mas ignorado pela Edge Function `generate-protocol`
+├── constants/protocols.ts         ⚠️ legado — `baseProtocol` é enviado pelo fallback de `protocolo.tsx` mas ignorado pela Edge Function `generate-protocol`
 ├── store/onboarding.ts            ✅
 ├── lib/supabase.ts                ✅
-├── lib/notifications.ts           ✅ requestPushPermission() + savePushToken() — requer Apple Developer Program para token real
+├── lib/generateProtocol.ts        ✅ utilitário fire-and-forget — encapsula chamada à Edge Function com retry (3x, 3s), salva no Supabase
+├── lib/notifications.ts           ✅ requestPushPermission() + savePushToken()
 ├── hooks/useAuth.ts               ✅
-├── hooks/useAIConsent.ts          ✅ requestConsent(), handleAccept/Decline — AsyncStorage key: "ai_consent_accepted"
-├── assets/fonts/                  ✅ Playfair Display (variável, `[wght].ttf` + Italic) e DM Serif Display — registradas em `app.json` `"fonts"[]` para bundling + carregadas via `useFonts` em `protocolo.tsx` e `home.tsx`. **A chave passada ao `useFonts` (ex: `'PlayfairDisplay-Italic'`, `'PlayfairDisplay-Regular'`) é o `fontFamily` correto nos styles** — não usar a convenção expo-google-fonts (`PlayfairDisplay_400Regular_Italic`), que não funciona com fontes locais
-├── assets/trust-hands.png         ⚠️ não usado — trust.tsx usa o componente SVG DoubleHeart inline (substituiu esta imagem)
+├── hooks/useAIConsent.ts          ✅ requestConsent() — AsyncStorage key: "ai_consent_accepted"
+├── assets/fonts/
+│   ├── PlayfairDisplay-Regular.ttf   ✅ fonte principal
+│   ├── PlayfairDisplay-Italic.ttf    ✅ títulos/destaques
+│   ├── DMSerifDisplay-Regular.ttf    ✅ Cerimônia do protocolo
+│   ├── DMSerifDisplay-Italic.ttf     ✅ Cerimônia + cerimSkiaFont (Canvas Skia)
+│   ├── CormorantGaramond-Regular.ttf ⚠️ não carregada via useFonts em nenhuma tela
+│   ├── CormorantGaramond-Italic.ttf  ⚠️ carregada em plan-preview.tsx mas nenhum style usa fontFamily 'CormorantGaramond-Italic'
+│   └── DMSans-MediumItalic.ttf       ⚠️ carregada em plan-preview.tsx mas nenhum style usa fontFamily 'DMSans-MediumItalic'
+├── assets/trust-hands.png         ⚠️ não usado (trust.tsx foi deletado)
+├── assets/welcome-video.mp4       ⚠️ não usado — nenhum arquivo referencia
 ├── lib/revenuecat.ts              ✅ initRevenueCat, getPackages, purchasePackage, restorePurchases, isSubscribed
-├── lib/storeReview.ts             ✅ requestAppReview() — popup nativo via expo-store-review com fallback para App Store (id6760590018)
+├── lib/storeReview.ts             ✅ requestAppReview() — popup nativo via expo-store-review (id6760590018)
 └── hooks/useSubscription.ts       ✅ useSubscription() — checa entitlement `premium` em tempo real
 ```
 
@@ -1314,5 +1546,164 @@ Aplicado em `food-report.tsx` nos componentes `CollapsibleSection` e `FoodCard`.
 
 ---
 
-*Última atualização: Sessão 24 — Maio 2026*
-*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto). `home.tsx` reescrita com design Horizonte Reformulado: contexto temporal AM/PM/noite, HeroEditorial VAR 3, céu noturno animado, ritual card, FAB coral. Tab bar: labels atualizados para início/rotina/perfil; `ScanModal` redesenhado como ScanTypeSheet com prop `isDark`. Bug corrigido: `home.tsx` agora reseta `tabBarTheme` para `'light'` no blur do `useFocusEffect`. Decisão 20 adicionada: padrão de duas Views para shadow + overflow em React Native.*
+### 21. `expo-linear-gradient` — `'transparent'` cria bordas escuras em fundos brancos
+
+No React Native, `'transparent'` interpola para `rgba(0,0,0,0)` (preto transparente), não para a cor do fundo. Em gradientes sobre fundo branco isso gera uma borda escura visível na extremidade do fade.
+
+**Regra:** nunca usar `'transparent'` como stop em `expo-linear-gradient`. Usar a cor-alvo com alpha 0 explicitamente.
+
+```tsx
+// ❌ Cria borda escura — 'transparent' interpola para rgba(0,0,0,0)
+<LinearGradient colors={['#FFFFFF', 'transparent']} />
+
+// ✅ Fade suave — interpola corretamente entre branco e branco transparente
+<LinearGradient colors={['#FFFFFF', 'rgba(255,255,255,0)']} />
+```
+
+Era aplicado em `rate-us.tsx` (tela pendente de deleção). Aplicar em qualquer nova tela com carrossel sobre fundo branco.
+
+---
+
+### 22. Animação de `strokeDashoffset` em SVG — `Animated.createAnimatedComponent` + `useNativeDriver: false`
+
+Para animar propriedades de elementos `react-native-svg` (ex: `strokeDashoffset` de um `Circle` para progress ring fluido), é preciso criar um componente animado via `Animated.createAnimatedComponent`. O módulo `react-native-svg` **não exporta** esse utilitário — deve-se usar o `Animated` do próprio React Native.
+
+```tsx
+// ✅ Correto
+import Animated from 'react-native'; // ou desestruturar do import
+import { Circle } from 'react-native-svg';
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+// ❌ Errado — react-native-svg não tem createAnimatedComponent
+import { createAnimatedComponent } from 'react-native-svg';
+```
+
+**`useNativeDriver: false` é obrigatório** para animações de SVG — o native driver não suporta propriedades de elementos SVG (só suporta `transform` e `opacity` de Views nativas).
+
+```tsx
+const progressAnim = useRef(new Animated.Value(0)).current;
+
+Animated.timing(progressAnim, {
+  toValue: percentage,
+  duration: 350,
+  useNativeDriver: false, // ← obrigatório para strokeDashoffset
+}).start();
+
+const strokeDashoffset = progressAnim.interpolate({
+  inputRange: [0, 100],
+  outputRange: [CIRCUMFERENCE, 0],
+});
+
+<AnimatedCircle
+  strokeDasharray={CIRCUMFERENCE}
+  strokeDashoffset={strokeDashoffset}
+  // ... demais props
+/>
+```
+
+Aplicado em `(scan)/loading.tsx` para o ring de progresso da análise facial: `percentage` (estado que sobe em saltos irregulares) é animado via `Animated.Value` intermediário com `duration: 350ms`, eliminando o efeito de travamento visual.
+
+---
+
+### 23. Shimmer em texto colorido — simulação de `backgroundClip: text` com overlay branco
+
+CSS `backgroundClip: text` não existe no React Native. A técnica para simular um shimmer sobre uma palavra colorida (ex: coral) é usar `overflow: 'hidden'` no container da palavra + um `LinearGradient` branco absoluto que desliza sobre ela.
+
+**Por que branco e não a cor do texto:**
+- Gradiente branco sobre fundo branco = branco (invisível) → sem artefatos de retângulo
+- Gradiente branco sobre texto coral = coral clareado → shimmer visível
+- Gradiente coral-transparent (mesmo hue, alpha 0) sobre fundo branco → ainda cria retângulo de cor translúcida sobre as lacunas entre letras
+
+```tsx
+<View style={{ overflow: 'hidden' }}>
+  <Text style={{ color: CORAL }}>palavra</Text>
+  <Animated.View
+    pointerEvents="none"
+    style={{
+      position: 'absolute', top: 0, bottom: 0, left: 0,
+      width: 400,
+      transform: [{ translateX: shimmerTranslateX }],
+    }}
+  >
+    <LinearGradient
+      colors={[
+        'rgba(255,255,255,0)',
+        'rgba(255,255,255,0)',
+        'rgba(255,255,255,0.78)',  // pico do shimmer
+        'rgba(255,255,255,0)',
+        'rgba(255,255,255,0)',
+      ]}
+      locations={[0, 0.35, 0.5, 0.65, 1]}
+      start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+      style={{ flex: 1 }}
+    />
+  </Animated.View>
+</View>
+```
+
+`shimmerTranslateX` vai de `+200` a `-400` em loop (1500ms, `useNativeDriver: true`). A largura `400` garante que o gradiente cobre a palavra inteira mesmo em textos longos.
+
+Aplicado em `(scan)/loading.tsx` na palavra destacada do título rotativo ("análise", "hidratação", "Score"…). Consultar também **Decisão 21** para o gotcha de `'transparent'` no `expo-linear-gradient`.
+
+---
+
+### 24. `overflow: 'hidden'` em pai de `ScrollView` bloqueia toque no New Architecture
+
+No **New Architecture (Fabric)**, `overflow: 'hidden'` em uma `View` pai pode bloquear os eventos de toque para um `ScrollView` filho, tornando o scroll completamente inoperante — o conteúdo é exibido corretamente, mas nenhum gesto de arrasto é detectado. Na Old Architecture, `overflow` afetava apenas a renderização, nunca o hitbox. No Fabric, esse comportamento mudou.
+
+**Sintoma típico:** o `ScrollView` renderiza os items normalmente, o usuário tenta rolar, o conteúdo não responde a nenhum gesto. `onScroll`, `onScrollEndDrag` e `onMomentumScrollEnd` nunca disparam.
+
+**Regra:** nunca colocar `overflow: 'hidden'` em um `View` que é pai direto de um `ScrollView`. O próprio `ScrollView` já clipa seu conteúdo internamente — o `overflow: 'hidden'` externo é redundante e, no Fabric, destrutivo.
+
+```tsx
+// ❌ Bloqueia o toque no New Architecture
+<View style={{ height: 300, overflow: 'hidden' }}>
+  <ScrollView snapToInterval={60} decelerationRate="fast">
+    {/* items */}
+  </ScrollView>
+</View>
+
+// ✅ Correto — ScrollView clipa o próprio conteúdo
+<View style={{ height: 300 }}>
+  <ScrollView snapToInterval={60} decelerationRate="fast">
+    {/* items */}
+  </ScrollView>
+</View>
+```
+
+**Corolário — scroll pickers com `decelerationRate="fast"` + `snapToInterval`:** o snap acontece tão rapidamente que `onMomentumScrollEnd` muitas vezes não dispara (não há momentum real). Sempre usar **ambos** `onScrollEndDrag` e `onMomentumScrollEnd` juntos para cobrir drags lentos e flicks rápidos.
+
+Descoberto ao corrigir o scroll picker de idade em `birthday.tsx` (Sessão 30).
+
+### 25. `useRef` como guard contra execução dupla em funções assíncronas críticas
+
+`useState` tem lag de re-render: se o usuário toca um botão duas vezes muito rapidamente (antes do primeiro `setState` re-renderizar e desabilitar o botão), ambos os taps disparam a função. O mesmo vale para `useEffect` com `[]` — em React StrictMode (ativo por padrão no Expo dev client), o efeito é invocado duas vezes. Qualquer função assíncrona que persiste dados no banco é vulnerável a essas condições.
+
+**Padrão correto — `useRef` como mutex:**
+```typescript
+const guardRef = useRef(false);
+
+const doOnce = async () => {
+  if (guardRef.current) return;   // já rodando — descarta
+  guardRef.current = true;
+  try {
+    // ... chamada de API + insert no banco
+  } catch (err) {
+    guardRef.current = false;     // reseta só em erro, para permitir retry manual
+    setError('...');
+  }
+};
+```
+
+**Por que `useRef` e não `useState`:** refs são síncronos — `guardRef.current = true` é visível imediatamente, sem aguardar re-render. `useState` só atualiza após o próximo ciclo de render, criando uma janela onde o guard ainda não está ativo.
+
+**Onde este padrão é aplicado:**
+- `app/(scan)/food-camera.tsx` — `navigatingRef` em `processAndNavigate`: impede que dois toques rápidos no botão de câmera resultem em dois `router.push('/(scan)/food-report')` simultâneos. O ref é resetado para `false` apenas em caso de erro no processamento da imagem.
+- `app/(scan)/food-report.tsx` — `analyzingRef` em `analyzeFood`: impede que chamadas paralelas (StrictMode ou remount da tela) gerem múltiplos inserts em `food_scans`. O ref é resetado para `false` apenas em caso de erro, preservando o botão "Tentar novamente" funcional.
+
+**Sintoma do bug sem o guard:** cada scan de refeição salvava 2–4 registros idênticos em `food_scans` com o mesmo `created_at`, aparecendo como duplicatas na seção "Hoje você comeu" da home.
+
+---
+
+*Última atualização: Sessão 31 — Maio 2026*
+*Status: MVP — RevenueCat ✅; guard de assinatura completo (4 pontos de verificação + timeout 8s); gamificação do protocolo; avaliação nativa (expo-store-review); push notifications ✅; App Store ID: id6760590018. Schema `analyze-skin` expandido: `region_insights`, `goal_alignment`, `skin_strengths`, `action_recommendations`. `skin-result.tsx` com parallax (foto fixa, Animated.ScrollView, ring SVG + badges animados, card com borderRadius desliza por cima da foto). `home.tsx` reescrita com design Horizonte Reformulado: contexto temporal AM/PM/noite, HeroEditorial VAR 3, céu noturno animado, ritual card, FAB coral. Tab bar: labels atualizados para início/rotina/perfil; `ScanModal` redesenhado como ScanTypeSheet com prop `isDark`. Bug corrigido: `home.tsx` agora reseta `tabBarTheme` para `'light'` no blur do `useFocusEffect`. Decisão 20 adicionada: padrão de duas Views para shadow + overflow em React Native. `loading.tsx` redesenhada pixel-perfect (Q13 do design de referência): orb Skia com gradiente luminoso + inset shadow simulado + specular highlight, halo coral pulsante, shimmer PlayfairDisplay-Italic na palavra destacada (Decisões 22 e 23), ring progress e step opacities com animação fluida via Animated.Value intermediário. Bug de food scan duplicado corrigido (Decisão 25): `useRef` guard em `food-camera.tsx` e `food-report.tsx` previne inserts múltiplos no banco causados por double-tap ou double-mount do StrictMode.*

@@ -1,159 +1,250 @@
-import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import { IOSWheelPicker } from '../../components/ui/IOSWheelPicker';
+import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
-import { Colors } from '../../constants/colors';
 
-const months = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
-];
-const days = Array.from({ length: 31 }, (_, i) => String(i + 1));
-const years = Array.from({ length: 51 }, (_, i) => String(2010 - i));
+const DEEP = '#1D3A44';
+const DEEP_SOFT = 'rgba(29,58,68,0.55)';
+const DEEP_HAIR = 'rgba(29,58,68,0.10)';
+const CORAL = '#FB7B6B';
+const CORAL_DEEP = '#E5654F';
+const CREAM = '#FFFFFF';
+
+const STEP = 1;
+const TOTAL = 14;
+const ITEM_HEIGHT = 60;
+const AGES = Array.from({ length: 51 }, (_, i) => i + 10); // 10–60
+const DEFAULT_AGE = 24;
+const DEFAULT_INDEX = AGES.indexOf(DEFAULT_AGE); // 14
 
 export default function Birthday() {
-  const [selectedDay, setSelectedDay] = useState('18');
-  const [selectedMonth, setSelectedMonth] = useState('Junho');
-  const [selectedYear, setSelectedYear] = useState('2007');
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+  });
+
+  const [selectedAge, setSelectedAge] = useState(DEFAULT_AGE);
+  const selectedAgeRef = useRef(DEFAULT_AGE);
+  const scrollRef = useRef<ScrollView>(null);
+  // Guard so onLayout never resets scroll after the first mount
+  const initialized = useRef(false);
+
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
   const router = useRouter();
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 4, step_name: 'Data de Nascimento', step_total: 23 });
+    track('onboarding_step_viewed', { step_number: 4, step_name: 'Idade', step_total: 23 });
   }, []);
 
-  const saveBirthday = (day: string, month: string, year: string) => {
-    const monthIndex = String(months.indexOf(month) + 1).padStart(2, '0');
-    const paddedDay = day.padStart(2, '0');
-    setOnboardingField('birthday', `${paddedDay}/${monthIndex}/${year}`);
-  };
+  const handleLayout = useCallback(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+    scrollRef.current?.scrollTo({ y: DEFAULT_INDEX * ITEM_HEIGHT, animated: false });
+  }, []);
+
+  // Real-time visual update while scrolling
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(Math.round(y / ITEM_HEIGHT), AGES.length - 1));
+    const age = AGES[index];
+    if (age !== selectedAgeRef.current) {
+      selectedAgeRef.current = age;
+      setSelectedAge(age);
+    }
+  }, []);
+
+  // Fires when drag ends (covers slow drags where momentum never starts)
+  const handleScrollEndDrag = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(Math.round(y / ITEM_HEIGHT), AGES.length - 1));
+    const age = AGES[index];
+    selectedAgeRef.current = age;
+    setSelectedAge(age);
+    setOnboardingField('birthday', String(age));
+    Haptics.selectionAsync();
+  }, [setOnboardingField]);
+
+  // Fires after a flick with momentum
+  const handleMomentumScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(Math.round(y / ITEM_HEIGHT), AGES.length - 1));
+    const age = AGES[index];
+    selectedAgeRef.current = age;
+    setSelectedAge(age);
+    setOnboardingField('birthday', String(age));
+    Haptics.selectionAsync();
+  }, [setOnboardingField]);
 
   const handleContinue = () => {
-    track('onboarding_step_completed', { step_number: 4, step_name: 'Data de Nascimento', step_total: 23 });
-    router.push('/(onboarding)/skin-type');
+    setOnboardingField('birthday', String(selectedAgeRef.current));
+    track('onboarding_step_completed', { step_number: 4, step_name: 'Idade', step_total: 23 });
+    router.push('/(onboarding)/gender');
   };
 
   return (
-    <LinearGradient
-      colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
-      locations={[0, 0.4, 0.7, 1]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
+      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
-          {/* Header */}
-          <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
-            <TouchableOpacity
-              onPress={async () => {
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.back();
-              }}
-              activeOpacity={0.7}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: 'rgba(255,255,255,0.85)',
-                borderWidth: 0.5,
-                borderColor: 'rgba(0,0,0,0.08)',
-                alignItems: 'center',
-                justifyContent: 'center',
+        {/* QHeader */}
+        <View style={{
+          paddingVertical: 6, paddingHorizontal: 24,
+          flexDirection: 'row', alignItems: 'center', gap: 14,
+        }}>
+          <TouchableOpacity
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            activeOpacity={0.7}
+            style={{
+              flexShrink: 0, width: 40, height: 40, borderRadius: 100,
+              backgroundColor: 'rgba(255,255,255,0.6)',
+              borderWidth: 0.5, borderColor: DEEP_HAIR,
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <ChevronLeft size={18} color={DEEP} />
+          </TouchableOpacity>
+          <View style={{
+            flex: 1, height: 4, borderRadius: 100,
+            backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+          }}>
+            <View style={{
+              position: 'absolute', top: 0, left: 0, bottom: 0,
+              width: `${(STEP / TOTAL) * 100}%`,
+              backgroundColor: CORAL, borderRadius: 100,
+            }} />
+          </View>
+        </View>
+
+        {/* QTitleBlock */}
+        <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
+          <Text style={{
+            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
+          }}>
+            sobre você
+          </Text>
+          <Text style={{
+            fontSize: 30, fontWeight: '700', color: DEEP,
+            letterSpacing: -0.85, lineHeight: 33,
+          }}>
+            {'Quantos '}
+            <Text style={{
+              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
+              fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+            }}>
+              anos
+            </Text>
+            {' você tem?'}
+          </Text>
+          <Text style={{
+            marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
+            color: DEEP_SOFT, letterSpacing: -0.1,
+          }}>
+            Sua pele muda completamente com a idade. Seu skincare também precisa mudar.
+          </Text>
+        </View>
+
+        {/* Age Wheel */}
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          {/* Height constrains the visible window; no overflow:hidden so touches aren't clipped */}
+          <View style={{ height: ITEM_HEIGHT * 5 }}>
+            <ScrollView
+              ref={scrollRef}
+              onLayout={handleLayout}
+              showsVerticalScrollIndicator={false}
+              snapToInterval={ITEM_HEIGHT}
+              decelerationRate="fast"
+              scrollEventThrottle={16}
+              onScroll={handleScroll}
+              onScrollEndDrag={handleScrollEndDrag}
+              onMomentumScrollEnd={handleMomentumScrollEnd}
+              contentContainerStyle={{
+                paddingTop: ITEM_HEIGHT * 2,
+                paddingBottom: ITEM_HEIGHT * 2,
               }}
             >
-              <ChevronLeft size={20} color="#6B7280" />
-            </TouchableOpacity>
-
-            <View style={{ marginTop: 16 }}>
-              <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
-                <View style={{ height: 2, width: '22%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
-              </View>
-            </View>
+              {AGES.map((age) => {
+                const dist = Math.abs(age - selectedAge);
+                let fontSize = 17;
+                let opacity = 0.18;
+                let fontWeight: '400' | '700' = '400';
+                let letterSpacing = -0.2;
+                let color = DEEP;
+                if (dist === 0) {
+                  fontSize = 56;
+                  fontWeight = '700';
+                  opacity = 1;
+                  letterSpacing = -1.8;
+                  color = CORAL;
+                } else if (dist === 1) {
+                  fontSize = 22;
+                  opacity = 0.35;
+                  letterSpacing = -0.3;
+                } else if (dist === 2) {
+                  fontSize = 17;
+                  opacity = 0.18;
+                }
+                return (
+                  <View
+                    key={age}
+                    style={{ height: ITEM_HEIGHT, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{
+                      fontSize, fontWeight, color, letterSpacing,
+                      lineHeight: ITEM_HEIGHT, opacity,
+                    }}>
+                      {age}
+                    </Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
           </View>
 
-          {/* Content */}
-          <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: 40 }}>
-            <Text style={{
-              fontSize: 11,
-              fontWeight: '700',
-              color: Colors.scanBtn,
-              letterSpacing: 1.2,
-              textTransform: 'uppercase',
-              marginBottom: 8,
-            }}>
-              Sobre você
-            </Text>
-
-            <Text style={{
-              fontSize: 26,
-              fontWeight: '800',
-              color: Colors.tabActive,
-              lineHeight: 31,
-              marginBottom: 8,
-            }}>
-              Quando você nasceu?
-            </Text>
-
-            <Text style={{
-              fontSize: 13,
-              color: Colors.gray,
-              lineHeight: 20,
-            }}>
-              Sua idade será usada para calibrar seu plano.
-            </Text>
-
-            <View style={{ flex: 1 }} />
-
-            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 32 }}>
-              <IOSWheelPicker
-                values={days}
-                selectedValue={selectedDay}
-                onChange={(v) => { setSelectedDay(v); saveBirthday(v, selectedMonth, selectedYear); }}
-                width={80}
-              />
-              <IOSWheelPicker
-                values={months}
-                selectedValue={selectedMonth}
-                onChange={(v) => { setSelectedMonth(v); saveBirthday(selectedDay, v, selectedYear); }}
-                width={140}
-              />
-              <IOSWheelPicker
-                values={years}
-                selectedValue={selectedYear}
-                onChange={(v) => { setSelectedYear(v); saveBirthday(selectedDay, selectedMonth, v); }}
-                width={100}
-              />
-            </View>
-
-            <View style={{ flex: 1 }} />
-
-            <View style={{ paddingBottom: 32 }}>
-              <TouchableOpacity
-                onPress={handleContinue}
-                activeOpacity={0.8}
-                style={{
-                  backgroundColor: Colors.scanBtn,
-                  borderRadius: 100,
-                  paddingVertical: 16,
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>
-                  Continuar
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
+          {/* ANOS label */}
+          <Text style={{
+            marginTop: 14,
+            fontSize: 10, fontWeight: '600', color: DEEP_SOFT,
+            letterSpacing: 2.4, textTransform: 'uppercase',
+          }}>
+            anos
+          </Text>
         </View>
-      </SafeAreaView>
-    </LinearGradient>
+
+        {/* PrimaryButton */}
+        <View style={{ paddingHorizontal: 24, paddingBottom: 22 }}>
+          <TouchableOpacity
+            onPress={handleContinue}
+            activeOpacity={0.85}
+            style={{
+              height: 60, borderRadius: 100, backgroundColor: CORAL,
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+              shadowColor: CORAL,
+              shadowOffset: { width: 0, height: 14 },
+              shadowOpacity: 0.55,
+              shadowRadius: 15, elevation: 8,
+            }}
+          >
+            <Text style={{
+              fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
+            }}>
+              Continuar
+            </Text>
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+              <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </TouchableOpacity>
+        </View>
+
+      </View>
+    </SafeAreaView>
   );
 }

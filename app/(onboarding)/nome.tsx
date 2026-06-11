@@ -1,27 +1,31 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useFonts } from 'expo-font';
 import { supabase } from '../../lib/supabase';
-import { Colors } from '../../constants/colors';
+
+const DEEP = '#1D3A44';
+const DEEP_SOFT = 'rgba(29,58,68,0.55)';
+const CORAL = '#FB7B6B';
+const CORAL_DEEP = '#E5654F';
 
 export default function Nome() {
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+  });
   const router = useRouter();
   const [nome, setNome] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
-      // Pre-fill: tenta user_metadata (Apple Sign-In), mas NÃO pre-preenche users.nome
-      // pois se chegou aqui é porque users.nome está vazio
       const existing =
         (user.user_metadata?.full_name as string | undefined) ??
-        (user.user_metadata?.name as string | undefined) ??
-        '';
+        (user.user_metadata?.name as string | undefined) ?? '';
       if (existing) setNome(existing.split(' ')[0]);
     })();
   }, []);
@@ -37,7 +41,7 @@ export default function Nome() {
         .from('users')
         .upsert({ id: user.id, nome: trimmed, email: user.email ?? '' }, { onConflict: 'id' });
       if (error) throw error;
-      router.replace('/(app)/home');
+      router.replace('/(onboarding)/notifications');
     } catch (e) {
       console.warn('[Nome] Erro ao salvar nome:', e);
       Alert.alert('Erro ao salvar', 'Não conseguimos salvar seu nome. Verifique sua conexão e tente novamente.');
@@ -46,102 +50,97 @@ export default function Nome() {
     }
   };
 
-  const canContinue = nome.trim().length > 0;
+  const active = nome.trim().length > 0;
 
   return (
-    <LinearGradient
-      colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
-      locations={[0, 0.4, 0.7, 1]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-
-            {/* Conteúdo */}
-            <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: 64 }}>
-              {/* Label */}
-              <Text style={{
-                fontSize: 11, fontWeight: '700',
-                color: Colors.scanBtn, letterSpacing: 1.2,
-                textTransform: 'uppercase', marginBottom: 8,
-              }}>
-                Sobre você
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Title block */}
+            <View style={{ paddingTop: 34, paddingHorizontal: 28 }}>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
+                sobre você
               </Text>
-
-              {/* Título */}
-              <Text style={{
-                fontSize: 26, fontWeight: '800',
-                color: Colors.tabActive, lineHeight: 31, marginBottom: 8,
-              }}>
-                Como você quer ser chamado?
+              <Text style={{ fontSize: 30, fontWeight: '700', color: DEEP, letterSpacing: -0.85, lineHeight: 33.6 }}>
+                {'Como você quer ser '}
+                <Text style={{ fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined, fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1 }}>
+                  chamada
+                </Text>
+                {'?'}
               </Text>
-
-              {/* Subtítulo */}
-              <Text style={{
-                fontSize: 13, color: Colors.gray,
-                lineHeight: 20, marginBottom: 32,
-              }}>
+              <Text style={{ marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
                 Esse é o nome que aparecerá na tela inicial do app.
               </Text>
+            </View>
 
-              {/* Input */}
+            {/* Input */}
+            <View style={{ paddingTop: 28, paddingHorizontal: 24 }}>
               <View style={{
-                backgroundColor: Colors.white,
-                borderRadius: 16,
-                borderWidth: 1.5,
-                borderColor: nome.length > 0 ? Colors.scanBtn : 'rgba(0,0,0,0.08)',
-                paddingHorizontal: 18, paddingVertical: 16,
-                shadowColor: nome.length > 0 ? Colors.scanBtn : '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: nome.length > 0 ? 0.15 : 0.06,
-                shadowRadius: nome.length > 0 ? 12 : 8,
-                elevation: 2,
+                height: 62, borderRadius: 18,
+                backgroundColor: '#FFFFFF',
+                borderWidth: isFocused ? 1.5 : 1,
+                borderColor: isFocused ? CORAL : 'rgba(29,58,68,0.10)',
+                shadowColor: CORAL,
+                shadowOffset: { width: 0, height: isFocused ? 6 : 2 },
+                shadowOpacity: isFocused ? 0.22 : 0.04,
+                shadowRadius: isFocused ? 22 : 14,
+                paddingHorizontal: 20,
+                justifyContent: 'center',
               }}>
                 <TextInput
                   value={nome}
                   onChangeText={setNome}
-                  placeholder="Seu nome"
-                  placeholderTextColor={Colors.gray}
+                  placeholder="Escreva seu nome"
+                  placeholderTextColor="rgba(29,58,68,0.30)"
                   autoCapitalize="words"
                   autoCorrect={false}
                   returnKeyType="done"
                   onSubmitEditing={handleContinue}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
                   style={{
-                    fontSize: 18, fontWeight: '500',
-                    color: Colors.tabActive,
+                    fontSize: 17,
+                    color: DEEP,
+                    letterSpacing: -0.2,
+                    fontWeight: nome.length > 0 ? '500' : '400',
                   }}
                 />
               </View>
             </View>
 
-            {/* Botão fixo no fundo — sem "Pular" */}
-            <View style={{ paddingHorizontal: 18, paddingBottom: 24 }}>
+            <View style={{ flex: 1, minHeight: 40 }} />
+
+            {/* CTA */}
+            <View style={{ paddingHorizontal: 24, paddingBottom: 22 }}>
               <TouchableOpacity
                 onPress={handleContinue}
-                disabled={!canContinue || loading}
-                activeOpacity={0.8}
+                disabled={!active || loading}
+                activeOpacity={0.85}
                 style={{
-                  backgroundColor: canContinue ? Colors.scanBtn : Colors.disabled,
-                  borderRadius: 100,
-                  paddingVertical: 16,
-                  alignItems: 'center',
-                  opacity: !canContinue ? 0.6 : 1,
+                  height: 60, borderRadius: 100,
+                  backgroundColor: active ? CORAL : 'rgba(29,58,68,0.18)',
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: CORAL,
+                  shadowOffset: { width: 0, height: active ? 8 : 0 },
+                  shadowOpacity: active ? 0.30 : 0,
+                  shadowRadius: 12,
+                  elevation: active ? 4 : 0,
                 }}
               >
                 {loading
-                  ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>Continuar</Text>
+                  ? <ActivityIndicator color="#FFFFFF" />
+                  : <Text style={{ fontSize: 17, fontWeight: '600', color: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)', letterSpacing: -0.2 }}>Continuar</Text>
                 }
               </TouchableOpacity>
             </View>
-
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+      </View>
+    </SafeAreaView>
   );
 }

@@ -1,18 +1,29 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Check } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
-import { Colors } from '../../constants/colors';
 
-const GENDERS = ['Masculino', 'Feminino', 'Outro'];
-const HINT_COLOR = '#C0B8B5';
+const DEEP = '#1D3A44';
+const DEEP_SOFT = 'rgba(29,58,68,0.55)';
+const DEEP_WHISPER = 'rgba(29,58,68,0.32)';
+const DEEP_HAIR = 'rgba(29,58,68,0.10)';
+const CORAL = '#FB7B6B';
+const CORAL_DEEP = '#E5654F';
+const CREAM = '#FFFFFF';
+
+const GENDERS = ['Feminino', 'Masculino', 'Outro'];
+const STEP = 2;
+const TOTAL = 14;
 
 export default function Gender() {
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+  });
   const [selected, setSelected] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
@@ -31,136 +42,142 @@ export default function Gender() {
       if (gender === 'Feminino') {
         router.push('/(onboarding)/pregnancy');
       } else {
-        router.push('/(onboarding)/birthday');
+        router.push('/(onboarding)/goal');
       }
     }, 300);
   }, []);
 
   return (
-    <LinearGradient
-      colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
-      locations={[0, 0.4, 0.7, 1]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
+      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
-          {/* Header */}
-          <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
-            <TouchableOpacity
-              onPress={async () => {
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.back();
-              }}
-              activeOpacity={0.7}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: 'rgba(255,255,255,0.85)',
-                borderWidth: 0.5,
-                borderColor: 'rgba(0,0,0,0.08)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <ChevronLeft size={20} color="#6B7280" />
-            </TouchableOpacity>
-
-            <View style={{ marginTop: 16 }}>
-              <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
-                <View style={{ height: 2, width: '16%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
-              </View>
-            </View>
-          </View>
-
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
-            showsVerticalScrollIndicator={false}
+        {/* QHeader: back button + progress bar na mesma linha */}
+        <View style={{
+          paddingVertical: 6,
+          paddingHorizontal: 24,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 14,
+        }}>
+          <TouchableOpacity
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            activeOpacity={0.7}
+            style={{
+              flexShrink: 0,
+              width: 40, height: 40, borderRadius: 100,
+              backgroundColor: 'rgba(255,255,255,0.6)',
+              borderWidth: 0.5,
+              borderColor: DEEP_HAIR,
+              alignItems: 'center', justifyContent: 'center',
+            }}
           >
-            <Text style={{
-              fontSize: 11,
-              fontWeight: '700',
-              color: Colors.scanBtn,
-              letterSpacing: 1.2,
-              textTransform: 'uppercase',
-              marginBottom: 8,
-            }}>
-              Sobre você
-            </Text>
-
-            <Text style={{
-              fontSize: 26,
-              fontWeight: '800',
-              color: Colors.tabActive,
-              lineHeight: 31,
-              marginBottom: 8,
-            }}>
-              Qual é o seu gênero?
-            </Text>
-
-            <Text style={{
-              fontSize: 13,
-              color: Colors.gray,
-              lineHeight: 20,
-              marginBottom: 28,
-            }}>
-              Isso nos ajuda a personalizar seu protocolo de skincare.
-            </Text>
-
-            <View style={{ gap: 10 }}>
-              {GENDERS.map((gender) => {
-                const isSelected = selected === gender;
-                return (
-                  <TouchableOpacity
-                    key={gender}
-                    activeOpacity={0.8}
-                    onPress={() => handleSelect(gender)}
-                    style={{
-                      backgroundColor: Colors.white,
-                      borderRadius: 100,
-                      paddingVertical: 18,
-                      paddingHorizontal: 24,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      borderWidth: 1.5,
-                      borderColor: isSelected ? Colors.scanBtn : 'transparent',
-                      shadowColor: isSelected ? Colors.scanBtn : '#000',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: isSelected ? 0.15 : 0.06,
-                      shadowRadius: isSelected ? 12 : 8,
-                      elevation: 2,
-                    }}
-                  >
-                    <Text style={{ fontSize: 15, fontWeight: '500', color: Colors.tabActive }}>
-                      {gender}
-                    </Text>
-                    {isSelected && (
-                      <View style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: 10,
-                        backgroundColor: Colors.scanBtn,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>
-                        <Check size={12} color={Colors.white} strokeWidth={3} />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={{ fontSize: 11, color: HINT_COLOR, textAlign: 'center', marginTop: 12 }}>
-              Toque para selecionar e avançar
-            </Text>
-          </ScrollView>
-
+            <ChevronLeft size={18} color={DEEP} />
+          </TouchableOpacity>
+          <View style={{
+            flex: 1, height: 4, borderRadius: 100,
+            backgroundColor: 'rgba(29,58,68,0.08)',
+            overflow: 'hidden',
+          }}>
+            <View style={{
+              position: 'absolute', top: 0, left: 0, bottom: 0,
+              width: `${(STEP / TOTAL) * 100}%`,
+              backgroundColor: CORAL,
+              borderRadius: 100,
+            }} />
+          </View>
         </View>
-      </SafeAreaView>
-    </LinearGradient>
+
+        {/* QTitleBlock */}
+        <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
+          <Text style={{
+            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            letterSpacing: 2.4, textTransform: 'uppercase',
+            marginBottom: 14,
+          }}>
+            sobre você
+          </Text>
+          <Text style={{
+            fontSize: 30, fontWeight: '700', color: DEEP,
+            letterSpacing: -0.85, lineHeight: 33,
+          }}>
+            {'Qual é o '}
+            <Text style={{
+              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
+              fontStyle: 'italic', fontWeight: '500',
+              color: CORAL, letterSpacing: -1,
+            }}>
+              seu
+            </Text>
+            {' gênero?'}
+          </Text>
+          <Text style={{
+            marginTop: 14,
+            fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT,
+            letterSpacing: -0.1,
+          }}>
+            Seu gênero influencia como a pele se comporta, especialmente nos hormônios.
+          </Text>
+        </View>
+
+        {/* Options */}
+        <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: 28, gap: 14 }}>
+          {GENDERS.map((gender) => {
+            const isSelected = selected === gender;
+            return (
+              <TouchableOpacity
+                key={gender}
+                activeOpacity={0.8}
+                onPress={() => handleSelect(gender)}
+                style={{
+                  minHeight: 66,
+                  borderRadius: 100,
+                  backgroundColor: '#FFFFFF',
+                  borderWidth: isSelected ? 1.5 : 0.5,
+                  borderColor: isSelected ? CORAL : DEEP_HAIR,
+                  paddingLeft: 26, paddingRight: 22,
+                  flexDirection: 'row', alignItems: 'center',
+                  shadowColor: isSelected ? CORAL : '#2B2724',
+                  shadowOffset: { width: 0, height: isSelected ? 6 : 2 },
+                  shadowOpacity: isSelected ? 0.18 : 0.04,
+                  shadowRadius: isSelected ? 22 : 14,
+                  elevation: isSelected ? 4 : 1,
+                }}
+              >
+                <Text style={{
+                  flex: 1,
+                  fontSize: 18, fontWeight: '500', color: DEEP,
+                  letterSpacing: -0.2,
+                }}>
+                  {gender}
+                </Text>
+                {isSelected && (
+                  <View style={{
+                    width: 24, height: 24, borderRadius: 100,
+                    backgroundColor: CORAL,
+                    alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <Check size={13} color="#fff" strokeWidth={2.8} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+
+          <Text style={{
+            marginTop: 6,
+            textAlign: 'center',
+            fontSize: 12.5, color: DEEP_WHISPER,
+            letterSpacing: -0.05,
+          }}>
+            toque para selecionar e avançar
+          </Text>
+        </View>
+
+      </View>
+    </SafeAreaView>
   );
 }

@@ -167,7 +167,7 @@ export function ScanModal({ isOpen, onClose, isDark = false }: ScanModalProps) {
 
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <Text style={{ fontFamily: displayFontReg, fontSize: 19, color: ink, letterSpacing: -0.285, lineHeight: 21 }}>Scanear refeição</Text>
+                    <Text style={{ fontFamily: displayFontReg, fontSize: 19, color: ink, letterSpacing: -0.285, lineHeight: 21 }}>Escanear refeição</Text>
                     {/* Badge "mais usado" */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 3, paddingLeft: 7, paddingRight: 9, borderRadius: 100, borderWidth: 0.5, borderColor: accent, backgroundColor: isDark ? 'rgba(251,123,107,0.08)' : 'rgba(251,123,107,0.06)' }}>
                       <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent }} />
@@ -201,7 +201,7 @@ export function ScanModal({ isOpen, onClose, isDark = false }: ScanModalProps) {
                 </View>
 
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontFamily: displayFontReg, fontSize: 19, color: ink, letterSpacing: -0.285, lineHeight: 21 }}>Scanear rosto</Text>
+                  <Text style={{ fontFamily: displayFontReg, fontSize: 19, color: ink, letterSpacing: -0.285, lineHeight: 21 }}>Escanear rosto</Text>
                   <Text style={{ fontSize: 12, fontWeight: '500', letterSpacing: 0.3, color: inkSoft, marginTop: 5, lineHeight: 17.4 }}>
                     Faça uma análise facial completa
                   </Text>

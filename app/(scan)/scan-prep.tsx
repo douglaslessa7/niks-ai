@@ -1,25 +1,38 @@
 import { useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Sun, Sparkles, User, Glasses } from 'lucide-react-native';
+import { ChevronLeft, Sun, Sparkles, User, Glasses, Smile } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
-import { CTAButton } from '../../components/ui/CTAButton';
+import { useFonts } from 'expo-font';
 import { AIConsentModal } from '../../components/ui/AIConsentModal';
 import { useAIConsent } from '../../hooks/useAIConsent';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
-import { Colors } from '../../constants/colors';
 
-const instructions = [
-  { Icon: Sun, text: 'Boa iluminação natural' },
-  { Icon: Sparkles, text: 'Rosto limpo, sem maquiagem' },
-  { Icon: User, text: 'Cabelo preso para trás' },
-  { Icon: Glasses, text: 'Retire óculos e acessórios do rosto' },
+const DEEP = '#1D3A44';
+const DEEP_SOFT = 'rgba(29,58,68,0.55)';
+const DEEP_HAIR = 'rgba(29,58,68,0.10)';
+const CORAL = '#FB7B6B';
+const CORAL_DEEP = '#E5654F';
+const CREAM = '#FFFFFF';
+
+const STEP = 14;
+const TOTAL = 14;
+
+const TIPS = [
+  { Icon: Sun, label: 'Local com boa iluminação' },
+  { Icon: Sparkles, label: 'Rosto limpo, sem maquiagem' },
+  { Icon: User, label: 'Cabelo preso' },
+  { Icon: Glasses, label: 'Sem óculos' },
+  { Icon: Smile, label: 'Expressão neutra na foto' },
 ];
 
 export default function ScanPrep() {
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+  });
   const router = useRouter();
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
   const { track } = useMixpanel();
@@ -34,137 +47,129 @@ export default function ScanPrep() {
     requestConsent(() => router.push('/(scan)/camera' as any));
   };
 
-  const backButton = (
-    <TouchableOpacity
-      onPress={async () => {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.back();
-      }}
-      activeOpacity={0.7}
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.85)',
-        borderWidth: 0.5,
-        borderColor: 'rgba(0,0,0,0.08)',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <ChevronLeft size={20} color="#6B7280" />
-    </TouchableOpacity>
-  );
-
-  const content = (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={{
-        fontSize: 11,
-        fontWeight: '700',
-        color: Colors.scanBtn,
-        letterSpacing: 1.2,
-        textTransform: 'uppercase',
-        marginBottom: 8,
-      }}>
-        Análise da pele
-      </Text>
-
-      <Text style={{
-        fontSize: 26,
-        fontWeight: '800',
-        color: Colors.tabActive,
-        lineHeight: 31,
-        marginBottom: 8,
-      }}>
-        Agora vamos analisar sua pele por foto
-      </Text>
-
-      <Text style={{
-        fontSize: 13,
-        color: Colors.gray,
-        lineHeight: 20,
-        marginBottom: 28,
-      }}>
-        Para melhores resultados:
-      </Text>
-
-      <View style={{ gap: 20, marginBottom: 0 }}>
-        {instructions.map(({ Icon, text }, index) => (
-          <View
-            key={index}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 16,
-            }}
-          >
-            <View style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: Colors.scanBtn,
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}>
-              <Icon size={20} color={Colors.white} />
-            </View>
-            <Text style={{ fontSize: 15, fontWeight: '500', color: Colors.tabActive }}>
-              {text}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={{ flex: 1 }} />
-
-      <TouchableOpacity
-        onPress={handleOpenCamera}
-        activeOpacity={0.8}
-        style={{
-          backgroundColor: Colors.scanBtn,
-          borderRadius: 100,
-          paddingVertical: 16,
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>
-          Abrir câmera
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-
   return (
     <>
-      <LinearGradient
-        colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
-        locations={[0, 0.4, 0.7, 1]}
-        style={{ flex: 1 }}
-      >
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
+        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
-            <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
-              {backButton}
-              {scanSource !== 'app' && (
-                <View style={{ marginTop: 16 }}>
-                  <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
-                    <View style={{ height: 2, width: '68%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
-                  </View>
-                </View>
-              )}
-            </View>
-
-            {content}
-
+          {/* QHeader */}
+          <View style={{
+            paddingVertical: 6, paddingHorizontal: 24,
+            flexDirection: 'row', alignItems: 'center', gap: 14,
+          }}>
+            <TouchableOpacity
+              onPress={async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.back();
+              }}
+              activeOpacity={0.7}
+              style={{
+                flexShrink: 0, width: 40, height: 40, borderRadius: 100,
+                backgroundColor: 'rgba(255,255,255,0.6)',
+                borderWidth: 0.5, borderColor: DEEP_HAIR,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <ChevronLeft size={18} color={DEEP} />
+            </TouchableOpacity>
+            {scanSource !== 'app' && (
+              <View style={{
+                flex: 1, height: 4, borderRadius: 100,
+                backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+              }}>
+                <View style={{
+                  position: 'absolute', top: 0, left: 0, bottom: 0,
+                  width: `${(STEP / TOTAL) * 100}%`,
+                  backgroundColor: CORAL, borderRadius: 100,
+                }} />
+              </View>
+            )}
           </View>
-        </SafeAreaView>
-      </LinearGradient>
+
+          {/* Title block */}
+          <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
+            <Text style={{
+              fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
+              letterSpacing: 2.6, textTransform: 'uppercase', marginBottom: 14,
+            }}>
+              análise da pele
+            </Text>
+            <Text style={{
+              fontSize: 28, fontWeight: '700', color: DEEP,
+              letterSpacing: -0.85, lineHeight: 31.36,
+            }}>
+              {'Agora vamos analisar a sua '}
+              <Text style={{
+                fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
+                fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+              }}>
+                pele
+              </Text>
+              {' por foto.'}
+            </Text>
+            <Text style={{
+              marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
+              color: DEEP_SOFT, letterSpacing: -0.1,
+            }}>
+              Para uma análise mais precisa, se certifique:
+            </Text>
+          </View>
+
+          {/* Tips list */}
+          <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: 24, gap: 18 }}>
+            {TIPS.map(({ Icon, label }, i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                <View style={{
+                  flexShrink: 0,
+                  width: 46, height: 46, borderRadius: 100,
+                  backgroundColor: CORAL,
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: CORAL,
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.55,
+                  shadowRadius: 18,
+                  elevation: 4,
+                }}>
+                  <Icon size={22} color="#FFFFFF" strokeWidth={2} />
+                </View>
+                <Text style={{
+                  fontSize: 16.5, fontWeight: '600', color: DEEP,
+                  letterSpacing: -0.2, lineHeight: 21.45,
+                  flex: 1,
+                }}>
+                  {label}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* PrimaryButton */}
+          <View style={{ paddingHorizontal: 24, paddingTop: 14, paddingBottom: 18 }}>
+            <TouchableOpacity
+              onPress={handleOpenCamera}
+              activeOpacity={0.85}
+              style={{
+                height: 60, borderRadius: 100, backgroundColor: CORAL,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                shadowColor: CORAL,
+                shadowOffset: { width: 0, height: 14 },
+                shadowOpacity: 0.55,
+                shadowRadius: 22, elevation: 8,
+              }}
+            >
+              <Text style={{
+                fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
+              }}>
+                Abrir câmera
+              </Text>
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+            </TouchableOpacity>
+          </View>
+
+        </View>
+      </SafeAreaView>
       <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
     </>
   );

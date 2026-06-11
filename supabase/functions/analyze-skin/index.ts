@@ -511,40 +511,49 @@ pontos_fracos: exatamente 3 preocupações principais visíveis, cada uma com lo
       ? `Analise o rosto nesta foto seguindo todas as etapas do sistema.\n\nContexto declarado pelo usuário (use conforme as instruções — confirma ou contradiz o visível):\n${ctx}`
       : 'Analise o rosto nesta foto seguindo todas as etapas do sistema.'
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
+    const openaiUrl = 'https://api.openai.com/v1/chat/completions'
+    const openaiKey = Deno.env.get('OPENAI_API_KEY')
 
     let data: any = null
     let lastError = ''
     for (let attempt = 1; attempt <= 3; attempt++) {
-      const response = await fetch(geminiUrl, {
+      const response = await fetch(openaiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`,
+        },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
-          contents: [{
-            role: 'user',
-            parts: [
-              { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
-              { text: contextMessage },
-            ],
-          }],
-          generationConfig: {
-            maxOutputTokens: 4096,
-          },
-          safetySettings: [
-            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+          model: 'gpt-5.4-mini',
+          max_completion_tokens: 4096,
+          stream: false,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt,
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/jpeg;base64,${imageBase64}`,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: contextMessage,
+                },
+              ],
+            },
           ],
         }),
       })
 
       data = await response.json()
-      const isUnavailable =
-        data?.error?.status === 'UNAVAILABLE' ||
-        data?.error?.code === 503 ||
-        JSON.stringify(data).includes('UNAVAILABLE')
+      const isUnavailable = !response.ok && (response.status === 503 || response.status === 500)
       if (isUnavailable) {
         lastError = JSON.stringify(data)
         if (attempt < 3) {
@@ -555,20 +564,16 @@ pontos_fracos: exatamente 3 preocupações principais visíveis, cada uma com lo
       break
     }
 
-    if (!data.candidates || data.candidates.length === 0) {
-      console.error('Gemini returned no candidates. Full response:', JSON.stringify(data))
+    if (!data.choices || data.choices.length === 0) {
+      console.error('OpenAI returned no choices. Full response:', JSON.stringify(data))
       return new Response(
         JSON.stringify({ error: 'Erro interno ao analisar a pele' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const rawText = data.candidates[0].content.parts[0].text
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('Resposta da IA não contém JSON válido')
-    }
-    const result = JSON.parse(jsonMatch[0])
+    const rawText = data.choices[0].message.content
+    const result = JSON.parse(rawText)
 
     // Mapeamento de compatibilidade para campos que o app consome
     if (result.skin_type_sebaceous && !result.skin_type_detected) {

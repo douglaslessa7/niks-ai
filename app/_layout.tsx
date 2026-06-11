@@ -2,14 +2,45 @@ import '../global.css';
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { initRevenueCat, loginRevenueCat } from '../lib/revenuecat';
+import { initRevenueCat, loginRevenueCat, ENTITLEMENT_ID } from '../lib/revenuecat';
 import { supabase } from '../lib/supabase';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
-import { SuperwallProvider } from 'expo-superwall';
+import { SuperwallProvider, CustomPurchaseControllerProvider } from 'expo-superwall';
+import type { PurchaseResult, RestoreResult } from 'expo-superwall';
 import Superwall from 'expo-superwall/compat';
+import Purchases from 'react-native-purchases';
 import { MixpanelProvider, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
+
+// Delega compras e restaurações do Superwall para o RevenueCat.
+// Sem este controller, o Superwall processa via StoreKit direto e o RevenueCat
+// não sabe da compra — getCustomerInfo() retorna "não assinante" e o paywall volta.
+const superwallPurchaseController = {
+  onPurchase: async ({ productId }: { productId: string }): Promise<PurchaseResult> => {
+    try {
+      const offerings = await Purchases.getOfferings();
+      const packages = offerings.current?.availablePackages ?? [];
+      const pkg = packages.find((p) => p.product.identifier === productId);
+      if (!pkg) return { type: 'failed', error: 'Produto não encontrado' };
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+      const active = typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined';
+      return active ? { type: 'purchased' } : { type: 'failed', error: 'Entitlement não ativo' };
+    } catch (error: any) {
+      if (error?.userCancelled) return { type: 'cancelled' };
+      return { type: 'failed', error: error?.message ?? 'Erro na compra' };
+    }
+  },
+  onPurchaseRestore: async (): Promise<RestoreResult> => {
+    try {
+      const customerInfo = await Purchases.restorePurchases();
+      const active = typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined';
+      return active ? { type: 'restored' } : { type: 'failed', error: 'Nenhuma compra para restaurar' };
+    } catch (error: any) {
+      return { type: 'failed', error: error?.message ?? 'Erro ao restaurar' };
+    }
+  },
+};
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const { track } = useMixpanel();
@@ -89,16 +120,21 @@ export default function RootLayout() {
 
   return (
     <MixpanelProvider>
-      <SuperwallProvider apiKeys={{ ios: 'pk_4iUsZwW_-ME9WdK3IcXYp' }}>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <SafeAreaProvider>
-            <AppShell>
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
-              </Stack>
-            </AppShell>
-          </SafeAreaProvider>
-        </GestureHandlerRootView>
+      <SuperwallProvider
+        apiKeys={{ ios: 'pk_4iUsZwW_-ME9WdK3IcXYp' }}
+        options={{ manualPurchaseManagement: true }}
+      >
+        <CustomPurchaseControllerProvider controller={superwallPurchaseController}>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <SafeAreaProvider>
+              <AppShell>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+                </Stack>
+              </AppShell>
+            </SafeAreaProvider>
+          </GestureHandlerRootView>
+        </CustomPurchaseControllerProvider>
       </SuperwallProvider>
     </MixpanelProvider>
   );

@@ -35,6 +35,7 @@ export default function FoodCamera() {
   const [zoom, setZoom] = useState<ZoomLevel>(1);
   const [flash, setFlash] = useState(false);
   const [picking, setPicking] = useState(false);
+  const navigatingRef = useRef(false);
   const scanAnim = useRef(new Animated.Value(0)).current;
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
@@ -62,6 +63,9 @@ export default function FoodCamera() {
   }, []);
 
   const processAndNavigate = async (uri: string) => {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+
     let manipulated;
     try {
       manipulated = await ImageManipulator.manipulateAsync(
@@ -71,10 +75,12 @@ export default function FoodCamera() {
       );
     } catch (e) {
       console.error('manipulateAsync falhou:', e);
+      navigatingRef.current = false;
     }
 
     const base64 = manipulated?.base64;
     if (!base64) {
+      navigatingRef.current = false;
       Alert.alert('Erro', 'Não foi possível processar a imagem.');
       return;
     }

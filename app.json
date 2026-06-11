@@ -90,7 +90,8 @@
       "./assets/fonts/PlayfairDisplay-Regular.ttf",
       "./assets/fonts/PlayfairDisplay-Italic.ttf",
       "./assets/fonts/DMSerifDisplay-Regular.ttf",
-      "./assets/fonts/DMSerifDisplay-Italic.ttf"
+      "./assets/fonts/DMSerifDisplay-Italic.ttf",
+      "./assets/fonts/DMSans-MediumItalic.ttf"
     ],
     "scheme": "niks-ai",
     "extra": {

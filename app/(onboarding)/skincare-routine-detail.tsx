@@ -1,15 +1,29 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
+import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
-import { Colors } from '../../constants/colors';
+
+const DEEP = '#1D3A44';
+const DEEP_SOFT = 'rgba(29,58,68,0.55)';
+const DEEP_WHISPER = 'rgba(29,58,68,0.32)';
+const DEEP_HAIR = 'rgba(29,58,68,0.10)';
+const CORAL = '#FB7B6B';
+const CORAL_DEEP = '#E5654F';
+const CREAM = '#FFFFFF';
+
+const STEP = 9;
+const TOTAL = 14;
 
 export default function SkincareRoutineDetail() {
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+  });
   const { onboarding, setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
   const router = useRouter();
@@ -17,13 +31,12 @@ export default function SkincareRoutineDetail() {
   const [description, setDescription] = useState(onboarding.skincare_routine_description ?? '');
   const [focused, setFocused] = useState(false);
 
+  const isPrescribed = onboarding.skincare_routine_type === 'prescribed';
+  const isActive = description.length >= 4;
+
   useEffect(() => {
     track('onboarding_step_viewed', { step_name: 'skincare_routine_detail' });
   }, []);
-
-  const title = onboarding.skincare_routine_type === 'prescribed'
-    ? 'Quais produtos foram prescritos?'
-    : 'Quais produtos você já usa?';
 
   const handleContinue = () => {
     track('onboarding_step_completed', { step_name: 'skincare_routine_detail' });
@@ -31,131 +44,158 @@ export default function SkincareRoutineDetail() {
   };
 
   return (
-    <LinearGradient
-      colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']}
-      locations={[0, 0.4, 0.7, 1]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
+      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
-          {/* Header */}
-          <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
-            <TouchableOpacity
-              onPress={async () => {
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.back();
-              }}
-              activeOpacity={0.7}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: 'rgba(255,255,255,0.85)',
-                borderWidth: 0.5,
-                borderColor: 'rgba(0,0,0,0.08)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <ChevronLeft size={20} color="#6B7280" />
-            </TouchableOpacity>
-
-            <View style={{ marginTop: 16 }}>
-              <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
-                <View style={{ height: 2, width: '90%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
-              </View>
-            </View>
+        {/* QHeader */}
+        <View style={{
+          paddingVertical: 6, paddingHorizontal: 24,
+          flexDirection: 'row', alignItems: 'center', gap: 14,
+        }}>
+          <TouchableOpacity
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }}
+            activeOpacity={0.7}
+            style={{
+              flexShrink: 0, width: 40, height: 40, borderRadius: 100,
+              backgroundColor: 'rgba(255,255,255,0.6)',
+              borderWidth: 0.5, borderColor: DEEP_HAIR,
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <ChevronLeft size={18} color={DEEP} />
+          </TouchableOpacity>
+          <View style={{
+            flex: 1, height: 4, borderRadius: 100,
+            backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+          }}>
+            <View style={{
+              position: 'absolute', top: 0, left: 0, bottom: 0,
+              width: `${(STEP / TOTAL) * 100}%`,
+              backgroundColor: CORAL, borderRadius: 100,
+            }} />
           </View>
+        </View>
 
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 40, paddingBottom: 32 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+        {/* QTitleBlock */}
+        <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
+          <Text style={{
+            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
+          }}>
+            sua rotina
+          </Text>
+          {isPrescribed ? (
+            <Text style={{
+              fontSize: 26, fontWeight: '700', color: DEEP,
+              letterSpacing: -0.85, lineHeight: 28.6,
+            }}>
+              {'Quais produtos foram '}
+              <Text style={{
+                fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
+                fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+              }}>
+                prescritos
+              </Text>
+              {'?'}
+            </Text>
+          ) : (
+            <Text style={{
+              fontSize: 26, fontWeight: '700', color: DEEP,
+              letterSpacing: -0.85, lineHeight: 28.6,
+            }}>
+              {'Quais '}
+              <Text style={{
+                fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
+                fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+              }}>
+                produtos
+              </Text>
+              {' você já usa?'}
+            </Text>
+          )}
+          <Text style={{
+            marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
+            color: DEEP_SOFT, letterSpacing: -0.1,
+          }}>
+            Descreva brevemente. Isso nos ajuda a montar o melhor protocolo para você.
+          </Text>
+        </View>
+
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 8 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <TextInput
+              multiline
+              numberOfLines={5}
+              placeholder="Ex: uso vitamina C de manhã e hidratante à noite..."
+              placeholderTextColor={DEEP_WHISPER}
+              value={description}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              onChangeText={(text) => {
+                setDescription(text);
+                setOnboardingField('skincare_routine_description', text || null);
+              }}
+              textAlignVertical="top"
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 22,
+                paddingHorizontal: 18,
+                paddingVertical: 16,
+                fontSize: 15.5,
+                lineHeight: 22.5,
+                color: DEEP,
+                letterSpacing: -0.1,
+                minHeight: 132,
+                borderWidth: focused || isActive ? 1.5 : 1,
+                borderColor: focused || isActive ? CORAL : DEEP_HAIR,
+                shadowColor: focused || isActive ? CORAL : '#2B2724',
+                shadowOffset: { width: 0, height: focused || isActive ? 6 : 2 },
+                shadowOpacity: focused || isActive ? 0.22 : 0.04,
+                shadowRadius: focused || isActive ? 22 : 14,
+              }}
+            />
+          </ScrollView>
+
+          {/* PrimaryButton */}
+          <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 18 }}>
+            <TouchableOpacity
+              onPress={handleContinue}
+              disabled={!isActive}
+              activeOpacity={0.85}
+              style={{
+                height: 60, borderRadius: 100,
+                backgroundColor: isActive ? CORAL : 'rgba(29,58,68,0.12)',
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                shadowColor: isActive ? CORAL : 'transparent',
+                shadowOffset: { width: 0, height: 14 },
+                shadowOpacity: isActive ? 0.55 : 0,
+                shadowRadius: 15, elevation: isActive ? 8 : 0,
+              }}
             >
               <Text style={{
-                fontSize: 11,
-                fontWeight: '700',
-                color: Colors.scanBtn,
-                letterSpacing: 1.2,
-                textTransform: 'uppercase',
-                marginBottom: 8,
+                fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
+                color: isActive ? '#FFFFFF' : 'rgba(29,58,68,0.42)',
               }}>
-                Sua rotina
+                Continuar
               </Text>
+              {isActive && (
+                <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                  <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
 
-              <Text style={{
-                fontSize: 26,
-                fontWeight: '800',
-                color: Colors.tabActive,
-                lineHeight: 31,
-                marginBottom: 8,
-              }}>
-                {title}
-              </Text>
-
-              <Text style={{
-                fontSize: 13,
-                color: Colors.gray,
-                lineHeight: 20,
-                marginBottom: 28,
-              }}>
-                Descreva brevemente. Isso nos ajuda a montar o melhor protocolo para você.
-              </Text>
-
-              <TextInput
-                multiline
-                numberOfLines={6}
-                placeholder="Ex: uso vitamina C de manhã e hidratante à noite..."
-                placeholderTextColor={Colors.gray}
-                value={description}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                onChangeText={(text) => {
-                  setDescription(text);
-                  setOnboardingField('skincare_routine_description', text || null);
-                }}
-                textAlignVertical="top"
-                style={{
-                  backgroundColor: Colors.white,
-                  borderRadius: 16,
-                  padding: 16,
-                  fontSize: 15,
-                  color: Colors.tabActive,
-                  minHeight: 140,
-                  borderWidth: 1.5,
-                  borderColor: focused ? Colors.scanBtn : 'rgba(0,0,0,0.08)',
-                  marginBottom: 24,
-                }}
-              />
-
-              <TouchableOpacity
-                onPress={handleContinue}
-                disabled={description.length < 3}
-                activeOpacity={0.8}
-                style={{
-                  backgroundColor: description.length < 3 ? '#E5E7EB' : Colors.scanBtn,
-                  borderRadius: 100,
-                  paddingVertical: 16,
-                  alignItems: 'center',
-                  opacity: description.length < 3 ? 0.6 : 1,
-                }}
-              >
-                <Text style={{
-                  fontSize: 16,
-                  fontWeight: '600',
-                  color: description.length < 3 ? Colors.gray : Colors.white,
-                }}>
-                  Continuar
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </KeyboardAvoidingView>
-
-        </View>
-      </SafeAreaView>
-    </LinearGradient>
+      </View>
+    </SafeAreaView>
   );
 }

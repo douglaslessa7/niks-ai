@@ -800,7 +800,7 @@ export default function Results() {
           <TouchableOpacity
             onPress={() => {
               track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 });
-              router.push('/(onboarding)/trust');
+              router.push('/(onboarding)/plan-preview');
             }}
             activeOpacity={0.85}
             style={{

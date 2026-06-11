@@ -1,78 +1,54 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
-  LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
+  Platform, Alert, ActivityIndicator,
   KeyboardAvoidingView, ScrollView, Linking,
+  LayoutAnimation, UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Eye, EyeOff, Mail } from 'lucide-react-native';
+import { Eye, EyeOff, Mail } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import { useFonts } from 'expo-font';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppStore } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
-import { Colors } from '../../constants/colors';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { generateAndSaveProtocol } from '../../lib/generateProtocol';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-function AppleIcon() {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 20 20" fill="none">
-      <Path
-        d="M14.12 10.47c-.02-2.13 1.74-3.16 1.82-3.21-1-1.46-2.55-1.66-3.1-1.68-1.32-.13-2.58.78-3.25.78-.67 0-1.7-.76-2.8-.74-1.44.02-2.77.84-3.51 2.13-1.5 2.59-.38 6.43 1.07 8.53.72 1.03 1.57 2.18 2.68 2.14 1.08-.04 1.49-.69 2.8-.69 1.3 0 1.67.69 2.81.67 1.16-.02 1.89-1.05 2.6-2.08.82-1.19 1.16-2.34 1.18-2.4-.03-.01-2.28-.87-2.3-3.45z"
-        fill="white"
-      />
-      <Path
-        d="M12.02 4.17c.6-.73 1-1.73.89-2.74-.86.04-1.9.57-2.51 1.29-.55.64-1.03 1.66-.9 2.64.95.07 1.93-.48 2.52-1.19z"
-        fill="white"
-      />
-    </Svg>
-  );
-}
-
-function GoogleIcon() {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 20 20" fill="none">
-      <Path d="M19.6 10.227c0-.709-.064-1.39-.182-2.045H10v3.868h5.382a4.6 4.6 0 01-1.996 3.018v2.51h3.232c1.891-1.742 2.982-4.305 2.982-7.35z" fill="#4285F4" />
-      <Path d="M10 20c2.7 0 4.964-.895 6.618-2.423l-3.232-2.509c-.895.6-2.04.955-3.386.955-2.605 0-4.81-1.76-5.595-4.123H1.064v2.59A9.996 9.996 0 0010 20z" fill="#34A853" />
-      <Path d="M4.405 11.9c-.2-.6-.314-1.24-.314-1.9 0-.66.114-1.3.314-1.9V5.51H1.064A9.996 9.996 0 000 10c0 1.614.386 3.14 1.064 4.49l3.34-2.59z" fill="#FBBC05" />
-      <Path d="M10 3.977c1.468 0 2.786.505 3.823 1.496l2.868-2.868C14.959.99 12.695 0 10 0 6.09 0 2.71 2.24 1.064 5.51l3.34 2.59C5.19 5.736 7.395 3.977 10 3.977z" fill="#EA4335" />
-    </Svg>
-  );
-}
-
-const Header = ({ onBack }: { onBack: () => void }) => (
-  <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
-    <TouchableOpacity
-      onPress={onBack}
-      activeOpacity={0.7}
-      style={{
-        width: 40, height: 40, borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.85)',
-        borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.08)',
-        alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      <ChevronLeft size={20} color="#6B7280" />
-    </TouchableOpacity>
-    <View style={{ marginTop: 16 }}>
-      <View style={{ height: 2, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 1 }}>
-        <View style={{ height: 2, width: '96%', backgroundColor: Colors.scanBtn, borderRadius: 1 }} />
-      </View>
-    </View>
-  </View>
-);
+const DEEP = '#1D3A44';
+const DEEP_SOFT = 'rgba(29,58,68,0.55)';
+const CORAL = '#FB7B6B';
+const CORAL_DEEP = '#E5654F';
 
 export default function Signup() {
+  const [fontsLoaded] = useFonts({
+    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+  });
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
-  const { saveToSupabase } = useAppStore();
+  const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating } = useAppStore();
   const { track, identify } = useMixpanel();
+
+  const startProtocolGeneration = (userId: string) => {
+    if (!scanResult) return;
+    // Lê skinScanId diretamente do store após saveToSupabase tê-lo setado —
+    // o closure do render ainda teria o valor antigo (null).
+    const freshSkinScanId = useAppStore.getState().skinScanId;
+    setProtocolGenerating(true);
+    generateAndSaveProtocol({
+      scanResult,
+      onboardingData: onboarding,
+      skinScanId: freshSkinScanId,
+      userId,
+      onSuccess: setProtocolResult,
+      onFinally: () => setProtocolGenerating(false),
+    });
+  };
 
   useEffect(() => {
     track('onboarding_step_viewed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
@@ -116,9 +92,23 @@ export default function Signup() {
         setEmailSent(email);
         setWaitingConfirmation(true);
       } else if (!error && data.session) {
-        if (data.session.user?.id) { identify(data.session.user.id); await saveToSupabase(data.session.user.id); }
+        if (data.session.user?.id) {
+          try {
+            const Purchases = (await import('react-native-purchases')).default;
+            await Purchases.logIn(data.session.user.id);
+            // Sincroniza o receipt da Apple com o usuário RC identificado.
+            // Sem isso, a compra feita pelo usuário anônimo não é transferida
+            // quando o usuário identificado já existia no RC (fluxo: paywall → signup).
+            await Purchases.restorePurchases();
+          } catch (rcErr) {
+            console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
+          }
+          identify(data.session.user.id);
+          await saveToSupabase(data.session.user.id);
+          startProtocolGeneration(data.session.user.id);
+        }
         track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-        router.push('/(onboarding)/skincare-routine');
+        router.push('/(onboarding)/nome');
       }
     } catch (error: any) {
       Alert.alert('Erro ao criar conta', error?.message ?? 'Tente novamente.');
@@ -145,105 +135,130 @@ export default function Signup() {
   const handleGoogleSignIn = async () => {
     try {
       const session = await signInWithGoogle();
-      if (session?.user?.id) { identify(session.user.id); await saveToSupabase(session.user.id); }
+      if (session?.user?.id) {
+        try {
+          const Purchases = (await import('react-native-purchases')).default;
+          await Purchases.logIn(session.user.id);
+          await Purchases.restorePurchases();
+        } catch (rcErr) {
+          console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
+        }
+        identify(session.user.id);
+        await saveToSupabase(session.user.id);
+        startProtocolGeneration(session.user.id);
+      }
       track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-      router.push('/(onboarding)/skincare-routine');
+      router.push('/(onboarding)/nome');
     } catch (error: any) {
       Alert.alert('Erro', JSON.stringify(error));
     }
   };
 
-  const emailBorderColor = focusedField === 'email' ? Colors.scanBtn : 'rgba(0,0,0,0.12)';
-  const passwordBorderColor = focusedField === 'password' ? Colors.tabActive : 'rgba(0,0,0,0.12)';
+  const emailActive = email.trim().length > 0;
+  const passwordActive = password.trim().length > 0;
+  const emailFocused = focusedField === 'email';
+  const passwordFocused = focusedField === 'password';
 
   if (waitingConfirmation) {
     return (
-      <LinearGradient colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']} locations={[0, 0.4, 0.7, 1]} style={{ flex: 1 }}>
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-            <Header onBack={() => router.back()} />
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingBottom: 32 }}>
-              <View style={{ marginBottom: 24 }}>
-                <Mail size={64} color={Colors.scanBtn} />
-              </View>
-              <Text style={{ fontSize: 26, fontWeight: '800', color: Colors.tabActive, textAlign: 'center', marginBottom: 12, lineHeight: 31 }}>
-                Verifique seu e-mail
-              </Text>
-              <Text style={{ fontSize: 13, color: Colors.gray, textAlign: 'center', marginBottom: 8, lineHeight: 20 }}>
-                Enviamos um link de confirmação para{' '}
-                <Text style={{ fontWeight: '700', color: Colors.tabActive }}>{emailSent}</Text>
-                {'. '}Clique no link para ativar sua conta.
-              </Text>
-              <Text style={{ fontSize: 13, color: Colors.muted, textAlign: 'center', marginBottom: 40 }}>
-                Não se esqueça de checar a pasta de spam.
-              </Text>
-              <TouchableOpacity
-                onPress={handleResend}
-                disabled={resendCooldown > 0}
-                activeOpacity={0.85}
-                style={{
-                  width: '100%', borderRadius: 100, paddingVertical: 16,
-                  alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: Colors.white,
-                  borderWidth: 1.5,
-                  borderColor: resendCooldown > 0 ? Colors.disabled : Colors.scanBtn,
-                  marginBottom: 8,
-                }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: '600', color: resendCooldown > 0 ? Colors.gray : Colors.scanBtn }}>
-                  Reenviar e-mail
-                </Text>
-              </TouchableOpacity>
-              {resendCooldown > 0 && (
-                <Text style={{ fontSize: 13, color: Colors.muted, marginBottom: 16 }}>
-                  Reenviar disponível em {resendCooldown}s
-                </Text>
-              )}
-              <TouchableOpacity onPress={handleUseOtherEmail} activeOpacity={0.7} style={{ marginTop: 8 }}>
-                <Text style={{ fontSize: 15, color: Colors.muted }}>Usar outro e-mail</Text>
-              </TouchableOpacity>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 32 }}>
+            <View style={{ marginBottom: 24 }}>
+              <Mail size={64} color={CORAL} />
             </View>
+            <Text style={{ fontSize: 28, fontWeight: '700', color: DEEP, textAlign: 'center', marginBottom: 14, letterSpacing: -0.7, lineHeight: 32 }}>
+              Verifique seu e-mail
+            </Text>
+            <Text style={{ fontSize: 14.5, color: DEEP_SOFT, textAlign: 'center', marginBottom: 8, lineHeight: 21.75 }}>
+              {'Enviamos um link de confirmação para '}
+              <Text style={{ fontWeight: '700', color: DEEP }}>{emailSent}</Text>
+              {'. Clique no link para ativar sua conta.'}
+            </Text>
+            <Text style={{ fontSize: 13, color: DEEP_SOFT, textAlign: 'center', marginBottom: 40, lineHeight: 19.5, opacity: 0.7 }}>
+              Não se esqueça de checar a pasta de spam.
+            </Text>
+            <TouchableOpacity
+              onPress={handleResend}
+              disabled={resendCooldown > 0}
+              activeOpacity={0.85}
+              style={{
+                width: '100%', height: 60, borderRadius: 100,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: resendCooldown > 0 ? 'rgba(29,58,68,0.18)' : CORAL,
+                shadowColor: CORAL,
+                shadowOffset: { width: 0, height: resendCooldown > 0 ? 0 : 14 },
+                shadowOpacity: resendCooldown > 0 ? 0 : 0.55,
+                shadowRadius: 30,
+                marginBottom: 8,
+              }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF', letterSpacing: -0.2 }}>
+                {resendCooldown > 0 ? `Reenviar em ${resendCooldown}s` : 'Reenviar e-mail'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleUseOtherEmail} activeOpacity={0.7} style={{ marginTop: 16 }}>
+              <Text style={{ fontSize: 15, color: DEEP_SOFT, letterSpacing: -0.1 }}>Usar outro e-mail</Text>
+            </TouchableOpacity>
           </View>
-        </SafeAreaView>
-      </LinearGradient>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <LinearGradient colors={['#FCEAE5', '#FDF0ED', '#FDFAF9', '#FFFFFF']} locations={[0, 0.4, 0.7, 1]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-          <Header onBack={async () => { await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }} />
-
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <ScrollView
-              contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 18, paddingTop: 32, paddingBottom: 32 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Heading */}
-              <View style={{ marginBottom: 32 }}>
-                <Text style={{ fontSize: 26, fontWeight: '800', color: Colors.tabActive, lineHeight: 31, marginBottom: 8 }}>
-                  Salve seu progresso
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Title block */}
+            <View style={{ paddingTop: 34, paddingHorizontal: 28 }}>
+              <Text style={{ fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
+                sua conta
+              </Text>
+              <Text style={{ fontSize: 26, fontWeight: '700', color: DEEP, letterSpacing: -0.7, lineHeight: 29.9 }}>
+                {'Bem-vinda! Vamos começar personalizando a '}
+                <Text style={{ fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined, fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -0.9 }}>
+                  sua jornada
                 </Text>
-                <Text style={{ fontSize: 13, color: Colors.gray, lineHeight: 20 }}>
-                  Crie sua conta no{' '}
-                  <Text style={{ fontWeight: '700', color: Colors.tabActive }}>NIKS AI</Text>
-                  {' '}para começar a sua jornada.
+                {'.'}
+              </Text>
+              <Text style={{ marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
+                {'Crie sua conta no '}
+                <Text style={{ fontWeight: '700', color: DEEP }}>NIKS</Text>
+                {' para começar a sua jornada.'}
+              </Text>
+            </View>
+
+            <View style={{ flex: 1, minHeight: 32 }} />
+
+            {/* Form */}
+            <View style={{ paddingHorizontal: 24, paddingBottom: 14, gap: 14 }}>
+
+              {/* Email field */}
+              <View>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: DEEP, letterSpacing: -0.1, marginBottom: 10 }}>
+                  Endereço de e-mail
                 </Text>
-              </View>
-
-              <View style={{ flex: 1 }} />
-
-              <View style={{ gap: 12 }}>
-                {/* Email field */}
-                <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.tabActive }}>
-                    Endereço de e-mail
-                  </Text>
+                <View style={{
+                  height: 56, borderRadius: 16,
+                  backgroundColor: '#FFFFFF',
+                  borderWidth: emailFocused ? 1.5 : 1,
+                  borderColor: emailFocused ? CORAL : 'rgba(29,58,68,0.12)',
+                  shadowColor: CORAL,
+                  shadowOffset: { width: 0, height: emailFocused ? 6 : 2 },
+                  shadowOpacity: emailFocused ? 0.22 : 0.03,
+                  shadowRadius: emailFocused ? 22 : 14,
+                  paddingHorizontal: 18,
+                  justifyContent: 'center',
+                }}>
                   <TextInput
                     placeholder="seuemail@exemplo.com"
-                    placeholderTextColor={Colors.gray}
+                    placeholderTextColor="rgba(29,58,68,0.30)"
                     value={email}
                     onChangeText={handleEmailChange}
                     keyboardType="email-address"
@@ -251,157 +266,209 @@ export default function Signup() {
                     autoCorrect={false}
                     onFocus={() => setFocusedField('email')}
                     onBlur={() => setFocusedField(null)}
-                    style={{
-                      height: 52, paddingHorizontal: 16, borderRadius: 14,
-                      fontSize: 15, color: Colors.tabActive,
-                      borderWidth: 1.5, borderColor: emailBorderColor,
-                      backgroundColor: Colors.white,
-                    }}
+                    style={{ fontSize: 16, color: DEEP, letterSpacing: -0.15 }}
                   />
                 </View>
+              </View>
 
-                {/* Password field */}
-                {step === 'password' && (
-                  <View style={{ gap: 6 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.tabActive }}>
-                      Defina uma senha para a sua conta
-                    </Text>
-                    <View>
-                      <TextInput
-                        placeholder="Mínimo 8 caracteres"
-                        placeholderTextColor={Colors.gray}
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry={!showPassword}
-                        autoFocus
-                        onFocus={() => setFocusedField('password')}
-                        onBlur={() => setFocusedField(null)}
-                        style={{
-                          height: 52, paddingHorizontal: 16, paddingRight: 48,
-                          borderRadius: 14, fontSize: 15, color: Colors.tabActive,
-                          borderWidth: 1.5, borderColor: passwordBorderColor,
-                          backgroundColor: Colors.white,
-                        }}
-                      />
-                      <TouchableOpacity
-                        onPress={() => setShowPassword(!showPassword)}
-                        style={{ position: 'absolute', right: 14, top: 14 }}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        {showPassword ? <EyeOff size={20} color={Colors.gray} /> : <Eye size={20} color={Colors.gray} />}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-
-                {/* CTA button */}
-                {step === 'email' ? (
-                  <TouchableOpacity
-                    onPress={handleEmailContinue}
-                    activeOpacity={0.85}
-                    style={{
-                      borderRadius: 100, paddingVertical: 16,
-                      alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: email.trim() ? Colors.scanBtn : Colors.disabled,
-                    }}
-                  >
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>Continuar</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    onPress={handleCreateAccount}
-                    activeOpacity={0.85}
-                    disabled={localLoading}
-                    style={{
-                      borderRadius: 100, paddingVertical: 16,
-                      alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: password.trim() ? Colors.scanBtn : Colors.disabled,
-                    }}
-                  >
-                    {localLoading
-                      ? <ActivityIndicator color={Colors.white} />
-                      : <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>Criar minha conta</Text>
-                    }
-                  </TouchableOpacity>
-                )}
-
-                {/* Divider + social — só no step email */}
-                {step === 'email' && (
-                  <>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 }}>
-                      <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(0,0,0,0.08)' }} />
-                      <Text style={{ fontSize: 13, color: Colors.gray }}>ou</Text>
-                      <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(0,0,0,0.08)' }} />
-                    </View>
-
+              {/* Password field */}
+              {step === 'password' && (
+                <View>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: DEEP, letterSpacing: -0.1, marginBottom: 10 }}>
+                    Defina uma senha para a sua conta
+                  </Text>
+                  <View style={{
+                    height: 56, borderRadius: 16,
+                    backgroundColor: '#FFFFFF',
+                    borderWidth: passwordFocused ? 1.5 : 1,
+                    borderColor: passwordFocused ? DEEP : 'rgba(29,58,68,0.12)',
+                    shadowColor: DEEP,
+                    shadowOffset: { width: 0, height: passwordFocused ? 4 : 2 },
+                    shadowOpacity: passwordFocused ? 0.16 : 0.03,
+                    shadowRadius: passwordFocused ? 18 : 14,
+                    paddingHorizontal: 18,
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                  }}>
+                    <TextInput
+                      placeholder="Mínimo 8 caracteres"
+                      placeholderTextColor="rgba(29,58,68,0.30)"
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                      autoFocus
+                      onFocus={() => setFocusedField('password')}
+                      onBlur={() => setFocusedField(null)}
+                      style={{
+                        flex: 1, fontSize: 16, color: DEEP,
+                        letterSpacing: (password.length > 0 && !showPassword) ? 4 : -0.15,
+                      }}
+                    />
                     <TouchableOpacity
-                      onPress={handleGoogleSignIn}
+                      onPress={() => setShowPassword(!showPassword)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      {showPassword
+                        ? <EyeOff size={20} color={DEEP} style={{ opacity: 0.55 }} />
+                        : <Eye size={20} color={DEEP} style={{ opacity: 0.55 }} />
+                      }
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Primary CTA */}
+              {step === 'email' ? (
+                <TouchableOpacity
+                  onPress={handleEmailContinue}
+                  activeOpacity={0.85}
+                  style={{
+                    height: 60, borderRadius: 100,
+                    backgroundColor: emailActive ? CORAL : 'rgba(29,58,68,0.18)',
+                    alignItems: 'center', justifyContent: 'center',
+                    shadowColor: CORAL,
+                    shadowOffset: { width: 0, height: emailActive ? 14 : 0 },
+                    shadowOpacity: emailActive ? 0.55 : 0,
+                    shadowRadius: 30,
+                    elevation: emailActive ? 8 : 0,
+                  }}
+                >
+                  <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: emailActive ? '#FFFFFF' : 'rgba(255,255,255,0.92)' }}>
+                    Continuar
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={handleCreateAccount}
+                  activeOpacity={0.85}
+                  disabled={localLoading}
+                  style={{
+                    height: 60, borderRadius: 100,
+                    backgroundColor: passwordActive ? CORAL : 'rgba(29,58,68,0.18)',
+                    alignItems: 'center', justifyContent: 'center',
+                    shadowColor: CORAL,
+                    shadowOffset: { width: 0, height: passwordActive ? 14 : 0 },
+                    shadowOpacity: passwordActive ? 0.55 : 0,
+                    shadowRadius: 30,
+                    elevation: passwordActive ? 8 : 0,
+                  }}
+                >
+                  {localLoading
+                    ? <ActivityIndicator color="#FFFFFF" />
+                    : <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: passwordActive ? '#FFFFFF' : 'rgba(255,255,255,0.92)' }}>Criar minha conta</Text>
+                  }
+                </TouchableOpacity>
+              )}
+
+              {/* OR divider + social — only on email step */}
+              {step === 'email' && (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 8 }}>
+                    <View style={{ flex: 1, height: 0.5, backgroundColor: 'rgba(29,58,68,0.16)' }} />
+                    <Text style={{ fontSize: 13, color: DEEP_SOFT, letterSpacing: -0.05 }}>ou</Text>
+                    <View style={{ flex: 1, height: 0.5, backgroundColor: 'rgba(29,58,68,0.16)' }} />
+                  </View>
+
+                  {/* Google */}
+                  <TouchableOpacity
+                    onPress={handleGoogleSignIn}
+                    activeOpacity={0.85}
+                    disabled={loading}
+                    style={{
+                      height: 56, borderRadius: 100,
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 0.5, borderColor: 'rgba(29,58,68,0.12)',
+                      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
+                      shadowColor: '#2B2724',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.04, shadowRadius: 14,
+                    }}
+                  >
+                    {loading ? <ActivityIndicator color={DEEP} /> : (
+                      <>
+                        <Svg width={20} height={20} viewBox="0 0 48 48">
+                          <Path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                          <Path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                          <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                          <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                        </Svg>
+                        <Text style={{ fontSize: 16, fontWeight: '600', color: DEEP, letterSpacing: -0.15 }}>Continuar com o Google</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Apple — iOS only */}
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity
+                      onPress={async () => {
+                        try {
+                          const data = await signInWithApple();
+                          if (!data) return;
+                          if (data.user?.id) {
+                            try {
+                              const Purchases = (await import('react-native-purchases')).default;
+                              await Purchases.logIn(data.user.id);
+                              await Purchases.restorePurchases();
+                            } catch (rcErr) {
+                              console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
+                            }
+                            identify(data.user.id);
+                            await saveToSupabase(data.user.id);
+                            startProtocolGeneration(data.user.id);
+                          }
+                          track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
+                          router.push('/(onboarding)/nome');
+                        } catch (error: any) {
+                          Alert.alert('Erro', error?.message ?? 'Tente novamente.');
+                        }
+                      }}
                       activeOpacity={0.85}
                       disabled={loading}
                       style={{
-                        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
-                        borderRadius: 100, paddingVertical: 16,
-                        backgroundColor: Colors.white,
-                        borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.1)',
+                        height: 56, borderRadius: 100,
+                        backgroundColor: DEEP,
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                        shadowColor: DEEP,
+                        shadowOffset: { width: 0, height: 6 },
+                        shadowOpacity: 0.35, shadowRadius: 18, elevation: 4,
                       }}
                     >
-                      {loading ? <ActivityIndicator color={Colors.tabActive} /> : (
+                      {loading ? <ActivityIndicator color="#FFFFFF" /> : (
                         <>
-                          <GoogleIcon />
-                          <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.tabActive }}>Continuar com o Google</Text>
+                          <Svg width={20} height={20} viewBox="0 0 24 24" fill="#FFFFFF">
+                            <Path d="M17.05 12.04c-.03-2.71 2.21-4.01 2.31-4.07-1.26-1.84-3.22-2.09-3.92-2.12-1.67-.17-3.26 1-4.11 1-.86 0-2.17-.98-3.57-.95-1.84.03-3.54 1.07-4.49 2.71-1.92 3.33-.49 8.25 1.38 10.96.91 1.32 2 2.8 3.4 2.75 1.37-.06 1.89-.88 3.54-.88 1.65 0 2.12.88 3.57.85 1.47-.03 2.4-1.35 3.3-2.68 1.04-1.54 1.47-3.04 1.49-3.12-.03-.01-2.87-1.1-2.9-4.36zM14.5 4.27c.75-.91 1.26-2.17 1.12-3.43-1.08.04-2.39.72-3.17 1.62-.7.8-1.31 2.08-1.15 3.32 1.21.09 2.45-.61 3.2-1.51z" fill="#FFFFFF" />
+                          </Svg>
+                          <Text style={{ fontSize: 16, fontWeight: '600', color: '#FFFFFF', letterSpacing: -0.15 }}>Continuar com a Apple</Text>
                         </>
                       )}
                     </TouchableOpacity>
+                  )}
+                </>
+              )}
+            </View>
 
-                    {Platform.OS === 'ios' && (
-                      <TouchableOpacity
-                        onPress={async () => {
-                          try {
-                            const data = await signInWithApple();
-                            if (!data) return;
-                            if (data.user?.id) { identify(data.user.id); await saveToSupabase(data.user.id); }
-                            track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-                            router.push('/(onboarding)/skincare-routine');
-                          } catch (error: any) {
-                            Alert.alert('Erro', error?.message ?? 'Tente novamente.');
-                          }
-                        }}
-                        activeOpacity={0.85}
-                        disabled={loading}
-                        style={{
-                          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
-                          borderRadius: 100, paddingVertical: 16,
-                          backgroundColor: Colors.tabActive,
-                        }}
-                      >
-                        {loading ? <ActivityIndicator color={Colors.white} /> : (
-                          <>
-                            <AppleIcon />
-                            <Text style={{ fontSize: 16, fontWeight: '600', color: Colors.white }}>Continuar com a Apple</Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </>
-                )}
-
-                {/* Terms */}
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8, paddingTop: 4 }}>
-                  <Text style={{ fontSize: 11, color: Colors.gray, lineHeight: 18 }}>Ao continuar, você concorda com nossos </Text>
-                  <TouchableOpacity onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}>
-                    <Text style={{ fontSize: 11, color: Colors.tabActive, textDecorationLine: 'underline', fontWeight: '500', lineHeight: 18 }}>Termos de Uso</Text>
-                  </TouchableOpacity>
-                  <Text style={{ fontSize: 11, color: Colors.gray, lineHeight: 18 }}> e </Text>
-                  <TouchableOpacity onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}>
-                    <Text style={{ fontSize: 11, color: Colors.tabActive, textDecorationLine: 'underline', fontWeight: '500', lineHeight: 18 }}>Política de Privacidade</Text>
-                  </TouchableOpacity>
-                  <Text style={{ fontSize: 11, color: Colors.gray, lineHeight: 18 }}>.</Text>
-                </View>
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </View>
-      </SafeAreaView>
-    </LinearGradient>
+            {/* Terms */}
+            <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 18, alignItems: 'center' }}>
+              <Text style={{ textAlign: 'center', fontSize: 12, lineHeight: 18, color: DEEP_SOFT, letterSpacing: -0.05 }}>
+                {'Ao continuar, você concorda com nossos '}
+                <Text
+                  onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}
+                  style={{ color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
+                >
+                  Termos de Uso
+                </Text>
+                {' e '}
+                <Text
+                  onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}
+                  style={{ color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
+                >
+                  Política de Privacidade
+                </Text>
+                {'.'}
+              </Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </SafeAreaView>
   );
 }

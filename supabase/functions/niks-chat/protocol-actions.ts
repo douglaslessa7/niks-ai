@@ -1,16 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
-const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=' +
-  GEMINI_API_KEY
-
-const SAFETY_SETTINGS = [
-  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-]
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
 const TRIGGER_PHRASE = 'posso incluir isso no seu protocolo?'
 
@@ -25,8 +16,8 @@ type SuggestionPayload = {
   }
 }
 
-// Extracts the outermost JSON object from a string, handling markdown fences
-// and any preamble text the model may have added before the JSON.
+// Extracts the outermost JSON object from a string, handling any preamble
+// the model may have added before the JSON.
 function extractJSON(text: string): string {
   const start = text.indexOf('{')
   const end   = text.lastIndexOf('}')
@@ -53,7 +44,7 @@ export async function checkForSuggestion(
 
     if (existing && existing.length > 0) return
 
-    // Extrair justificativa e mudanças via Gemini
+    // Extrair justificativa e mudanças via OpenAI
     const prompt = `A NIKS (coach de skincare) propôs uma alteração no protocolo da usuária na mensagem abaixo.
 Extraia a justificativa clínica e as mudanças propostas.
 Retorne SOMENTE JSON válido, sem markdown, sem texto antes ou depois:
@@ -71,55 +62,29 @@ Retorne SOMENTE JSON válido, sem markdown, sem texto antes ou depois:
 
 Resposta da NIKS: ${assistantResponse}`
 
-    const resp = await fetch(GEMINI_URL, {
+    const resp = await fetch(OPENAI_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 1024,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'object',
-            properties: {
-              reason: { type: 'string' },
-              proposed_changes: {
-                type: 'object',
-                properties: {
-                  action:        { type: 'string' },
-                  step_name:     { type: 'string' },
-                  period:        { type: 'string' },
-                  duration_days: { type: 'integer' },
-                  details:       { type: 'string' },
-                },
-                required: ['action', 'step_name', 'details'],
-              },
-            },
-            required: ['reason', 'proposed_changes'],
-          },
-        },
-        safetySettings: SAFETY_SETTINGS,
+        model: 'gpt-4.1-mini',
+        max_tokens: 512,
+        stream: false,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
       }),
     })
 
     if (!resp.ok) {
-      console.error('protocol-actions.ts: Gemini error', resp.status, await resp.text())
+      console.error('protocol-actions.ts: OpenAI error (checkForSuggestion)', resp.status, await resp.text())
       return
     }
 
     const data = await resp.json()
-    const candidate    = data?.candidates?.[0]
-    const finishReason = candidate?.finishReason
-
-    if (finishReason && finishReason !== 'STOP') {
-      console.warn('protocol-actions.ts: checkForSuggestion finishReason', finishReason, '— skipping parse')
-      return
-    }
-
-    const raw = candidate?.content?.parts?.[0]?.text
-    if (!raw) return
-
-    const parsed = JSON.parse(extractJSON(raw)) as SuggestionPayload
+    const text = data.choices[0].message.content
+    const parsed = JSON.parse(extractJSON(text)) as SuggestionPayload
 
     await supabase.from('coach_protocol_suggestions').insert({
       user_id: userId,
@@ -192,47 +157,29 @@ Regras:
 
 Mensagem da usuária: ${userMessage}`
 
-    const resp = await fetch(GEMINI_URL, {
+    const resp = await fetch(OPENAI_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 64,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'object',
-            properties: {
-              intent: {
-                type: 'string',
-                enum: ['approved', 'rejected', 'unclear'],
-              },
-            },
-            required: ['intent'],
-          },
-        },
-        safetySettings: SAFETY_SETTINGS,
+        model: 'gpt-4.1-mini',
+        max_tokens: 128,
+        stream: false,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
       }),
     })
 
     if (!resp.ok) {
-      console.error('protocol-actions.ts: checkApprovalIntent Gemini error', resp.status, await resp.text())
+      console.error('protocol-actions.ts: OpenAI error (checkApprovalIntent)', resp.status, await resp.text())
       return
     }
 
     const data = await resp.json()
-    const candidate    = data?.candidates?.[0]
-    const finishReason = candidate?.finishReason
-
-    if (finishReason && finishReason !== 'STOP') {
-      console.warn('protocol-actions.ts: checkApprovalIntent finishReason', finishReason, '— skipping parse')
-      return
-    }
-
-    const raw = candidate?.content?.parts?.[0]?.text
-    if (!raw) return
-
-    const { intent } = JSON.parse(extractJSON(raw)) as { intent: 'approved' | 'rejected' | 'unclear' }
+    const text = data.choices[0].message.content
+    const { intent } = JSON.parse(extractJSON(text)) as { intent: 'approved' | 'rejected' | 'unclear' }
 
     if (intent === 'unclear') return
 

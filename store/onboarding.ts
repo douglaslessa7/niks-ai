@@ -181,14 +181,12 @@ export type OnboardingData = {
   pregnancy_status?: 'none' | 'pregnant' | 'breastfeeding' | 'trying' | null
   birthday: string | null
   skin_type: string | null
-  frequency: string | null
   sun_exposure: string | null
   hydration: string | null
   sleep: string | null
-  sunscreen: string | null
-  food_analysis: boolean | null
   commitment: string | null
   objetivo: string | null
+  goal_desire?: string | null
   skincare_routine_type?: 'zero' | 'complement' | 'prescribed' | 'unsure' | null
   skincare_routine_description?: string | null
   allergy_type?: 'none' | 'sensitive' | 'reaction' | null
@@ -220,12 +218,18 @@ type AppStore = {
   skinScanId: string | null
   protocolResult: ProtocolResult | null
   setProtocolResult: (result: ProtocolResult) => void
+  protocolGenerating: boolean
+  setProtocolGenerating: (v: boolean) => void
   selectedScan: { result: ScanResult; imageUri: string } | null
   setSelectedScan: (scan: { result: ScanResult; imageUri: string } | null) => void
   selectedFoodResult: FoodReportResult | null
   setSelectedFoodResult: (result: FoodReportResult | null) => void
+  selectedFoodImageUrl: string | null
+  setSelectedFoodImageUrl: (url: string | null) => void
   niksChatMode: 'empty' | 'active'
   setNiksChatMode: (mode: 'empty' | 'active') => void
+  skinPreviewUrl: string | null
+  setSkinPreviewUrl: (url: string | null) => void
   saveToSupabase: (userId: string) => Promise<void>
   reset: () => void
 }
@@ -236,14 +240,12 @@ const initialOnboarding: OnboardingData = {
   pregnancy_status: null,
   birthday: null,
   skin_type: null,
-  frequency: null,
   sun_exposure: null,
   hydration: null,
   sleep: null,
-  sunscreen: null,
-  food_analysis: null,
   commitment: null,
   objetivo: null,
+  goal_desire: null,
   skincare_routine_type: null,
   skincare_routine_description: null,
   allergy_type: null,
@@ -269,8 +271,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   skinImageUri: null,
   skinScanId: null,
   protocolResult: null,
+  protocolGenerating: false,
   selectedScan: null,
   selectedFoodResult: null,
+  selectedFoodImageUrl: null,
 
   setScanSource: (source) => set({ scanSource: source }),
 
@@ -290,21 +294,33 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri }),
 
   setProtocolResult: (result) => set({ protocolResult: result }),
+  setProtocolGenerating: (v) => set({ protocolGenerating: v }),
 
   setSelectedScan: (scan) => set({ selectedScan: scan }),
 
   setSelectedFoodResult: (result) => set({ selectedFoodResult: result }),
 
+  setSelectedFoodImageUrl: (url) => set({ selectedFoodImageUrl: url }),
+
   niksChatMode: 'empty',
   setNiksChatMode: (mode) => set({ niksChatMode: mode }),
+  skinPreviewUrl: null,
+  setSkinPreviewUrl: (url) => set({ skinPreviewUrl: url }),
 
   saveToSupabase: async (userId: string) => {
     const { onboarding, scanResult, scanImageUri, skinImageBase64 } = get()
 
     let idade: number | null = null
     if (onboarding.birthday) {
-      const birth = new Date(onboarding.birthday)
-      idade = new Date().getFullYear() - birth.getFullYear()
+      const asNum = Number(onboarding.birthday)
+      if (!isNaN(asNum) && asNum > 0 && asNum < 120) {
+        idade = asNum
+      } else {
+        const birth = new Date(onboarding.birthday)
+        if (!isNaN(birth.getTime())) {
+          idade = new Date().getFullYear() - birth.getFullYear()
+        }
+      }
     }
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -324,11 +340,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         tipo_pele: onboarding.skin_type,
         concerns: onboarding.concerns,
         objetivo: onboarding.objetivo,
-        frequency: onboarding.frequency,
         sun_exposure: onboarding.sun_exposure,
         hydration: onboarding.hydration,
         sleep: onboarding.sleep,
-        sunscreen: onboarding.sunscreen,
         birthday: onboarding.birthday,
       })
 
@@ -361,5 +375,5 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, skinImageBase64: null, skinImageUri: null, skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, skinImageBase64: null, skinImageUri: null, skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
 }))

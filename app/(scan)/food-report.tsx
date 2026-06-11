@@ -4,8 +4,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Line, Circle } from 'react-native-svg';
+import Svg, { Path, Line, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import { Canvas, Circle as SkiaCircle, RadialGradient, vec, BlurMask } from '@shopify/react-native-skia';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { useFonts } from 'expo-font';
+import { Lato_400Regular_Italic, Lato_400Regular } from '@expo-google-fonts/lato';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -31,13 +35,32 @@ type FoodAnalysisResult = {
   disclaimer: string;
 };
 
+const DEEP = '#1D3A44';
+const DEEP_SOFT = 'rgba(29,58,68,0.55)';
+const DEEP_HAIR = 'rgba(29,58,68,0.10)';
+const CORAL = '#FB7B6B';
+const CORAL_DEEP = '#E5654F';
+const CREAM = '#FFFFFF';
+
+const RING_SIZE = 220;
+const RING_STROKE = 6;
+const RING_R = (RING_SIZE - RING_STROKE) / 2;
+const RING_C = 2 * Math.PI * RING_R;
+
+const FOOD_HEADLINES: { prefix: string; highlight: string; fontSize?: number }[] = [
+  { prefix: 'Identificando sua', highlight: 'refeição' },
+  { prefix: 'Avaliando os', highlight: 'nutrientes' },
+  { prefix: 'Calculando o impacto na', highlight: 'pele', fontSize: 22 },
+  { prefix: 'Finalizando sua', highlight: 'análise' },
+];
+
 const foodSteps = [
-  { label: 'Identificando os alimentos', delay: 500 },
-  { label: 'Avaliando macronutrientes', delay: 1500 },
-  { label: 'Analisando índice glicêmico', delay: 2500 },
-  { label: 'Verificando inflamação e oxidação', delay: 3500 },
-  { label: 'Correlacionando com seu perfil de pele', delay: 4500 },
-  { label: 'Score de impacto na pele', delay: 5500 },
+  { at: 16, label: 'Identificando os alimentos' },
+  { at: 32, label: 'Avaliando macronutrientes' },
+  { at: 48, label: 'Analisando índice glicêmico' },
+  { at: 64, label: 'Verificando inflamação e oxidação' },
+  { at: 80, label: 'Correlacionando com seu perfil de pele' },
+  { at: 100, label: 'Score de impacto na pele' },
 ];
 
 // ─── Design tokens ────────────────────────────────────────────
@@ -182,10 +205,12 @@ function FoodSection({ eyebrow, children }: { eyebrow: string; children: React.R
   );
 }
 
-function FoodCard({ food, defaultOpen = false, fontItalic }: {
+function FoodCard({ food, defaultOpen = false, fontItalic, fontReg, latoRegular }: {
   food: FoodItem;
   defaultOpen?: boolean;
   fontItalic: string | undefined;
+  fontReg: string | undefined;
+  latoRegular: string | undefined;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const swatch = impactSwatchConfig[food.impact] ?? impactSwatchConfig.neutro;
@@ -203,7 +228,7 @@ function FoodCard({ food, defaultOpen = false, fontItalic }: {
           <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: swatch }} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 18, fontFamily: fontItalic, color: '#2B2724', letterSpacing: -0.3 }}>{food.name}</Text>
+          <Text style={{ fontSize: 18, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.3 }}>{food.name}</Text>
           <View style={{ marginTop: 6, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <ImpactPill impact={food.impact} />
             {food.substitution && (
@@ -232,7 +257,7 @@ function FoodCard({ food, defaultOpen = false, fontItalic }: {
                 </Svg>
                 <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: '#FB7B6B' }}>substitua por</Text>
               </View>
-              <Text style={{ marginTop: 10, fontSize: 15, fontFamily: fontItalic, color: '#2B2724', letterSpacing: -0.15, lineHeight: 21.75 }}>{food.substitution}</Text>
+              <Text style={{ marginTop: 10, fontSize: 15, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.15, lineHeight: 21.75 }}>{food.substitution}</Text>
             </View>
           )}
         </View>
@@ -247,48 +272,61 @@ function FoodCard({ food, defaultOpen = false, fontItalic }: {
 export default function FoodReport() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { foodImageBase64, foodImageMimeType, onboarding, selectedFoodResult, setSelectedFoodResult } = useAppStore();
+  const { foodImageBase64, foodImageMimeType, onboarding, selectedFoodResult, setSelectedFoodResult, selectedFoodImageUrl, setSelectedFoodImageUrl } = useAppStore();
   const { track } = useMixpanel();
   const [result, setResult] = useState<FoodAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const apiDoneRef = useRef(false);
-  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [currentStep, setCurrentStep] = useState(0);
+  const analyzingRef = useRef(false);
+  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentProgressRef = useRef(0);
   const [showDemandNotice, setShowDemandNotice] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [countdownPaused, setCountdownPaused] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const demandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blinkAnim = useRef(new Animated.Value(1)).current;
+  const bobAnim = useRef(new Animated.Value(0)).current;
+  const haloAnim = useRef(new Animated.Value(1)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
+  const headlineFadeAnim = useRef(new Animated.Value(1)).current;
+  const headlineSlideAnim = useRef(new Animated.Value(0)).current;
+  const stepOpacitiesFood = useRef(foodSteps.map((_, i) => new Animated.Value(i === 0 ? 1 : 0.35))).current;
 
   const [fontsLoaded] = useFonts({
     'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
     'PlayfairDisplay-Italic':  require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    'Lato-Italic':             Lato_400Regular_Italic,
+    'Lato-Regular':            Lato_400Regular,
   });
-  const fontItalic = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined;
-  const fontReg    = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
+  const fontItalic  = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined;
+  const fontReg     = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
+  const latoItalic  = fontsLoaded ? 'Lato-Italic'            : undefined;
+  const latoRegular = fontsLoaded ? 'Lato-Regular'           : undefined;
 
   useEffect(() => {
-    const TOTAL_DURATION = 10000;
-    const increment = 90 / (TOTAL_DURATION / 50);
-
-    progressIntervalRef.current = setInterval(() => {
-      if (apiDoneRef.current) {
-        clearInterval(progressIntervalRef.current!);
-        return;
-      }
-      setProgress((prev) => {
-        if (prev >= 98) return 98;
-        if (prev >= 90) return prev + 0.03;
-        return Math.min(prev + increment, 90);
-      });
-    }, 50);
-
-    return () => {
-      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    const tickProgress = () => {
+      const current = currentProgressRef.current;
+      if (current >= 99 || apiDoneRef.current) return;
+      let delay: number;
+      if (current < 60) delay = 90;
+      else if (current < 75) delay = 220;
+      else if (current < 85) delay = 500;
+      else if (current < 92) delay = 1200;
+      else if (current < 96) delay = 3500;
+      else delay = 8000;
+      progressTimerRef.current = setTimeout(() => {
+        const next = current + 1;
+        currentProgressRef.current = next;
+        setProgress(next);
+        tickProgress();
+      }, delay);
     };
+    tickProgress();
+    return () => { if (progressTimerRef.current) clearTimeout(progressTimerRef.current); };
   }, []);
 
   useEffect(() => {
@@ -298,12 +336,6 @@ export default function FoodReport() {
     } else {
       analyzeFood();
     }
-  }, []);
-
-  useEffect(() => {
-    foodSteps.forEach((step, index) => {
-      setTimeout(() => setCurrentStep(index + 1), step.delay);
-    });
   }, []);
 
   useEffect(() => {
@@ -348,15 +380,58 @@ export default function FoodReport() {
     return () => { if (countdownRef.current) clearTimeout(countdownRef.current); };
   }, [showDemandNotice]);
 
+  // 1. Startup loops — primeiro efeito, igual ao loading.tsx
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.timing(blinkAnim, { toValue: 0.3, duration: 500, useNativeDriver: true }),
+      Animated.timing(blinkAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(bobAnim, { toValue: -4, duration: 1800, useNativeDriver: true }),
+      Animated.timing(bobAnim, { toValue: 0, duration: 1800, useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(haloAnim, { toValue: 1.08, duration: 1200, useNativeDriver: true }),
+      Animated.timing(haloAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+    ])).start();
+    Animated.loop(
+      Animated.timing(shimmerAnim, { toValue: 1, duration: 1500, useNativeDriver: true })
+    ).start();
+  }, []);
+
+  // 2. Anel + opacidades dos steps no mesmo efeito — igual ao loading.tsx
   useEffect(() => {
     Animated.timing(progressAnim, {
       toValue: progress,
-      duration: 100,
+      duration: 450,
       useNativeDriver: false,
     }).start();
+    foodSteps.forEach((s, i) => {
+      const active = progress >= s.at - 18 && progress < s.at;
+      const done = progress >= s.at;
+      Animated.timing(stepOpacitiesFood[i], {
+        toValue: done || active ? 1 : 0.35,
+        duration: 350,
+        useNativeDriver: true,
+      }).start();
+    });
   }, [progress]);
 
+  const headlineIdx = Math.min(FOOD_HEADLINES.length - 1, Math.floor(progress / (100 / FOOD_HEADLINES.length)));
+
+  // 3. Transição de headline
+  useEffect(() => {
+    headlineFadeAnim.setValue(0);
+    headlineSlideAnim.setValue(8);
+    Animated.parallel([
+      Animated.timing(headlineFadeAnim, { toValue: 1, duration: 520, useNativeDriver: true }),
+      Animated.timing(headlineSlideAnim, { toValue: 0, duration: 520, useNativeDriver: true }),
+    ]).start();
+  }, [headlineIdx]);
+
   const analyzeFood = async () => {
+    if (analyzingRef.current) return;
+    analyzingRef.current = true;
     try {
       setLoading(true);
       setError(null);
@@ -460,6 +535,7 @@ export default function FoodReport() {
       console.error('Erro ao analisar refeição:', String(err));
       track('food_scan_failed', { error: err?.message ?? 'unknown' });
       setError('Não foi possível analisar a refeição. Tente novamente.');
+      analyzingRef.current = false;
     } finally {
       apiDoneRef.current = true;
       setProgress(100);
@@ -468,89 +544,225 @@ export default function FoodReport() {
     }
   };
 
-  const widthInterp = progressAnim.interpolate({
+  const ringOffsetAnim = progressAnim.interpolate({
     inputRange: [0, 100],
-    outputRange: ['0%', '100%'],
+    outputRange: [RING_C, 0],
+  });
+  const shimmerTranslateX = shimmerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [200, -400],
   });
 
   // ─── Loading state ─────────────────────────────────────────────
 
   if (loading) {
-    const displayProgress = Math.floor(progress);
+    const currentHeadline = FOOD_HEADLINES[headlineIdx];
+    const headlineFontSize = currentHeadline.fontSize ?? 28;
     return (
-      <SafeAreaView className="flex-1 bg-white">
-        <View className="flex-1 px-6 justify-center">
+      <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
+        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+
+          {/* High demand notice */}
           {showDemandNotice && (
             <View style={{
-              width: '100%',
-              backgroundColor: '#FB7B6B',
-              borderRadius: 10,
-              padding: 12,
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              gap: 9,
-              marginBottom: 20,
+              marginHorizontal: 24, marginTop: 12,
+              backgroundColor: CORAL, borderRadius: 14, padding: 12,
+              flexDirection: 'row', alignItems: 'flex-start', gap: 9,
             }}>
-              <Svg width={16} height={16} viewBox="0 0 16 16" style={{ marginTop: 1, flexShrink: 0 }}>
-                <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none"/>
-                <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none"/>
-                <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round"/>
-                <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round"/>
-              </Svg>
+              <View style={{ marginTop: 1, flexShrink: 0 }}>
+                <Svg width={16} height={16} viewBox="0 0 16 16">
+                  <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
+                  <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
+                  <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
+                  <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
+                </Svg>
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
                   Estamos com alta demanda agora
                 </Text>
                 {countdownPaused ? (
-                  <Text style={{ fontSize: 12, fontWeight: '400', color: '#FFFFFF', lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
                     Por favor, aguarde só mais um pouco.
                   </Text>
                 ) : (
-                  <Text style={{ fontSize: 12, fontWeight: '400', color: '#FFFFFF', lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
                     O impacto da sua refeição na pele está sendo calculado. Por favor, aguarde só mais{' '}
-                    <Text style={{ fontWeight: '700', color: '#FFFFFF' }}>{countdown}s</Text>.
+                    <Text style={{ fontWeight: '700' }}>{countdown}s</Text>.
                   </Text>
                 )}
               </View>
             </View>
           )}
 
-          <Text className="text-[64px] font-bold text-[#1A1A1A] text-center tracking-tight mb-4">
-            {displayProgress}%
-          </Text>
-          <Text className="text-[20px] font-semibold text-[#1A1A1A] text-center mb-8">
-            Analisando sua refeição...
-          </Text>
-          <View className="mb-12 h-1 bg-[#E5E7EB] rounded-full overflow-hidden">
-            <Animated.View style={{ width: widthInterp, height: '100%' }}>
-              <LinearGradient
-                colors={['#EF4444', '#3B82F6', '#9CA3AF']}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={{ flex: 1, borderRadius: 99 }}
-              />
+          {/* Eyebrow + headline */}
+          <View style={{ paddingHorizontal: 28, paddingTop: 40, alignItems: 'center' }}>
+            <Text style={{
+              fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
+              letterSpacing: 2.6, textTransform: 'uppercase', marginBottom: 14,
+            }}>
+              análise de alimentos
+            </Text>
+            <Animated.View style={{
+              width: '100%',
+              alignItems: 'center',
+              opacity: headlineFadeAnim, transform: [{ translateY: headlineSlideAnim }],
+            }}>
+              <View style={{ width: '100%', alignItems: 'center', overflow: 'hidden' }}>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={false}
+                  style={{
+                    fontSize: headlineFontSize, fontWeight: '700', color: DEEP,
+                    letterSpacing: -0.85, lineHeight: headlineFontSize * 1.15, textAlign: 'center',
+                  }}
+                >
+                  {currentHeadline.prefix}{' '}
+                  <Text style={{
+                    fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
+                    fontSize: headlineFontSize, fontWeight: '500', color: CORAL,
+                    letterSpacing: -0.8,
+                  }}>
+                    {currentHeadline.highlight}
+                  </Text>
+                  {'…'}
+                </Text>
+                <Animated.View pointerEvents="none" style={{
+                  position: 'absolute', top: 0, bottom: 0, left: 0, width: 400,
+                  transform: [{ translateX: shimmerTranslateX }],
+                }}>
+                  <LinearGradient
+                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.78)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0)']}
+                    locations={[0, 0.35, 0.5, 0.65, 1]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                    style={{ flex: 1 }}
+                  />
+                </Animated.View>
+              </View>
             </Animated.View>
+            <Text style={{
+              marginTop: 12, fontSize: 14, lineHeight: 21, color: DEEP_SOFT,
+              letterSpacing: -0.05, textAlign: 'center',
+            }}>
+              Isso leva só alguns segundos. Não feche o app.
+            </Text>
           </View>
-          <View className="gap-4">
-            {foodSteps.map((step, index) => {
-              const isCompleted = currentStep > index;
-              const isInProgress = currentStep === index;
-              const isPending = currentStep < index;
+
+          {/* Orb + progress ring */}
+          <View style={{ alignItems: 'center', paddingTop: 36 }}>
+            <View style={{ width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.View style={{
+                position: 'absolute',
+                width: RING_SIZE + 56, height: RING_SIZE + 56,
+                left: -28, top: -28,
+                transform: [{ scale: haloAnim }],
+              }}>
+                <Canvas style={{ width: RING_SIZE + 56, height: RING_SIZE + 56 }}>
+                  <SkiaCircle cx={(RING_SIZE + 56) / 2} cy={(RING_SIZE + 56) / 2} r={(RING_SIZE + 56) / 2}>
+                    <RadialGradient
+                      c={vec((RING_SIZE + 56) / 2, (RING_SIZE + 56) / 2)}
+                      r={(RING_SIZE + 56) * 0.5}
+                      colors={['rgba(251,123,107,0.22)', 'rgba(251,123,107,0)']}
+                    />
+                  </SkiaCircle>
+                </Canvas>
+              </Animated.View>
+
+              <Svg
+                width={RING_SIZE} height={RING_SIZE}
+                style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
+              >
+                <Defs>
+                  <SvgLinearGradient id="fdRing" x1="0" y1="0" x2="1" y2="1">
+                    <Stop offset="0%" stopColor="#F9C9B6" />
+                    <Stop offset="100%" stopColor={CORAL} />
+                  </SvgLinearGradient>
+                </Defs>
+                <Circle
+                  cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
+                  stroke="rgba(29,58,68,0.08)" strokeWidth={RING_STROKE} fill="none"
+                />
+                <AnimatedCircle
+                  cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
+                  stroke="url(#fdRing)" strokeWidth={RING_STROKE} fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_C}
+                  strokeDashoffset={ringOffsetAnim}
+                />
+              </Svg>
+
+              <Animated.View style={{ transform: [{ translateY: bobAnim }] }}>
+                <View style={{
+                  shadowColor: '#C86651', shadowOffset: { width: 0, height: 18 },
+                  shadowOpacity: 0.45, shadowRadius: 25, elevation: 12,
+                }}>
+                  <Canvas style={{ width: 140, height: 140 }}>
+                    <SkiaCircle cx={70} cy={70} r={70}>
+                      <RadialGradient
+                        c={vec(49, 42)} r={120}
+                        colors={['#FFEFE4', '#F9C9B6', '#E89178', '#C86651']}
+                        positions={[0, 0.28, 0.68, 1]}
+                      />
+                    </SkiaCircle>
+                    <SkiaCircle cx={70} cy={18} r={72}>
+                      <RadialGradient
+                        c={vec(70, 18)} r={72}
+                        colors={['rgba(255,255,255,0.38)', 'rgba(255,255,255,0)']}
+                      />
+                      <BlurMask blur={9} style="normal" />
+                    </SkiaCircle>
+                    <SkiaCircle cx={46} cy={29} r={13}>
+                      <RadialGradient
+                        c={vec(46, 29)} r={13}
+                        colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
+                      />
+                      <BlurMask blur={2} style="normal" />
+                    </SkiaCircle>
+                  </Canvas>
+                </View>
+              </Animated.View>
+            </View>
+          </View>
+
+          {/* Steps checklist */}
+          <View style={{ flex: 1, paddingHorizontal: 32, paddingTop: 24, gap: 14 }}>
+            {foodSteps.map((s, i) => {
+              const active = progress >= s.at - 18 && progress < s.at;
+              const done = progress >= s.at;
               return (
-                <View key={index} className="flex-row items-center gap-3" style={{ opacity: isPending ? 0.4 : 1 }}>
-                  <View className="w-6 h-6 items-center justify-center flex-shrink-0">
-                    {isCompleted ? (
-                      <Check size={20} color="#1A1A1A" />
-                    ) : isInProgress ? (
-                      <Text style={{ fontSize: 18, color: '#1A1A1A' }}>→</Text>
+                <Animated.View key={i} style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12,
+                  opacity: stepOpacitiesFood[i],
+                }}>
+                  <View style={{
+                    flexShrink: 0, width: 22, height: 22, borderRadius: 100,
+                    backgroundColor: done ? CORAL : 'transparent',
+                    borderWidth: 1.5,
+                    borderColor: done ? CORAL : active ? CORAL : DEEP_HAIR,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {done ? (
+                      <Check size={11} color="#fff" strokeWidth={3} />
+                    ) : active ? (
+                      <Animated.View style={{
+                        width: 8, height: 8, borderRadius: 100,
+                        backgroundColor: CORAL, opacity: blinkAnim,
+                      }} />
                     ) : null}
                   </View>
-                  <Text className={`text-[17px] ${isCompleted || isInProgress ? 'text-[#1A1A1A] font-medium' : 'text-[#9CA3AF]'}`}>
-                    {step.label}
+                  <Text style={{
+                    fontSize: 14.5, fontWeight: '500', color: DEEP,
+                    letterSpacing: -0.1, lineHeight: 18.85, flex: 1,
+                  }}>
+                    {s.label}
                   </Text>
-                </View>
+                </Animated.View>
               );
             })}
           </View>
+
         </View>
       </SafeAreaView>
     );
@@ -576,9 +788,11 @@ export default function FoodReport() {
 
   // ─── Result state ──────────────────────────────────────────────
 
-  const photoSource = foodImageBase64
-    ? { uri: `data:${foodImageMimeType ?? 'image/jpeg'};base64,${foodImageBase64}` }
-    : null;
+  // When opened from history, selectedFoodResult is set and we use the stored image_url.
+  // When coming fresh from a scan, selectedFoodImageUrl is null and foodImageBase64 holds the camera capture.
+  const photoSource = selectedFoodResult
+    ? (selectedFoodImageUrl ? { uri: selectedFoodImageUrl } : null)
+    : (foodImageBase64 ? { uri: `data:${foodImageMimeType ?? 'image/jpeg'};base64,${foodImageBase64}` } : null);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }} edges={['top']}>
@@ -613,7 +827,7 @@ export default function FoodReport() {
 
           {/* Back button */}
           <TouchableOpacity
-            onPress={() => { setSelectedFoodResult(null); router.back(); }}
+            onPress={() => { setSelectedFoodResult(null); setSelectedFoodImageUrl(null); router.back(); }}
             activeOpacity={0.8}
             style={{ position: 'absolute', top: 50, left: 18, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.32)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' }}
           >
@@ -686,13 +900,13 @@ export default function FoodReport() {
               {result.foods.length} itens · toque para abrir
             </Text>
           </View>
-          {/* Italic per design reference */}
-          <Text style={{ marginTop: 12, marginBottom: 18, fontSize: 26, fontFamily: fontItalic, color: '#2B2724', letterSpacing: -0.5, lineHeight: 28.6 }}>
-            cada ingrediente, decifrado.
+          <Text style={{ marginTop: 12, marginBottom: 18, fontSize: 26, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.5, lineHeight: 28.6 }}>
+            {'Cada ingrediente, '}
+            <Text style={{ fontFamily: fontItalic, color: '#FB7B6B' }}>decifrado.</Text>
           </Text>
           <View style={{ gap: 10 }}>
             {result.foods.map((f, i) => (
-              <FoodCard key={i} food={f} defaultOpen={i === 0} fontItalic={fontItalic} />
+              <FoodCard key={i} food={f} defaultOpen={i === 0} fontItalic={fontItalic} fontReg={fontReg} latoRegular={latoRegular} />
             ))}
           </View>
         </View>
@@ -706,7 +920,7 @@ export default function FoodReport() {
                 <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 2.4, textTransform: 'uppercase', color: '#FB7B6B' }}>você sabia</Text>
                 <View style={{ flex: 1, height: 0.5, backgroundColor: 'rgba(251,123,107,0.4)' }} />
               </View>
-              <Text style={{ fontSize: 22, fontFamily: fontItalic, color: '#2B2724', letterSpacing: -0.5, lineHeight: 29.7 }}>
+              <Text style={{ fontSize: 22, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.5, lineHeight: 29.7 }}>
                 {result.science_note}
               </Text>
             </View>
@@ -726,7 +940,7 @@ export default function FoodReport() {
       </View>
       <View style={{ position: 'absolute', left: 22, right: 22, bottom: 24 + insets.bottom }}>
         <TouchableOpacity
-          onPress={() => { setSelectedFoodResult(null); router.replace('/(app)/home' as any); }}
+          onPress={() => { setSelectedFoodResult(null); setSelectedFoodImageUrl(null); router.replace('/(app)/home' as any); }}
           activeOpacity={0.85}
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#FB7B6B', borderRadius: 100, paddingVertical: 17, shadowColor: '#FB7B6B', shadowOpacity: 0.188, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}
         >
