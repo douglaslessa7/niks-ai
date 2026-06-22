@@ -57,7 +57,28 @@ Deno.serve(async (req) => {
   }
 
   const event = payload?.event;
-  if (!event?.type || !event?.app_user_id) {
+
+  // Ignorar tipos que esta função não processa (ex.: TRANSFER, que tem estrutura
+  // diferente e não traz app_user_id na raiz). Retorna 200 para o RevenueCat não
+  // retentar e evita o erro "Missing event fields" desses eventos.
+  const HANDLED_EVENT_TYPES = [
+    'INITIAL_PURCHASE',
+    'RENEWAL',
+    'TRIAL_STARTED',
+    'TRIAL_CONVERTED',
+    'TRIAL_CANCELLED',
+    'CANCELLATION',
+    'EXPIRATION',
+    'UNCANCELLATION',
+  ];
+  if (!event?.type || !HANDLED_EVENT_TYPES.includes(event.type)) {
+    return new Response(JSON.stringify({ ok: true, skipped: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (!event?.app_user_id) {
     return new Response(JSON.stringify({ error: 'Missing event fields' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
@@ -114,10 +135,41 @@ Deno.serve(async (req) => {
       });
   }
 
+  // Ignorar usuários anônimos do RevenueCat ($RCAnonymousID:...) ou qualquer
+  // app_user_id que não seja um UUID válido — evita "invalid input syntax for
+  // type uuid" no upsert quando a compra ocorre antes do usuário se identificar.
+  const UUID_REGEX =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (
+    event.app_user_id.startsWith('$RCAnonymousID:') ||
+    !UUID_REGEX.test(event.app_user_id)
+  ) {
+    return new Response(JSON.stringify({ ok: true, skipped: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
+
+  // Verificar se o usuário existe em "users" antes do upsert — eventos do
+  // RevenueCat para usuários que nunca completaram o cadastro quebrariam com
+  // violação da FK subscriptions_user_id_fkey.
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', event.app_user_id)
+    .maybeSingle();
+
+  if (!existingUser) {
+    return new Response(JSON.stringify({ ok: true, skipped: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   const { error } = await supabase
     .from('subscriptions')
