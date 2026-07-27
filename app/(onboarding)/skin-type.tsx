@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Check } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -17,7 +17,7 @@ const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
 
 const STEP = 6;
-const TOTAL = 14;
+const TOTAL = 13;
 
 const skinTypes = [
   { type: 'Oleosa', sub: 'Brilha durante o dia' },
@@ -43,10 +43,11 @@ export default function SkinType() {
   const handleSelect = (type: string) => {
     setSelected(type);
     setOnboardingField('skin_type', type);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.select();
   };
 
   const handleContinue = () => {
+    haptics.action();
     track('onboarding_step_completed', { step_number: 5, step_name: 'Tipo de Pele', step_total: 23 });
     router.push('/(onboarding)/sun-exposure');
   };
@@ -61,8 +62,8 @@ export default function SkinType() {
           flexDirection: 'row', alignItems: 'center', gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}

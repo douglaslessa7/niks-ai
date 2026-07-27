@@ -4,6 +4,9 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { Session } from '@supabase/supabase-js'
 import * as AppleAuthentication from 'expo-apple-authentication'
 import * as Crypto from 'expo-crypto'
+import { clearAllCache } from '../lib/cache'
+import { resetUserId } from '../lib/currentUser'
+import { useAppStore } from '../store/onboarding'
 
 // Client ID iOS gerado no Google Cloud Console
 GoogleSignin.configure({
@@ -130,12 +133,24 @@ export function useAuth() {
     }
   }
 
+  // ⚠️ O cache de dados (lib/cache) e o store persistido são POR USUÁRIO. Sair sem
+  // limpá-los faria a próxima conta a logar neste aparelho abrir vendo o score, a
+  // rotina e o nome da conta anterior. Sempre limpar os dois no logout.
+  const clearLocalData = async () => {
+    resetUserId()
+    useAppStore.persist.clearStorage()
+    useAppStore.getState().reset()
+    await clearAllCache()
+  }
+
   const signOut = async () => {
     try {
       await GoogleSignin.signOut()
       await supabase.auth.signOut()
     } catch (error) {
       console.error('Erro no logout:', error)
+    } finally {
+      await clearLocalData()
     }
   }
 
@@ -143,6 +158,7 @@ export function useAuth() {
     await supabase.rpc('delete_user')
     try { await GoogleSignin.signOut() } catch {}
     await supabase.auth.signOut()
+    await clearLocalData()
   }
 
   return {

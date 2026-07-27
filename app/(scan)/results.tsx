@@ -7,6 +7,7 @@ import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 're
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore, ScanResult } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { haptics } from '../../lib/haptics';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -799,6 +800,7 @@ export default function Results() {
         <View style={{ paddingHorizontal: 24, paddingBottom: insets.bottom + 24, paddingTop: 8 }}>
           <TouchableOpacity
             onPress={() => {
+              haptics.action();
               track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 });
               router.push('/(onboarding)/plan-preview');
             }}

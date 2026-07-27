@@ -10,9 +10,11 @@ import { Canvas, Circle as SkiaCircle, RadialGradient, vec, BlurMask } from '@sh
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 import { useFonts } from 'expo-font';
 import { Lato_400Regular_Italic, Lato_400Regular } from '@expo-google-fonts/lato';
+import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { haptics } from '../../lib/haptics';
 
 type FoodItem = {
   name: string;
@@ -41,26 +43,23 @@ const DEEP_HAIR = 'rgba(29,58,68,0.10)';
 const CORAL = '#FB7B6B';
 const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
+const PINK = '#FF9D9D';           // rosa padrão do app (design da tela de carregamento de produto)
+const PINK_SOFT = '#FFC9C9';      // parada clara do gradiente do arco
 
-const RING_SIZE = 220;
-const RING_STROKE = 6;
+const RING_SIZE = 250;
+const RING_STROKE = 8;
 const RING_R = (RING_SIZE - RING_STROKE) / 2;
 const RING_C = 2 * Math.PI * RING_R;
+const WHITE_D = RING_SIZE - 30;   // disco branco central (dentro do anel)
 
-const FOOD_HEADLINES: { prefix: string; highlight: string; fontSize?: number }[] = [
-  { prefix: 'Identificando sua', highlight: 'refeição' },
-  { prefix: 'Avaliando os', highlight: 'nutrientes' },
-  { prefix: 'Calculando o impacto na', highlight: 'pele', fontSize: 22 },
-  { prefix: 'Finalizando sua', highlight: 'análise' },
-];
-
-const foodSteps = [
-  { at: 16, label: 'Identificando os alimentos' },
-  { at: 32, label: 'Avaliando macronutrientes' },
-  { at: 48, label: 'Analisando índice glicêmico' },
-  { at: 64, label: 'Verificando inflamação e oxidação' },
-  { at: 80, label: 'Correlacionando com seu perfil de pele' },
-  { at: 100, label: 'Score de impacto na pele' },
+// Frases que rodam abaixo do círculo conforme a análise da refeição avança.
+const FOOD_PHASES = [
+  'Identificando os alimentos',
+  'Avaliando os macronutrientes',
+  'Analisando o índice glicêmico',
+  'Verificando inflamação e oxidação',
+  'Cruzando com o seu perfil de pele',
+  'Calculando o impacto na sua pele',
 ];
 
 // ─── Design tokens ────────────────────────────────────────────
@@ -170,7 +169,7 @@ function CollapsibleSection({
     <View style={{ borderRadius: 22, backgroundColor: '#fff', shadowColor: '#2B2724', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
       <View style={{ borderRadius: 22, borderWidth: 0.5, borderColor: open ? (isPositive ? 'rgba(16,185,129,0.45)' : 'rgba(251,123,107,0.5)') : 'rgba(43,39,36,0.06)', overflow: 'hidden' }}>
         <TouchableOpacity
-          onPress={() => setOpen(o => !o)}
+          onPress={() => { haptics.tap(); setOpen(o => !o); }}
           activeOpacity={0.8}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, paddingHorizontal: 18 }}
         >
@@ -219,7 +218,7 @@ function FoodCard({ food, defaultOpen = false, fontItalic, fontReg, latoRegular 
     <View style={{ borderRadius: 22, backgroundColor: '#fff', shadowColor: '#2B2724', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
       <View style={{ borderRadius: 22, borderWidth: 0.5, borderColor: 'rgba(43,39,36,0.06)', overflow: 'hidden' }}>
       <TouchableOpacity
-        onPress={() => setOpen(o => !o)}
+        onPress={() => { haptics.tap(); setOpen(o => !o); }}
         activeOpacity={0.8}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, paddingHorizontal: 18 }}
       >
@@ -288,24 +287,25 @@ export default function FoodReport() {
   const progressAnim = useRef(new Animated.Value(0)).current;
   const demandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const blinkAnim = useRef(new Animated.Value(1)).current;
-  const bobAnim = useRef(new Animated.Value(0)).current;
   const haloAnim = useRef(new Animated.Value(1)).current;
-  const shimmerAnim = useRef(new Animated.Value(0)).current;
-  const headlineFadeAnim = useRef(new Animated.Value(1)).current;
-  const headlineSlideAnim = useRef(new Animated.Value(0)).current;
-  const stepOpacitiesFood = useRef(foodSteps.map((_, i) => new Animated.Value(i === 0 ? 1 : 0.35))).current;
+  const phraseFadeAnim = useRef(new Animated.Value(1)).current;
 
   const [fontsLoaded] = useFonts({
     'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
     'PlayfairDisplay-Italic':  require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
     'Lato-Italic':             Lato_400Regular_Italic,
     'Lato-Regular':            Lato_400Regular,
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
   });
   const fontItalic  = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined;
   const fontReg     = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
   const latoItalic  = fontsLoaded ? 'Lato-Italic'            : undefined;
   const latoRegular = fontsLoaded ? 'Lato-Regular'           : undefined;
+  const fExtra      = fontsLoaded ? 'Nunito_800ExtraBold'    : undefined;
+  const fBold       = fontsLoaded ? 'Nunito_700Bold'         : undefined;
+  const fSemi       = fontsLoaded ? 'Nunito_600SemiBold'     : undefined;
 
   useEffect(() => {
     const tickProgress = () => {
@@ -380,54 +380,30 @@ export default function FoodReport() {
     return () => { if (countdownRef.current) clearTimeout(countdownRef.current); };
   }, [showDemandNotice]);
 
-  // 1. Startup loops — primeiro efeito, igual ao loading.tsx
+  // 1. Halo pulsante suave atrás do círculo (respiro) — igual ao product-loading.tsx
   useEffect(() => {
     Animated.loop(Animated.sequence([
-      Animated.timing(blinkAnim, { toValue: 0.3, duration: 500, useNativeDriver: true }),
-      Animated.timing(blinkAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(haloAnim, { toValue: 1.1, duration: 1400, useNativeDriver: true }),
+      Animated.timing(haloAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
     ])).start();
-    Animated.loop(Animated.sequence([
-      Animated.timing(bobAnim, { toValue: -4, duration: 1800, useNativeDriver: true }),
-      Animated.timing(bobAnim, { toValue: 0, duration: 1800, useNativeDriver: true }),
-    ])).start();
-    Animated.loop(Animated.sequence([
-      Animated.timing(haloAnim, { toValue: 1.08, duration: 1200, useNativeDriver: true }),
-      Animated.timing(haloAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-    ])).start();
-    Animated.loop(
-      Animated.timing(shimmerAnim, { toValue: 1, duration: 1500, useNativeDriver: true })
-    ).start();
   }, []);
 
-  // 2. Anel + opacidades dos steps no mesmo efeito — igual ao loading.tsx
+  // 2. Anima o arco de progresso a cada mudança de porcentagem.
   useEffect(() => {
     Animated.timing(progressAnim, {
       toValue: progress,
       duration: 450,
       useNativeDriver: false,
     }).start();
-    foodSteps.forEach((s, i) => {
-      const active = progress >= s.at - 18 && progress < s.at;
-      const done = progress >= s.at;
-      Animated.timing(stepOpacitiesFood[i], {
-        toValue: done || active ? 1 : 0.35,
-        duration: 350,
-        useNativeDriver: true,
-      }).start();
-    });
   }, [progress]);
 
-  const headlineIdx = Math.min(FOOD_HEADLINES.length - 1, Math.floor(progress / (100 / FOOD_HEADLINES.length)));
+  const phraseIdx = Math.min(FOOD_PHASES.length - 1, Math.floor(progress / (100 / FOOD_PHASES.length)));
 
-  // 3. Transição de headline
+  // 3. Fade da frase quando muda de fase.
   useEffect(() => {
-    headlineFadeAnim.setValue(0);
-    headlineSlideAnim.setValue(8);
-    Animated.parallel([
-      Animated.timing(headlineFadeAnim, { toValue: 1, duration: 520, useNativeDriver: true }),
-      Animated.timing(headlineSlideAnim, { toValue: 0, duration: 520, useNativeDriver: true }),
-    ]).start();
-  }, [headlineIdx]);
+    phraseFadeAnim.setValue(0);
+    Animated.timing(phraseFadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+  }, [phraseIdx]);
 
   const analyzeFood = async () => {
     if (analyzingRef.current) return;
@@ -548,223 +524,161 @@ export default function FoodReport() {
     inputRange: [0, 100],
     outputRange: [RING_C, 0],
   });
-  const shimmerTranslateX = shimmerAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [200, -400],
-  });
 
   // ─── Loading state ─────────────────────────────────────────────
+  // Mesmo design da tela de carregamento do scan de PRODUTO (círculo grande +
+  // porcentagem no centro), com a copy adaptada para a análise da refeição.
 
   if (loading) {
-    const currentHeadline = FOOD_HEADLINES[headlineIdx];
-    const headlineFontSize = currentHeadline.fontSize ?? 28;
+    const currentPhrase = FOOD_PHASES[phraseIdx];
+    const pct = Math.floor(progress);
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: CREAM }}>
+        {/* Véu de fundo — leve gradiente rosa no topo, dissolvendo no branco */}
+        <LinearGradient
+          colors={['#FFF1F2', '#FFF8F8', '#FFFFFF']}
+          locations={[0, 0.4, 1]}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        />
 
-          {/* High demand notice */}
-          {showDemandNotice && (
-            <View style={{
-              marginHorizontal: 24, marginTop: 12,
-              backgroundColor: CORAL, borderRadius: 14, padding: 12,
-              flexDirection: 'row', alignItems: 'flex-start', gap: 9,
-            }}>
-              <View style={{ marginTop: 1, flexShrink: 0 }}>
-                <Svg width={16} height={16} viewBox="0 0 16 16">
-                  <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
-                  <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
-                  <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
-                  <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
-                </Svg>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
-                  Estamos com alta demanda agora
-                </Text>
-                {countdownPaused ? (
-                  <Text style={{ fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                    Por favor, aguarde só mais um pouco.
-                  </Text>
-                ) : (
-                  <Text style={{ fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                    O impacto da sua refeição na pele está sendo calculado. Por favor, aguarde só mais{' '}
-                    <Text style={{ fontWeight: '700' }}>{countdown}s</Text>.
-                  </Text>
-                )}
-              </View>
-            </View>
-          )}
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
-          {/* Eyebrow + headline */}
-          <View style={{ paddingHorizontal: 28, paddingTop: 40, alignItems: 'center' }}>
-            <Text style={{
-              fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
-              letterSpacing: 2.6, textTransform: 'uppercase', marginBottom: 14,
-            }}>
-              análise de alimentos
-            </Text>
-            <Animated.View style={{
-              width: '100%',
-              alignItems: 'center',
-              opacity: headlineFadeAnim, transform: [{ translateY: headlineSlideAnim }],
-            }}>
-              <View style={{ width: '100%', alignItems: 'center', overflow: 'hidden' }}>
-                <Text
-                  numberOfLines={1}
-                  adjustsFontSizeToFit={true}
-                  minimumFontScale={0.7}
-                  allowFontScaling={false}
-                  style={{
-                    fontSize: headlineFontSize, fontWeight: '700', color: DEEP,
-                    letterSpacing: -0.85, lineHeight: headlineFontSize * 1.15, textAlign: 'center',
-                  }}
-                >
-                  {currentHeadline.prefix}{' '}
-                  <Text style={{
-                    fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                    fontSize: headlineFontSize, fontWeight: '500', color: CORAL,
-                    letterSpacing: -0.8,
-                  }}>
-                    {currentHeadline.highlight}
-                  </Text>
-                  {'…'}
-                </Text>
-                <Animated.View pointerEvents="none" style={{
-                  position: 'absolute', top: 0, bottom: 0, left: 0, width: 400,
-                  transform: [{ translateX: shimmerTranslateX }],
-                }}>
-                  <LinearGradient
-                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0.78)', 'rgba(255,255,255,0)', 'rgba(255,255,255,0)']}
-                    locations={[0, 0.35, 0.5, 0.65, 1]}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                    style={{ flex: 1 }}
-                  />
-                </Animated.View>
-              </View>
-            </Animated.View>
-            <Text style={{
-              marginTop: 12, fontSize: 14, lineHeight: 21, color: DEEP_SOFT,
-              letterSpacing: -0.05, textAlign: 'center',
-            }}>
-              Isso leva só alguns segundos. Não feche o app.
-            </Text>
-          </View>
-
-          {/* Orb + progress ring */}
-          <View style={{ alignItems: 'center', paddingTop: 36 }}>
-            <View style={{ width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' }}>
-              <Animated.View style={{
-                position: 'absolute',
-                width: RING_SIZE + 56, height: RING_SIZE + 56,
-                left: -28, top: -28,
-                transform: [{ scale: haloAnim }],
+            {/* Aviso de alta demanda */}
+            {showDemandNotice && (
+              <View style={{
+                marginHorizontal: 24, marginTop: 12,
+                backgroundColor: PINK, borderRadius: 16, padding: 13,
+                flexDirection: 'row', alignItems: 'flex-start', gap: 9,
               }}>
-                <Canvas style={{ width: RING_SIZE + 56, height: RING_SIZE + 56 }}>
-                  <SkiaCircle cx={(RING_SIZE + 56) / 2} cy={(RING_SIZE + 56) / 2} r={(RING_SIZE + 56) / 2}>
-                    <RadialGradient
-                      c={vec((RING_SIZE + 56) / 2, (RING_SIZE + 56) / 2)}
-                      r={(RING_SIZE + 56) * 0.5}
-                      colors={['rgba(251,123,107,0.22)', 'rgba(251,123,107,0)']}
-                    />
-                  </SkiaCircle>
-                </Canvas>
-              </Animated.View>
-
-              <Svg
-                width={RING_SIZE} height={RING_SIZE}
-                style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
-              >
-                <Defs>
-                  <SvgLinearGradient id="fdRing" x1="0" y1="0" x2="1" y2="1">
-                    <Stop offset="0%" stopColor="#F9C9B6" />
-                    <Stop offset="100%" stopColor={CORAL} />
-                  </SvgLinearGradient>
-                </Defs>
-                <Circle
-                  cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
-                  stroke="rgba(29,58,68,0.08)" strokeWidth={RING_STROKE} fill="none"
-                />
-                <AnimatedCircle
-                  cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
-                  stroke="url(#fdRing)" strokeWidth={RING_STROKE} fill="none"
-                  strokeLinecap="round"
-                  strokeDasharray={RING_C}
-                  strokeDashoffset={ringOffsetAnim}
-                />
-              </Svg>
-
-              <Animated.View style={{ transform: [{ translateY: bobAnim }] }}>
-                <View style={{
-                  shadowColor: '#C86651', shadowOffset: { width: 0, height: 18 },
-                  shadowOpacity: 0.45, shadowRadius: 25, elevation: 12,
-                }}>
-                  <Canvas style={{ width: 140, height: 140 }}>
-                    <SkiaCircle cx={70} cy={70} r={70}>
-                      <RadialGradient
-                        c={vec(49, 42)} r={120}
-                        colors={['#FFEFE4', '#F9C9B6', '#E89178', '#C86651']}
-                        positions={[0, 0.28, 0.68, 1]}
-                      />
-                    </SkiaCircle>
-                    <SkiaCircle cx={70} cy={18} r={72}>
-                      <RadialGradient
-                        c={vec(70, 18)} r={72}
-                        colors={['rgba(255,255,255,0.38)', 'rgba(255,255,255,0)']}
-                      />
-                      <BlurMask blur={9} style="normal" />
-                    </SkiaCircle>
-                    <SkiaCircle cx={46} cy={29} r={13}>
-                      <RadialGradient
-                        c={vec(46, 29)} r={13}
-                        colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0)']}
-                      />
-                      <BlurMask blur={2} style="normal" />
-                    </SkiaCircle>
-                  </Canvas>
+                <View style={{ marginTop: 1, flexShrink: 0 }}>
+                  <Svg width={16} height={16} viewBox="0 0 16 16">
+                    <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
+                    <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
+                    <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
+                    <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
+                  </Svg>
                 </View>
-              </Animated.View>
-            </View>
-          </View>
-
-          {/* Steps checklist */}
-          <View style={{ flex: 1, paddingHorizontal: 32, paddingTop: 24, gap: 14 }}>
-            {foodSteps.map((s, i) => {
-              const active = progress >= s.at - 18 && progress < s.at;
-              const done = progress >= s.at;
-              return (
-                <Animated.View key={i} style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 12,
-                  opacity: stepOpacitiesFood[i],
-                }}>
-                  <View style={{
-                    flexShrink: 0, width: 22, height: 22, borderRadius: 100,
-                    backgroundColor: done ? CORAL : 'transparent',
-                    borderWidth: 1.5,
-                    borderColor: done ? CORAL : active ? CORAL : DEEP_HAIR,
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {done ? (
-                      <Check size={11} color="#fff" strokeWidth={3} />
-                    ) : active ? (
-                      <Animated.View style={{
-                        width: 8, height: 8, borderRadius: 100,
-                        backgroundColor: CORAL, opacity: blinkAnim,
-                      }} />
-                    ) : null}
-                  </View>
-                  <Text style={{
-                    fontSize: 14.5, fontWeight: '500', color: DEEP,
-                    letterSpacing: -0.1, lineHeight: 18.85, flex: 1,
-                  }}>
-                    {s.label}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fBold, fontSize: 13, color: '#FFFFFF', marginBottom: 3 }}>
+                    Estamos com alta demanda agora
                   </Text>
-                </Animated.View>
-              );
-            })}
-          </View>
+                  {countdownPaused ? (
+                    <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
+                      Por favor, aguarde só mais um pouco.
+                    </Text>
+                  ) : (
+                    <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
+                      O impacto da sua refeição na pele está sendo calculado. Por favor, aguarde só mais{' '}
+                      <Text style={{ fontFamily: fBold }}>{countdown}s</Text>.
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
 
-        </View>
-      </SafeAreaView>
+            {/* Círculo central com a porcentagem */}
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{
+                width: RING_SIZE + 44, height: RING_SIZE + 44,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                {/* Anel decorativo externo (hairline rosa) */}
+                <View style={{
+                  position: 'absolute',
+                  width: RING_SIZE + 44, height: RING_SIZE + 44,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,157,157,0.18)',
+                }} />
+
+                {/* Halo pulsante suave */}
+                <Animated.View style={{
+                  position: 'absolute',
+                  width: RING_SIZE, height: RING_SIZE,
+                  borderRadius: 999,
+                  backgroundColor: 'rgba(255,157,157,0.10)',
+                  transform: [{ scale: haloAnim }],
+                }} />
+
+                {/* Disco branco central (card flutuante) */}
+                <View style={{
+                  position: 'absolute',
+                  width: WHITE_D, height: WHITE_D,
+                  borderRadius: 999,
+                  backgroundColor: '#FFFFFF',
+                  shadowColor: PINK,
+                  shadowOffset: { width: 0, height: 12 },
+                  shadowOpacity: 0.28,
+                  shadowRadius: 28,
+                  elevation: 10,
+                }} />
+
+                {/* Anel de progresso */}
+                <Svg
+                  width={RING_SIZE} height={RING_SIZE}
+                  style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
+                >
+                  <Defs>
+                    <SvgLinearGradient id="fdRing" x1="0" y1="0" x2="1" y2="1">
+                      <Stop offset="0%" stopColor={PINK_SOFT} />
+                      <Stop offset="100%" stopColor={PINK} />
+                    </SvgLinearGradient>
+                  </Defs>
+                  {/* Trilho de fundo */}
+                  <Circle
+                    cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
+                    stroke="rgba(29,58,68,0.06)" strokeWidth={RING_STROKE} fill="none"
+                  />
+                  {/* Arco preenchido */}
+                  <AnimatedCircle
+                    cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
+                    stroke="url(#fdRing)" strokeWidth={RING_STROKE} fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={RING_C}
+                    strokeDashoffset={ringOffsetAnim}
+                  />
+                </Svg>
+
+                {/* Número da porcentagem */}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                  <Text style={{
+                    fontFamily: fExtra, fontSize: 86, color: DEEP,
+                    letterSpacing: -3, lineHeight: 92,
+                  }}>
+                    {pct}
+                  </Text>
+                  <Text style={{
+                    fontFamily: fBold, fontSize: 28, color: DEEP,
+                    letterSpacing: -1, marginBottom: 16, marginLeft: 2,
+                  }}>
+                    %
+                  </Text>
+                </View>
+              </View>
+
+              {/* Legenda rotativa (fase atual) */}
+              <Animated.View style={{ opacity: phraseFadeAnim, marginTop: 44, paddingHorizontal: 24 }}>
+                <Text style={{
+                  fontFamily: fSemi, fontSize: 17, color: DEEP_SOFT,
+                  letterSpacing: -0.2, textAlign: 'center',
+                }}>
+                  {currentPhrase}
+                </Text>
+              </Animated.View>
+
+              {/* Subtexto fixo tranquilizador */}
+              <Text style={{
+                fontFamily: fSemi, fontSize: 13.5, color: 'rgba(29,58,68,0.38)',
+                letterSpacing: -0.1, textAlign: 'center', marginTop: 10, paddingHorizontal: 32,
+              }}>
+                Isso leva só alguns segundos. Não feche o app.
+              </Text>
+            </View>
+
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -777,7 +691,7 @@ export default function FoodReport() {
           {error ?? 'Erro inesperado'}
         </Text>
         <TouchableOpacity
-          onPress={analyzeFood}
+          onPress={() => { haptics.action(); analyzeFood(); }}
           style={{ backgroundColor: '#FB7B6B', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
         >
           <Text style={{ color: 'white', fontWeight: '600' }}>Tentar novamente</Text>
@@ -827,7 +741,7 @@ export default function FoodReport() {
 
           {/* Back button */}
           <TouchableOpacity
-            onPress={() => { setSelectedFoodResult(null); setSelectedFoodImageUrl(null); router.back(); }}
+            onPress={() => { haptics.tap(); setSelectedFoodResult(null); setSelectedFoodImageUrl(null); router.back(); }}
             activeOpacity={0.8}
             style={{ position: 'absolute', top: 50, left: 18, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.32)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' }}
           >
@@ -940,7 +854,7 @@ export default function FoodReport() {
       </View>
       <View style={{ position: 'absolute', left: 22, right: 22, bottom: 24 + insets.bottom }}>
         <TouchableOpacity
-          onPress={() => { setSelectedFoodResult(null); setSelectedFoodImageUrl(null); router.replace('/(app)/home' as any); }}
+          onPress={() => { haptics.tap(); setSelectedFoodResult(null); setSelectedFoodImageUrl(null); router.replace('/(app)/home' as any); }}
           activeOpacity={0.85}
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#FB7B6B', borderRadius: 100, paddingVertical: 17, shadowColor: '#FB7B6B', shadowOpacity: 0.188, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}
         >

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, useWindowDimensions } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import Svg, {
   Path,
@@ -27,7 +27,7 @@ const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
 
 const STEP = 4;
-const TOTAL = 14;
+const TOTAL = 13;
 
 const W = 320;
 const H = 170;
@@ -124,8 +124,8 @@ export default function GoalValidation() {
           flexDirection: 'row', alignItems: 'center', gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}
@@ -223,6 +223,7 @@ export default function GoalValidation() {
         <View style={{ paddingHorizontal: 24, paddingTop: 14, paddingBottom: 18 }}>
           <TouchableOpacity
             onPress={() => {
+              haptics.action();
               track('onboarding_step_completed', { step_number: 19, step_name: 'Goal Validation', step_total: 23 });
               router.push('/(onboarding)/concerns');
             }}

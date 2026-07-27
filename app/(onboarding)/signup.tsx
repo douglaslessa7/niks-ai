@@ -15,6 +15,8 @@ import { useAppStore } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { generateAndSaveProtocol } from '../../lib/generateProtocol';
+import { attributeCouponIfAny } from '../../lib/couponAttribution';
+import { haptics } from '../../lib/haptics';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -66,6 +68,7 @@ export default function Signup() {
   const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleEmailContinue = () => {
+    haptics.action();
     if (!email.trim()) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setStep('password');
@@ -80,6 +83,7 @@ export default function Signup() {
   };
 
   const handleCreateAccount = async () => {
+    haptics.action();
     if (!password.trim()) return;
     try {
       setLocalLoading(true);
@@ -105,6 +109,9 @@ export default function Signup() {
           }
           identify(data.session.user.id);
           await saveToSupabase(data.session.user.id);
+          // Liga o cupom (se houver) ao user_id real. Não bloqueia: se falhar, a
+          // usuária entra normalmente; o webhook ainda confirma a conversão.
+          attributeCouponIfAny(data.session.user.id);
           startProtocolGeneration(data.session.user.id);
         }
         track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
@@ -118,6 +125,7 @@ export default function Signup() {
   };
 
   const handleResend = async () => {
+    haptics.tap();
     await supabase.auth.resend({ type: 'signup', email: emailSent });
     setResendCooldown(30);
     if (resendIntervalRef.current) clearInterval(resendIntervalRef.current);
@@ -128,11 +136,13 @@ export default function Signup() {
   };
 
   const handleUseOtherEmail = () => {
+    haptics.tap();
     setWaitingConfirmation(false);
     setEmail(''); setPassword(''); setStep('email');
   };
 
   const handleGoogleSignIn = async () => {
+    haptics.action();
     try {
       const session = await signInWithGoogle();
       if (session?.user?.id) {
@@ -145,6 +155,7 @@ export default function Signup() {
         }
         identify(session.user.id);
         await saveToSupabase(session.user.id);
+        attributeCouponIfAny(session.user.id);
         startProtocolGeneration(session.user.id);
       }
       track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
@@ -304,7 +315,7 @@ export default function Signup() {
                       }}
                     />
                     <TouchableOpacity
-                      onPress={() => setShowPassword(!showPassword)}
+                      onPress={() => { haptics.tap(); setShowPassword(!showPassword); }}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       {showPassword
@@ -400,6 +411,7 @@ export default function Signup() {
                   {Platform.OS === 'ios' && (
                     <TouchableOpacity
                       onPress={async () => {
+                        haptics.action();
                         try {
                           const data = await signInWithApple();
                           if (!data) return;
@@ -413,6 +425,7 @@ export default function Signup() {
                             }
                             identify(data.user.id);
                             await saveToSupabase(data.user.id);
+                            attributeCouponIfAny(data.user.id);
                             startProtocolGeneration(data.user.id);
                           }
                           track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
@@ -451,14 +464,14 @@ export default function Signup() {
               <Text style={{ textAlign: 'center', fontSize: 12, lineHeight: 18, color: DEEP_SOFT, letterSpacing: -0.05 }}>
                 {'Ao continuar, você concorda com nossos '}
                 <Text
-                  onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}
+                  onPress={() => { haptics.tap(); Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'); }}
                   style={{ color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
                 >
                   Termos de Uso
                 </Text>
                 {' e '}
                 <Text
-                  onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}
+                  onPress={() => { haptics.tap(); Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'); }}
                   style={{ color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
                 >
                   Política de Privacidade

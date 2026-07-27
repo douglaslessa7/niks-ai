@@ -1,15 +1,19 @@
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput,
-  KeyboardAvoidingView, Platform, Keyboard, Image, StyleSheet,
+  KeyboardAvoidingView, Platform, Keyboard, Image,
   TouchableWithoutFeedback,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Path, Defs, RadialGradient, Stop, Ellipse } from 'react-native-svg';
+import {
+  Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
+  Nunito_500Medium, Nunito_400Regular, Nunito_300Light,
+} from '@expo-google-fonts/nunito';
+import Svg, { Circle, Path } from 'react-native-svg';
 import Animated, {
   useSharedValue, useAnimatedStyle,
   withRepeat, withSequence, withTiming, withDelay, Easing, cancelAnimation,
@@ -17,101 +21,36 @@ import Animated, {
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
-import NightSky from '../../components/ui/NightSky';
+import { useCachedQuery, invalidateCache } from '../../lib/cache';
+import { getUserId, useUserId } from '../../lib/currentUser';
+import { haptics } from '../../lib/haptics';
 
-// ── Color tokens (NIKS design system) ────────────────────────────────────────
-const CORAL        = '#FB7B6B';
-const CORAL_TINT   = 'rgba(251,123,107,0.06)';
-const INK          = '#2B2724';
-const INK_SOFT     = 'rgba(43,39,36,0.55)';
-const INK_WHISPER  = 'rgba(43,39,36,0.35)';
-const INK_HAIR     = 'rgba(43,39,36,0.08)';
-const SURFACE_HAIR = 'rgba(43,39,36,0.06)';
-const WHITE        = '#FFFFFF';
+// ── Color tokens (novo design system NIKS — home/protocolo/recomendação) ──────
+const INK        = '#121212';
+const INK_SOFT   = '#515151';
+const INK_MUTE   = '#818181';
+const INK_FAINT  = '#B5B5B5';
+const CORAL      = '#FF9D9D';                 // rosa da Rotina (protocolo BRAND)
+const CORAL_TINT = 'rgba(255,157,157,0.12)';  // wash do rosa da Rotina
+const CARD_BD    = '#E3E3E6';
+const BUBBLE_BG  = '#F3EEEE'; // balão de mensagem (Figma node 1:424/1:425)
+const WHITE      = '#FFFFFF';
+const PILL_BG    = '#FFFFFF';
+// Gradiente vermelho dos botões de ação (mesmo dos "Escanear")
+const RED_GRAD: [string, string] = ['#FF9D9D', '#FF9D9D']; // rosa da Rotina (protocolo BRAND)
 
-function isNightTime(): boolean {
-  const h = new Date().getHours();
-  return h >= 18 || h < 4;
-}
-
-// ── MiniOrb ───────────────────────────────────────────────────────────────────
-// Moon craters scaled from the 132px protocolo orb (cx/cy/r proporcionais)
-const MOON_CRATERS = [
-  { cx: 77, cy: 49, r: 7,   op: 0.18 },
-  { cx: 43, cy: 77, r: 5,   op: 0.16 },
-  { cx: 96, cy: 60, r: 3.5, op: 0.14 },
-  { cx: 71, cy: 91, r: 3,   op: 0.12 },
-  { cx: 53, cy: 37, r: 2.5, op: 0.10 },
-];
-
-function MiniOrb({ size, isDark = false }: { size: number; isDark?: boolean }) {
-  const r    = size / 2;
-  const gCX  = size * 0.35;
-  const gCY  = size * 0.30;
-  const gR   = size * 0.955;
-  const hlCX = size * 0.39;
-  const hlCY = size * 0.23;
-  const hlRX = size * 0.17;
-  const hlRY = size * 0.11;
-  const gId  = `mgOrbG_${size}${isDark ? 'd' : 'l'}`;
-  const hlId = `mgOrbHl_${size}`;
-
-  const c0 = isDark ? '#FFFFFF' : '#FFEFE4';
-  const c1 = isDark ? '#F4EEE4' : '#F9C9B6';
-  const c2 = isDark ? '#D8CDB8' : '#E89178';
-  const c3 = isDark ? '#A89676' : '#C86651';
-
-  // Scale craters from reference 132px orb to current size
-  const sc = size / 132;
-  const minR = size * 0.025;
-  const craters = isDark ? MOON_CRATERS.map((c, i) => ({
-    cx: c.cx * sc,
-    cy: c.cy * sc,
-    r: Math.max(c.r * sc, minR),
-    op: c.op,
-    id: `moCrater_${size}_${i}`,
-  })) : [];
-
+// Avatar da NIKS nas mensagens = logo (sparkle bloom), como no Figma (node 1:408)
+function NiksAvatar({ size }: { size: number }) {
   return (
-    <View style={{
-      width: size, height: size,
-      shadowColor: isDark ? '#FFF8DC' : '#E89178',
-      shadowOffset: { width: 0, height: Math.round(size * 0.12) },
-      shadowOpacity: 0.30,
-      shadowRadius: Math.round(size * 0.28),
-      elevation: 4,
-    }}>
-      <Svg width={size} height={size}>
-        <Defs>
-          <RadialGradient id={gId} cx={gCX} cy={gCY} r={gR} gradientUnits="userSpaceOnUse">
-            <Stop offset="0%"   stopColor={c0} stopOpacity={1} />
-            <Stop offset="30%"  stopColor={c1} stopOpacity={1} />
-            <Stop offset="70%"  stopColor={c2} stopOpacity={1} />
-            <Stop offset="100%" stopColor={c3} stopOpacity={1} />
-          </RadialGradient>
-          <RadialGradient id={hlId} cx={hlCX} cy={hlCY} r={hlRX} gradientUnits="userSpaceOnUse">
-            <Stop offset="0%"   stopColor="#FFFFFF" stopOpacity={0.65} />
-            <Stop offset="100%" stopColor="#FFFFFF" stopOpacity={0}    />
-          </RadialGradient>
-          {craters.map(c => (
-            <RadialGradient key={c.id} id={c.id} cx={c.cx} cy={c.cy} r={c.r} gradientUnits="userSpaceOnUse">
-              <Stop offset="0%"   stopColor="#000000" stopOpacity={c.op} />
-              <Stop offset="100%" stopColor="#000000" stopOpacity={0}    />
-            </RadialGradient>
-          ))}
-        </Defs>
-        <Circle cx={r} cy={r} r={r} fill={`url(#${gId})`} />
-        <Ellipse cx={hlCX} cy={hlCY} rx={hlRX} ry={hlRY} fill={`url(#${hlId})`} />
-        {craters.map(c => (
-          <Circle key={c.id} cx={c.cx} cy={c.cy} r={c.r} fill={`url(#${c.id})`} />
-        ))}
-      </Svg>
-    </View>
+    <Image
+      source={require('../../assets/home/niks-logo.png')}
+      style={{ width: size, height: size, resizeMode: 'contain', tintColor: '#FF9D9D' }}
+    />
   );
 }
 
-// Breath animation wrapper: scale 1 → 1.04 → 1, 4.8s ease-in-out infinite
-function AnimatedMiniOrb({ size, isDark = false }: { size: number; isDark?: boolean }) {
+// Logo do app (sparkle NIKS) com o mesmo "respiro" da orbe — usado no hero do estado inicial
+function AnimatedLogo({ size }: { size: number }) {
   const scale = useSharedValue(1);
   useEffect(() => {
     scale.value = withRepeat(
@@ -123,88 +62,76 @@ function AnimatedMiniOrb({ size, isDark = false }: { size: number; isDark?: bool
     );
   }, []);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return <Animated.View style={style}><MiniOrb size={size} isDark={isDark} /></Animated.View>;
+  return (
+    <Animated.View style={style}>
+      <Image
+        source={require('../../assets/home/niks-logo.png')}
+        style={{ width: size, height: size, resizeMode: 'contain', tintColor: '#FF9D9D' }}
+      />
+    </Animated.View>
+  );
 }
 
 // ── ChatHeader ────────────────────────────────────────────────────────────────
-function ChatHeader({ showBack, onBack, onHistoryPress, isDark = false, onDebugToggle }: {
-  showBack: boolean; onBack: () => void; onHistoryPress: () => void; isDark?: boolean;
-  onDebugToggle: () => void;
+// Padrão dos headers do novo design: logo NIKS (sparkle) + título Nunito, centrado.
+function ChatHeader({
+  showBack, onBack, onHistoryPress, showHistory,
+  title, titleFont, titleSize = 20, logoSize = 22,
+}: {
+  showBack: boolean; onBack: () => void; onHistoryPress: () => void; showHistory: boolean;
+  title: string; titleFont?: string; titleSize?: number; logoSize?: number;
 }) {
-  const tapCountRef = useRef(0);
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleNiksTap = () => {
-    tapCountRef.current += 1;
-    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 2000);
-    if (tapCountRef.current >= 5) {
-      tapCountRef.current = 0;
-      onDebugToggle();
-    }
-  };
-
-  const iconColor = isDark ? 'rgba(255,255,255,0.55)' : INK_SOFT;
-  const textColor = isDark ? '#FFFFFF' : INK;
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(43,39,36,0.05)';
   return (
     <View style={{
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-      paddingHorizontal: 22, paddingTop: 6, paddingBottom: 14,
-      borderBottomWidth: 0.5, borderBottomColor: borderColor,
+      paddingHorizontal: 20, paddingTop: 6, paddingBottom: 14,
+      borderBottomWidth: 0.5, borderBottomColor: 'rgba(18,18,18,0.06)',
     }}>
       {showBack ? (
         <TouchableOpacity
-          onPress={onBack}
-          style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}
+          onPress={() => { haptics.tap(); onBack(); }}
+          style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Svg width={20} height={20} viewBox="0 0 24 24">
+          <Svg width={22} height={22} viewBox="0 0 24 24">
             <Path
               d="M15 18l-6-6 6-6"
-              stroke={iconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+              stroke={INK_MUTE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
               fill="none"
             />
           </Svg>
         </TouchableOpacity>
       ) : (
-        <View style={{ width: 30, height: 30 }} />
+        <View style={{ width: 32, height: 32 }} />
       )}
 
-      {/* 5 toques no título "NIKS" alternam dia/noite — mesmo mecanismo da Home */}
-      <TouchableOpacity onPress={handleNiksTap} activeOpacity={1}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Svg width={6} height={6} viewBox="0 0 6 6">
-            <Defs>
-              <RadialGradient id="niksHdrDot" cx="35%" cy="30%" r="100%" gradientUnits="objectBoundingBox">
-                <Stop offset="0%"   stopColor="#FFEFE4" />
-                <Stop offset="70%"  stopColor="#E89178" />
-                <Stop offset="100%" stopColor="#C86651" />
-              </RadialGradient>
-            </Defs>
-            <Circle cx={3} cy={3} r={3} fill="url(#niksHdrDot)" />
-          </Svg>
-          <Text style={{
-            fontSize: 11, fontWeight: '600', letterSpacing: 3.2,
-            textTransform: 'uppercase', color: textColor,
-          }}>
-            NIKS
-          </Text>
-        </View>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Image
+          source={require('../../assets/home/niks-logo.png')}
+          style={{ width: logoSize, height: logoSize, resizeMode: 'contain', tintColor: '#FF9D9D' }}
+        />
+        <Text style={{
+          marginLeft: 8, fontFamily: titleFont, fontSize: titleSize, color: INK, letterSpacing: -0.6,
+        }}>
+          {title}
+        </Text>
+      </View>
 
-      <TouchableOpacity onPress={onHistoryPress} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
-        <Svg width={19} height={19} viewBox="0 0 24 24">
-          <Path d="M3 12a9 9 0 1 0 3-6.7" stroke={iconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          <Path d="M3 4v5h5"            stroke={iconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          <Path d="M12 8v4l2.5 1.5"     stroke={iconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        </Svg>
-      </TouchableOpacity>
+      {showHistory ? (
+        <TouchableOpacity onPress={() => { haptics.tap(); onHistoryPress(); }} style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+          <Svg width={20} height={20} viewBox="0 0 24 24">
+            <Path d="M3 12a9 9 0 1 0 3-6.7" stroke={INK_MUTE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <Path d="M3 4v5h5"            stroke={INK_MUTE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <Path d="M12 8v4l2.5 1.5"     stroke={INK_MUTE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </Svg>
+        </TouchableOpacity>
+      ) : (
+        <View style={{ width: 32, height: 32 }} />
+      )}
     </View>
   );
 }
 
 // ── Suggestion icons ──────────────────────────────────────────────────────────
-// Inline SVG paths from chat-components.jsx SUGGESTION_ICONS (lines 103-137)
 const SUGGESTION_ICONS: Record<string, React.ReactNode> = {
   spot: (
     <Svg width={18} height={18} viewBox="0 0 24 24">
@@ -216,6 +143,15 @@ const SUGGESTION_ICONS: Record<string, React.ReactNode> = {
     <Svg width={18} height={18} viewBox="0 0 24 24">
       <Path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       <Path d="M9 14.5c.6 1 1.6 1.5 2.7 1.5"                       stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+    </Svg>
+  ),
+  meal: (
+    <Svg width={18} height={18} viewBox="0 0 24 24">
+      {/* Garfo */}
+      <Path d="M4 3v5a2 2 0 0 0 2 2 2 2 0 0 0 2-2V3" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d="M6 10v11"                              stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      {/* Faca */}
+      <Path d="M20 14V3a4 4 0 0 0-4 4v4a2 2 0 0 0 2 2h2zm0 0v7" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </Svg>
   ),
   mood: (
@@ -242,12 +178,9 @@ const SUGGESTION_ICONS: Record<string, React.ReactNode> = {
 };
 
 // ── SuggestionCard ────────────────────────────────────────────────────────────
-// SuggestionRow from chat-components.jsx adapted for React Native
-// Cascade: opacity 0→1, translateY 6→0, 480ms cubic-bezier(0.2,0.7,0.2,1), delay = index * 60ms
-// Uses TouchableOpacity (not Pressable) with explicit marginRight instead of gap —
-// Pressable's function-style prop has inconsistent flexDirection behaviour in RN 0.83.
-function SuggestionCard({ icon, text, index, onPress, isDark = false }: {
-  icon: string; text: string; index: number; onPress: () => void; isDark?: boolean;
+// Card branco arredondado com borda #E3E3E6 (mesmo padrão de home/recomendação).
+function SuggestionCard({ icon, text, index, onPress, fSemi }: {
+  icon: string; text: string; index: number; onPress: () => void; fSemi?: string;
 }) {
   const opacity    = useSharedValue(0);
   const translateY = useSharedValue(6);
@@ -264,39 +197,34 @@ function SuggestionCard({ icon, text, index, onPress, isDark = false }: {
     marginBottom: 10,
   }));
 
-  const cardBg      = isDark ? 'rgba(255,255,255,0.04)' : WHITE;
-  const cardBorder  = isDark ? 'rgba(255,255,255,0.08)' : SURFACE_HAIR;
-  const textColor   = isDark ? '#FFFFFF' : INK;
-  const arrowColor  = isDark ? 'rgba(255,255,255,0.32)' : INK_WHISPER;
-
   return (
     <Animated.View style={animStyle}>
       <TouchableOpacity
-        onPress={onPress}
+        onPress={() => { haptics.tap(); onPress(); }}
         activeOpacity={0.85}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           width: '100%',
-          backgroundColor: cardBg,
-          borderWidth: 0.5,
-          borderColor: cardBorder,
+          backgroundColor: WHITE,
+          borderWidth: 1,
+          borderColor: CARD_BD,
           borderRadius: 18,
           paddingTop: 14,
           paddingRight: 14,
           paddingBottom: 14,
           paddingLeft: 16,
-          shadowColor: isDark ? 'transparent' : '#2B2724',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.04,
-          shadowRadius: 14,
-          elevation: isDark ? 0 : 2,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 4,
+          elevation: 2,
         }}
       >
         <View style={{
-          width: 32,
-          height: 32,
-          borderRadius: 16,
+          width: 34,
+          height: 34,
+          borderRadius: 17,
           backgroundColor: CORAL_TINT,
           alignItems: 'center',
           justifyContent: 'center',
@@ -306,7 +234,7 @@ function SuggestionCard({ icon, text, index, onPress, isDark = false }: {
           {SUGGESTION_ICONS[icon]}
         </View>
         <Text style={{
-          flex: 1, fontSize: 14, lineHeight: 19.6, letterSpacing: -0.1, color: textColor,
+          flex: 1, fontFamily: fSemi, fontSize: 14, lineHeight: 19, letterSpacing: -0.3, color: INK,
         }}>
           {text}
         </Text>
@@ -314,7 +242,7 @@ function SuggestionCard({ icon, text, index, onPress, isDark = false }: {
           <Svg width={14} height={14} viewBox="0 0 24 24">
             <Path
               d="M9 6l6 6-6 6"
-              stroke={arrowColor} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none"
+              stroke={INK_FAINT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"
             />
           </Svg>
         </View>
@@ -324,11 +252,9 @@ function SuggestionCard({ icon, text, index, onPress, isDark = false }: {
 }
 
 // ── NiksMessage ───────────────────────────────────────────────────────────────
-// AIMessageV2 with variant="bubble", showOrb=true from chat-screens-v2.jsx
-// Left: MiniOrb 28px | Right: coral hairline bubble with serif text
-// children: React.ReactNode — can contain nested <Text> for italic/coral inline spans
-function NiksMessage({ children, streaming = false, fontReg, isDark = false }: {
-  children: React.ReactNode; streaming?: boolean; fontReg?: string; isDark?: boolean;
+// Avatar orb 28px à esquerda + balão branco borda #E3E3E6 com texto Nunito.
+function NiksMessage({ children, streaming = false, fReg }: {
+  children: React.ReactNode; streaming?: boolean; fReg?: string;
 }) {
   const caretOpacity = useSharedValue(0);
 
@@ -349,36 +275,34 @@ function NiksMessage({ children, streaming = false, fontReg, isDark = false }: {
   }, [streaming]);
 
   const caretStyle = useAnimatedStyle(() => ({ opacity: caretOpacity.value }));
-  const bubbleBg   = isDark ? 'rgba(255,255,255,0.06)' : WHITE;
-  const textColor  = isDark ? '#FFFFFF' : INK;
 
+  // Figma node 1:424 — balão #F3EEEE radius 18, avatar (logo) no canto inferior esquerdo
   return (
     <View style={{
-      flexDirection: 'row', gap: 12, alignItems: 'flex-start',
-      alignSelf: 'flex-start', maxWidth: '100%',
+      flexDirection: 'row', gap: 10, alignItems: 'flex-end',
+      alignSelf: 'flex-start', maxWidth: '92%',
     }}>
-      <View style={{ flexShrink: 0, paddingTop: 1 }}>
-        <MiniOrb size={28} isDark={isDark} />
+      <View style={{ flexShrink: 0, paddingBottom: 2 }}>
+        <NiksAvatar size={30} />
       </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
+      <View style={{ flexShrink: 1, minWidth: 0 }}>
         <View style={{
-          backgroundColor: bubbleBg,
-          borderWidth: 0.5, borderColor: CORAL,
-          borderTopLeftRadius: 4, borderTopRightRadius: 18,
-          borderBottomRightRadius: 18, borderBottomLeftRadius: 18,
-          paddingTop: 14, paddingHorizontal: 18, paddingBottom: 15,
-          shadowColor: CORAL,
+          backgroundColor: WHITE,
+          borderWidth: 1, borderColor: CARD_BD,
+          borderRadius: 18,
+          paddingVertical: 15, paddingHorizontal: 20,
+          shadowColor: '#000',
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: isDark ? 0 : 0.05,
-          shadowRadius: 9,
-          elevation: isDark ? 0 : 2,
+          shadowOpacity: 0.04,
+          shadowRadius: 4,
+          elevation: 1,
         }}>
           <Text style={{
-            fontFamily: fontReg,
-            fontSize: 15,
-            lineHeight: 23.25,
-            letterSpacing: -0.15,
-            color: textColor,
+            fontFamily: fReg,
+            fontSize: 14,
+            lineHeight: 20,
+            letterSpacing: -0.3,
+            color: '#111111',
           }}>
             {children}
             {streaming && (
@@ -392,24 +316,18 @@ function NiksMessage({ children, streaming = false, fontReg, isDark = false }: {
 }
 
 // ── UserBubble ────────────────────────────────────────────────────────────────
-// UserBubble from chat-components.jsx — right-aligned solid coral bubble
-function UserBubble({ text }: { text: string }) {
+// Figma node 1:425 — balão #F3EEEE radius 18, à direita, texto preto.
+function UserBubble({ text, fReg }: { text: string; fReg?: string }) {
   return (
     <View style={{ alignItems: 'flex-end' }}>
       <View style={{
-        maxWidth: '78%',
-        backgroundColor: CORAL,
-        borderTopLeftRadius: 18, borderTopRightRadius: 4,
-        borderBottomRightRadius: 18, borderBottomLeftRadius: 18,
-        paddingTop: 11, paddingHorizontal: 16, paddingBottom: 12,
-        shadowColor: CORAL,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.20,
-        shadowRadius: 18,
-        elevation: 4,
+        maxWidth: '82%',
+        backgroundColor: BUBBLE_BG,
+        borderRadius: 18,
+        paddingVertical: 14, paddingHorizontal: 20,
       }}>
         <Text style={{
-          fontSize: 15, lineHeight: 22.5, letterSpacing: -0.1, color: WHITE,
+          fontFamily: fReg, fontSize: 14, lineHeight: 20, letterSpacing: -0.3, color: '#111111',
         }}>
           {text}
         </Text>
@@ -419,21 +337,14 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ── UserPhotoBubble ───────────────────────────────────────────────────────────
-// Renders real image when imageUri is provided, otherwise shows gradient placeholder
-function UserPhotoBubble({ fontItalic, imageUri }: { fontItalic?: string; imageUri?: string }) {
+// Figma node 1:423 — imagem arredondada radius 35, alinhada à direita.
+function UserPhotoBubble({ imageUri }: { imageUri?: string }) {
   return (
     <View style={{ alignItems: 'flex-end' }}>
       <View style={{
-        width: 168, height: 210,
-        borderTopLeftRadius: 20, borderTopRightRadius: 4,
-        borderBottomRightRadius: 20, borderBottomLeftRadius: 20,
+        width: 222, height: 207,
+        borderRadius: 35,
         overflow: 'hidden',
-        borderWidth: 0.5, borderColor: 'rgba(251,123,107,0.20)',
-        shadowColor: 'rgba(168,90,107,1)',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.25,
-        shadowRadius: 26,
-        elevation: 6,
       }}>
         {imageUri ? (
           <Image
@@ -450,27 +361,12 @@ function UserPhotoBubble({ fontItalic, imageUri }: { fontItalic?: string; imageU
             style={{ flex: 1 }}
           />
         )}
-        <View style={{
-          position: 'absolute', left: 12, top: 12,
-          paddingVertical: 4, paddingHorizontal: 9,
-          borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.92)',
-        }}>
-          <Text style={{
-            fontFamily: fontItalic,
-            fontSize: 10, fontStyle: 'italic',
-            color: CORAL, letterSpacing: 0.2,
-          }}>
-            foto · agora
-          </Text>
-        </View>
       </View>
     </View>
   );
 }
 
 // ── Typing dots ───────────────────────────────────────────────────────────────
-// Animated dots — niks-pulse: scale(0.7) opacity(0.4) → scale(1) opacity(1), 1200ms, stagger 0/180/360ms
-// Rendered as AIMessageV2 plain variant (no bubble): MiniOrb 28px left + dots right
 function DotPulse({ delay }: { delay: number }) {
   const scale   = useSharedValue(0.7);
   const opacity = useSharedValue(0.4);
@@ -496,21 +392,25 @@ function DotPulse({ delay }: { delay: number }) {
   return (
     <Animated.View style={[{
       width: 6, height: 6, borderRadius: 3,
-      backgroundColor: 'rgba(251,123,107,0.55)',
+      backgroundColor: 'rgba(248,107,121,0.6)',
     }, animStyle]} />
   );
 }
 
-function TypingDots({ isDark = false }: { isDark?: boolean }) {
+function TypingDots() {
   return (
     <View style={{
-      flexDirection: 'row', gap: 12, alignItems: 'flex-start',
-      alignSelf: 'flex-start', maxWidth: '100%',
+      flexDirection: 'row', gap: 10, alignItems: 'flex-end',
+      alignSelf: 'flex-start', maxWidth: '92%',
     }}>
-      <View style={{ flexShrink: 0, paddingTop: 1 }}>
-        <MiniOrb size={28} isDark={isDark} />
+      <View style={{ flexShrink: 0, paddingBottom: 2 }}>
+        <NiksAvatar size={30} />
       </View>
-      <View style={{ flex: 1, minWidth: 0, justifyContent: 'center', paddingTop: 8 }}>
+      <View style={{
+        backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BD, borderRadius: 18,
+        paddingVertical: 15, paddingHorizontal: 18,
+        justifyContent: 'center',
+      }}>
         <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
           <DotPulse delay={0}   />
           <DotPulse delay={180} />
@@ -522,17 +422,17 @@ function TypingDots({ isDark = false }: { isDark?: boolean }) {
 }
 
 // ── ChatInputBar ──────────────────────────────────────────────────────────────
-// ChatInput from chat-components.jsx — pill with camera+gallery+text + send button
+// Pill de input branca com borda #E3E3E6 + botão enviar em gradiente vermelho.
 function ChatInputBar({
-  value, onChangeText, onSend, fontItalic,
+  value, onChangeText, onSend, fReg,
   bottomInset = 0, keyboardOpen = false,
   onCameraPress, onGalleryPress,
-  pendingImages, onRemoveImage, atLimit, isDark = false,
+  pendingImages, onRemoveImage, atLimit,
 }: {
   value: string
   onChangeText: (t: string) => void
   onSend: () => void
-  fontItalic?: string
+  fReg?: string
   bottomInset?: number
   keyboardOpen?: boolean
   onCameraPress: () => void
@@ -540,14 +440,10 @@ function ChatInputBar({
   pendingImages: Array<{ uri: string }>
   onRemoveImage: (index: number) => void
   atLimit: boolean
-  isDark?: boolean
 }) {
-  const paddingBottom = keyboardOpen ? 8 : bottomInset + 86;
-  const pillBg       = isDark ? 'rgba(26,31,46,0.92)' : '#FAFAF8';
-  const pillBorder   = isDark ? 'rgba(255,255,255,0.10)' : SURFACE_HAIR;
-  const iconColor    = isDark ? 'rgba(255,255,255,0.50)' : INK_SOFT;
-  const inputColor   = isDark ? '#FFFFFF' : INK;
-  const placeholderC = isDark ? 'rgba(255,255,255,0.32)' : INK_WHISPER;
+  // Navbar global = 80px fixos (cobre o home indicator). Ancorar a ~20px acima dela,
+  // sem somar a safe area (evita o vão grande e o risco de colar no menu).
+  const paddingBottom = keyboardOpen ? 8 : 100;
 
   const LINE_HEIGHT = 20;
   const MAX_INPUT_HEIGHT = LINE_HEIGHT * 4;
@@ -561,6 +457,7 @@ function ChatInputBar({
   return (
     <View style={{
       paddingTop: 12, paddingHorizontal: 16, paddingBottom,
+      backgroundColor: 'transparent',
     }}>
       {pendingImages.length > 0 && (
         <ScrollView
@@ -573,14 +470,14 @@ function ChatInputBar({
             <View key={index} style={{ width: 56, height: 56 }}>
               <Image
                 source={{ uri: img.uri }}
-                style={{ width: 56, height: 56, borderRadius: 10, borderWidth: 0.5, borderColor: 'rgba(251,123,107,0.3)' }}
+                style={{ width: 56, height: 56, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(248,107,121,0.3)' }}
               />
               <TouchableOpacity
-                onPress={() => onRemoveImage(index)}
+                onPress={() => { haptics.tap(); onRemoveImage(index); }}
                 style={{
                   position: 'absolute', top: -5, right: -5,
                   width: 18, height: 18, borderRadius: 9,
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.25)' : INK_SOFT,
+                  backgroundColor: INK_SOFT,
                   alignItems: 'center', justifyContent: 'center',
                 }}
               >
@@ -596,34 +493,39 @@ function ChatInputBar({
         {/* Pill */}
         <View style={{
           flex: 1, flexDirection: 'row', alignItems: isMultiline ? 'flex-end' : 'center', gap: 4,
-          backgroundColor: pillBg,
-          borderWidth: 0.5, borderColor: pillBorder,
+          backgroundColor: PILL_BG,
+          borderWidth: 1, borderColor: CARD_BD,
           borderRadius: isMultiline ? 22 : 100,
           paddingTop: 8, paddingBottom: 8, paddingLeft: 14, paddingRight: 8,
-          minHeight: 44,
+          minHeight: 46,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.04,
+          shadowRadius: 8,
+          elevation: 1,
         }}>
           {/* Camera */}
           <View style={{ opacity: atLimit ? 0.3 : 1 }} pointerEvents={atLimit ? 'none' : 'auto'}>
             <TouchableOpacity
-              onPress={onCameraPress}
+              onPress={() => { haptics.tap(); onCameraPress(); }}
               style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
             >
               <Svg width={20} height={20} viewBox="0 0 24 24">
-                <Path d="M4 8a2 2 0 0 1 2-2h2.5l1.5-2h4l1.5 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z" stroke={iconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                <Circle cx={12} cy={13} r={3.5} stroke={iconColor} strokeWidth="1.5" fill="none" />
+                <Path d="M4 8a2 2 0 0 1 2-2h2.5l1.5-2h4l1.5 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z" stroke={INK_MUTE} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                <Circle cx={12} cy={13} r={3.5} stroke={INK_MUTE} strokeWidth="1.5" fill="none" />
               </Svg>
             </TouchableOpacity>
           </View>
           {/* Gallery */}
           <View style={{ opacity: atLimit ? 0.3 : 1 }} pointerEvents={atLimit ? 'none' : 'auto'}>
             <TouchableOpacity
-              onPress={onGalleryPress}
+              onPress={() => { haptics.tap(); onGalleryPress(); }}
               style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
             >
               <Svg width={20} height={20} viewBox="0 0 24 24">
-                <Path d="M3.5 4.5h17a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5h-17A2.5 2.5 0 0 1 1 17V7a2.5 2.5 0 0 1 2.5-2.5z" stroke={iconColor} strokeWidth="1.5" fill="none" />
-                <Circle cx={9} cy={10} r={1.4} stroke={iconColor} strokeWidth="1.5" fill="none" />
-                <Path d="M4 17l5-5 4 4 3-3 4 4" stroke={iconColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                <Path d="M3.5 4.5h17a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5h-17A2.5 2.5 0 0 1 1 17V7a2.5 2.5 0 0 1 2.5-2.5z" stroke={INK_MUTE} strokeWidth="1.5" fill="none" />
+                <Circle cx={9} cy={10} r={1.4} stroke={INK_MUTE} strokeWidth="1.5" fill="none" />
+                <Path d="M4 17l5-5 4 4 3-3 4 4" stroke={INK_MUTE} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
               </Svg>
             </TouchableOpacity>
           </View>
@@ -632,17 +534,17 @@ function ChatInputBar({
             value={value}
             onChangeText={onChangeText}
             placeholder="pergunte algo…"
-            placeholderTextColor={placeholderC}
+            placeholderTextColor={INK_FAINT}
             multiline
             onContentSizeChange={(e) => {
               setContentHeight(e.nativeEvent.contentSize.height);
             }}
             style={{
               flex: 1,
-              fontStyle: 'normal',
+              fontFamily: fReg,
               fontSize: 15,
               lineHeight: LINE_HEIGHT,
-              color: inputColor,
+              color: INK,
               paddingVertical: 0,
               paddingLeft: 8, paddingRight: 6,
               maxHeight: MAX_INPUT_HEIGHT,
@@ -650,22 +552,25 @@ function ChatInputBar({
           />
         </View>
         {/* Send button */}
-        <TouchableOpacity
-          onPress={onSend}
-          style={{
-            width: 44, height: 44, borderRadius: 22,
-            backgroundColor: CORAL,
-            alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            shadowColor: CORAL,
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.30,
-            shadowRadius: 22,
-            elevation: 6,
-          }}
-        >
-          <Svg width={18} height={18} viewBox="0 0 24 24">
-            <Path d="M5 12h13M12 5l7 7-7 7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          </Svg>
+        <TouchableOpacity onPress={() => { haptics.action(); onSend(); }} activeOpacity={0.9} style={{ flexShrink: 0 }}>
+          <LinearGradient
+            colors={RED_GRAD}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={{
+              width: 46, height: 46, borderRadius: 23,
+              alignItems: 'center', justifyContent: 'center',
+              shadowColor: '#FF9D9D',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.30,
+              shadowRadius: 18,
+              elevation: 6,
+            }}
+          >
+            <Svg width={18} height={18} viewBox="0 0 24 24">
+              <Path d="M12 19V6M5 13l7-7 7 7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </Svg>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
     </View>
@@ -675,7 +580,7 @@ function ChatInputBar({
 // ── Suggestions data ──────────────────────────────────────────────────────────
 const SUGGESTIONS = [
   { icon: 'spot',    text: 'Apareceu uma espinha no meu rosto, preciso de ajuda' },
-  { icon: 'product', text: 'Esse produto vai funcionar pra mim?' },
+  { icon: 'meal',    text: 'Analisar o impacto da minha refeição na minha pele', action: 'foodScan' },
   { icon: 'mood',    text: 'Não tô gostando da minha pele hoje, me ajuda a melhorar?' },
   { icon: 'chart',   text: 'Tô vendo resultado com meu protocolo?' },
   { icon: 'alert',   text: 'Minha pele reagiu a algo que usei' },
@@ -685,8 +590,6 @@ const SUGGESTIONS = [
 const PREDEFINED_RESPONSES: Record<string, string> = {
   'Apareceu uma espinha no meu rosto, preciso de ajuda':
     'Me manda uma foto para eu ver o que está acontecendo.',
-  'Esse produto vai funcionar pra mim?':
-    'Me manda uma foto do produto e se puder da lista de ingredientes também que eu analiso pra você.',
   'Não tô gostando da minha pele hoje, me ajuda a melhorar?':
     'Me conta mais. O que você tá sentindo que está diferente nela? Ressecamento, oleosidade? Se puder me envia uma foto também pra eu conseguir te ajudar melhor.',
   'Minha pele reagiu a algo que usei':
@@ -734,33 +637,30 @@ type Message = {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function NiksChat() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
-    'PlayfairDisplay-Italic':  require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_500Medium,
+    Nunito_400Regular,
+    Nunito_300Light,
   });
-  const fontReg    = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
-  const fontItalic = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined;
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold'      : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold'  : undefined;
+  const fMed   = fontsLoaded ? 'Nunito_500Medium'    : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular'   : undefined;
 
   const { setTabBarTheme, setNiksChatMode } = useAppStore();
-  const [debugMode, setDebugMode] = useState<'am' | 'pm' | null>(null);
-  const [autoNight, setAutoNight] = useState(isNightTime);
-  const isDark = debugMode !== null ? (debugMode === 'pm') : autoNight;
 
   useFocusEffect(
     useCallback(() => {
-      setAutoNight(isNightTime());
-      setTabBarTheme(isDark ? 'dark' : 'light');
+      setTabBarTheme('light');
       return () => { setTabBarTheme('light'); };
-    }, [isDark])
+    }, [])
   );
-
-  const ink         = isDark ? '#FFFFFF'                : INK;
-  const inkSoft     = isDark ? 'rgba(255,255,255,0.65)' : INK_SOFT;
-  const inkWhisper  = isDark ? 'rgba(255,255,255,0.42)' : INK_WHISPER;
-  const inkHair     = isDark ? 'rgba(255,255,255,0.14)' : INK_HAIR;
-  const surfaceHair = isDark ? 'rgba(255,255,255,0.08)' : SURFACE_HAIR;
-  const screenBg    = isDark ? '#0F1420'                : WHITE;
 
   const [mode,           setMode]           = useState<'empty' | 'active'>('empty');
   const [firstName,      setFirstName]      = useState('você');
@@ -783,76 +683,88 @@ export default function NiksChat() {
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true
+  // ── Carga inicial do chat, cacheada ──────────────────────────────────────
+  // Antes eram 4 requisições a CADA foco da aba — incluindo rebaixar a conversa
+  // inteira — e a checagem de `niksChatMode` acontecia DEPOIS de tudo, ou seja,
+  // não evitava requisição nenhuma. Agora nome + conversa + mensagens são uma
+  // entrada de cache só, e a tela volta instantânea.
+  const cachedUserId = useUserId()
 
-      const init = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user || !active) return
+  const fetchChat = useCallback(async () => {
+    const uid = await getUserId()
+    if (!uid) throw new Error('sem sessão')
 
-        setUserId(user.id)
+    const [userRes, convRes] = await Promise.all([
+      supabase.from('users').select('nome').eq('id', uid).single(),
+      supabase
+        .from('coach_conversations')
+        .select('id')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
 
-        const { data: userData } = await supabase
-          .from('users').select('nome').eq('id', user.id).single()
-        if (active && userData?.nome) {
-          setFirstName(userData.nome.trim().split(' ')[0] || 'você')
-        }
+    const nome = userRes.data?.nome ?? null
+    const convId: string | null = convRes.data?.id ?? null
+    if (!convId) return { userId: uid, nome, conversationId: null, msgs: [] as any[] }
 
-        const { data: latestConv } = await supabase
-          .from('coach_conversations')
-          .select('id')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
+    const { data: msgs } = await supabase
+      .from('coach_messages')
+      .select('id, role, content, image_url, created_at')
+      .eq('conversation_id', convId)
+      .eq('user_id', uid)
+      .order('created_at', { ascending: true })
 
-        if (!active) return
-        if (!latestConv) return
+    return { userId: uid, nome, conversationId: convId, msgs: msgs ?? [] }
+  }, [])
 
-        const convId = latestConv.id
-        setConversationId(convId)
-
-        const { data: msgs } = await supabase
-          .from('coach_messages')
-          .select('id, role, content, image_url, created_at')
-          .eq('conversation_id', convId)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: true })
-
-        if (!active) return
-
-        const chatMode = useAppStore.getState().niksChatMode
-        if (msgs && msgs.length > 0 && chatMode !== 'empty') {
-          setMessages(msgs.map(msg => {
-            let imageUris: string[] | undefined
-            if (msg.image_url) {
-              try {
-                const parsed = JSON.parse(msg.image_url)
-                imageUris = Array.isArray(parsed) ? parsed : [msg.image_url]
-              } catch {
-                imageUris = [msg.image_url]
-              }
-            }
-            return {
-              id: msg.id,
-              role: msg.role as 'user' | 'assistant',
-              content: msg.content,
-              imageUris,
-            }
-          }))
-          setConversationTime(msgs[0].created_at)
-          setMode('active')
-        } else if (chatMode !== 'empty') {
-          setMessages([])
-          setMode('empty')
-        }
-      }
-
-      init()
-      return () => { active = false }
-    }, []),
+  const { data: chatData } = useCachedQuery(
+    cachedUserId ? `chat:${cachedUserId}` : null,
+    fetchChat,
+    { enabled: Boolean(cachedUserId) },
   )
+
+  useEffect(() => {
+    if (!chatData) return
+
+    setUserId(chatData.userId)
+    if (chatData.nome) setFirstName(chatData.nome.trim().split(' ')[0] || 'você')
+    if (!chatData.conversationId) return
+    setConversationId(chatData.conversationId)
+
+    // ⚠️ `niksChatMode` (store) decide se a conversa é RESTAURADA na tela. Cold
+    // start cai em 'empty' de propósito (README) — o cache não muda isso, só
+    // evita ir à rede para descobrir o que já sabíamos.
+    const chatMode = useAppStore.getState().niksChatMode
+    if (chatMode === 'empty') return
+
+    const msgs = chatData.msgs
+    if (msgs.length > 0) {
+      setMessages(msgs.map((msg: any) => {
+        let imageUris: string[] | undefined
+        if (msg.image_url) {
+          try {
+            const parsed = JSON.parse(msg.image_url)
+            imageUris = Array.isArray(parsed) ? parsed : [msg.image_url]
+          } catch {
+            imageUris = [msg.image_url]
+          }
+        }
+        return {
+          id: msg.id,
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+          imageUris,
+        }
+      }))
+      setConversationTime(msgs[0].created_at)
+      setMode('active')
+    } else {
+      setMessages([])
+      setMode('empty')
+    }
+  }, [chatData])
 
   const handleBackToEmpty = () => {
     setNiksChatMode('empty')
@@ -965,6 +877,9 @@ export default function NiksChat() {
           ? { ...m, content: xhr.responseText, isStreaming: false }
           : m
       ))
+      // A conversa cresceu no banco — marca o cache como velho para que a próxima
+      // entrada na aba busque o histórico atualizado em vez de servir o antigo.
+      if (cachedUserId) invalidateCache(`chat:${cachedUserId}`)
     }
 
     xhr.onerror = () => {
@@ -1160,14 +1075,7 @@ export default function NiksChat() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: screenBg }}>
-      {isDark && (
-        <LinearGradient
-          colors={['#0F1420', '#1A1F2E', '#2A1F28']}
-          style={StyleSheet.absoluteFill}
-        />
-      )}
-      {isDark && <NightSky />}
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
 
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: 'transparent' }}>
         <KeyboardAvoidingView
@@ -1178,8 +1086,11 @@ export default function NiksChat() {
             showBack={mode === 'active'}
             onBack={handleBackToEmpty}
             onHistoryPress={loadHistory}
-            isDark={isDark}
-            onDebugToggle={() => setDebugMode(prev => prev === null ? 'am' : prev === 'am' ? 'pm' : null)}
+            showHistory={mode !== 'active'}
+            title={mode === 'active' ? 'NIKS Chat' : 'NIKS'}
+            titleFont={mode === 'active' ? fMed : fBold}
+            titleSize={mode === 'active' ? 22 : 20}
+            logoSize={mode === 'active' ? 24 : 22}
           />
 
           <View style={{ flex: 1 }}>
@@ -1193,33 +1104,28 @@ export default function NiksChat() {
                 alignItems: 'center',
               }}>
                 <View style={{ marginBottom: 22 }}>
-                  <AnimatedMiniOrb size={84} isDark={isDark} />
+                  <AnimatedLogo size={84} />
                 </View>
 
-                {/* Greeting "olá, juliana." */}
+                {/* Greeting "Olá, juliana" */}
                 <Text style={{
-                  fontFamily: fontReg,
-                  fontSize: 38, lineHeight: 40,
-                  letterSpacing: -1.2, color: CORAL,
-                  textTransform: 'lowercase',
+                  fontFamily: fXBold,
+                  fontSize: 32, lineHeight: 36,
+                  letterSpacing: -1, color: '#FF9D9D',
                   textAlign: 'center',
                 }}>
-                  {'olá, '}
-                  <Text style={{ fontFamily: fontItalic, fontStyle: 'italic', fontWeight: '500' }}>
-                    {firstName}
-                  </Text>
-                  {'.'}
+                  {'Olá, '}
+                  <Text style={{ color: '#FF9D9D' }}>{firstName}</Text>
                 </Text>
 
                 {/* Tagline */}
                 <Text style={{
-                  fontFamily: fontItalic,
-                  fontSize: 17, lineHeight: 23.8,
-                  letterSpacing: -0.15,
-                  fontStyle: 'italic',
-                  color: inkSoft,
+                  fontFamily: fMed,
+                  fontSize: 16, lineHeight: 22,
+                  letterSpacing: -0.3,
+                  color: INK_MUTE,
                   maxWidth: 260, textAlign: 'center',
-                  marginTop: 10,
+                  marginTop: 8,
                 }}>
                   como posso te ajudar hoje?
                 </Text>
@@ -1230,14 +1136,15 @@ export default function NiksChat() {
                 flexDirection: 'row', alignItems: 'center', gap: 12,
                 paddingTop: 10, paddingHorizontal: 28, paddingBottom: 16,
               }}>
-                <View style={{ flex: 1, height: 0.5, backgroundColor: inkHair }} />
+                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(18,18,18,0.07)' }} />
                 <Text style={{
-                  fontSize: 9, fontWeight: '600', letterSpacing: 2.4,
-                  textTransform: 'uppercase', color: inkSoft,
+                  fontFamily: fBold,
+                  fontSize: 10, letterSpacing: 1.6,
+                  textTransform: 'uppercase', color: INK_MUTE,
                 }}>
                   SUGESTÕES
                 </Text>
-                <View style={{ flex: 1, height: 0.5, backgroundColor: inkHair }} />
+                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(18,18,18,0.07)' }} />
               </View>
 
               {/* Suggestion cards list */}
@@ -1253,8 +1160,12 @@ export default function NiksChat() {
                     icon={s.icon}
                     text={s.text}
                     index={i}
-                    isDark={isDark}
-                    onPress={() => handleSuggestionPress(s.text)}
+                    fSemi={fSemi}
+                    onPress={() =>
+                      s.action === 'foodScan'
+                        ? router.push('/(scan)/food-camera' as any)
+                        : handleSuggestionPress(s.text)
+                    }
                   />
                 ))}
               </ScrollView>
@@ -1266,23 +1177,11 @@ export default function NiksChat() {
               ref={scrollRef}
               style={{ flex: 1, backgroundColor: 'transparent' }}
               contentContainerStyle={{
-                paddingTop: 16, paddingHorizontal: 22, paddingBottom: insets.bottom + 144,
-                gap: 20,
+                paddingTop: 20, paddingHorizontal: 22, paddingBottom: insets.bottom + 144,
+                gap: 18,
               }}
               showsVerticalScrollIndicator={false}
             >
-              {/* Timestamp divider */}
-              <Text style={{
-                alignSelf: 'center',
-                fontSize: 9, fontWeight: '600',
-                textTransform: 'uppercase',
-                letterSpacing: 2.4,
-                color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(43,39,36,0.42)',
-                paddingTop: 2, paddingBottom: 8,
-              }}>
-                {conversationTime ? formatConversationDate(conversationTime) : ''}
-              </Text>
-
               {messages.map(m => {
                 if (m.role === 'user') {
                   return (
@@ -1290,19 +1189,19 @@ export default function NiksChat() {
                       {m.imageUris && m.imageUris.length > 0 && (
                         <View style={{ alignItems: 'flex-end', gap: 6 }}>
                           {m.imageUris.map((uri, i) => (
-                            <UserPhotoBubble key={i} fontItalic={fontItalic} imageUri={uri} />
+                            <UserPhotoBubble key={i} imageUri={uri} />
                           ))}
                         </View>
                       )}
-                      {m.content ? <UserBubble text={m.content} /> : null}
+                      {m.content ? <UserBubble text={m.content} fReg={fReg} /> : null}
                     </View>
                   )
                 }
                 if (m.content === '' && m.isStreaming) {
-                  return <TypingDots key={m.id} isDark={isDark} />
+                  return <TypingDots key={m.id} />
                 }
                 return (
-                  <NiksMessage key={m.id} fontReg={fontReg} streaming={m.isStreaming} isDark={isDark}>
+                  <NiksMessage key={m.id} fReg={fReg} streaming={m.isStreaming}>
                     {m.content}
                   </NiksMessage>
                 )
@@ -1320,23 +1219,24 @@ export default function NiksChat() {
               />
               <View style={{
                 position: 'absolute', top: 8, right: 16, width: 276, zIndex: 11,
-                backgroundColor: isDark ? '#1A1F2E' : WHITE,
+                backgroundColor: WHITE,
                 borderRadius: 20,
-                borderWidth: 0.5, borderColor: surfaceHair,
-                shadowColor: isDark ? '#000000' : INK,
+                borderWidth: 1, borderColor: CARD_BD,
+                shadowColor: INK,
                 shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: isDark ? 0.4 : 0.10,
+                shadowOpacity: 0.10,
                 shadowRadius: 28,
                 elevation: 16,
                 overflow: 'hidden',
               }}>
                 <View style={{
                   paddingVertical: 14, paddingHorizontal: 18,
-                  borderBottomWidth: 0.5, borderBottomColor: surfaceHair,
+                  borderBottomWidth: 1, borderBottomColor: 'rgba(18,18,18,0.06)',
                 }}>
                   <Text style={{
-                    fontSize: 9, fontWeight: '600', letterSpacing: 2.4,
-                    textTransform: 'uppercase', color: inkSoft,
+                    fontFamily: fBold,
+                    fontSize: 10, letterSpacing: 1.6,
+                    textTransform: 'uppercase', color: INK_MUTE,
                   }}>
                     Conversas recentes
                   </Text>
@@ -1344,32 +1244,32 @@ export default function NiksChat() {
 
                 {historyLoading ? (
                   <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 13, color: inkWhisper }}>Carregando…</Text>
+                    <Text style={{ fontFamily: fMed, fontSize: 13, color: INK_FAINT }}>Carregando…</Text>
                   </View>
                 ) : historyConversations.length === 0 ? (
                   <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 13, color: inkWhisper }}>Nenhuma conversa ainda.</Text>
+                    <Text style={{ fontFamily: fMed, fontSize: 13, color: INK_FAINT }}>Nenhuma conversa ainda.</Text>
                   </View>
                 ) : (
                   historyConversations.map((conv, index) => (
                     <TouchableOpacity
                       key={conv.id}
-                      onPress={() => loadConversation(conv.id)}
+                      onPress={() => { haptics.tap(); loadConversation(conv.id); }}
                       activeOpacity={0.7}
                       style={{
                         flexDirection: 'row', alignItems: 'center', gap: 12,
                         paddingVertical: 14, paddingHorizontal: 18,
-                        borderBottomWidth: index < historyConversations.length - 1 ? 0.5 : 0,
-                        borderBottomColor: surfaceHair,
+                        borderBottomWidth: index < historyConversations.length - 1 ? 1 : 0,
+                        borderBottomColor: 'rgba(18,18,18,0.06)',
                       }}
                     >
                       <Text
-                        style={{ flex: 1, fontSize: 13, lineHeight: 18, color: ink }}
+                        style={{ flex: 1, fontFamily: fSemi, fontSize: 13, lineHeight: 18, color: INK }}
                         numberOfLines={2}
                       >
                         {conv.title}
                       </Text>
-                      <Text style={{ fontSize: 11, color: inkWhisper, flexShrink: 0 }}>
+                      <Text style={{ fontFamily: fMed, fontSize: 11, color: INK_FAINT, flexShrink: 0 }}>
                         {conv.relativeTime}
                       </Text>
                     </TouchableOpacity>
@@ -1384,7 +1284,7 @@ export default function NiksChat() {
               value={inputText}
               onChangeText={setInputText}
               onSend={handleSend}
-              fontItalic={fontItalic}
+              fReg={fReg}
               bottomInset={insets.bottom}
               keyboardOpen={keyboardOpen}
               onCameraPress={() => pickImage('camera')}
@@ -1392,7 +1292,6 @@ export default function NiksChat() {
               pendingImages={pendingImages}
               onRemoveImage={(index) => setPendingImages(prev => prev.filter((_, i) => i !== index))}
               atLimit={pendingImages.length >= 5}
-              isDark={isDark}
             />
           </View>
           </View>

@@ -1,3 +1,16 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// analyze-skin — ANÁLISE DE PELE DO ONBOARDING (1 foto)
+//
+// Recebe 1 foto (`imageBase64`) e devolve o `ScanResult` completo. Chamada por
+// `app/(scan)/loading.tsx` (o scan do onboarding).
+//
+// ⚠️ A análise MULTI-FOTO do app (6 fotos → 3 imagens) vive numa função SEPARADA,
+// `analyze-skin-app`, de propósito: ela pode ficar mais pesada/cara e evoluir sem
+// nenhum risco de regredir este fluxo (que é o funil até o paywall, e roda para
+// gente que talvez nem assine). O SCHEMA DE SAÍDA das duas é o mesmo — as duas
+// alimentam a mesma UI (`skin-result`, home, store). Se mudar a FORMA da resposta
+// aqui, mude lá também. Divergir o PROMPT é o esperado; divergir o schema, não.
+// ═══════════════════════════════════════════════════════════════════════════
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -406,10 +419,42 @@ pontos_fracos: exatamente 3 preocupações principais visíveis, cada uma com lo
 
 ---
 
+## ETAPA 8 — MÉTRICAS DA TELA HOME
+
+Gere 6 métricas visuais, cada uma um número INTEIRO de 0 a 100. Elas são exibidas como cards independentes na tela inicial do app — cada uma sozinha, nunca combinadas entre si.
+
+REGRA DE INDEPENDÊNCIA (crítica): estas 6 métricas são avaliações SEPARADAS e NÃO entram no cálculo do skin_score da ETAPA 6. O skin_score permanece exatamente como definido na ETAPA 6 — não o altere por causa destas métricas, e não force estas métricas para "casar" com o skin_score. Como todas descrevem o mesmo rosto, uma coerência natural é esperada; evite apenas contradições grosseiras (ex.: skin_score 88 com acne 90). Divergências leves são normais e aceitáveis.
+
+Há dois grupos com DIREÇÕES OPOSTAS — respeite a direção de cada um.
+
+MÉTRICAS POSITIVAS (quanto MAIOR, melhor — 100 = melhor possível, 0 = pior possível):
+
+- qualidade_pele: qualidade geral da pele — uniformidade de tom, textura lisa, luminosidade e aparência saudável. 100 = pele impecável, uniforme e luminosa; 0 = pele muito comprometida, irregular e sem viço.
+- atratividade: impressão estética geral que a PELE transmite ao rosto — frescor, viço, uniformidade e "glow". Avalie o quanto a pele deixa o rosto com aparência radiante e saudável; NÃO avalie os traços do rosto. 100 = pele radiante e harmoniosa; 0 = pele apagada e cansada.
+- juventude: aparência de juventude da pele — firmeza, elasticidade, volume preservado e ausência de sinais de envelhecimento. 100 = pele firme e jovem; 0 = forte perda de firmeza e envelhecimento avançado. É uma impressão global (relacionada a envelhecimento e firmness_loss), não apenas linhas.
+
+MÉTRICAS NEGATIVAS (quanto MENOR, melhor — 0 = ausência total, 100 = severidade máxima):
+
+- oleosidade: quantidade de oleosidade/brilho sebáceo visível. 0 = nada oleosa (fosca/seca); 100 = extremamente oleosa (brilho difuso intenso em toda a zona T e além). Deve ser coerente com brilho_sebaceo e skin_type_sebaceous.
+- acne: severidade e quantidade de acne visível. 0 = nenhuma acne; 100 = acne severa e disseminada. Deve refletir a severidade que você avaliou em acne.severity_score (IGA 0 → acne ≈ 0; IGA 4 → acne ≈ 90-100). Filamentos sebáceos do nariz NÃO contam como acne.
+- linhas_expressao: quantidade e profundidade de linhas de expressão (linhas finas e rugas dinâmicas — periocular, testa, glabela, perioral). 0 = nenhuma linha visível; 100 = linhas numerosas e profundas. Deve ser coerente com envelhecimento.lines_type.
+
+Avalie cada métrica estritamente pelo que vê na imagem, de forma independente das outras.
+
+---
+
 ## RETORNE EXATAMENTE ESTE JSON — sem texto antes, sem texto depois, sem markdown:
 
 {
   "skin_score": <número inteiro 0-100>,
+  "metricas": {
+    "qualidade_pele": <número inteiro 0-100>,
+    "atratividade": <número inteiro 0-100>,
+    "juventude": <número inteiro 0-100>,
+    "oleosidade": <número inteiro 0-100>,
+    "acne": <número inteiro 0-100>,
+    "linhas_expressao": <número inteiro 0-100>
+  },
   "headline": <string>,
   "skin_phototype": <"I"|"II"|"III"|"IV"|"V"|"VI">,
   "skin_type_sebaceous": <"seca"|"oleosa"|"mista"|"normal">,
@@ -511,6 +556,14 @@ pontos_fracos: exatamente 3 preocupações principais visíveis, cada uma com lo
       ? `Analise o rosto nesta foto seguindo todas as etapas do sistema.\n\nContexto declarado pelo usuário (use conforme as instruções — confirma ou contradiz o visível):\n${ctx}`
       : 'Analise o rosto nesta foto seguindo todas as etapas do sistema.'
 
+    const userContent = [
+      {
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${imageBase64}` },
+      },
+      { type: 'text', text: contextMessage },
+    ]
+
     const openaiUrl = 'https://api.openai.com/v1/chat/completions'
     const openaiKey = Deno.env.get('OPENAI_API_KEY')
 
@@ -535,18 +588,7 @@ pontos_fracos: exatamente 3 preocupações principais visíveis, cada uma com lo
             },
             {
               role: 'user',
-              content: [
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:image/jpeg;base64,${imageBase64}`,
-                  },
-                },
-                {
-                  type: 'text',
-                  text: contextMessage,
-                },
-              ],
+              content: userContent,
             },
           ],
         }),
@@ -581,6 +623,17 @@ pontos_fracos: exatamente 3 preocupações principais visíveis, cada uma com lo
     }
     if (result.envelhecimento?.skin_age !== undefined && result.skin_age === undefined) {
       result.skin_age = result.envelhecimento.skin_age
+    }
+
+    // Sanitiza as 6 métricas da home: inteiro, 0–100, null se inválida
+    if (result.metricas && typeof result.metricas === 'object') {
+      const clampMetric = (v: any) => {
+        const n = Math.round(Number(v))
+        return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null
+      }
+      for (const k of ['qualidade_pele', 'atratividade', 'juventude', 'oleosidade', 'acne', 'linhas_expressao']) {
+        result.metricas[k] = clampMetric(result.metricas[k])
+      }
     }
 
     if (!result.disclaimer) {

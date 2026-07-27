@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle as SvgCircle } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { haptics } from '../../lib/haptics';
 
 const DEEP = '#1D3A44';
 const DEEP_SOFT = 'rgba(29,58,68,0.55)';
@@ -452,6 +453,7 @@ export default function PlanPreview() {
         }}>
           <TouchableOpacity
             onPress={() => {
+              haptics.action();
               track('onboarding_step_completed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 });
               router.push('/(onboarding)/paywall-soft' as any);
             }}

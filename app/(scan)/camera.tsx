@@ -10,9 +10,12 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { useScanConsentGate } from '../../hooks/useScanConsentGate';
+import { haptics } from '../../lib/haptics';
 
 export default function Camera() {
   const router = useRouter();
+  const { consentGate } = useScanConsentGate();
   const { setSkinImage, scanSource } = useAppStore();
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
@@ -37,6 +40,7 @@ export default function Camera() {
   };
 
   const handlePickImage = async () => {
+    haptics.tap();
     try {
       setCapturing(true);
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -59,6 +63,7 @@ export default function Camera() {
   };
 
   const handleCapture = async () => {
+    haptics.action();
     if (!cameraRef.current) return;
     try {
       setCapturing(true);
@@ -90,7 +95,7 @@ export default function Camera() {
             O NIKS AI precisa da câmera para analisar sua pele.
           </Text>
           <TouchableOpacity
-            onPress={requestPermission}
+            onPress={() => { haptics.tap(); requestPermission(); }}
             style={{ backgroundColor: 'white', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
           >
             <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1A1A' }}>Permitir câmera</Text>
@@ -103,7 +108,7 @@ export default function Camera() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Close button */}
-      <TouchableOpacity onPress={() => router.back()} activeOpacity={0.8} style={styles.closeBtn}>
+      <TouchableOpacity onPress={() => { haptics.tap(); router.back(); }} activeOpacity={0.8} style={styles.closeBtn}>
         <X size={20} color="white" />
       </TouchableOpacity>
 
@@ -145,15 +150,22 @@ export default function Camera() {
         </TouchableOpacity>
       </View>
 
-      {/* Botão galeria — simulador: único modo; celular real: alternativa */}
-      <TouchableOpacity
-        onPress={handlePickImage}
-        activeOpacity={0.8}
-        disabled={capturing}
-        style={styles.galleryBtn}
-      >
-        <ImageIcon size={20} color="white" />
-      </TouchableOpacity>
+      {/* Botão galeria — SÓ em desenvolvimento. No simulador é o único jeito de
+          fornecer uma foto (o shutter fica desabilitado sem câmera real). Em
+          produção a análise de pele exige foto tirada na hora: sem galeria, a
+          usuária não sobe uma imagem qualquer da internet. */}
+      {__DEV__ && (
+        <TouchableOpacity
+          onPress={handlePickImage}
+          activeOpacity={0.8}
+          disabled={capturing}
+          style={styles.galleryBtn}
+        >
+          <ImageIcon size={20} color="white" />
+        </TouchableOpacity>
+      )}
+
+      {consentGate}
     </SafeAreaView>
   );
 }

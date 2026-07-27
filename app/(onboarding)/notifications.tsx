@@ -7,6 +7,7 @@ import { Canvas, Circle as SkiaCircle, RadialGradient, vec } from '@shopify/reac
 import { useFonts } from 'expo-font';
 import { supabase } from '../../lib/supabase';
 import { requestPushPermission, savePushToken } from '../../lib/notifications';
+import { haptics } from '../../lib/haptics';
 
 const DEEP = '#1D3A44';
 const DEEP_SOFT = 'rgba(29,58,68,0.55)';
@@ -38,6 +39,7 @@ export default function Notifications() {
   };
 
   const handleActivate = async () => {
+    haptics.action();
     setLoading(true);
     setHasRequested(true);
     try {
@@ -170,7 +172,7 @@ export default function Notifications() {
 
           {hasRequested && (
             <TouchableOpacity
-              onPress={navigateToApp}
+              onPress={() => { haptics.tap(); navigateToApp(); }}
               activeOpacity={0.85}
               style={{
                 height: 60, borderRadius: 100,

@@ -6,6 +6,7 @@ import { ChevronLeft, Shield, Droplets, Sparkles, Leaf, Sun } from 'lucide-react
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore, ScanResult } from '../../store/onboarding';
+import { haptics } from '../../lib/haptics';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -320,7 +321,7 @@ export default function SkinResult() {
       {/* ── Header flutuante ─────────────────────────────────────── */}
       <SafeAreaView style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }} edges={['top']}>
         <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={{ padding: 4 }}>
+          <TouchableOpacity onPress={() => { haptics.tap(); router.back(); }} activeOpacity={0.7} style={{ padding: 4 }}>
             <ChevronLeft size={24} color="#FFFFFF" strokeWidth={2} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>

@@ -5,10 +5,11 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import Svg, { Path, Ellipse } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
 import { useFonts } from 'expo-font';
-import { requestAppReview } from '../../lib/storeReview';
+// Tela desativada: fora do fluxo de onboarding (política da Apple).
+// import { requestAppReview } from '../../lib/storeReview';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 
 const DEEP = '#1D3A44';
@@ -111,9 +112,10 @@ export default function RateUs() {
 
   const scrollX = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    requestAppReview();
-  }, []);
+  // Pop-up de avaliação desativado (política da Apple: só depois de uso real do app).
+  // useEffect(() => {
+  //   requestAppReview();
+  // }, []);
 
   useEffect(() => {
     track('onboarding_step_viewed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
@@ -131,6 +133,7 @@ export default function RateUs() {
   }, []);
 
   const handleContinue = () => {
+    haptics.action();
     track('onboarding_step_completed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
     if (scanSource === 'app') {
       setScanSource('onboarding');
@@ -150,8 +153,8 @@ export default function RateUs() {
           flexDirection: 'row', alignItems: 'center', gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}

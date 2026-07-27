@@ -16,6 +16,7 @@ import {
 } from '@shopify/react-native-skia';
 import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 
 const DEEP = '#1D3A44';
@@ -603,7 +604,7 @@ export default function Loading() {
             </Text>
 
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => { haptics.tap(); router.back(); }}
               style={{
                 width: '100%',
                 backgroundColor: CORAL,

@@ -35,6 +35,63 @@ function extractPlano(productId: string): string {
   return 'mensal';
 }
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ── Atribuição de cupom (conversão) ──────────────────────────────────────────
+// O produto de cupom tem identificador próprio, então TODA compra dele veio de cupom.
+// O webhook é o lugar confiável para confirmar a conversão: sobrevive ao app fechar
+// entre a compra e o signup.
+const COUPON_PRODUCT_ID = 'br.com.niksai.app.anual.promo10';
+// Eventos que confirmam que a assinatura de cupom aconteceu (positivos). Cancelamento
+// e expiração não desfazem a atribuição — quem converteu, converteu.
+const COUPON_CONVERT_TYPES = [
+  'INITIAL_PURCHASE',
+  'TRIAL_STARTED',
+  'TRIAL_CONVERTED',
+  'RENEWAL',
+  'UNCANCELLATION',
+];
+
+// deno-lint-ignore no-explicit-any
+async function marcarConversaoCupom(supabase: any, event: RevenueCatEvent): Promise<void> {
+  try {
+    if (event.product_id !== COUPON_PRODUCT_ID) return;
+    if (!COUPON_CONVERT_TYPES.includes(event.type)) return;
+    const rcId = event.app_user_id;
+    if (!rcId) return;
+
+    // A aplicação do cupom e a compra acontecem na MESMA identidade do RevenueCat
+    // (anônima para usuária nova, identificada para quem já tinha conta), então o
+    // app_user_id do evento casa com o rc_app_user_id guardado na aplicação. Pega a
+    // aplicação MAIS RECENTE desse id (= o cupom que ela de fato usou, caso tenha
+    // testado mais de um) e marca convertida.
+    const { data: latest } = await supabase
+      .from('cupom_aplicacoes')
+      .select('id')
+      .eq('rc_app_user_id', rcId)
+      .order('aplicado_em', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!latest) return;
+
+    // Idempotente: o contador total_assinaturas só sobe no false→true do trigger.
+    // Reprocessar o mesmo evento (ou um RENEWAL depois) não infla nada.
+    const patch: Record<string, unknown> = { converteu: true };
+    // Se o id já é UUID (usuária que tinha conta), liga o user_id de brinde.
+    if (!rcId.startsWith('$RCAnonymousID:') && UUID_REGEX.test(rcId)) patch.user_id = rcId;
+
+    const { error } = await supabase
+      .from('cupom_aplicacoes')
+      .update(patch)
+      .eq('id', latest.id);
+    if (error) console.error('[webhook] marcarConversaoCupom update falhou:', error.message);
+  } catch (e) {
+    // Nunca deixa a atribuição derrubar o webhook.
+    console.error('[webhook] marcarConversaoCupom erro:', e);
+  }
+}
+
 Deno.serve(async (req) => {
   // Validar secret
   const authHeader = req.headers.get('Authorization') ?? '';
@@ -84,6 +141,16 @@ Deno.serve(async (req) => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  // Atribuição de cupom (conversão) — INDEPENDENTE do upsert de subscriptions abaixo.
+  // Roda ANTES dos guards de anônimo/usuário-existe porque a compra de uma usuária NOVA
+  // chega com id anônimo e ainda sem conta. Não quebra o fluxo (try/catch interno).
+  await marcarConversaoCupom(supabase, event);
 
   // Mapear event type → status + campos
   let status: SubscriptionStatus | null = null;
@@ -138,8 +205,7 @@ Deno.serve(async (req) => {
   // Ignorar usuários anônimos do RevenueCat ($RCAnonymousID:...) ou qualquer
   // app_user_id que não seja um UUID válido — evita "invalid input syntax for
   // type uuid" no upsert quando a compra ocorre antes do usuário se identificar.
-  const UUID_REGEX =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // (A atribuição de cupom acima já rodou de propósito, pois ela aceita id anônimo.)
   if (
     event.app_user_id.startsWith('$RCAnonymousID:') ||
     !UUID_REGEX.test(event.app_user_id)
@@ -149,11 +215,6 @@ Deno.serve(async (req) => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
 
   // Verificar se o usuário existe em "users" antes do upsert — eventos do
   // RevenueCat para usuários que nunca completaram o cadastro quebrariam com

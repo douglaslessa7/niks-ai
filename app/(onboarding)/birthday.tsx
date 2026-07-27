@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -17,7 +17,7 @@ const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
 
 const STEP = 1;
-const TOTAL = 14;
+const TOTAL = 13;
 const ITEM_HEIGHT = 60;
 const AGES = Array.from({ length: 51 }, (_, i) => i + 10); // 10–60
 const DEFAULT_AGE = 24;
@@ -67,7 +67,7 @@ export default function Birthday() {
     selectedAgeRef.current = age;
     setSelectedAge(age);
     setOnboardingField('birthday', String(age));
-    Haptics.selectionAsync();
+    haptics.select();
   }, [setOnboardingField]);
 
   // Fires after a flick with momentum
@@ -78,10 +78,11 @@ export default function Birthday() {
     selectedAgeRef.current = age;
     setSelectedAge(age);
     setOnboardingField('birthday', String(age));
-    Haptics.selectionAsync();
+    haptics.select();
   }, [setOnboardingField]);
 
   const handleContinue = () => {
+    haptics.action();
     setOnboardingField('birthday', String(selectedAgeRef.current));
     track('onboarding_step_completed', { step_number: 4, step_name: 'Idade', step_total: 23 });
     router.push('/(onboarding)/gender');
@@ -97,8 +98,8 @@ export default function Birthday() {
           flexDirection: 'row', alignItems: 'center', gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}

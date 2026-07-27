@@ -19,10 +19,29 @@ import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
 const superwallPurchaseController = {
   onPurchase: async ({ productId }: { productId: string }): Promise<PurchaseResult> => {
     try {
+      // Procura o produto em TODAS as offerings do projeto, não só na atual.
+      // Produtos de cupom (ex.: o anual com desconto da offering `promo10`) vivem
+      // numa offering que NÃO é a default. Limitar a busca a `offerings.current`
+      // faria a compra desses produtos falhar em silêncio: o Superwall entenderia
+      // que falhou, o RevenueCat nunca seria notificado, e a usuária cairia em loop
+      // de paywall depois de já ter pago.
       const offerings = await Purchases.getOfferings();
-      const packages = offerings.current?.availablePackages ?? [];
-      const pkg = packages.find((p) => p.product.identifier === productId);
-      if (!pkg) return { type: 'failed', error: 'Produto não encontrado' };
+      const allPackages = Object.values(offerings.all).flatMap((o) => o.availablePackages);
+      const pkg = allPackages.find((p) => p.product.identifier === productId);
+      if (!pkg) {
+        // Só chega aqui se o produto não existe em NENHUMA offering — falha real de
+        // configuração no RevenueCat. Loga o cenário completo para não falhar às cegas.
+        console.error(
+          `[purchase] Produto "${productId}" não encontrado em nenhuma offering do RevenueCat. ` +
+          `Offerings existentes: ${Object.keys(offerings.all).join(', ') || '(nenhuma)'}. ` +
+          `Produtos por offering: ${
+            Object.values(offerings.all)
+              .map((o) => `${o.identifier}[${o.availablePackages.map((p) => p.product.identifier).join(', ')}]`)
+              .join(' · ') || '(nenhum)'
+          }`
+        );
+        return { type: 'failed', error: `Produto ${productId} não encontrado em nenhuma offering` };
+      }
       const { customerInfo } = await Purchases.purchasePackage(pkg);
       const active = typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined';
       return active ? { type: 'purchased' } : { type: 'failed', error: 'Entitlement não ativo' };
@@ -105,14 +124,37 @@ export default function RootLayout() {
       }
     };
 
+    // MESMA condição de auth usada dentro do handleAuthUrl (a negação do return de
+    // guarda ali em cima). É a fronteira única entre os dois fluxos: se for auth, vai
+    // SÓ para o handleAuthUrl (inalterado); senão, vai SÓ para o Superwall. Um nunca
+    // rouba o link do outro.
+    const isAuthUrl = (url: string) =>
+      url.includes('auth/confirm') || url.includes('code=') || url.includes('access_token=');
+
+    // Despachante: NÃO altera o tratamento de auth — só decide quem recebe a URL.
+    const handleDeepLink = (url: string) => {
+      if (isAuthUrl(url)) {
+        // Link de autenticação do Supabase → fluxo de auth, exatamente como hoje.
+        handleAuthUrl(url);
+        return;
+      }
+      // Só o que NÃO é auth vai para o Superwall (ex.: preview de paywall por QR code).
+      // Defensivo: qualquer falha aqui é isolada e nunca afeta o fluxo de auth.
+      try {
+        Superwall.shared.handleDeepLink(url).catch(() => {});
+      } catch {
+        // SDK ainda não configurado / indisponível — ignora.
+      }
+    };
+
     // App estava fechado e foi aberto pelo link (cold start)
     Linking.getInitialURL().then((url) => {
-      if (url) handleAuthUrl(url);
+      if (url) handleDeepLink(url);
     });
 
     // App estava em background ou foreground e recebeu o link
     const subscription = Linking.addEventListener('url', ({ url }) => {
-      handleAuthUrl(url);
+      handleDeepLink(url);
     });
 
     return () => subscription.remove();

@@ -1,160 +1,179 @@
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
-import { BlurView } from 'expo-blur';
+import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { haptics } from '../../lib/haptics';
 import { getCustomerInfo, isSubscribed, loginRevenueCat } from '../../lib/revenuecat';
 import { useAppStore } from '../../store/onboarding';
-import { ScanModal } from '../../components/scan/ScanModal';
+import NameCapture from '../../components/onboarding/NameCapture';
 
-// ── Tab icons (filled/outline dual-mode) ─────────────────────────────────────
-function TabIconHome({ color, size = 24, filled }: { color: string; size?: number; filled: boolean }) {
+// ── Bottom navbar — réplica do design "Fixed bottom bar" (navbar-design/Navbar.dc.html) ──
+// Ícones line/stroke SVG idênticos ao design. Cores/estados do design:
+//   inativo #8a8a93 · ativo #e0736f (traço 2) + ponto #ff9d9d sob a aba ativa ·
+//   badge de notificação vermelho #e8452f no ícone de mensagens · barra branca,
+//   borda superior hairline #f2e6e6, sombra suave para cima, flush full-width.
+const NAV_ACTIVE = '#ff9d9d';
+const NAV_INACTIVE = '#8a8a93';
+const NAV_DOT = '#ff9d9d';        // ponto sob a aba ativa
+const NAV_BORDER = '#f2e6e6';     // borda superior hairline
+const NAV_BADGE = '#ff9d9d';      // badge de notificação (mensagens) — rosa da Rotina
+// Modo noturno da tab bar (sincronizado com o tema da tela — ex.: protocolo à noite)
+const NAV_ACTIVE_DARK = '#FF9D9D';
+const NAV_INACTIVE_DARK = '#8B93A8';
+const NAV_BG_DARK = '#1A1F2E';
+// A logo central da navbar é SEMPRE a logo rosa padrão da marca (#FF9D9D) — fixa,
+// independente do Niks score e igual em ambos os modos (claro e noturno).
+
+// Ícones SVG line, copiados 1:1 do design (viewBox 24, cantos/juntas arredondados).
+// Tamanho aumentado p/ 29 (design usava 23) — ficava pequeno demais na barra real.
+const GLYPH_SIZE = 29;
+function NavGlyph({ name, color, active }: { name: string; color: string; active: boolean }) {
+  // Ícone "beauty" (tela protocolo) — preenchido (fill), viewBox 34. Segue a cor da
+  // navbar: rosa padrão (#ff9d9d) quando ativo, cinza quando inativo.
+  if (name === 'beauty') {
+    return (
+      <Svg width={GLYPH_SIZE} height={GLYPH_SIZE} viewBox="0 0 34 34">
+        <Path d="M17.5152 4.15432C18.3865 4.15432 19.093 4.37213 19.6668 4.7015C20.7718 5.00432 22.0787 5.47713 23.3537 6.19432C22.3974 3.809 20.0759 2.11963 17.3505 2.11963H16.6599C13.9399 2.11963 11.6184 3.80369 10.6621 6.17838C13.7062 4.46244 16.9574 4.17557 17.1434 4.15963C17.2815 4.149 17.4037 4.149 17.5205 4.149L17.5152 4.15432Z" fill={color} />
+        <Path d="M6.05673 19.0082C6.31704 18.7107 6.69423 18.5354 7.10329 18.5354C7.62923 18.5354 8.11267 18.8275 8.36236 19.295C8.58548 19.7041 8.86173 20.06 9.15392 20.3629L9.26548 18.7319C9.26548 18.7319 8.89892 13.276 18.557 11.2413C18.7961 11.1882 19.0245 11.1032 19.2317 10.9704C19.848 10.5825 20.8892 9.61036 20.5917 7.57036C20.5917 7.57036 20.0286 5.04161 17.2183 5.22755C17.2183 5.22755 11.3745 5.69505 8.28267 9.48817C8.28267 9.48817 4.91454 13.0422 5.84954 17.9988C5.84954 17.9988 5.90798 18.4025 6.05673 19.0082Z" fill={color} />
+        <Path d="M28.1506 17.9986C29.0856 13.0421 25.7175 9.48801 25.7175 9.48801C24.485 7.97395 22.8169 7.00176 21.2497 6.36426C21.4409 6.7202 21.5631 7.0602 21.6269 7.33645L21.6375 7.41082C22.0413 10.1361 20.4847 11.4377 19.7994 11.868C19.5178 12.0433 19.2044 12.1708 18.8697 12.2505C25.0003 14.673 24.7347 18.7318 24.7347 18.7318L24.9525 21.9352L24.5541 23.3324C23.5394 26.7058 20.3625 29.0221 16.8509 28.953C13.9025 28.8999 11.2781 27.1468 9.97656 24.4852C9.67375 24.7189 9.40813 24.9793 9.17969 25.2396C9.92875 26.6474 11.0072 27.8108 12.2928 28.6343V31.1046C12.2928 31.5296 12.6381 31.8749 13.0631 31.8749H20.6919C21.1116 31.8749 21.4569 31.5296 21.4569 31.1046V28.8096C23.3481 27.7152 24.825 25.9514 25.5209 23.7786C25.5422 23.768 25.5688 23.7627 25.59 23.7414C27.5822 21.7705 28.1506 17.9986 28.1506 17.9986Z" fill={color} />
+        <Path d="M16.1656 19.2472C16.341 19.0135 16.2985 18.6788 16.0647 18.5035C15.831 18.3281 15.4963 18.3706 15.321 18.6044C15.0235 18.9975 14.5772 19.2206 14.0885 19.2206C13.5997 19.2206 13.1535 18.9975 12.856 18.6044C12.6806 18.3706 12.346 18.3228 12.1122 18.5035C11.8785 18.6788 11.8306 19.0135 12.0113 19.2472C12.5106 19.906 13.2703 20.2831 14.0885 20.2831C14.9066 20.2831 15.6716 19.906 16.1656 19.2472Z" fill={color} />
+        <Path d="M22.5406 19.2472C22.716 19.0135 22.6735 18.6788 22.4397 18.5035C22.206 18.3281 21.8713 18.3706 21.696 18.6044C21.3985 18.9975 20.9522 19.2206 20.4635 19.2206C19.9747 19.2206 19.5285 18.9975 19.231 18.6044C19.0556 18.3706 18.721 18.3228 18.4872 18.5035C18.2535 18.6788 18.2056 19.0135 18.3863 19.2472C18.8856 19.906 19.6453 20.2831 20.4635 20.2831C21.2816 20.2831 22.0466 19.906 22.5406 19.2472Z" fill={color} />
+        <Path d="M17.2705 25.5424C18.009 25.5424 18.6943 25.3033 19.1565 24.8836C19.3743 24.6871 19.3902 24.3524 19.1936 24.1346C18.9971 23.9168 18.6624 23.9008 18.4446 24.0974C18.179 24.3418 17.738 24.4852 17.2705 24.4852C16.803 24.4852 16.3621 24.3418 16.0965 24.0974C15.8786 23.9008 15.544 23.9168 15.3474 24.1346C15.1508 24.3524 15.1668 24.6871 15.3846 24.8836C15.8468 25.3033 16.5374 25.5424 17.2705 25.5424Z" fill={color} />
+        <Path d="M10.1683 22.4772C9.41395 22.0469 8.17083 21.1809 7.42708 19.7944C7.28895 19.5394 6.93302 19.5234 6.79489 19.7784C6.39645 20.4956 5.57302 21.6325 4.04833 22.4825C3.80395 22.6206 3.79333 22.9713 4.04302 23.1041C4.78145 23.5078 6.00333 24.3578 6.81083 25.8613C6.94364 26.1109 7.29958 26.1269 7.4377 25.8772C7.86802 25.1175 8.74458 23.8584 10.1577 23.0988C10.4074 22.9659 10.4233 22.61 10.179 22.4719L10.1683 22.4772Z" fill={color} />
+        <Path d="M29.9842 27.8269C29.4476 27.5029 28.6826 26.9344 28.1726 26.0632C28.0292 25.8188 27.6839 25.8082 27.5404 26.0526C27.2376 26.5573 26.6798 27.2638 25.7289 27.8323C25.4898 27.9757 25.4845 28.3104 25.7235 28.4538C26.2495 28.7619 27.0092 29.3357 27.5563 30.276C27.6945 30.5151 28.0345 30.531 28.1779 30.2919C28.502 29.7554 29.0864 28.9744 29.9682 28.4485C30.2073 28.3051 30.2232 27.9704 29.9842 27.8269Z" fill={color} />
+      </Svg>
+    );
+  }
+  // traço proporcional ao tamanho maior (design: 1.8 / 2 em 23px → ~1.55 / 1.7 em 24 viewBox)
+  const sw = active ? 1.7 : 1.55;
+  const common = {
+    stroke: color,
+    strokeWidth: sw,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    fill: 'none',
+  };
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M3 10.5L12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15V14H9v7.5H4.5A1.5 1.5 0 0 1 3 20z"
-        fill={filled ? color : 'none'}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap={filled ? undefined : 'round'}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-function TabIconProtocol({ color, size = 24, filled }: { color: string; size?: number; filled: boolean }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"
-        fill={filled ? color : 'none'}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap={filled ? undefined : 'round'}
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-function TabIconUser({ color, size = 24, filled }: { color: string; size?: number; filled: boolean }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
-        fill={filled ? color : 'none'}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap={filled ? undefined : 'round'}
-        strokeLinejoin="round"
-      />
-      <Circle cx={12} cy={7} r={4} fill={filled ? color : 'none'} stroke={color} strokeWidth={1.5} />
-    </Svg>
-  );
-}
-function TabIconSparkles({ color, size = 24, filled }: { color: string; size?: number; filled: boolean }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"
-        fill={filled ? color : 'none'}
-        stroke={color}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path d="M5 3v4"   stroke={color} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-      <Path d="M19 17v4" stroke={color} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-      <Path d="M3 5h4"   stroke={color} strokeWidth={1.5} strokeLinecap="round" fill="none" />
-      <Path d="M17 19h4" stroke={color} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+    <Svg width={GLYPH_SIZE} height={GLYPH_SIZE} viewBox="0 0 24 24">
+      {name === 'rotina' && (
+        <>
+          <Path d="M10 2h4M11 2v2.5M13 2v2.5M9.5 8.5h5" {...common} />
+          <Rect x={7.5} y={8.5} width={9} height={13.5} rx={2.5} {...common} />
+          <Path d="M12 5.5V8.5M8 15.5h4" {...common} />
+        </>
+      )}
+      {name === 'busca' && (
+        <>
+          <Circle cx={11} cy={11} r={7} {...common} />
+          <Path d="M20 20l-3.2-3.2" {...common} />
+        </>
+      )}
+      {name === 'niks' && (
+        <Path d="M21 12a8 8 0 0 1-11.4 7.2L4 20l1-4.6A8 8 0 1 1 21 12z" {...common} />
+      )}
+      {name === 'perfil' && (
+        <>
+          <Circle cx={12} cy={8} r={4} {...common} />
+          <Path d="M4.5 20a7.5 7.5 0 0 1 15 0" {...common} />
+        </>
+      )}
     </Svg>
   );
 }
 
-const TABS = [
-  { key: 'home',      label: 'início', Icon: TabIconHome     },
-  { key: 'protocolo', label: 'rotina', Icon: TabIconProtocol },
-  { key: 'niks-chat', label: 'niks',   Icon: TabIconSparkles },
-  { key: 'perfil',    label: 'perfil', Icon: TabIconUser     },
-];
+// Ordem esquerda→direita do design. Center = logo NIKS (mantida como no app atual).
+// Mapeamento de rotas preservado do app.
+const NAV_ITEMS = [
+  { key: 'beauty', route: '/protocolo' },          // ícone "beauty" (rosto/skincare)
+  { key: 'rotina', route: '/recomendacao-produtos' }, // ícone de produto (frasco)
+  { key: 'home',   route: '/home' },              // center — logo (intocada)
+  { key: 'niks',   route: '/niks-chat', badge: true },
+  { key: 'perfil', route: '/perfil' },
+] as const;
 
-// ── Global bottom bar — tab pill (left) + FAB scan (right) ───────────────────
 function GlobalBottomBar() {
   const router = useRouter();
   const pathname = usePathname();
-  const tabBarTheme = useAppStore((s) => s.tabBarTheme);
-  const setScanModalOpen = useAppStore((s) => s.setScanModalOpen);
+  const insets = useSafeAreaInsets();
+  // Tema da tab bar — escurece junto com telas em modo noturno (protocolo)
+  const isDark = useAppStore((s) => s.tabBarTheme) === 'dark';
 
-  const isDark = tabBarTheme === 'dark';
-  const tabAccent    = isDark ? '#FB8877' : '#FB7B6B';
-  const fabColor     = '#FB7B6B';
-  const inactiveColor = isDark ? 'rgba(255,255,255,0.45)' : '#8A8A8E';
-  const bg     = isDark ? 'rgba(26,31,46,0.85)' : '#FFFFFF';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : '#F0F0F0';
+  const isActive = (route: string) => pathname === route || pathname.startsWith(`${route}/`);
 
-  const tabItems = TABS.map((tab) => {
-    const isActive = pathname === `/${tab.key}` || pathname.startsWith(`/${tab.key}/`);
-    const color = isActive ? tabAccent : inactiveColor;
-    return (
-      <TouchableOpacity
-        key={tab.key}
-        onPress={() => router.push(`/${tab.key}` as any)}
-        activeOpacity={0.8}
-        style={styles.tabItem}
-      >
-        <tab.Icon color={color} size={24} filled={isActive} />
-        <Text style={[styles.tabLabel, { color, fontWeight: isActive ? '600' : '400' }]}>
-          {tab.label}
-        </Text>
-      </TouchableOpacity>
-    );
-  });
-
-  const tabContent = (
-    <View style={[styles.pillInner, { backgroundColor: bg, borderColor: border }]}>
-      {tabItems}
-    </View>
-  );
+  const activeColor = isDark ? NAV_ACTIVE_DARK : NAV_ACTIVE;
+  const inactiveColor = isDark ? NAV_INACTIVE_DARK : NAV_INACTIVE;
 
   return (
-    <>
-      {/* Tab pill — leaves right: 92 gap for the FAB */}
-      <View style={[
-        styles.pill,
-        isDark ? styles.pillShadowDark : styles.pillShadowLight,
-      ]}>
-        {isDark ? (
-          <BlurView intensity={50} tint="dark" style={{ borderRadius: 20, overflow: 'hidden' }}>
-            {tabContent}
-          </BlurView>
-        ) : (
-          tabContent
-        )}
-      </View>
+    // Barra flush na borda inferior, full-width. padding do design: 14 topo / 20 lados.
+    // padding inferior = safe area (home indicator) com mínimo de 26 do design.
+    <View style={[
+      styles.navbar,
+      {
+        paddingTop: 14,
+        paddingBottom: Math.max(insets.bottom, 26),
+        backgroundColor: isDark ? NAV_BG_DARK : '#FFFFFF',
+        borderTopColor: isDark ? 'rgba(255,255,255,0.07)' : NAV_BORDER,
+      },
+    ]}>
+      {NAV_ITEMS.map((it) => {
+        const active = isActive(it.route);
 
-      {/* FAB — scan button */}
-      <TouchableOpacity
-        onPress={() => setScanModalOpen(true)}
-        activeOpacity={0.88}
-        style={[styles.fab, { backgroundColor: fabColor, shadowColor: fabColor }]}
-      >
-        <Svg width={26} height={26} viewBox="0 0 24 24">
-          <Path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
-        </Svg>
-      </TouchableOpacity>
-    </>
+        // Item central — a logo NIKS pura (fundo transparente, sem moldura). SEMPRE na
+        // cor rosa padrão da marca (#FF9D9D — a mesma logo tintada de protocolo/chat),
+        // independente do Niks score e em ambos os modos (claro e noturno).
+        if (it.key === 'home') {
+          return (
+            <TouchableOpacity
+              key={it.key}
+              activeOpacity={0.7}
+              onPress={() => { haptics.tap(); router.push(it.route as any); }}
+              style={styles.item}
+            >
+              <Image
+                source={require('../../assets/home/niks-logo.png')}
+                style={[styles.centerLogo, { tintColor: '#FF9D9D' }]}
+              />
+            </TouchableOpacity>
+          );
+        }
+
+        return (
+          <TouchableOpacity
+            key={it.key}
+            activeOpacity={0.7}
+            onPress={() => { haptics.tap(); router.push(it.route as any); }}
+            style={styles.item}
+          >
+            <View>
+              <NavGlyph
+                name={it.key}
+                color={active ? activeColor : inactiveColor}
+                active={active}
+              />
+              {('badge' in it && it.badge) && (
+                <View style={[styles.badge, isDark && { borderColor: NAV_BG_DARK }]} />
+              )}
+            </View>
+            {/* slot de altura fixa: ponto sob a aba ativa (mantém ícones alinhados) */}
+            <View style={styles.dotSlot}>
+              {active && <View style={[styles.dot, isDark && { backgroundColor: NAV_ACTIVE_DARK }]} />}
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
 export default function AppLayout() {
   const router = useRouter();
-  const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  const [needsName, setNeedsName] = useState(false);
   const tabBarVisible = useAppStore((s) => s.tabBarVisible);
   const subscriptionVerified = useAppStore((s) => s.subscriptionVerified);
   const setSubscriptionVerified = useAppStore((s) => s.setSubscriptionVerified);
-  const scanModalOpen = useAppStore((s) => s.scanModalOpen);
-  const setScanModalOpen = useAppStore((s) => s.setScanModalOpen);
   const tabBarTheme = useAppStore((s) => s.tabBarTheme);
 
   useEffect(() => {
@@ -164,18 +183,22 @@ export default function AppLayout() {
         return;
       }
 
-      // Verifica se o usuário já tem nome definido
+      // Guard de nome — APENAS marca o estado; NUNCA navega. Um router.replace
+      // para o grupo (onboarding) aqui criava um loop: o (onboarding)/_layout via
+      // sessão + assinante e mandava de volta para /home, e assim sem parar (a
+      // tela "entrava e saía" e a usuária não conseguia digitar). Agora o guard só
+      // decide se a captura de nome deve ser RENDERIZADA no lugar do app (ver render
+      // abaixo). O efeito NÃO pode parar aqui: precisa seguir até verificar a
+      // assinatura e setar `ready`, senão `if (!ready) return null` deixaria a tela
+      // branca para sempre. `needsName` é um estado paralelo ao `ready`.
+      // Espaço em branco conta como vazio (mesma regra da validação do input).
       try {
         const { data: userData } = await supabase
           .from('users')
           .select('nome')
           .eq('id', session.user.id)
           .single();
-        const nome = (userData?.nome ?? '').trim();
-        if (!nome) {
-          router.replace('/(onboarding)/nome');
-          return;
-        }
+        setNeedsName(!(userData?.nome ?? '').trim());
       } catch {
         // Em caso de erro não bloqueamos o nome check
       }
@@ -218,6 +241,12 @@ export default function AppLayout() {
 
   if (!ready) return null;
 
+  // Nome vazio → renderiza a captura no lugar do app (mesma fonte da etapa do
+  // onboarding). Só chega aqui com `ready` true, ou seja, assinatura já verificada
+  // (o guard de assinatura continua fail closed e intocado). Ao salvar, `onSaved`
+  // apenas libera a renderização — sem navegação, sem remontar layout, sem loop.
+  if (needsName) return <NameCapture onSaved={() => setNeedsName(false)} />;
+
   return (
     <View style={{ flex: 1 }}>
       <Tabs
@@ -227,6 +256,7 @@ export default function AppLayout() {
         }}
       >
         <Tabs.Screen name="home" />
+        <Tabs.Screen name="recomendacao-produtos" />
         <Tabs.Screen name="protocolo" />
         <Tabs.Screen name="niks-chat" />
         <Tabs.Screen name="perfil" />
@@ -234,68 +264,60 @@ export default function AppLayout() {
         <Tabs.Screen name="skin-result" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
-      <ScanModal
-        isOpen={scanModalOpen}
-        onClose={() => setScanModalOpen(false)}
-        isDark={tabBarTheme === 'dark'}
-      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: {
+  // Flush na borda inferior, full-width. Borda superior hairline + sombra suave p/ cima.
+  navbar: {
     position: 'absolute',
-    left: 16,
-    right: 92,
-    bottom: 20,
-    borderRadius: 20,
-  },
-  pillShadowLight: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  pillShadowDark: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 8,
-  },
-  pillInner: {
+    left: 0, right: 0, bottom: 0,
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  item: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'space-around',
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    justifyContent: 'flex-start',
   },
-  tabItem: {
-    alignItems: 'center',
-    paddingVertical: 4,
-    gap: 4,
-    minWidth: 52,
+  centerLogo: {
+    width: 49,
+    height: 49,
+    resizeMode: 'contain',
+    marginTop: -6,
   },
-  tabLabel: {
-    fontSize: 12,
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 24,
-    zIndex: 30,
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+  // Slot de altura fixa p/ o ponto da aba ativa — mantém todos os ícones na mesma linha.
+  dotSlot: {
+    height: 9,
+    marginTop: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.33,
-    shadowRadius: 28,
-    elevation: 12,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: NAV_DOT,
+  },
+  // Badge de notificação no ícone de mensagens (canto superior direito).
+  badge: {
+    position: 'absolute',
+    top: -1,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: NAV_BADGE,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
 });

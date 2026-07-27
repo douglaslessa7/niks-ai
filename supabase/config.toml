@@ -14,3 +14,13 @@ entrypoint = "./functions/analyze-skin/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/revenuecat-webhook/index.ts"
+
+[functions.validar-cupom]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/validar-cupom/index.ts"
+
+[functions.atribuir-cupom]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/atribuir-cupom/index.ts"

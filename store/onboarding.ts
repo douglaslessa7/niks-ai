@@ -1,8 +1,17 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
+import type { StickerSpec } from '../lib/stickerSpec'
 
-async function uploadScanPhoto(userId: string, base64: string): Promise<string> {
-  const path = `${userId}/${Date.now()}.jpg`;
+/**
+ * Sobe um JPEG (base64) para o bucket privado `scans` e devolve uma signed URL de 1 ano.
+ *
+ * `prefix` distingue a origem dentro da pasta do usuário (ex.: `'home_'` para a foto de
+ * perfil escolhida na galeria). O default `''` preserva o caminho histórico dos scans.
+ */
+export async function uploadScanPhoto(userId: string, base64: string, prefix = ''): Promise<string> {
+  const path = `${userId}/${prefix}${Date.now()}.jpg`;
   const binaryStr = atob(base64);
   const bytes = new Uint8Array(binaryStr.length);
   for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
@@ -196,12 +205,27 @@ export type OnboardingData = {
 type AppStore = {
   tabBarTheme: 'light' | 'dark'
   setTabBarTheme: (theme: 'light' | 'dark') => void
+  // Niks score do último scan — usado para o tema de cor da home E da logo central da navbar
+  skinScore: number | null
+  setSkinScore: (score: number | null) => void
   tabBarVisible: boolean
   setTabBarVisible: (visible: boolean) => void
-  scanModalOpen: boolean
-  setScanModalOpen: (open: boolean) => void
+  // produto_id cujo detalhe deve abrir ao entrar em recomendacao-produtos (deep-link da home)
+  productDetailTarget: string | null
+  setProductDetailTarget: (id: string | null) => void
   subscriptionVerified: boolean
   setSubscriptionVerified: (v: boolean) => void
+
+  // Cupom de influenciadora aplicado no paywall. Aplicado ANTES do signup, quando a
+  // usuária ainda não tem sessão — por isso é guardado localmente (persistido, ver
+  // partialize) para depois ser ligado ao user_id no cadastro. `rcAppUserId` é o id do
+  // RevenueCat usado na validação, guardado para casar a aplicação exata em cupom_aplicacoes.
+  appliedCoupon: { codigo: string; rcAppUserId: string } | null
+  setAppliedCoupon: (c: { codigo: string; rcAppUserId: string } | null) => void
+  // Tutorial de preparação do scan (scan-prep-app) — mostrado UMA vez só na vida.
+  // Persistido (ver partialize): depois de visto, o botão "Escanear" vai direto à câmera.
+  scanTutorialSeen: boolean
+  setScanTutorialSeen: (v: boolean) => void
   onboarding: OnboardingData
   setOnboardingField: <K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) => void
   scanSource: 'onboarding' | 'app'
@@ -212,9 +236,41 @@ type AppStore = {
   foodImageBase64: string | null
   foodImageMimeType: string | null
   setFoodImage: (base64: string, mimeType: string) => void
+  productImageBase64: string | null
+  productImageMimeType: string | null
+  setProductImage: (base64: string, mimeType: string) => void
+  productScanResult: any | null
+  setProductScanResult: (result: any | null) => void
+  // Colagem do Story (feature Compartilhar): URIs das fotos, na ordem das células.
+  // Viajam pelo store, nunca por router params (truncam no bridge do RN).
+  collagePhotos: string[]
+  setCollagePhotos: (uris: string[]) => void
+  // Adesivo escolhido na bandeja de `share-preview`. `null` = ainda não escolheu →
+  // a tela cai no padrão (só o Niks score). Guardado no store, e não em state local,
+  // para sobreviver ao vai-e-vem entre `share-capture` e `share-preview`.
+  stickerSpec: StickerSpec | null
+  setStickerSpec: (spec: StickerSpec | null) => void
+  // Se a bandeja já subiu sozinha nesta sessão. ⚠️ NÃO persistir (ver `partialize`):
+  // é exatamente a lista branca que faz a bandeja voltar a subir no cold start.
+  stickerSheetSeen: boolean
+  setStickerSheetSeen: (v: boolean) => void
+  // Foto crua recém-escolhida na galeria, a caminho da tela de ajuste (`(foto)/ajustar-foto`).
+  // Mesma regra da colagem: viaja pelo store, nunca por router params. É só um hand-off —
+  // a foto definitiva é persistida em `users.foto_home_url`.
+  homePhotoDraft: { uri: string; width: number; height: number } | null
+  setHomePhotoDraft: (d: { uri: string; width: number; height: number } | null) => void
   skinImageBase64: string | null
   skinImageUri: string | null
   setSkinImage: (base64: string, uri: string) => void
+  // Scan multi-foto (só dentro do app): as 3 imagens que vão para a IA, em base64,
+  // na ordem [neutra_alta, layoutA (2×2 de expressões), layoutB (2 perfis)].
+  // Vazio no scan de 1 foto do onboarding — é isso que `loading-dentro-app` usa para
+  // decidir entre o payload multi e o payload single.
+  // ⚠️ NUNCA persistir (ver o `partialize` no fim do arquivo): ~1 MB de base64.
+  skinCollagesBase64: string[]
+  // Setter ATÔMICO do scan multi-foto. Existe para não haver um render intermediário
+  // com a foto neutra nova ao lado das colagens do scan anterior.
+  setSkinScanImages: (neutral: { base64: string; uri: string }, collages: string[]) => void
   skinScanId: string | null
   protocolResult: ProtocolResult | null
   setProtocolResult: (result: ProtocolResult) => void
@@ -252,23 +308,35 @@ const initialOnboarding: OnboardingData = {
   allergy_description: null,
 }
 
-export const useAppStore = create<AppStore>((set, get) => ({
+export const useAppStore = create<AppStore>()(persist((set, get) => ({
   tabBarTheme: 'light',
   setTabBarTheme: (theme) => set({ tabBarTheme: theme }),
+  skinScore: null,
+  setSkinScore: (score) => set({ skinScore: score }),
   tabBarVisible: true,
   setTabBarVisible: (visible) => set({ tabBarVisible: visible }),
-  scanModalOpen: false,
-  setScanModalOpen: (open) => set({ scanModalOpen: open }),
+
+  productDetailTarget: null,
+  setProductDetailTarget: (id) => set({ productDetailTarget: id }),
   subscriptionVerified: false,
   setSubscriptionVerified: (v) => set({ subscriptionVerified: v }),
+
+  appliedCoupon: null,
+  setAppliedCoupon: (c) => set({ appliedCoupon: c }),
+  scanTutorialSeen: false,
+  setScanTutorialSeen: (v) => set({ scanTutorialSeen: v }),
   onboarding: initialOnboarding,
   scanSource: 'onboarding',
   scanResult: null,
   scanImageUri: null,
   foodImageBase64: null,
   foodImageMimeType: null,
+  productImageBase64: null,
+  productImageMimeType: null,
+  productScanResult: null,
   skinImageBase64: null,
   skinImageUri: null,
+  skinCollagesBase64: [],
   skinScanId: null,
   protocolResult: null,
   protocolGenerating: false,
@@ -286,12 +354,33 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setScanResult: (result, imageUri) =>
     set({ scanResult: result, scanImageUri: imageUri }),
 
+  setProductImage: (base64, mimeType) => {
+    console.log('setProductImage called, size KB:', Math.round((base64.length * 0.75) / 1024))
+    set({ productImageBase64: base64, productImageMimeType: mimeType })
+  },
+
+  setProductScanResult: (result) => set({ productScanResult: result }),
+
+  collagePhotos: [],
+  setCollagePhotos: (uris) => set({ collagePhotos: uris }),
+  stickerSpec: null,
+  setStickerSpec: (spec) => set({ stickerSpec: spec }),
+  stickerSheetSeen: false,
+  setStickerSheetSeen: (v) => set({ stickerSheetSeen: v }),
+  homePhotoDraft: null,
+  setHomePhotoDraft: (d) => set({ homePhotoDraft: d }),
+
   setFoodImage: (base64, mimeType) => {
     console.log('setFoodImage called, size KB:', Math.round((base64.length * 0.75) / 1024))
     set({ foodImageBase64: base64, foodImageMimeType: mimeType })
   },
 
-  setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri }),
+  // Caminho de 1 foto (onboarding e galeria em __DEV__). LIMPA as colagens de propósito:
+  // sem isso, um scan de 1 foto feito depois de um scan multi reenviaria à IA as
+  // colagens antigas junto com a foto nova.
+  setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri, skinCollagesBase64: [] }),
+  setSkinScanImages: (neutral, collages) =>
+    set({ skinImageBase64: neutral.base64, skinImageUri: neutral.uri, skinCollagesBase64: collages }),
 
   setProtocolResult: (result) => set({ protocolResult: result }),
   setProtocolGenerating: (v) => set({ protocolGenerating: v }),
@@ -375,5 +464,33 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, skinImageBase64: null, skinImageUri: null, skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, collagePhotos: [], stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
+}), {
+  // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
+  // O store era 100% em memória, então TODO cache dele morria ao fechar o app —
+  // por isso o cache do protocolo em `protocolo.tsx` nunca funcionava na prática:
+  // depois de qualquer restart ele caía direto no fallback do Supabase.
+  name: 'niks-app-store',
+  storage: createJSONStorage(() => AsyncStorage),
+
+  // ⚠️ LISTA BRANCA DELIBERADA — só persistir o que é pequeno e seguro.
+  // Fora de propósito, e NÃO adicionar sem pensar:
+  //   • `subscriptionVerified` — precisa voltar a `false` no cold start para o
+  //     RevenueCat ser reverificado (ver decisão 16 do README);
+  //   • `niksChatMode` — o README exige que o cold start caia em 'empty';
+  //   • `*ImageBase64` / `*ImageUri` / `collagePhotos` / `homePhotoDraft` /
+  //     `skinCollagesBase64` — base64 de foto estoura o AsyncStorage (as 3 imagens
+  //     do scan multi-foto somam ~1 MB sozinhas); são hand-offs entre telas, de
+  //     vida curta, que não fazem sentido sobreviver ao app;
+  //   • `onboarding` — o fluxo tem `reset()` próprio;
+  //   • `stickerSpec` / `stickerSheetSeen` — é ESTA exclusão que implementa a regra
+  //     "a bandeja de adesivos só sobe sozinha na primeira vez da sessão": os dois
+  //     morrem no cold start, sem precisar de flag nova em AsyncStorage. Persistir
+  //     `stickerSheetSeen` faria a bandeja nunca mais subir sozinha — bug silencioso.
+  partialize: (s) => ({
+    skinScore: s.skinScore,       // tema de cor da home e da navbar, na hora
+    protocolResult: s.protocolResult, // a Rotina abre instantânea, sem rede
+    scanTutorialSeen: s.scanTutorialSeen, // tutorial de prep é uma-vez-só, para sempre
+    appliedCoupon: s.appliedCoupon, // cupom aplicado antes do signup — precisa sobreviver até o cadastro
+  }),
 }))

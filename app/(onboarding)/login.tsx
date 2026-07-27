@@ -8,10 +8,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Eye, EyeOff } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import { useAuth } from '../../hooks/useAuth';
-import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
+import { getCustomerInfo, isSubscribed, loginRevenueCat } from '../../lib/revenuecat';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -39,7 +39,18 @@ export default function Login() {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
 
-  const routeAfterLogin = async () => {
+  const routeAfterLogin = async (userId?: string) => {
+    // Garante que o RevenueCat está logado com o usuário que acabou de autenticar
+    // ANTES de verificar a assinatura. Sem isso, getCustomerInfo() lê o customer
+    // anônimo (o loginRevenueCat do _layout.tsx é fire-and-forget e pode não ter
+    // completado) → isSubscribed false → usuário existente cai no paywall/signup.
+    if (userId) {
+      try {
+        await loginRevenueCat(userId);
+      } catch {
+        // ignora — segue para o check de assinatura mesmo assim
+      }
+    }
     try {
       const info = await getCustomerInfo();
       if (isSubscribed(info)) {
@@ -53,6 +64,7 @@ export default function Login() {
   };
 
   const handleEmailContinue = () => {
+    haptics.action();
     if (!email.trim()) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setStep('password');
@@ -67,13 +79,14 @@ export default function Login() {
   };
 
   const handleLogin = async () => {
+    haptics.action();
     if (!password.trim()) return;
     try {
       setLocalLoading(true);
       const session = await signInWithEmail(email, password);
       if (session.user?.id) identify(session.user.id);
       track('user_logged_in', { method: 'email' });
-      await routeAfterLogin();
+      await routeAfterLogin(session.user?.id);
     } catch (error: any) {
       Alert.alert('Erro ao entrar', error?.message ?? 'Tente novamente.');
     } finally {
@@ -82,11 +95,12 @@ export default function Login() {
   };
 
   const handleGoogleLogin = async () => {
+    haptics.action();
     try {
       const session = await signInWithGoogle();
       if (session.user?.id) identify(session.user.id);
       track('user_logged_in', { method: 'google' });
-      await routeAfterLogin();
+      await routeAfterLogin(session.user?.id);
     } catch (error: any) {
       Alert.alert('Erro', error?.message ?? 'Tente novamente.');
     }
@@ -104,8 +118,8 @@ export default function Login() {
         {/* Back button */}
         <View style={{ paddingTop: 16, paddingHorizontal: 18 }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}
@@ -215,7 +229,7 @@ export default function Login() {
                       }}
                     />
                     <TouchableOpacity
-                      onPress={() => setShowPassword(!showPassword)}
+                      onPress={() => { haptics.tap(); setShowPassword(!showPassword); }}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
                       {showPassword
@@ -316,12 +330,13 @@ export default function Login() {
                   {Platform.OS === 'ios' && (
                     <TouchableOpacity
                       onPress={async () => {
+                        haptics.action();
                         try {
                           const data = await signInWithApple();
                           if (!data) return;
                           if (data.user?.id) identify(data.user.id);
                           track('user_logged_in', { method: 'apple' });
-                          await routeAfterLogin();
+                          await routeAfterLogin(data.user?.id);
                         } catch (error: any) {
                           Alert.alert('Erro', error?.message ?? 'Tente novamente.');
                         }
@@ -356,14 +371,14 @@ export default function Login() {
               <Text style={{ textAlign: 'center', fontSize: 12, lineHeight: 18, color: DEEP_SOFT, letterSpacing: -0.05 }}>
                 {'Ao continuar, você concorda com nossos '}
                 <Text
-                  onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}
+                  onPress={() => { haptics.tap(); Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'); }}
                   style={{ color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
                 >
                   Termos de Uso
                 </Text>
                 {' e '}
                 <Text
-                  onPress={() => Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5')}
+                  onPress={() => { haptics.tap(); Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'); }}
                   style={{ color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
                 >
                   Política de Privacidade

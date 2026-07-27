@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -17,7 +17,7 @@ const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
 
 const STEP = 8;
-const TOTAL = 14;
+const TOTAL = 13;
 
 const waterOptions = ['Menos de 1L', '1–2L', '2–3L', '3L+'];
 const sleepOptions = ['4–5', '6', '7', '8', '9+'];
@@ -68,6 +68,7 @@ export default function HydrationSleep() {
   }, []);
 
   const handleContinue = () => {
+    haptics.action();
     track('onboarding_step_completed', { step_number: 8, step_name: 'Hidratação e Sono', step_total: 23 });
     router.push('/(onboarding)/skincare-routine');
   };
@@ -84,8 +85,8 @@ export default function HydrationSleep() {
           flexDirection: 'row', alignItems: 'center', gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}
@@ -164,7 +165,7 @@ export default function HydrationSleep() {
                   onPress={() => {
                     setWater(opt);
                     setOnboardingField('hydration', opt);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    haptics.select();
                   }}
                 />
               ))}
@@ -193,7 +194,7 @@ export default function HydrationSleep() {
                   onPress={() => {
                     setSleep(opt);
                     setOnboardingField('sleep', opt);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    haptics.select();
                   }}
                 />
               ))}

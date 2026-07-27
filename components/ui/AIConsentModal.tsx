@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useEffect, useRef } from 'react';
 import { ShieldCheck } from 'lucide-react-native';
+import { haptics } from '../../lib/haptics';
 
 interface AIConsentModalProps {
   visible: boolean;
@@ -64,11 +65,12 @@ export function AIConsentModal({ visible, onAccept, onDecline }: AIConsentModalP
           {'Ao continuar, você autoriza esse processamento conforme nossa '}
           <Text
             style={styles.link}
-            onPress={() =>
+            onPress={() => {
+              haptics.tap();
               Linking.openURL(
                 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'
-              )
-            }
+              );
+            }}
           >
             Política de Privacidade
           </Text>
@@ -76,12 +78,26 @@ export function AIConsentModal({ visible, onAccept, onDecline }: AIConsentModalP
         </Text>
 
         {/* Botão Continuar */}
-        <TouchableOpacity style={styles.btnPrimary} onPress={onAccept} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.btnPrimary}
+          onPress={() => {
+            haptics.action();
+            onAccept();
+          }}
+          activeOpacity={0.85}
+        >
           <Text style={styles.btnPrimaryText}>Continuar</Text>
         </TouchableOpacity>
 
         {/* Botão Cancelar */}
-        <TouchableOpacity style={styles.btnSecondary} onPress={onDecline} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.btnSecondary}
+          onPress={() => {
+            haptics.tap();
+            onDecline();
+          }}
+          activeOpacity={0.7}
+        >
           <Text style={styles.btnSecondaryText}>Cancelar</Text>
         </TouchableOpacity>
       </Animated.View>

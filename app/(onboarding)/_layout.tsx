@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
@@ -6,6 +6,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 export default function OnboardingLayout() {
   const router = useRouter();
+  const segments = useSegments();
   const { track, timeEvent, registerSuperProperties, isReady } = useMixpanel();
   const [isInOnboarding, setIsInOnboarding] = useState(false);
   const hasTrackedStart = useRef(false);
@@ -17,7 +18,13 @@ export default function OnboardingLayout() {
         return;
       }
 
-      if (session) {
+      // Reforço contra o loop de nome: nunca expulsar quem está na etapa `nome`.
+      // O (app)/_layout já não navega mais para cá, mas se um assinante cair na
+      // etapa de nome por qualquer caminho, este bounce para /home reabriria o
+      // ping-pong. Na etapa de nome, deixamos a captura acontecer.
+      const onNameStep = segments[segments.length - 1] === 'nome';
+
+      if (session && !onNameStep) {
         try {
           const info = await getCustomerInfo();
           if (isSubscribed(info)) {

@@ -3,10 +3,11 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { useAppStore } from '../../store/onboarding';
 
 const DEEP = '#1D3A44';
 const DEEP_SOFT = 'rgba(29,58,68,0.55)';
@@ -17,7 +18,7 @@ const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
 
 const STEP = 12;
-const TOTAL = 14;
+const TOTAL = 13;
 const CHART_H = 220;
 const WITHOUT_H = Math.round(CHART_H * 0.22); // 48
 
@@ -27,6 +28,7 @@ export default function SocialProof() {
   });
   const { track } = useMixpanel();
   const router = useRouter();
+  const { scanSource, setScanSource } = useAppStore();
 
   useEffect(() => {
     track('onboarding_step_viewed', { step_number: 10, step_name: 'Social Proof', step_total: 23 });
@@ -42,8 +44,8 @@ export default function SocialProof() {
           flexDirection: 'row', alignItems: 'center', gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}
@@ -208,8 +210,16 @@ export default function SocialProof() {
         <View style={{ paddingHorizontal: 24, paddingTop: 14, paddingBottom: 18 }}>
           <TouchableOpacity
             onPress={() => {
+              haptics.action();
               track('onboarding_step_completed', { step_number: 10, step_name: 'Social Proof', step_total: 23 });
-              router.push('/(scan)/rate-us' as any);
+              // Tela "Avalie-nos" removida do onboarding (política da Apple: nada de
+              // pedir avaliação antes do usuário usar o app). Roteamento herdado dela.
+              if (scanSource === 'app') {
+                setScanSource('onboarding');
+                router.replace('/(app)/skin-result' as any);
+              } else {
+                router.push('/(scan)/scan-prep' as any);
+              }
             }}
             activeOpacity={0.85}
             style={{

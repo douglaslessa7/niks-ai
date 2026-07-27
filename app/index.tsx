@@ -15,6 +15,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '../lib/supabase';
 import { useMixpanel } from '../lib/mixpanel/MixpanelProvider';
+import { haptics } from '../lib/haptics';
 
 
 // ─── Design tokens ────────────────────────────────────────────
@@ -76,7 +77,10 @@ function ProgressDots({ active }: { active: number }) {
 function PrimaryButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={() => {
+        haptics.action();
+        onPress();
+      }}
       activeOpacity={0.85}
       style={{
         width: '100%',
@@ -114,7 +118,12 @@ function FooterLink({ onLogin }: { onLogin: () => void }) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 18 }}>
       <Text style={{ color: DEEP_SOFT, fontSize: 14, letterSpacing: -0.1 }}>Já tem conta? </Text>
-      <TouchableOpacity onPress={onLogin}>
+      <TouchableOpacity
+        onPress={() => {
+          haptics.tap();
+          onLogin();
+        }}
+      >
         <Text style={{ color: DEEP, fontSize: 14, fontWeight: '600', letterSpacing: -0.1 }}>Entrar</Text>
       </TouchableOpacity>
     </View>

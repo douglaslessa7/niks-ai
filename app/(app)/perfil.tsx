@@ -1,8 +1,8 @@
 import { View, Text, TouchableOpacity, ScrollView, Linking, Alert } from 'react-native';
 import { requestAppReview } from '../../lib/storeReview';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ChevronRight,
   Crown,
@@ -16,6 +16,8 @@ import * as Notifications from 'expo-notifications';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { requestPushPermission, savePushToken } from '../../lib/notifications';
+import { useCachedQuery } from '../../lib/cache';
+import { haptics } from '../../lib/haptics';
 
 export default function Perfil() {
   const router = useRouter();
@@ -23,26 +25,33 @@ export default function Perfil() {
   const [nome, setNome] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
 
-  useFocusEffect(
-    useCallback(() => {
-      supabase.auth.getUser().then(({ data }) => {
-        if (data?.user?.email) setEmail(data.user.email);
-        const userId = data?.user?.id;
-        if (!userId) return;
-        supabase
-          .from('users')
-          .select('nome')
-          .eq('id', userId)
-          .single()
-          .then(({ data: userData }) => {
-            if (userData?.nome) setNome(userData.nome);
-            else setNome(null);
-          });
-      });
-    }, [])
-  );
+  // Nome + e-mail vêm do cache: a tela abre preenchida e revalida em silêncio.
+  // Antes eram 2 requisições (`auth.getUser` + `users`) a CADA foco da aba.
+  const fetchPerfil = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    const u = data.session?.user;
+    if (!u?.id) return { nome: null, email: null };
+    const { data: userData } = await supabase
+      .from('users')
+      .select('nome')
+      .eq('id', u.id)
+      .single();
+    return { nome: userData?.nome ?? null, email: u.email ?? null };
+  }, []);
+
+  const { data: perfil } = useCachedQuery(`perfil:${user?.id ?? 'anon'}`, fetchPerfil, {
+    staleMs: 5 * 60_000, // nome/e-mail quase nunca mudam
+    enabled: Boolean(user?.id),
+  });
+
+  useEffect(() => {
+    if (!perfil) return;
+    setNome(perfil.nome);
+    setEmail(perfil.email);
+  }, [perfil]);
 
   const handleNotifications = async () => {
+    haptics.tap();
     const { status } = await Notifications.getPermissionsAsync();
 
     if (status === 'granted') {
@@ -79,6 +88,7 @@ export default function Perfil() {
   };
 
   const handleDeleteAccount = () => {
+    haptics.warning();
     Alert.alert(
       'Apagar minha conta',
       'Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.',
@@ -116,7 +126,7 @@ export default function Perfil() {
             {/* Profile Header Card */}
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => router.push('/set-name' as any)}
+              onPress={() => { haptics.tap(); router.push('/set-name' as any); }}
               style={{
                 backgroundColor: '#FFFFFF',
                 borderRadius: 20,
@@ -182,7 +192,7 @@ export default function Perfil() {
               </Text>
               <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => Linking.openURL('itms-apps://apps.apple.com/account/subscriptions')}
+                onPress={() => { haptics.tap(); Linking.openURL('itms-apps://apps.apple.com/account/subscriptions'); }}
                 style={{
                   backgroundColor: '#FFFFFF',
                   borderRadius: 16,
@@ -324,7 +334,8 @@ export default function Perfil() {
               >
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() =>
+                  onPress={() => {
+                    haptics.tap();
                     Alert.alert(
                       'Fale conosco',
                       'Mande a sua pergunta ou feedback para o nosso e-mail support@niksaiapp.com',
@@ -335,8 +346,8 @@ export default function Perfil() {
                           onPress: () => Linking.openURL('mailto:support@niksaiapp.com'),
                         },
                       ]
-                    )
-                  }
+                    );
+                  }}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -352,7 +363,7 @@ export default function Perfil() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={requestAppReview}
+                  onPress={() => { haptics.tap(); requestAppReview(); }}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -370,6 +381,7 @@ export default function Perfil() {
             {/* Sign Out + Version */}
             <View style={{ alignItems: 'center', gap: 12, paddingVertical: 24 }}>
               <TouchableOpacity activeOpacity={0.8} onPress={() => {
+                haptics.warning();
                 Alert.alert(
                   'Sair da conta',
                   'Tem certeza que deseja sair da sua conta? Para entrar novamente, será necessário fazer login com seu e-mail e senha.',

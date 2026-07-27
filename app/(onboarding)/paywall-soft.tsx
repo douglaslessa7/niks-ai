@@ -1,12 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { View, ActivityIndicator, InteractionManager } from 'react-native';
-import { useRouter } from 'expo-router';
-import { usePlacement } from 'expo-superwall';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { usePlacement, useSuperwallEvents } from 'expo-superwall';
+import Superwall from 'expo-superwall/compat';
 import Purchases from 'react-native-purchases';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { armSuppressReapresentar, consumeSuppressReapresentar, consumeNextPlacement } from '../../lib/paywallFlow';
+import { attributeCouponIfAny } from '../../lib/couponAttribution';
 
 export default function PaywallSoft() {
   const router = useRouter();
@@ -38,7 +41,9 @@ export default function PaywallSoft() {
         setSubscriptionVerified(true);
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          // Usuária já tem conta (reengajamento) — vai direto para home
+          // Usuária já tem conta (reengajamento) — não passa pelo signup, então atribui
+          // o cupom aqui (não bloqueia; o webhook ainda confirma a conversão) e vai à home.
+          attributeCouponIfAny(session.user.id);
           router.replace('/(app)/home');
         } else {
           // Nova usuária — precisa criar a conta
@@ -56,6 +61,9 @@ export default function PaywallSoft() {
   const { registerPlacement } = usePlacement({
     onPresent: () => {},
     onDismiss: async () => {
+      // Fechamento causado pelo botão "TENHO CUPOM": pula ESTA reapresentação (uso
+      // único). Se não estiver armada, segue o fluxo normal (fail closed) intacto.
+      if (consumeSuppressReapresentar()) return;
       await handleAfterPaywall();
     },
     onSkip: async () => {
@@ -68,9 +76,50 @@ export default function PaywallSoft() {
     },
   });
 
+  // Botão "TENHO CUPOM" do paywall → custom action `showPromoRedeem`. Fecha o paywall
+  // (suprimindo a reapresentação, uso único) e abre a tela própria de cupom. Ela não
+  // tem nenhuma navegação para dentro do app: só volta para cá (com ou sem desconto).
+  const handlingCoupon = useRef(false);
+  useSuperwallEvents({
+    onCustomPaywallAction: async (name) => {
+      if (name !== 'showPromoRedeem' || handlingCoupon.current) return;
+      handlingCoupon.current = true;
+      try {
+        track('coupon_button_tapped');
+        armSuppressReapresentar();
+        try { await Superwall.shared.dismiss(); } catch {}
+        router.push('/(onboarding)/promo-cupom');
+      } finally {
+        handlingCoupon.current = false;
+      }
+    },
+  });
+
+  // Ao VOLTAR da tela de cupom, reapresenta o paywall certo: com desconto (cupom
+  // válido) ou o normal (voltar/descartar). O primeiro foco é ignorado — o registro
+  // inicial continua sendo feito pelo useEffect abaixo, sem alteração.
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (__DEV__) return;
+      if (firstFocus.current) { firstFocus.current = false; return; }
+      const placement = consumeNextPlacement() ?? 'paywall_onboarding';
+      const task = InteractionManager.runAfterInteractions(() => {
+        registerPlacement({ placement });
+      });
+      return () => task.cancel();
+    }, [])
+  );
+
   useEffect(() => {
     if (__DEV__) {
-      router.replace('/(onboarding)/signup');
+      // Atalho de dev: pula o paywall. Mas NÃO pode mandar todo mundo pro signup —
+      // quem já tem sessão (login pela tela "Entrar") já tem conta e deve ir pra home.
+      // Sem esse check, logar numa conta existente em dev caía na tela de criar conta.
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSubscriptionVerified(true);
+        router.replace(session?.user ? '/(app)/home' : '/(onboarding)/signup');
+      });
       return;
     }
 

@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
+import { invalidateCache } from '../../lib/cache';
+import { haptics } from '../../lib/haptics';
 
 function FloatingLabelInput({
   label,
@@ -100,10 +102,15 @@ export default function SetName() {
 
   const handleSave = async () => {
     if (!canSave || !user?.id) return;
+    haptics.action();
     setSaving(true);
     try {
       const nome = `${firstName.trim()} ${lastName.trim()}`.trim();
       await supabase.from('users').update({ nome }).eq('id', user.id);
+      // O nome é lido de cache em dois lugares — o Perfil e a saudação da NIKS.
+      // Sem invalidar, os dois continuariam mostrando o nome antigo.
+      invalidateCache(`perfil:${user.id}`);
+      invalidateCache(`chat:${user.id}`);
       router.back();
     } catch (e) {
       console.error('Erro ao salvar nome:', e);
@@ -126,7 +133,7 @@ export default function SetName() {
           {/* Top Bar */}
           <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 8 }}>
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => { haptics.tap(); router.back(); }}
               style={{
                 width: 40,
                 height: 40,

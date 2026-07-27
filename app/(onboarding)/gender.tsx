@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Check } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -18,7 +18,7 @@ const CREAM = '#FFFFFF';
 
 const GENDERS = ['Feminino', 'Masculino', 'Outro'];
 const STEP = 2;
-const TOTAL = 14;
+const TOTAL = 13;
 
 export default function Gender() {
   const [fontsLoaded] = useFonts({
@@ -36,7 +36,7 @@ export default function Gender() {
   const handleSelect = useCallback((gender: string) => {
     setSelected(gender);
     setOnboardingField('genero', gender);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.select();
     setTimeout(() => {
       track('onboarding_step_completed', { step_number: 3, step_name: 'Gênero', step_total: 23 });
       if (gender === 'Feminino') {
@@ -60,8 +60,8 @@ export default function Gender() {
           gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}

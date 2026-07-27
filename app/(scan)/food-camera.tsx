@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Device from 'expo-device';
+import { haptics } from '../../lib/haptics';
 
 type ZoomLevel = 0.5 | 1 | 2;
 
@@ -140,7 +141,7 @@ export default function FoodCamera() {
           O NIKS AI precisa da câmera para analisar sua refeição.
         </Text>
         <TouchableOpacity
-          onPress={requestPermission}
+          onPress={() => { haptics.tap(); requestPermission(); }}
           style={{ backgroundColor: 'white', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
         >
           <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1A1A' }}>Permitir câmera</Text>
@@ -179,7 +180,7 @@ export default function FoodCamera() {
         }}
       >
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => { haptics.tap(); router.back(); }}
           activeOpacity={0.8}
           style={{
             width: 40,
@@ -277,7 +278,7 @@ export default function FoodCamera() {
           {zoomLevels.map((z) => (
             <TouchableOpacity
               key={z}
-              onPress={() => setZoom(z)}
+              onPress={() => { haptics.select(); setZoom(z); }}
               activeOpacity={0.8}
               style={{
                 paddingHorizontal: 14,
@@ -319,7 +320,7 @@ export default function FoodCamera() {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 48 }}>
           {/* Flash toggle */}
           <TouchableOpacity
-            onPress={() => setFlash(!flash)}
+            onPress={() => { haptics.select(); setFlash(!flash); }}
             activeOpacity={0.8}
             style={{
               width: 44,
@@ -339,7 +340,7 @@ export default function FoodCamera() {
 
           {/* Shutter — câmera real no celular, galeria no simulador */}
           <TouchableOpacity
-            onPress={isSimulator ? pickAndAnalyze : handleCapture}
+            onPress={() => { haptics.action(); isSimulator ? pickAndAnalyze() : handleCapture(); }}
             disabled={picking}
             activeOpacity={0.9}
             style={{
@@ -358,7 +359,7 @@ export default function FoodCamera() {
 
           {/* Gallery button — sempre visível */}
           <TouchableOpacity
-            onPress={pickAndAnalyze}
+            onPress={() => { haptics.tap(); pickAndAnalyze(); }}
             disabled={picking}
             activeOpacity={0.8}
             style={{

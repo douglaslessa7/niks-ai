@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Check } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -17,7 +17,7 @@ const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
 
 const STEP = 2;
-const TOTAL = 14;
+const TOTAL = 13;
 
 type PregnancyStatus = 'none' | 'pregnant' | 'breastfeeding' | 'trying';
 
@@ -44,10 +44,11 @@ export default function Pregnancy() {
   const handleSelect = (value: PregnancyStatus) => {
     setSelected(value);
     setOnboardingField('pregnancy_status', value);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.select();
   };
 
   const handleContinue = () => {
+    haptics.action();
     track('onboarding_step_completed', { step_name: 'pregnancy' });
     router.push('/(onboarding)/goal');
   };
@@ -62,8 +63,8 @@ export default function Pregnancy() {
           flexDirection: 'row', alignItems: 'center', gap: 14,
         }}>
           <TouchableOpacity
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onPress={() => {
+              haptics.tap();
               router.back();
             }}
             activeOpacity={0.7}

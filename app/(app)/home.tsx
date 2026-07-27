@@ -1,895 +1,626 @@
+import { useState, useCallback, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, Image,
-  useWindowDimensions, StyleSheet,
+  View, Text, TouchableOpacity, ScrollView, Image, StyleSheet,
+  useWindowDimensions, LayoutAnimation, Platform, UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { Image as ExpoImage } from 'expo-image';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import { useFonts } from 'expo-font';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Circle, Path, Defs, RadialGradient, Stop, Ellipse } from 'react-native-svg';
-import Animated, {
-  useSharedValue, useAnimatedStyle,
-  withRepeat, withSequence, withTiming, withDelay, Easing,
-} from 'react-native-reanimated';
-import { useAppStore, ScanResult } from '../../store/onboarding';
+import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
+import { Exo2_700Bold } from '@expo-google-fonts/exo-2';
+import { Lato_400Regular } from '@expo-google-fonts/lato';
+import { Lightbulb, ScanFace, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { useAppStore } from '../../store/onboarding';
+import { useFaceScan } from '../../hooks/useFaceScan';
 import { supabase } from '../../lib/supabase';
-import { useAIConsent } from '../../hooks/useAIConsent';
-import { AIConsentModal } from '../../components/ui/AIConsentModal';
+import { getScoreTheme } from '../../lib/scoreTheme';
+import { haptics } from '../../lib/haptics';
+import { metricColor } from '../../lib/metricColor';
+import { METRIC_DEFS, Metricas } from '../../lib/metricDefs';
+import { CATALOGO_DICAS, Dica } from '../../lib/dicas/catalogo';
+import { getDicaDoDia } from '../../lib/dicas/dicaDoDia';
+import { useCachedQuery } from '../../lib/cache';
+import { getUserId, useUserId } from '../../lib/currentUser';
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-type FoodScan = {
-  id: string;
-  meal_name: string;
-  meal_score: number;
-  meal_label: string;
-  created_at: string;
-  image_url: string | null;
-  full_result: any | null;
+// Habilita LayoutAnimation no Android (iOS já vem ligado)
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// ── Métricas da home (node 1:63) — alimentadas pelo último scan real ──────────
+// `METRIC_DEFS` (chaves, rótulos, polaridade) vive em `lib/metricDefs` desde que a
+// bandeja de adesivos do Story passou a precisar da MESMA lista. Não redefinir aqui.
+
+// Semáforo por "bom/ruim pra pessoa" (não pelo valor cru) — vive em lib/metricColor
+// para o adesivo do Story (NiksSticker) usar EXATAMENTE a mesma regra de cor.
+
+// Formato do `full_result` (jsonb do skin_scans) no que a home consome. Tipado local
+// para não tocar no store. `metricas` pode faltar em scans antigos (pré-deploy).
+type FullResult = {
+  skin_score?: number;
+  metricas?: Metricas;
 };
 
-type SkinScan = {
-  id: string;
-  foto_url: string;
-  full_result: ScanResult;
-  created_at: string;
-};
+// Tema de cor por faixa do Niks score (0–25 vermelho, 26–50 laranja, 51–75 amarelo,
+// 76–100 rosa) — vive em lib/scoreTheme para ser compartilhado com a navbar (logo central).
 
-type OrbVariant = 'dawn' | 'night';
-type TimeCtx = { mode: 'am' | 'pm'; orbVariant: OrbVariant; greeting: string; period: string };
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-function getTimeContext(hour: number): TimeCtx {
-  if (hour >= 4 && hour < 18) return { mode: 'am', orbVariant: 'dawn', greeting: 'Bom dia', period: 'manhã' };
-  return { mode: 'pm', orbVariant: 'night', greeting: 'Boa noite', period: 'noite' };
-}
-
-const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
-const MONTHS   = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-function formatDateShort(d: Date) { return `${d.getDate()} ${MONTHS[d.getMonth()]} · ${WEEKDAYS[d.getDay()]}`; }
-
-function getProtocolDate() {
-  const now = new Date();
-  now.setHours(now.getHours() - 3);
-  return now.toISOString().split('T')[0];
-}
-
-function getTodayStart(): Date {
-  const now = new Date();
-  const cutoff = new Date(now);
-  cutoff.setHours(2, 30, 0, 0);
-  if (now < cutoff) cutoff.setDate(cutoff.getDate() - 1);
-  return cutoff;
-}
-
-// ── HomeOrb ──────────────────────────────────────────────────────────────────
-// Copiado literalmente de home-screen.jsx → HomeOrb (home-horizonte-reformulado.jsx referencia este arquivo)
-// Gradientes: radial-gradient(circle at 35% 30%, ...) convertido para SVG RadialGradient
-// Sombras: box-shadow convertidas para shadowColor/shadowOpacity/shadowRadius do RN
-// Highlight: radial-gradient(ellipse at center, rgba(255,255,255,0.55) 0%, transparent 70%)
-// Variante night: craters adicionais (3 círculos com radial-gradient escuro)
-
-// Stops dos gradientes orb — extraídos de home-screen.jsx linha 56-59
-const ORB_STOPS: Record<OrbVariant, Array<[string, string]>> = {
-  dawn:  [['#FFEFE4','0%'],['#F9C9B6','30%'],['#E89178','70%'],['#C86651','100%']],
-  night: [['#FFFFFF','0%'],['#F4EEE4','30%'],['#D8CDB8','60%'],['#A89676','100%']],
-};
-
-// Sombras — extraídas de home-screen.jsx linhas 62-65
-// night: '0 0 70px rgba(255,248,220,0.4), 0 20px 48px rgba(0,0,0,0.45), inset 0 2px 0 rgba(255,255,255,0.6)'
-// RN não suporta múltiplas sombras nem inset — usar o drop shadow principal
-const ORB_SHADOW: Record<OrbVariant, object> = {
-  dawn:  { shadowColor: '#E89178', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.32, shadowRadius: 48, elevation: 8  },
-  night: { shadowColor: '#000000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.45, shadowRadius: 48, elevation: 12 },
-};
-
-function HomeOrb({ variant, size }: { variant: OrbVariant; size: number }) {
-  const r   = size / 2;
-  // Gradiente: circle at 35% 30% → cx=35%*size, cy=30%*size
-  // r cobre o canto mais distante de (35%,30%): sqrt(0.65²+0.70²)*size ≈ 0.955*size
-  const gCX = size * 0.35;
-  const gCY = size * 0.30;
-  const gR  = size * 0.955;
-
-  // Highlight: top:10% left:20% w:32% h:20% — radial-gradient(ellipse at center, ...)
-  // centro = (left + w/2, top + h/2) = (0.20+0.16, 0.10+0.10) = (0.36, 0.20)
-  const hlCX = size * 0.36;
-  const hlCY = size * 0.20;
-  const hlRX = size * 0.16;  // 0.32/2
-  const hlRY = size * 0.10;  // 0.20/2
-
-  const isNight = variant === 'night';
-  const gid  = `g_orb_${variant}`;
-  const hlid = `g_hl_${variant}`;
-
-  // Craters (night only) — extraídos de home-screen.jsx linhas 84-90
-  // Cada crater: { position, dimensões, gradient at 30% 30% }
-  // Raio do gradiente = farthest-corner de (30%,30%) no elemento quadrado = 0.70*dim*sqrt(2)
-  // Crater 1: top:32% left:54% w:11% h:11% → center=(0.595,0.375), r=0.70*0.11*√2*size≈0.109*size
-  // Crater 2: top:55% left:28% w:8%  h:8%  → center=(0.32, 0.59),  r=0.70*0.08*√2*size≈0.079*size
-  // Crater 3: top:68% left:50% w:5%  h:5%  → center=(0.525,0.705), r=0.70*0.05*√2*size≈0.050*size
-  // gCx de cada crater = left + 0.30*width; gCy = top + 0.30*height
-
-  return (
-    <View style={{ width: size, height: size, ...ORB_SHADOW[variant] }}>
-      <Svg width={size} height={size}>
-        <Defs>
-          {/* Gradiente principal do orb — radial-gradient(circle at 35% 30%, ...) */}
-          <RadialGradient id={gid} cx={gCX} cy={gCY} r={gR} gradientUnits="userSpaceOnUse">
-            {ORB_STOPS[variant].map(([color, offset], i) => (
-              <Stop key={i} offset={offset} stopColor={color} stopOpacity={1} />
-            ))}
-          </RadialGradient>
-
-          {/* Highlight — radial-gradient(ellipse at center, rgba(255,255,255,0.55) 0%, transparent 70%) */}
-          <RadialGradient id={hlid} cx={hlCX} cy={hlCY} r={hlRX} gradientUnits="userSpaceOnUse">
-            <Stop offset="0%"   stopColor="#FFFFFF" stopOpacity={0.55} />
-            <Stop offset="100%" stopColor="#FFFFFF" stopOpacity={0} />
-          </RadialGradient>
-
-          {/* Craters da variante night */}
-          {isNight && (
-            <>
-              {/* Crater 1 — top:32% left:54% w:11% h:11% — gradient at 30%,30% */}
-              <RadialGradient id="g_cr1" cx={size * 0.573} cy={size * 0.353} r={size * 0.109} gradientUnits="userSpaceOnUse">
-                <Stop offset="0%"   stopColor="#000000" stopOpacity={0.08} />
-                <Stop offset="60%"  stopColor="#000000" stopOpacity={0.18} />
-                <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
-              </RadialGradient>
-              {/* Crater 2 — top:55% left:28% w:8% h:8% — gradient at 30%,30% */}
-              <RadialGradient id="g_cr2" cx={size * 0.304} cy={size * 0.574} r={size * 0.079} gradientUnits="userSpaceOnUse">
-                <Stop offset="0%"   stopColor="#000000" stopOpacity={0.06} />
-                <Stop offset="60%"  stopColor="#000000" stopOpacity={0.16} />
-                <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
-              </RadialGradient>
-              {/* Crater 3 — top:68% left:50% w:5% h:5% — gradient at 30%,30% */}
-              <RadialGradient id="g_cr3" cx={size * 0.515} cy={size * 0.695} r={size * 0.050} gradientUnits="userSpaceOnUse">
-                <Stop offset="0%"   stopColor="#000000" stopOpacity={0.06} />
-                <Stop offset="60%"  stopColor="#000000" stopOpacity={0.14} />
-                <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
-              </RadialGradient>
-            </>
-          )}
-        </Defs>
-
-        {/* Corpo do orb */}
-        <Circle cx={r} cy={r} r={r} fill={`url(#${gid})`} />
-
-        {/* Highlight — filter:blur(5px) não suportado em RN; gradiente já é suave */}
-        <Ellipse cx={hlCX} cy={hlCY} rx={hlRX} ry={hlRY} fill={`url(#${hlid})`} />
-
-        {/* Craters (variant === 'night' only) */}
-        {isNight && (
-          <>
-            <Ellipse cx={size * 0.595} cy={size * 0.375} rx={size * 0.055} ry={size * 0.055} fill="url(#g_cr1)" />
-            <Ellipse cx={size * 0.32}  cy={size * 0.59}  rx={size * 0.040} ry={size * 0.040} fill="url(#g_cr2)" />
-            <Ellipse cx={size * 0.525} cy={size * 0.705} rx={size * 0.025} ry={size * 0.025} fill="url(#g_cr3)" />
-          </>
-        )}
-      </Svg>
-    </View>
-  );
-}
-
-// ── Night sky ────────────────────────────────────────────────────────────────
-const STAR_DATA = Array.from({ length: 56 }, (_, i) => ({
-  cx: `${(i * 37 + 13) % 100}%`,
-  cy: `${(i * 53 + 7) % 100}%`,
-  r:   i % 3 === 0 ? 1.3 : 0.7,
-  op:  0.3 + ((i * 17) % 60) / 100,
-}));
-
-function ReformuladoNightSkyStatic() {
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-        {STAR_DATA.map((s, i) => (
-          <Circle key={i} cx={s.cx} cy={s.cy} r={s.r} fill="#fff" opacity={s.op} />
-        ))}
-      </Svg>
-    </View>
-  );
-}
-
-const SHOOTERS = [
-  { topPct: 0.12, leftPct: -0.20, delay: 1200,  duration: 9000  },
-  { topPct: 0.40, leftPct: -0.22, delay: 5500,  duration: 11000 },
-  { topPct: 0.68, leftPct: -0.18, delay: 9800,  duration: 10000 },
-];
-
-function ShootingStar({ topPct, leftPct, delay, duration }: (typeof SHOOTERS)[0]) {
-  const { height: H, width: W } = useWindowDimensions();
-  const tx = useSharedValue(0);
-  const ty = useSharedValue(0);
-  const op = useSharedValue(0);
-
-  useEffect(() => {
-    const d = duration;
-    tx.value = withDelay(delay, withRepeat(
-      withSequence(withTiming(520, { duration: d, easing: Easing.linear }), withTiming(0, { duration: 0 })),
-      -1, false,
-    ));
-    ty.value = withDelay(delay, withRepeat(
-      withSequence(withTiming(170, { duration: d, easing: Easing.linear }), withTiming(0, { duration: 0 })),
-      -1, false,
-    ));
-    op.value = withDelay(delay, withRepeat(
-      withSequence(
-        withTiming(1, { duration: d * 0.08, easing: Easing.linear }),
-        withTiming(1, { duration: d * 0.84, easing: Easing.linear }),
-        withTiming(0, { duration: d * 0.08, easing: Easing.linear }),
-      ),
-      -1, false,
-    ));
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: op.value,
-    transform: [{ translateX: tx.value }, { translateY: ty.value }],
-  }));
-
-  return (
-    <View
-      style={{ position: 'absolute', top: topPct * H, left: leftPct * W, transform: [{ rotate: '18deg' }] }}
-      pointerEvents="none"
-    >
-      <Animated.View style={[{ width: 140, height: 1, borderRadius: 1, overflow: 'hidden' }, animStyle]}>
-        <LinearGradient
-          colors={['transparent', 'rgba(255,255,255,0.9)', '#FFFFFF']}
-          locations={[0, 0.7, 1]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={{ flex: 1 }}
-        />
-      </Animated.View>
-    </View>
-  );
-}
-
-function ReformuladoNightSky() {
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-        {STAR_DATA.map((s, i) => (
-          <Circle key={i} cx={s.cx} cy={s.cy} r={s.r} fill="#fff" opacity={s.op} />
-        ))}
-      </Svg>
-      {SHOOTERS.map((sh, i) => <ShootingStar key={i} {...sh} />)}
-    </View>
-  );
-}
-
-// ── HeroEditorial (VAR 3 — variante aprovada) ─────────────────────────────────
-function HeroEditorial({
-  firstName, displayFont, displayFontReg, accent, ctx, today, isDark, inkSoft,
-  onDebugToggle,
-}: {
-  firstName: string;
-  displayFont: string | undefined;
-  displayFontReg: string | undefined;
-  accent: string;
-  ctx: TimeCtx;
-  today: Date;
-  isDark: boolean;
-  inkSoft: string;
-  onDebugToggle: () => void;
-}) {
-  const tapCountRef  = useRef(0);
-  const tapTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleNiksTap = () => {
-    tapCountRef.current += 1;
-    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 2000);
-    if (tapCountRef.current >= 5) {
-      tapCountRef.current = 0;
-      onDebugToggle();
-    }
-  };
-
-  const mastheadColor = isDark ? 'rgba(255,255,255,0.7)' : inkSoft;
-  const titleColor    = isDark ? '#FFFFFF' : accent;
-  return (
-    <View style={{ position: 'relative', paddingTop: 8, paddingBottom: 24, overflow: 'visible' }}>
-      {/* Orb — atrás dos cards. right:-110 sangra fora do container, overflow:visible obrigatório */}
-      {/* top: 56 = referência top:110 - (paddingTop referência:62 - paddingTop app:8). SafeAreaView cuida do safe area aqui, a referência embutia no paddingTop:62 */}
-      <View style={{ position: 'absolute', right: -110, top: 56, zIndex: 0, opacity: isDark ? 1 : 0.9 }} pointerEvents="none">
-        <HomeOrb variant={ctx.orbVariant} size={320} />
-      </View>
-
-      {/* Masthead — 5 toques no "NIKS" ativam o debug de modo dia/noite */}
-      <View style={{ paddingHorizontal: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 3 }}>
-        <TouchableOpacity onPress={handleNiksTap} activeOpacity={1}>
-          <Text style={{ fontSize: 10, fontWeight: '600', letterSpacing: 2.8, color: mastheadColor, textTransform: 'uppercase' }}>
-            NIKS
-          </Text>
-        </TouchableOpacity>
-        <Text style={{ fontSize: 10, fontWeight: '500', letterSpacing: 0.5, color: mastheadColor }}>
-          {formatDateShort(today)}
-        </Text>
-      </View>
-
-      {/* Saudação */}
-      <View style={{ paddingLeft: 28, paddingRight: 28, marginTop: 44, position: 'relative', zIndex: 2 }}>
-          <Text style={{ fontFamily: displayFont, fontSize: 54, fontWeight: '400', color: titleColor, lineHeight: 54, letterSpacing: -1.89 }}>
-            Olá,
-          </Text>
-          <Text
-            style={{ fontFamily: displayFontReg, fontSize: 54, fontWeight: '400', color: titleColor, lineHeight: 54, letterSpacing: -1.89 }}
-            adjustsFontSizeToFit
-            numberOfLines={1}
-            minimumFontScale={0.5}
-          >
-            {firstName.toLowerCase() || 'você'}.
-          </Text>
-        <Text style={{ fontFamily: displayFont, fontSize: 15, fontWeight: '400', color: isDark ? 'rgba(255,255,255,0.75)' : 'rgb(251, 123, 107)', fontStyle: 'italic', letterSpacing: -0.075, marginTop: 13, lineHeight: 22.5, maxWidth: 190 }}>
-          {ctx.mode === 'am'
-            ? 'Sua rotina da manhã já \nestá esperando por você.'
-            : 'Sua rotina da noite já \nestá esperando por você.'}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// ── Tab bar icons — paths copiados literalmente de niks-protocolo-shared.jsx (Icon.home/homeFilled/protocol/protocolFilled/user/userFilled) ──
-
-// ── Inline SVG icons ──────────────────────────────────────────────────────────
-function IconCheck() {
-  return (
-    <Svg width={13} height={13} viewBox="0 0 24 24">
-      <Path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-function IconArrowRight({ color = '#fff', size = 14 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path d="M5 12h14M13 6l6 6-6 6" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-function IconCamera() {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24">
-      <Path d="M3 7V5a2 2 0 0 1 2-2h2" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Path d="M17 3h2a2 2 0 0 1 2 2v2" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Path d="M21 17v2a2 2 0 0 1-2 2h-2" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Path d="M7 21H5a2 2 0 0 1-2-2v-2" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Circle cx={12} cy={12} r={3} stroke="#fff" strokeWidth={1.8} fill="none" />
-    </Svg>
-  );
-}
-function IconPlus({ accent }: { accent: string }) {
-  return (
-    <Svg width={11} height={11} viewBox="0 0 14 14">
-      <Path d="M7 2v10M2 7h10" stroke={accent} strokeWidth={1.6} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-// ── RitualCard ───────────────────────────────────────────────────────────────
-function RitualCard({
-  ritualComplete, ctx, nextStep, doneSoFar, total,
-  displayFont, displayFontReg, latoFont, accent, ink, inkSoft, inkHair, surface, surfaceHair, isDark,
-  onPress,
-}: {
-  ritualComplete: boolean; ctx: TimeCtx; nextStep: string;
-  doneSoFar: number; total: number; displayFont: string | undefined; displayFontReg: string | undefined; latoFont: string | undefined;
-  accent: string; ink: string; inkSoft: string; inkHair: string;
-  surface: string; surfaceHair: string; isDark: boolean; onPress: () => void;
-}) {
-  const periodLabel = ctx.mode === 'am' ? 'matinal' : 'noturno';
-  const safeTotal = total > 0 ? total : 1;
-  const safeDone  = Math.min(doneSoFar, safeTotal);
-
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.92}
-      style={{
-        marginHorizontal: 20, marginTop: 8,
-        backgroundColor: surface, borderWidth: 0.5, borderColor: surfaceHair,
-        borderRadius: 24, paddingVertical: 20, paddingHorizontal: 22,
-        position: 'relative', zIndex: 5,
-        shadowColor: '#2B2724', shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 14, elevation: isDark ? 0 : 2,
-      }}
-    >
-      {/* Eyebrow + counter */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 10, fontWeight: '600', letterSpacing: 2.4, color: inkSoft, textTransform: 'uppercase' }}>
-          Skincare {periodLabel}
-        </Text>
-        <Text style={{ fontSize: 11, fontWeight: '500', color: inkSoft, letterSpacing: 0.3 }}>
-          {ritualComplete ? safeTotal : safeDone + 1}
-          <Text style={{ opacity: 0.5 }}> / </Text>
-          {safeTotal}
-        </Text>
-      </View>
-
-      {ritualComplete ? (
-        <>
-          <Text style={{ fontFamily: displayFont, fontSize: 32, fontWeight: '400', color: ink, lineHeight: 33.6, letterSpacing: -0.64, marginTop: 16 }}>
-            <Text style={{ fontStyle: 'italic' }}>{'skincare ' + periodLabel + '\n'}</Text>
-            <Text style={{ color: accent }}>concluído.</Text>
-          </Text>
-          <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '400', color: inkSoft, letterSpacing: -0.065 }}>
-            {safeTotal} de {safeTotal} passos · até {ctx.mode === 'am' ? 'a noite' : 'amanhã'}
-          </Text>
-          <View style={{ marginTop: 20, flexDirection: 'row', gap: 6 }}>
-            {Array.from({ length: safeTotal }).map((_, i) => (
-              <View key={i} style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: accent }} />
-            ))}
-          </View>
-          <View style={{ marginTop: 20, backgroundColor: accent, borderRadius: 100, paddingVertical: 15, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, shadowColor: accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.188, shadowRadius: 22, elevation: 6 }}>
-            <IconCheck />
-            <Text style={{ fontSize: 15, fontWeight: '600', letterSpacing: -0.075, color: '#FFFFFF' }}>Ver resumo</Text>
-          </View>
-        </>
-      ) : (
-        <>
-          <Text style={{ fontFamily: displayFontReg, fontSize: 32, fontWeight: '400', color: ink, lineHeight: 33.6, letterSpacing: -0.64, fontStyle: 'italic', marginTop: 16 }}>
-            {nextStep || 'Configure seu protocolo'}
-          </Text>
-          <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '400', color: inkSoft, letterSpacing: -0.065 }}>
-            passo {safeDone + 1} de {safeTotal} · ~2 min
-          </Text>
-          <View style={{ marginTop: 20, flexDirection: 'row', gap: 6 }}>
-            {Array.from({ length: safeTotal }).map((_, i) => (
-              <View key={i} style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: i < safeDone + 1 ? accent : inkHair }} />
-            ))}
-          </View>
-          <View style={{ marginTop: 20, backgroundColor: accent, borderRadius: 100, paddingVertical: 15, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, shadowColor: accent, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.188, shadowRadius: 22, elevation: 6 }}>
-            <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600', letterSpacing: -0.075 }}>Começar agora</Text>
-            <IconArrowRight />
-          </View>
-        </>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-// ── ScanCard — extraído para componente próprio (useState não pode ficar em map) ──
-function ScanCard({
-  scan, delta, displayFont, latoFont, accent, ink, inkSoft, surface, surfaceHair, isDark, onPress,
-}: {
-  scan: SkinScan; delta: number; displayFont: string | undefined; latoFont: string | undefined;
-  accent: string; ink: string; inkSoft: string; surface: string;
-  surfaceHair: string; isDark: boolean; onPress: () => void;
-}) {
-  const [imgErr, setImgErr] = useState(false);
-  const isValidUrl = scan.foto_url.startsWith('http');
-  const score  = scan.full_result.skin_score;
-  const dateStr = new Date(scan.created_at)
-    .toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-    .replace('.', '');
-
-  return (
-    <View style={{ width: 196, flexShrink: 0, backgroundColor: surface, borderWidth: 0.5, borderColor: surfaceHair, borderRadius: 22, overflow: 'hidden', shadowColor: '#2B2724', shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0 : 0.04, shadowRadius: 10, elevation: isDark ? 0 : 1 }}>
-      {/* Imagem + overlays */}
-      <View style={{ height: 232, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F4EFE9' }}>
-        {isValidUrl && !imgErr ? (
-          <Image source={{ uri: scan.foto_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" onError={() => setImgErr(true)} />
-        ) : (
-          <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#C8C0B8' }} />
-        )}
-
-        {/* Score badge */}
-        <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: isDark ? 'rgba(15,20,32,0.72)' : 'rgba(255,255,255,0.92)', borderWidth: 0.5, borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(43,39,36,0.06)', borderRadius: 14, paddingVertical: 6, paddingLeft: 11, paddingRight: 10, flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
-          <Text style={{ fontFamily: latoFont, fontSize: 20, fontWeight: '400', color: ink, lineHeight: 20, letterSpacing: -0.4 }}>{score}</Text>
-          <Text style={{ fontFamily: latoFont, fontSize: 11, fontWeight: '400', color: inkSoft, fontStyle: 'italic' }}>/100</Text>
-        </View>
-
-        {/* Delta */}
-        {delta !== 0 && (
-          <Text style={{ position: 'absolute', left: 12, bottom: 12, fontFamily: displayFont, fontSize: 13, fontStyle: 'italic', color: '#FFFFFF', letterSpacing: 0.2 }}>
-            {delta > 0 ? '+' : ''}{delta}
-          </Text>
-        )}
-      </View>
-
-      {/* Footer */}
-      <View style={{ padding: 14, gap: 12 }}>
-        <View>
-          <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, color: inkSoft, textTransform: 'uppercase' }}>Scan facial</Text>
-          <Text style={{ fontFamily: latoFont, fontSize: 18, fontWeight: '400', color: ink, letterSpacing: -0.36, lineHeight: 19.8, marginTop: 4, fontStyle: 'italic' }}>
-            {dateStr}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={{ borderWidth: 0.5, borderColor: accent, borderRadius: 100, paddingVertical: 9, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <Text style={{ color: accent, fontSize: 12, fontWeight: '600', letterSpacing: -0.06 }}>Ver resultado</Text>
-          <IconArrowRight color={accent} size={10} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-// ── ScansRecentes ─────────────────────────────────────────────────────────────
-function ScansRecentes({
-  scans, displayFont, latoFont, accent, ink, inkSoft, surface, surfaceHair, isDark, onVerResultado,
-}: {
-  scans: SkinScan[]; displayFont: string | undefined; latoFont: string | undefined; accent: string;
-  ink: string; inkSoft: string; surface: string; surfaceHair: string;
-  isDark: boolean; onVerResultado: (scan: SkinScan) => void;
-}) {
-  if (scans.length === 0) return null;
-
-  const scansWithDelta = scans.map((s, i) => ({
-    scan: s,
-    delta: i < scans.length - 1
-      ? s.full_result.skin_score - scans[i + 1].full_result.skin_score
-      : 0,
-  }));
-
-  return (
-    <View style={{ paddingTop: 28 }}>
-      <View style={{ paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-        <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, color: inkSoft, textTransform: 'uppercase' }}>Scans recentes</Text>
-        <Text style={{ fontSize: 12, fontWeight: '500', color: accent }}>ver tudo</Text>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        snapToInterval={208}
-        snapToAlignment="start"
-        decelerationRate="fast"
-        contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 4 }}
-      >
-        {scansWithDelta.map(({ scan, delta }) => (
-          <ScanCard
-            key={scan.id}
-            scan={scan}
-            delta={delta}
-            displayFont={displayFont}
-            latoFont={latoFont}
-            accent={accent}
-            ink={ink}
-            inkSoft={inkSoft}
-            surface={surface}
-            surfaceHair={surfaceHair}
-            isDark={isDark}
-            onPress={() => onVerResultado(scan)}
-          />
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-// ── RefeicoesSection ─────────────────────────────────────────────────────────
-function RefeicoesSection({
-  meals, displayFont, latoFont, accent, ink, inkSoft, inkHair, surface, surfaceHair, isDark,
-  onMealPress, onScanPress,
-}: {
-  meals: FoodScan[]; displayFont: string | undefined; latoFont: string | undefined; accent: string;
-  ink: string; inkSoft: string; inkHair: string; surface: string;
-  surfaceHair: string; isDark: boolean;
-  onMealPress: (meal: FoodScan) => void; onScanPress: () => void;
-}) {
-  const filled = meals.length > 0;
-
-  return (
-    <View style={{ paddingHorizontal: 20, paddingTop: 28 }}>
-      <View style={{
-        backgroundColor: surface, borderWidth: 0.5, borderColor: surfaceHair, borderRadius: 22,
-        paddingTop: filled ? 20 : 22, paddingBottom: filled ? 8 : 22, paddingHorizontal: 22,
-        shadowColor: '#2B2724', shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: isDark ? 0 : 0.04, shadowRadius: 10, elevation: isDark ? 0 : 1,
-      }}>
-        {/* Header */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: filled ? 6 : 0 }}>
-          <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, color: inkSoft, textTransform: 'uppercase' }}>Hoje você comeu</Text>
-          {filled && <Text style={{ fontSize: 12, fontWeight: '500', color: accent }}>ver tudo</Text>}
-        </View>
-
-        {filled ? (
-          <>
-            {meals.map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                onPress={() => onMealPress(m)}
-                activeOpacity={0.85}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, borderTopWidth: 0.5, borderTopColor: inkHair }}
-              >
-                <View style={{ width: 52, height: 52, borderRadius: 14, overflow: 'hidden', flexShrink: 0, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F4EFE9', borderWidth: 0.5, borderColor: surfaceHair }}>
-                  {m.image_url
-                    ? <Image source={{ uri: m.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                    : <View style={{ flex: 1 }} />}
-                </View>
-
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '500', color: ink, lineHeight: 17.5, letterSpacing: -0.07 }} numberOfLines={1}>
-                    {m.meal_name}
-                  </Text>
-                  <Text style={{ marginTop: 4, fontFamily: displayFont, fontSize: 12, color: inkSoft }}>
-                    {new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                </View>
-
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 1, flexShrink: 0 }}>
-                  <Text style={{ fontFamily: latoFont, fontSize: 22, fontWeight: '400', color: '#FB7B6B', letterSpacing: -0.44, lineHeight: 22 }}>{m.meal_score}</Text>
-                  <Text style={{ fontFamily: latoFont, fontSize: 12, color: inkSoft, fontStyle: 'italic' }}>/100</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-
-            {/* Add row */}
-            <TouchableOpacity
-              onPress={onScanPress}
-              activeOpacity={0.8}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: 0.5, borderTopColor: inkHair }}
-            >
-              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: `${accent}18`, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <IconPlus accent={accent} />
-              </View>
-              <Text style={{ fontSize: 14, fontWeight: '500', color: accent, letterSpacing: -0.07 }}>Escanear refeição</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          /* Empty state */
-          <View style={{ marginTop: 16, paddingTop: 22, borderTopWidth: 0.5, borderTopColor: inkHair }}>
-            <Text style={{ fontFamily: latoFont, fontSize: 22, fontWeight: '400', color: ink, letterSpacing: -0.44, lineHeight: 25.3, maxWidth: 260 }}>
-              <Text style={{ fontStyle: 'italic' }}>{'nenhuma refeição\n'}</Text>
-              {'escaneada '}
-              <Text style={{ color: accent }}>{'hoje '}</Text>
-              <Text style={{ color: accent }}>ainda</Text>
-              {'.'}
-            </Text>
-            <Text style={{ marginTop: 10, fontSize: 13, color: inkSoft, lineHeight: 18.85, letterSpacing: -0.065, maxWidth: 270 }}>
-              Fotografe sua próxima refeição pra ver o impacto dela na sua pele.
-            </Text>
-            <TouchableOpacity
-              onPress={onScanPress}
-              activeOpacity={0.85}
-              style={{ marginTop: 18, alignSelf: 'stretch', backgroundColor: accent, borderRadius: 100, paddingVertical: 13, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, shadowColor: accent, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.165, shadowRadius: 18, elevation: 4 }}
-            >
-              <IconCamera />
-              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600', letterSpacing: -0.07 }}>Escanear refeição</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    </View>
-  );
-}
-
-// ── Home ──────────────────────────────────────────────────────────────────────
 export default function Home() {
+  const { startFaceScan } = useFaceScan();
+  const setStoreSkinScore = useAppStore((s) => s.setSkinScore); // espelha o score p/ a navbar
+  const setProductDetailTarget = useAppStore((s) => s.setProductDetailTarget);
+  const setHomePhotoDraft = useAppStore((s) => s.setHomePhotoDraft);
   const router = useRouter();
-  const { setSelectedScan, setSelectedFoodResult, setSelectedFoodImageUrl, setTabBarTheme, setScanModalOpen } = useAppStore();
-  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
-  const [debugMode, setDebugMode] = useState<'am' | 'pm' | null>(null); // DEBUG — remover antes do release
+  const userId = useUserId(); // chaveia o cache — os dados são por usuário
+  const [tipOpen, setTipOpen] = useState(false);
+  const toggleTip = () => {
+    haptics.tap();
+    LayoutAnimation.configureNext(LayoutAnimation.create(240, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
+    setTipOpen((o) => !o);
+  };
+  const { width } = useWindowDimensions();
+  const PHOTO = Math.round(width * 0.58);   // foto = 228/393 (Figma node 1:51)
+  const LOGO = Math.round(width * (49 / 393)); // sparkle do topo = 49/393 (Figma node 1:385)
+  const CARD_OVERLAP = Math.round(width * (40 / 393)); // card sobrepõe 40px do fundo da foto (Figma)
+  const PHOTO_OFFSET = width * (2.5 / 393); // Figma: foto em left calc(50% + 2.5px), à direita do centro
+  // Anel: asset REAL do elipse do Figma (node 1:319). O asset (600px) cobre o frame de 265
+  // unidades; o círculo do anel dentro dele = 228. Renderizando a imagem em PHOTO·265/228, o
+  // círculo do anel fica = PHOTO (bate exatamente com a borda da foto; o traço fica centrado,
+  // extravasando um pouco pra fora, como no Figma).
+  const RING_IMG = PHOTO * (265.005 / 228);
 
-  const hour = debugMode === 'am' ? 9 : debugMode === 'pm' ? 22 : new Date().getHours();
-  const ctx  = getTimeContext(hour);
-  const isDark      = ctx.orbVariant === 'night';
-  const accent      = '#FB7B6B';
-  const ink         = isDark ? '#FFFFFF'                : '#2B2724';
-  const inkSoft     = isDark ? 'rgba(255,255,255,0.65)' : 'rgba(43,39,36,0.58)';
-  const inkHair     = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(43,39,36,0.08)';
-  const surface     = isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF';
-  const surfaceHair = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(43,39,36,0.06)';
+  // ── Último scan real do usuário logado (Niks score + 6 métricas + foto) ───────
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+  const [skinScore, setSkinScore] = useState<number | null>(null);
+  const [metricas, setMetricas] = useState<Metricas>(null);
 
-  const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
-    'PlayfairDisplay-Italic':  require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
-    'DMSerifDisplay-Regular':  require('../../assets/fonts/DMSerifDisplay-Regular.ttf'),
-    'DMSerifDisplay-Italic':   require('../../assets/fonts/DMSerifDisplay-Italic.ttf'),
-  });
-  const displayFont    = fontsLoaded ? 'PlayfairDisplay-Italic'  : undefined;
-  const displayFontReg = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
-  const latoFont       = fontsLoaded ? 'PlayfairDisplay-Regular' : undefined;
+  // Trocar a foto da home: galeria → tela de ajuste (enquadramento no círculo da home).
+  // `allowsEditing: false` de propósito — com `true` o iOS abre o "Move and scale" nativo,
+  // que recorta QUADRADO e não mostra o formato circular real. O enquadramento é nosso.
+  // A foto crua viaja pelo store (regra do projeto: nunca por router params).
+  const pickHomePhoto = useCallback(async () => {
+    haptics.tap();
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 1, // sem perda aqui; a compressão acontece depois do recorte
+      exif: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const a = result.assets[0];
+    setHomePhotoDraft({ uri: a.uri, width: a.width, height: a.height });
+    router.push('/(foto)/ajustar-foto');
+  }, [router, setHomePhotoDraft]);
 
-  const [firstName,      setFirstName]      = useState('');
-  const [meals,          setMeals]          = useState<FoodScan[]>([]);
-  const [scans,          setScans]          = useState<SkinScan[]>([]);
-  const [ritualComplete, setRitualComplete] = useState(false);
-  const [nextStep,       setNextStep]       = useState('');
-  const [doneSoFar,      setDoneSoFar]      = useState(0);
-  const [ritualTotal,    setRitualTotal]    = useState(0);
+  // ── Dica do dia — fila numerada, avança a cada DIA DE USO (lib/dicas/dicaDoDia) ─
+  // Começa na dica 1 para nunca existir card vazio enquanto o AsyncStorage é lido.
+  const [dica, setDica] = useState<Dica>(CATALOGO_DICAS[0]);
 
-  // ── Todo o fetch em um único useFocusEffect ──────────────────────────────
+  // "Para você" — 2 primeiros produtos recomendados (reais), resolvidos por produto_id.
+  const [featured, setFeatured] = useState<{ productId: string; imagemUrl: string }[]>([]);
+
+  // A dica não depende de login nem de scan — efeito próprio, resolvido em cada foco
+  // (getDicaDoDia só anda na fila quando o dia civil vira).
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      setTabBarTheme(isDark ? 'dark' : 'light');
-
-      (async () => {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user || !active) return;
-
-          // First name — salvo na tabela users.nome (via set-name screen)
-          const { data: userData } = await supabase
-            .from('users')
-            .select('nome')
-            .eq('id', user.id)
-            .single();
-          const nome = userData?.nome ?? (user.user_metadata?.full_name as string) ?? (user.user_metadata?.name as string) ?? '';
-          if (active) setFirstName(nome.split(' ')[0] || 'você');
-
-          // Refeições do dia (reset às 2h30)
-          const todayStart = getTodayStart().toISOString();
-          const { data: foodData } = await supabase
-            .from('food_scans')
-            .select('id, meal_name, meal_score, meal_label, created_at, image_url, full_result')
-            .eq('user_id', user.id)
-            .gte('created_at', todayStart)
-            .order('created_at', { ascending: false });
-          if (active && foodData) setMeals(foodData as FoodScan[]);
-
-          // Scans de pele (últimos 5)
-          const { data: skinData } = await supabase
-            .from('skin_scans')
-            .select('id, foto_url, full_result, created_at')
-            .eq('user_id', user.id)
-            .not('full_result', 'is', null)
-            .order('created_at', { ascending: false })
-            .limit(5);
-
-          if (active && skinData) {
-            const fetchedScans = skinData as SkinScan[];
-            setScans(fetchedScans);
-
-            // Reparo de foto_url inválida do onboarding (uma vez)
-            const { skinScanId, skinImageBase64: b64 } = useAppStore.getState();
-            const brokenScan = fetchedScans.find(
-              (s) => s.id === skinScanId && !s.foto_url.startsWith('http'),
-            );
-            if (brokenScan && b64) {
-              try {
-                const path = `${user.id}/${Date.now()}.jpg`;
-                const binaryStr = atob(b64);
-                const bytes = new Uint8Array(binaryStr.length);
-                for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-                const { error: upErr } = await supabase.storage
-                  .from('scans').upload(path, bytes.buffer, { contentType: 'image/jpeg', upsert: false });
-                if (!upErr) {
-                  const { data: signed } = await supabase.storage.from('scans').createSignedUrl(path, 31536000);
-                  const fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl;
-                  await supabase.from('skin_scans').update({ foto_url: fotoUrl }).eq('id', brokenScan.id);
-                  if (active) setScans((prev) => prev.map((s) => s.id === brokenScan.id ? { ...s, foto_url: fotoUrl } : s));
-                }
-              } catch (e) { console.warn('Failed to repair scan photo:', e); }
-            }
-          }
-
-          // Ritual / protocolo
-          const { data: protData } = await supabase
-            .from('protocolos')
-            .select('rotina_am, rotina_pm')
-            .eq('user_id', user.id)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .single();
-
-          if (active && protData) {
-            const steps: Array<{ id: number; name: string }> =
-              ctx.mode === 'am'
-                ? (protData.rotina_am as any[] ?? [])
-                : (protData.rotina_pm as any[] ?? []);
-
-            const period = ctx.mode === 'am' ? 'morning' : 'night';
-            const key    = `protocolo_check_${getProtocolDate()}_${period}`;
-            const stored = await AsyncStorage.getItem(key);
-            const checked: number[] = stored ? JSON.parse(stored) : [];
-
-            const done     = checked.length;
-            const total    = steps.length;
-            const complete = total > 0 && done >= total;
-            const next     = steps[done]?.name ?? steps[0]?.name ?? '';
-
-            if (active) {
-              setRitualTotal(total);
-              setDoneSoFar(done);
-              setRitualComplete(complete);
-              setNextStep(next);
-            }
-          }
-        } catch (e) {
-          console.warn('Home fetch error:', e);
-        }
-      })();
-
-      return () => { active = false; setTabBarTheme('light'); };
-    }, [isDark]),
+      getDicaDoDia().then((d) => { if (active) setDica(d); });
+      return () => { active = false; };
+    }, [])
   );
 
-  const today = new Date();
+  // ── Carga da home, cacheada ──────────────────────────────────────────────
+  // Antes: 4–5 requisições SEQUENCIAIS a cada foco da aba, sem nenhuma guarda —
+  // era a principal causa da home "recarregar" toda vez. Agora o resultado inteiro
+  // é uma entrada de cache só: a tela abre com os dados da última visita e revalida
+  // por trás. As 3 primeiras consultas viraram PARALELAS (não dependem entre si);
+  // só `produtos` precisa esperar, porque depende dos ids da recomendação.
+  const fetchHome = useCallback(async () => {
+    const userId = await getUserId();
+    if (!userId) throw new Error('sem sessão');
+
+    const [scanRes, userRes, recRes] = await Promise.all([
+      // Último scan (score + métricas + foto)
+      supabase
+        .from('skin_scans')
+        .select('foto_url, full_result')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Foto escolhida pela usuária na galeria (se houver) — ver precedência abaixo.
+      supabase
+        .from('users')
+        .select('foto_home_url')
+        .eq('id', userId)
+        .maybeSingle(),
+      // "Para você": 2 primeiros produtos recomendados (principal de cada passo, na
+      // ordem do JSON), resolvidos contra `produtos` num único select.
+      supabase
+        .from('recomendacoes_produtos')
+        .select('recomendacao')
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ]);
+
+    const data = scanRes.data;
+    const userRow = userRes.data;
+    const passos: any[] = Array.isArray(recRes.data?.recomendacao) ? recRes.data!.recomendacao : [];
+    const firstIds: string[] = [];
+    for (const p of passos) {
+      if (p?.sem_produto) continue;
+      const prods = p?.produtos ?? [];
+      const principal = prods.find((x: any) => x?.principal) ?? prods[0];
+      if (principal?.produto_id) firstIds.push(principal.produto_id);
+      if (firstIds.length >= 2) break;
+    }
+    let feat: { productId: string; imagemUrl: string }[] = [];
+    if (firstIds.length) {
+      const { data: prods } = await supabase
+        .from('produtos')
+        .select('id, imagem_url')
+        .in('id', firstIds);
+      const byId = new Map((prods ?? []).map((p: any) => [p.id, p]));
+      feat = firstIds
+        .map((id) => byId.get(id))
+        .filter(Boolean)
+        .map((p: any) => ({ productId: p.id, imagemUrl: p.imagem_url }));
+    }
+
+    const full = (data?.full_result ?? null) as FullResult | null;
+    return {
+      // ⚠️ Precedência ABSOLUTA da foto escolhida na galeria: uma vez que a usuária
+      // escolhe uma, novos scans NUNCA mais trocam a foto da home. A única forma de
+      // trocar é tocar na foto e escolher outra (→ `(foto)/ajustar-foto`). Intencional.
+      fotoUrl: userRow?.foto_home_url ?? data?.foto_url ?? null,
+      skinScore: typeof full?.skin_score === 'number' ? full.skin_score : null,
+      metricas: full?.metricas ?? null,
+      featured: feat,
+    };
+  }, []);
+
+  const { data: homeData } = useCachedQuery(
+    userId ? `home:${userId}` : null,
+    fetchHome,
+    { enabled: Boolean(userId) },
+  );
+
+  useEffect(() => {
+    if (!homeData) return;
+    setFotoUrl(homeData.fotoUrl);
+    setSkinScore(homeData.skinScore);
+    setStoreSkinScore(homeData.skinScore); // navbar (logo central) usa o mesmo tema de cor
+    setMetricas(homeData.metricas);
+    setFeatured(homeData.featured);
+  }, [homeData, setStoreSkinScore]);
+
+  // Card de métricas (Figma node 1:63 = 374×187). Escala proporcional pela largura
+  // real do card (largura da tela − 2×margin de 12) para casar 1:1 com o Figma.
+  const MS = (width - 24) / 374;
+  const COLS = [21, 149, 277].map((x) => x * MS); // x das 3 colunas (esq. de cada métrica)
+
+  const [fontsLoaded] = useFonts({
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Exo2_700Bold,
+    Lato_400Regular,
+  });
+
+  // Aliases — fallback undefined evita flash de layout enquanto carrega
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fExo   = fontsLoaded ? 'Exo2_700Bold' : undefined;
+  const fLato  = fontsLoaded ? 'Lato_400Regular' : undefined;
+
+  // Tema de cor pela faixa do Niks score (réplica das 4 variações do Figma)
+  const theme = getScoreTheme(skinScore);
+
+  // Usuária LEGADA: já escaneou (tem score), mas o scan é anterior ao deploy das 6
+  // métricas — o `full_result` dela não tem o campo `metricas`. A própria ausência do
+  // campo é a flag; não há coluna nem migration para isso. Distingue-se de quem nunca
+  // escaneou (`skinScore == null`), que já tem o placeholder da foto.
+  const legacyScan = skinScore != null && metricas == null;
+
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Background */}
-      {isDark ? (
+    <View style={styles.root}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Fundo gradiente branco → tom do tema atrás do score + foto (muda por faixa
+            de score, como no Figma). Última parada = cor da página (#F9F9F9), que fica
+            atrás do card de métricas, fundindo sem borda dura. */}
         <LinearGradient
-          colors={['#0F1420', '#1A1F2E', '#2A1F28']}
-          locations={[0, 0.45, 1]}
-          style={StyleSheet.absoluteFill}
+          colors={['#FFFFFF', '#FFFFFF', theme.heroSoft, theme.heroMed, '#F9F9F9']}
+          locations={[0, 0.5, 0.72, 0.82, 1]}
+          style={styles.heroGradient}
+          pointerEvents="none"
         />
-      ) : (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} />
-      )}
 
-      {isDark && <ReformuladoNightSky />}
+        <SafeAreaView edges={['top']} style={{ backgroundColor: 'transparent' }}>
+          {/* ── Niks score ─────────────────────────────────────────────── */}
+          <View style={styles.scoreBlock}>
+            <Image source={theme.logo} style={[styles.scoreLogo, { width: LOGO, height: Math.round(LOGO * (199 / 196)) }]} />
+            <Text style={[styles.scoreNumber, { fontFamily: fXBold, color: theme.score }]}>{skinScore != null ? skinScore : '—'}</Text>
+            <Text style={[styles.scoreLabel, { fontFamily: fXBold }]}>Niks score</Text>
+            <Image
+              source={theme.underline}
+              style={styles.scoreUnderline}
+              resizeMode="stretch"
+            />
+          </View>
 
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView
-          style={{ flex: 1, zIndex: 1 }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 180 }}
+          {/* ── Foto circular + anel colorido por tema (recriado em código) ──
+              Com scan: rosto do último scan. Sem scan: placeholder neutro + ícone. */}
+          <View style={styles.photoWrap}>
+            {/* Tocar na foto → galeria → tela de ajuste. O TouchableOpacity envolve o View
+                dimensionado POR FORA: o `photoCircle` tem `overflow: 'hidden'`, que já deu
+                problema de toque no New Architecture neste projeto.
+                ⚠️ O card de métricas cobre os 40px de baixo da foto (zIndex maior, como no
+                Figma), então essa faixa não recebe toque — é esperado, não mexer no zIndex. */}
+            <TouchableOpacity
+              onPress={pickHomePhoto}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Trocar a foto do perfil"
+              style={{ width: PHOTO, height: PHOTO, transform: [{ translateX: PHOTO_OFFSET }] }}
+            >
+              {/* Foto (círculo interno) */}
+              <View style={[styles.photoCircle, { width: PHOTO, height: PHOTO, borderRadius: PHOTO / 2 }]}>
+                {fotoUrl ? (
+                  <Image source={{ uri: fotoUrl }} style={styles.photo} resizeMode="cover" />
+                ) : (
+                  <View style={styles.photoPlaceholder}>
+                    <ScanFace size={PHOTO * 0.26} color="#F3A9A6" strokeWidth={1.6} />
+                  </View>
+                )}
+              </View>
+              {/* Anel = asset REAL do elipse do Figma (node 1:319) com centro transparente,
+                  sobreposto à foto. Centrado; o círculo do anel = PHOTO, traço centrado na borda. */}
+              <Image
+                source={theme.ringImg}
+                style={{
+                  position: 'absolute',
+                  width: RING_IMG, height: RING_IMG,
+                  left: (PHOTO - RING_IMG) / 2, top: (PHOTO - RING_IMG) / 2,
+                }}
+              />
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+
+        {/* ── Card de métricas (sobrepõe os 40px de baixo da foto, como no Figma) ──
+            Réplica pixel-perfect do node 1:63: 3 colunas absolutas em x=21/149/277,
+            2 linhas. Cada métrica = label (Lato) + valor (Exo 2 Bold) + barra.
+
+            TOCAR NO CARD = compartilhar (substituiu o link "Compartilhar" que ficava
+            embaixo dele). O TouchableOpacity envolve o card POR FORA e carrega só a
+            posição (margens + zIndex): o card em si tem `overflow: 'hidden'`, que já
+            causou problema de toque no New Architecture neste projeto. Como o wrapper
+            não tem filhos em fluxo normal além do próprio card, a grade absoluta do
+            node 1:63 não se move. */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          disabled={skinScore == null}
+          accessibilityRole="button"
+          accessibilityLabel="Compartilhar minhas métricas"
+          style={[styles.metricsCardTouch, { marginTop: -CARD_OVERLAP }]}
+          onPress={() => { haptics.tap(); router.push('/(share)/share-capture' as any); }}
         >
-          <HeroEditorial
-            firstName={firstName}
-            displayFont={displayFont}
-            displayFontReg={displayFontReg}
-            accent={accent}
-            ctx={ctx}
-            today={today}
-            isDark={isDark}
-            inkSoft={inkSoft}
-            onDebugToggle={() => setDebugMode(prev => prev === null ? 'am' : prev === 'am' ? 'pm' : null)}
-          />
+        <View style={[styles.metricsCard, { height: 187 * MS }]}>
+          {/* Wrapper absoluto que PREENCHE o card: as métricas seguem posicionadas pelas
+              coordenadas do Figma (left/top a partir de 0), idêntico a antes. Existe só
+              para apagar as 6 de uma vez no estado legado, virando fundo do aviso. */}
+          <View style={[StyleSheet.absoluteFill, legacyScan && { opacity: 0.22 }]}>
+          {METRIC_DEFS.map((m, i) => {
+            const col = i % 3;
+            const row = Math.floor(i / 3);
+            const twoLine = m.label.includes('\n');
+            // tops (Figma, node 1:63) — label sobe para 91 quando tem 2 linhas
+            const labelTop = row === 0 ? 17 : twoLine ? 91 : 101;
+            const numTop = row === 0 ? 34.24 : 118.24;
+            const trackTop = row === 0 ? 71.85 : 155.85;
+            // valor real do último scan (null = sem dado → "—" + barra vazia)
+            const v = metricas?.[m.key] ?? null;
+            const fill = v == null ? 0 : v / 100;
+            const barColor = v == null ? 'transparent' : metricColor(v, m.positive);
+            return (
+              <View key={m.label} style={{ position: 'absolute', left: COLS[col], top: 0, width: 110 * MS, height: '100%' }}>
+                <Text
+                  numberOfLines={2}
+                  style={{
+                    position: 'absolute', left: 0, top: labelTop * MS, width: 110 * MS,
+                    fontFamily: fLato, fontSize: 12.536 * MS, lineHeight: 14.5 * MS,
+                    color: '#000000', letterSpacing: -0.2507 * MS,
+                  }}
+                >
+                  {m.label}
+                </Text>
+                <Text
+                  style={{
+                    position: 'absolute', left: 0, top: numTop * MS,
+                    fontFamily: fExo, fontSize: 28.206 * MS,
+                    color: '#000000', letterSpacing: -0.5641 * MS, textTransform: 'uppercase',
+                  }}
+                >
+                  {v == null ? '—' : v}
+                </Text>
+                <View
+                  style={{
+                    position: 'absolute', left: 0, top: trackTop * MS,
+                    width: 76 * MS, height: 4.701 * MS, borderRadius: 40,
+                    backgroundColor: '#F3F3F4', overflow: 'hidden',
+                  }}
+                >
+                  <View style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: fill * 76 * MS, borderRadius: 40, backgroundColor: barColor }} />
+                </View>
+              </View>
+            );
+          })}
+          </View>
 
-          <RitualCard
-            ritualComplete={ritualComplete}
-            ctx={ctx}
-            nextStep={nextStep}
-            doneSoFar={doneSoFar}
-            total={ritualTotal}
-            displayFont={displayFont}
-            displayFontReg={displayFontReg}
-            latoFont={latoFont}
-            accent={accent}
-            ink={ink}
-            inkSoft={inkSoft}
-            inkHair={inkHair}
-            surface={surface}
-            surfaceHair={surfaceHair}
-            isDark={isDark}
-            onPress={() => router.push('/(app)/protocolo' as any)}
-          />
+          {/* Estado LEGADO: a usuária tem scan (logo, tem score), mas o scan é anterior
+              às 6 métricas — `full_result.metricas` não existe. Sem esse aviso o card
+              vira 6 travessões sem explicação. Os travessões ficam de fundo (opacity
+              acima) e o scrim carrega a mensagem: mostram A FORMA do que ela desbloqueia.
+              Sem CTA próprio de propósito — o botão "Escanear" já é fixo no rodapé. */}
+          {legacyScan && (
+            <View style={styles.metricsLock} pointerEvents="none">
+              <Text style={[styles.metricsLockTitle, { fontFamily: fXBold, fontSize: 15 * MS }]}>
+                Aprimoramos a análise de pele.
+              </Text>
+              <Text style={[styles.metricsLockBody, { fontFamily: fSemi, fontSize: 12.5 * MS, lineHeight: 17 * MS, marginTop: 6 * MS }]}>
+                Faça um novo scan para desbloquear suas 6 novas métricas e ter uma análise mais precisa.
+              </Text>
+            </View>
+          )}
+        </View>
+        </TouchableOpacity>
 
-          <ScansRecentes
-            scans={scans}
-            displayFont={displayFont}
-            latoFont={latoFont}
-            accent={accent}
-            ink={ink}
-            inkSoft={inkSoft}
-            surface={surface}
-            surfaceHair={surfaceHair}
-            isDark={isDark}
-            onVerResultado={(scan) => {
-              setSelectedScan({ result: scan.full_result, imageUri: scan.foto_url });
-              router.push('/(app)/skin-result' as any);
-            }}
-          />
+        {/* ── Dica do dia (toca para expandir o conteúdo) ─────────────────
+            Colapsado: eyebrow + título (o gancho). Expandido: nas receitas, os
+            ingredientes e o preparo vêm ANTES do corpo. O campo `fonte` do catálogo
+            é auditoria interna — nunca é renderizado. */}
+        <TouchableOpacity activeOpacity={0.85} style={styles.tipCard} onPress={toggleTip}>
+          <View style={styles.tipHeader}>
+            <View style={styles.tipIconBox}>
+              <Lightbulb size={24} color="#121212" strokeWidth={2} />
+            </View>
+            <View style={styles.tipTexts}>
+              {/* A frase é escrita aqui, não lida do catálogo: lá o `eyebrow` é 'DICA DO DIA'
+                  (caixa alta, uniforme nas 26 dicas) e a caixa certa na UI é "Dica do Dia" —
+                  que nenhum textTransform produz ('capitalize' maiusculiza o "do"). */}
+              <Text style={[styles.tipKicker, { fontFamily: fXBold }]} numberOfLines={1}>
+                Dica do Dia
+              </Text>
+              <Text
+                style={[styles.tipTitle, { fontFamily: fXBold }]}
+                numberOfLines={tipOpen ? undefined : 2}
+              >
+                {dica.titulo}
+              </Text>
+            </View>
+            {tipOpen
+              ? <ChevronUp size={20} color="#B5B5B5" strokeWidth={2.5} />
+              : <ChevronDown size={20} color="#B5B5B5" strokeWidth={2.5} />}
+          </View>
 
-          <RefeicoesSection
-            meals={meals}
-            displayFont={displayFont}
-            latoFont={latoFont}
-            accent={accent}
-            ink={ink}
-            inkSoft={inkSoft}
-            inkHair={inkHair}
-            surface={surface}
-            surfaceHair={surfaceHair}
-            isDark={isDark}
-            onMealPress={(meal) => {
-              if (meal.full_result) setSelectedFoodResult(meal.full_result);
-              setSelectedFoodImageUrl(meal.image_url ?? null);
-              router.push('/(scan)/food-report' as any);
-            }}
-            onScanPress={() => requestConsent(() => { setSelectedFoodResult(null); router.push('/(scan)/food-camera' as any); })}
-          />
-        </ScrollView>
-      </SafeAreaView>
-      <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
+          {tipOpen && (
+            <View style={styles.tipBody}>
+              {!!dica.ingredientes?.length && (
+                <View style={styles.tipSection}>
+                  <Text style={[styles.tipBlockLabel, { fontFamily: fBold }]}>Ingredientes</Text>
+                  {dica.ingredientes.map((item, i) => (
+                    <View key={i} style={styles.tipListRow}>
+                      <View style={styles.tipBullet} />
+                      <Text style={[styles.tipListText, { fontFamily: fSemi }]}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {!!dica.preparo?.length && (
+                <View style={styles.tipSection}>
+                  <Text style={[styles.tipBlockLabel, { fontFamily: fBold }]}>Preparo</Text>
+                  {dica.preparo.map((passo, i) => (
+                    <View key={i} style={styles.tipListRow}>
+                      <Text style={[styles.tipStepNumber, { fontFamily: fBold }]}>{i + 1}</Text>
+                      <Text style={[styles.tipListText, { fontFamily: fSemi }]}>{passo}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* "Por que fazer" existe em TODA dica — receita ou não. É a anatomia fixa
+                  do card: a usuária sempre sabe onde procurar o motivo. */}
+              <View style={styles.tipSection}>
+                <Text style={[styles.tipBlockLabel, { fontFamily: fBold }]}>Por que fazer</Text>
+                <Text style={[styles.tipParagraph, { fontFamily: fSemi }]}>{dica.corpo}</Text>
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* ── Para você — 2 primeiros produtos recomendados (reais) ──────────
+            Toque abre direto o detalhe do produto na tela de recomendação. */}
+        {featured.length > 0 && (
+          <>
+            <Text style={[styles.sectionTitle, { fontFamily: fBold }]}>Para você</Text>
+            <View style={styles.productsRow}>
+              {featured.map((f) => (
+                <TouchableOpacity
+                  key={f.productId}
+                  activeOpacity={0.9}
+                  style={styles.productCard}
+                  onPress={() => {
+                    haptics.tap();
+                    setProductDetailTarget(f.productId);
+                    router.push('/recomendacao-produtos' as any);
+                  }}
+                >
+                  <ExpoImage source={{ uri: f.imagemUrl }} style={styles.productImg} contentFit="contain" />
+                </TouchableOpacity>
+              ))}
+              {/* completa a linha se só houver 1 produto (mantém o card à esquerda) */}
+              {featured.length === 1 && <View style={[styles.productCard, { opacity: 0 }]} pointerEvents="none" />}
+            </View>
+          </>
+        )}
+
+      </ScrollView>
+
+      {/* ── Botão Escanear — fixo, logo acima da tab bar (não rola com o conteúdo) ──
+          bottom = BAR_HEIGHT da navbar (80px, node 1:27) + 12px de respiro. */}
+      <View style={styles.scanWrap} pointerEvents="box-none">
+        <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.action(); startFaceScan(); }}>
+          <LinearGradient
+            colors={['#FF9D9D', '#FF9D9D']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.scanBtn}
+          >
+            <ScanFace size={22} color="#FFFFFF" strokeWidth={2} />
+            <Text style={[styles.scanText, { fontFamily: fBold }]}>Escanear</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#F9F9F9' },
+  scroll: { flex: 1, backgroundColor: '#F9F9F9' },
+  // paddingBottom = navbar (80) + botão fixo (48, bottom 108) + respiros → conteúdo rola livre atrás do botão
+  content: { paddingBottom: 186 },
+
+  heroGradient: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 520,
+  },
+
+  // Score
+  scoreBlock: { alignItems: 'center', paddingTop: 2 },
+  scoreLogo: { resizeMode: 'contain' }, // tamanho definido inline (LOGO, proporcional à largura)
+  scoreNumber: { fontSize: 72, color: '#121212', letterSpacing: -2.88, marginTop: 2 },
+  scoreLabel: { fontSize: 30.5, color: '#121212', letterSpacing: -1.2, marginTop: -14 },
+  scoreUnderline: { width: 160, height: 7, marginTop: 3 },
+
+  // Foto
+  photoWrap: { alignItems: 'center', marginTop: 10, width: '100%', zIndex: 1 },
+  photoCircle: {
+    overflow: 'hidden',
+    backgroundColor: '#F3F3F4',
+    // Só a foto (círculo). O anel é uma Image sobreposta (asset real do elipse do Figma,
+    // node 1:319) — ver render. `profile-photo.png` não é mais usado.
+  },
+  photo: { width: '100%', height: '100%' },
+  photoPlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+
+  // Métricas — card réplica do node 1:63. Sem padding: as métricas são posicionadas
+  // absolutamente pelas coordenadas do Figma (ver render). overflow hidden = "overflow-clip".
+  // Wrapper tocável (compartilhar): carrega SÓ a posição do card. A `marginHorizontal: 12`
+  // é a mesma do card "Dica do dia" — as duas caixas têm a mesma largura de propósito.
+  metricsCardTouch: {
+    marginHorizontal: 12,
+    zIndex: 2,
+  },
+  metricsCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: '#E3E3E6',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+
+  // Aviso do estado legado — scrim sobre as métricas fantasmas, DENTRO do card (que já
+  // tem overflow:hidden + borderRadius 16, então se recorta sozinho). Não altera a altura
+  // do card nem a grade absoluta do node 1:63 — é sobreposição pura.
+  metricsLock: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  metricsLockTitle: { color: '#121212', textAlign: 'center', letterSpacing: -0.3 },
+  metricsLockBody: { color: '#818181', textAlign: 'center' },
+
+  // Dica do dia — mesma casca do antigo card de skincare (borda, sombra, chip 62×62,
+  // expansão por LayoutAnimation). Só o conteúdo mudou.
+  tipCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: '#E3E3E6',
+    borderRadius: 18,
+    marginHorizontal: 12, marginTop: 16,
+    paddingHorizontal: 12, paddingVertical: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1, shadowRadius: 3, elevation: 2,
+  },
+  tipHeader: { flexDirection: 'row', alignItems: 'center' },
+  tipIconBox: {
+    width: 68, height: 68, borderRadius: 15,
+    backgroundColor: '#F9F9F9',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tipTexts: { flex: 1, marginLeft: 12, marginRight: 8 },
+  // "Dica do dia" — NÃO é um eyebrow: mesma tipografia do título (Nunito ExtraBold 17),
+  // só que em rosa. Faz parte do texto, não é uma etiqueta.
+  tipKicker: { fontSize: 17, lineHeight: 23, color: '#FF9D9D', letterSpacing: -0.5 },
+  tipTitle: { fontSize: 17, lineHeight: 23, color: '#121212', letterSpacing: -0.5 },
+  // Conteúdo expandido — alinhado à coluna do título (chip 68 + gap 12 = 80).
+  // Anatomia fixa: INGREDIENTES + PREPARO (só receitas) + POR QUE FAZER (todas as dicas).
+  tipBody: { marginTop: 14, paddingLeft: 80, paddingRight: 4, paddingBottom: 4 },
+  tipSection: { marginBottom: 16 },
+  tipBlockLabel: {
+    fontSize: 12, color: '#121212', letterSpacing: 0.3,
+    textTransform: 'uppercase', marginBottom: 8,
+  },
+  tipListRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
+  tipBullet: {
+    width: 4, height: 4, borderRadius: 2,
+    backgroundColor: '#FF9D9D',
+    marginTop: 8, marginRight: 10,
+  },
+  // Número do passo do preparo — largura fixa para os textos alinharem numa coluna só
+  tipStepNumber: {
+    width: 14, marginRight: 8,
+    fontSize: 14, lineHeight: 20, color: '#FF9D9D', letterSpacing: -0.2,
+  },
+  tipListText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#515151', letterSpacing: -0.2 },
+  tipParagraph: { fontSize: 14, lineHeight: 21, color: '#515151', letterSpacing: -0.2 },
+
+  // Para você
+  sectionTitle: { fontSize: 20, color: '#121212', letterSpacing: -0.8, marginTop: 22, marginLeft: 16 },
+  productsRow: { flexDirection: 'row', gap: 8, marginTop: 14, paddingHorizontal: 16 },
+  productCard: {
+    flex: 1, height: 142,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: '#E3E3E6',
+    borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  productImg: { height: 120, width: '55%' },
+
+  // Escanear — fixo acima da tab bar (80px de altura, node 1:27)
+  scanWrap: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 108,
+    alignItems: 'center',
+  },
+  scanBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, height: 48, width: 134, borderRadius: 42,
+    shadowColor: '#FF9D9D', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45, shadowRadius: 12, elevation: 6,
+  },
+  scanText: { fontSize: 16, color: '#FFFFFF' },
+});

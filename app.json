@@ -1,20 +1,20 @@
 {
   "expo": {
-    "name": "NIKS AI",
+    "name": "NIKS",
     "newArchEnabled": true,
     "slug": "niks-ai",
-    "version": "1.0.36",
+    "version": "1.0.47",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-niks.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-niks.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1A1A1A"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "buildNumber": "2",
-      "icon": "./assets/icon.png",
+      "icon": "./assets/icon-niks.png",
       "supportsTablet": false,
       "bundleIdentifier": "br.com.niksai.app",
       "usesAppleSignIn": true,
@@ -84,7 +84,17 @@
       ],
       "expo-apple-authentication",
       "expo-audio",
-      "expo-video"
+      "expo-video",
+      "expo-image",
+      "expo-sharing",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "O NIKS AI precisa acessar suas fotos.",
+          "savePhotosPermission": "Permita salvar sua colagem NIKS na galeria de fotos.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "fonts": [
       "./assets/fonts/PlayfairDisplay-Regular.ttf",

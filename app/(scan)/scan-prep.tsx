@@ -4,11 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft, Sun, Sparkles, User, Glasses, Smile } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
 import { useFonts } from 'expo-font';
-import { AIConsentModal } from '../../components/ui/AIConsentModal';
-import { useAIConsent } from '../../hooks/useAIConsent';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 
 const DEEP = '#1D3A44';
@@ -18,8 +16,8 @@ const CORAL = '#FB7B6B';
 const CORAL_DEEP = '#E5654F';
 const CREAM = '#FFFFFF';
 
-const STEP = 14;
-const TOTAL = 14;
+const STEP = 13;
+const TOTAL = 13;
 
 const TIPS = [
   { Icon: Sun, label: 'Local com boa iluminação' },
@@ -34,7 +32,6 @@ export default function ScanPrep() {
     'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
   });
   const router = useRouter();
-  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
   const { track } = useMixpanel();
   const { scanSource } = useAppStore();
 
@@ -43,8 +40,9 @@ export default function ScanPrep() {
   }, []);
 
   const handleOpenCamera = () => {
+    haptics.action();
     track('onboarding_step_completed', { step_number: 13, step_name: 'Análise com IA', step_total: 23 });
-    requestConsent(() => router.push('/(scan)/camera' as any));
+    router.push('/(scan)/camera' as any);
   };
 
   return (
@@ -58,8 +56,8 @@ export default function ScanPrep() {
             flexDirection: 'row', alignItems: 'center', gap: 14,
           }}>
             <TouchableOpacity
-              onPress={async () => {
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onPress={() => {
+                haptics.tap();
                 router.back();
               }}
               activeOpacity={0.7}
@@ -170,7 +168,6 @@ export default function ScanPrep() {
 
         </View>
       </SafeAreaView>
-      <AIConsentModal visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
     </>
   );
 }

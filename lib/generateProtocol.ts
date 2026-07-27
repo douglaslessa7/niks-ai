@@ -78,6 +78,27 @@ export async function generateAndSaveProtocol({
       rotina_pm: data.night,
       dicas,
     });
+
+    // Encadeia a recomendação de produtos reais. A função é auto-guardada
+    // (gera só no primeiro scan), então é seguro chamar sempre. Roda aqui —
+    // depois do insert do protocolo — porque `recomendar-produtos` lê o
+    // protocolo no banco. Falha aqui não pode quebrar o fluxo do protocolo.
+    try {
+      await fetch(
+        'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/recomendar-produtos',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': ANON_KEY,
+            'Authorization': `Bearer ${ANON_KEY}`,
+          },
+          body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null }),
+        }
+      );
+    } catch (recErr) {
+      console.warn('[generateProtocol] recomendar-produtos falhou (não bloqueante):', recErr);
+    }
   } catch (err) {
     console.error('[generateProtocol] Unexpected error:', err);
   } finally {
