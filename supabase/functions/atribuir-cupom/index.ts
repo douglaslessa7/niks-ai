@@ -7,12 +7,15 @@
 // e reassina), o app chama esta função com o rc_app_user_id GUARDADO (não o atual):
 // assim NÃO depende da ordem do Purchases.logIn, que troca o id do RevenueCat.
 //
-// Responsabilidade: SÓ liga o user_id. A CONVERSÃO (converteu=true) é marcada pelo
-// revenuecat-webhook, que é mais confiável (sobrevive ao app fechar) e sabe pelo
-// product_id que a compra veio de cupom. Divisão de responsabilidades de propósito.
+// Responsabilidade: liga o user_id E marca converteu=true (a compra já aconteceu quando
+// esta função é chamada — o app só chama pós-assinatura). O webhook também marca a
+// conversão no caso comum, mas ele casa a linha só pelo app_user_id da compra; se o id
+// do RevenueCat MUDOU entre aplicar o cupom e comprar (um Purchases.logIn no meio), o
+// webhook não acha a linha. Por isso o app marca converteu aqui também — ele acha a
+// linha de forma confiável pelo rc_app_user_id GUARDADO. Os dois são idempotentes: o
+// contador só sobe no false→true do trigger, rodar 2× não infla.
 //
-// Idempotente: só liga quando ainda está NULL; rodar de novo não muda nada e não toca
-// no contador de conversões. Nunca deve travar o signup — o app chama sem bloquear.
+// Nunca deve travar o signup — o app chama sem bloquear.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -60,13 +63,16 @@ Deno.serve(async (req) => {
     // Cupom sumiu do banco: nada a ligar, mas não é erro do fluxo.
     if (!cupom) return json({ ok: true, linked: false })
 
-    // Liga o user_id só se ainda estiver NULL (idempotente; não sobrescreve).
+    // Liga o user_id e marca convertida. Sem guard de `user_id is null`: a conversão
+    // precisa ser marcada mesmo que o user_id já tenha sido ligado antes. Idempotente:
+    // reescrever o mesmo user_id não muda nada, e o contador só sobe no false→true do
+    // trigger. Casa a linha pelo cupom + o rc_app_user_id GUARDADO (o do momento da
+    // aplicação), então independe do id ter mudado até a compra.
     const { data: updated, error } = await supabase
       .from('cupom_aplicacoes')
-      .update({ user_id })
+      .update({ user_id, converteu: true })
       .eq('cupom_id', cupom.id)
       .eq('rc_app_user_id', rc_app_user_id)
-      .is('user_id', null)
       .select('id')
 
     if (error) throw error

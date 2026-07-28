@@ -61,25 +61,28 @@ async function marcarConversaoCupom(supabase: any, event: RevenueCatEvent): Prom
     const rcId = event.app_user_id;
     if (!rcId) return;
 
-    // A aplicação do cupom e a compra acontecem na MESMA identidade do RevenueCat
-    // (anônima para usuária nova, identificada para quem já tinha conta), então o
-    // app_user_id do evento casa com o rc_app_user_id guardado na aplicação. Pega a
-    // aplicação MAIS RECENTE desse id (= o cupom que ela de fato usou, caso tenha
-    // testado mais de um) e marca convertida.
-    const { data: latest } = await supabase
+    // Casa a aplicação MAIS RECENTE (= o cupom que ela de fato usou, caso tenha testado
+    // mais de um) por `rc_app_user_id`. No caso comum o app_user_id da compra é o mesmo
+    // id guardado na aplicação. MAS se o id do RevenueCat mudou entre aplicar e comprar
+    // (um Purchases.logIn no meio), a linha ficou gravada com o id antigo e a compra vem
+    // com o novo (UUID). Nesse caso o app já ligou o `user_id` = esse novo UUID, então
+    // casamos também por `user_id` quando o id da compra é um UUID.
+    const isUuid = !rcId.startsWith('$RCAnonymousID:') && UUID_REGEX.test(rcId);
+    const filter = isUuid ? `rc_app_user_id.eq.${rcId},user_id.eq.${rcId}` : null;
+    const base = supabase
       .from('cupom_aplicacoes')
       .select('id')
-      .eq('rc_app_user_id', rcId)
       .order('aplicado_em', { ascending: false })
-      .limit(1)
+      .limit(1);
+    const { data: latest } = await (filter ? base.or(filter) : base.eq('rc_app_user_id', rcId))
       .maybeSingle();
     if (!latest) return;
 
     // Idempotente: o contador total_assinaturas só sobe no false→true do trigger.
     // Reprocessar o mesmo evento (ou um RENEWAL depois) não infla nada.
     const patch: Record<string, unknown> = { converteu: true };
-    // Se o id já é UUID (usuária que tinha conta), liga o user_id de brinde.
-    if (!rcId.startsWith('$RCAnonymousID:') && UUID_REGEX.test(rcId)) patch.user_id = rcId;
+    // Se o id da compra é UUID (usuária identificada), liga o user_id de brinde.
+    if (isUuid) patch.user_id = rcId;
 
     const { error } = await supabase
       .from('cupom_aplicacoes')
