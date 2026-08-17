@@ -26,7 +26,7 @@ import Svg, {
 // Skia — orb com gradiente radial + numeral da cerimônia (aliased p/ não colidir com react-native-svg)
 import {
   Canvas, Circle as SkiaCircle, Rect as SkiaRect, Group,
-  RadialGradient as SkiaRadialGradient, vec, BlurMask,
+  RadialGradient as SkiaRadialGradient, vec, BlurMask, Shadow as SkiaShadow,
   Text as SkiaText, useFont,
 } from '@shopify/react-native-skia';
 // NightSky — céu estrelado (estrelas + estrelas cadentes) reaproveitado do modo noturno antigo
@@ -35,7 +35,9 @@ import { useAppStore, type OnboardingData, type ScanResult, type ProtocolResult 
 import { useFaceScan } from '../../hooks/useFaceScan';
 import { supabase } from '../../lib/supabase';
 import { generateAndSaveProtocol } from '../../lib/generateProtocol';
+import { buildOnboardingDataFromUserRow } from '../../lib/buildOnboardingDataFromUserRow';
 import { markStepCompleted } from '../../lib/routineProgress';
+import { requestAppReview } from '../../lib/storeReview';
 import { getSavedProducts, normStepKey, type SavedProduct } from '../../lib/savedProducts';
 import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
@@ -145,6 +147,18 @@ function mapStep(raw: RawStep): Step {
   const how = (raw?.instruction ?? '').trim()
     || (Array.isArray(raw?.steps) ? raw.steps.join(' ').trim() : '');
   return { title: name, ingredients: ingredient, category, icon, how };
+}
+
+// Reconstrói o array `dicas` a partir do store (a tabela guarda `dicas` como coluna
+// `text[]`; o store guarda os campos soltos). Usado só no ramo de fallback do store.
+function storeDicas(r: ProtocolResult): (string | null)[] {
+  return r.dicas?.length ? r.dicas : [
+    r.introduction_warnings ?? null,
+    r.expected_timeline?.two_weeks ?? null,
+    r.expected_timeline?.one_month ?? null,
+    r.expected_timeline?.three_months ?? null,
+    r.introduction_schedule ?? null,
+  ];
 }
 
 // Foco continua fixo por período (rótulo editorial); passos/duração são derivados
@@ -481,9 +495,6 @@ export default function Protocolo() {
   const [fontsLoaded] = useFonts({
     Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
     Nunito_500Medium, Nunito_400Regular,
-    // DM Serif — usadas SÓ na cerimônia (idêntica à produção)
-    'DMSerifDisplay-Regular': require('../../assets/fonts/DMSerifDisplay-Regular.ttf'),
-    'DMSerifDisplay-Italic': require('../../assets/fonts/DMSerifDisplay-Italic.ttf'),
   });
   const F = {
     xbold: fontsLoaded ? 'Nunito_800ExtraBold' : undefined,
@@ -492,11 +503,11 @@ export default function Protocolo() {
     medium: fontsLoaded ? 'Nunito_500Medium' : undefined,
     regular: fontsLoaded ? 'Nunito_400Regular' : undefined,
   };
-  // Cerimônia usa DM Serif Display (serif "cerimônia" da produção)
-  const cerimFont = fontsLoaded ? 'DMSerifDisplay-Italic' : undefined;
-  const cerimFontReg = fontsLoaded ? 'DMSerifDisplay-Regular' : undefined;
-  // Skia font para o numeral do orb — renderizado dentro do Canvas p/ evitar clipping
-  const cerimSkiaFont = useFont(require('../../assets/fonts/DMSerifDisplay-Italic.ttf'), 84);
+  // Cerimônia migrada para Nunito (identidade nova) — cerimFont = ênfase/títulos, cerimFontReg = títulos/corpo
+  const cerimFont = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const cerimFontReg = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  // Skia font para o numeral do orb — Nunito ExtraBold (era DM Serif Italic)
+  const cerimSkiaFont = useFont(Nunito_800ExtraBold, 84);
   const insets = useSafeAreaInsets();
 
   // Sincroniza a tab bar global (GlobalBottomBar) com o tema: escura no modo Noite,
@@ -527,16 +538,18 @@ export default function Protocolo() {
   // triedGenerate da tela de recomendação). Rearmada só no toque explícito de "Tentar de novo".
   const triedGenerate = useRef(false);
 
-  // Fonte 1: store (gerado no onboarding / atualizado pela NIKS Coach). Agora que o
-  // store persiste em disco (`partialize` em store/onboarding.ts), este caminho
-  // sobrevive a fechar o app — antes ele SEMPRE falhava depois de um restart e a
-  // tela caía na consulta ao Supabase a cada foco.
+  // FALLBACK do vão: o store cobre a janela em que a tabela ainda não tem o protocolo
+  // — timing do onboarding (o insert roda DEPOIS do setProtocolResult) OU insert falho.
+  // A FONTE DE VERDADE é a tabela `protocolos` (ver efeito abaixo). Persistido em disco
+  // (`partialize`), então pinta na hora e sobrevive a restart até a tabela assumir.
   const fromStore = protocolResult?.morning?.length && protocolResult?.night?.length
     ? protocolResult
     : null;
 
-  // Fonte 2 (fallback): tabela `protocolos`, agora cacheada. Só é consultada quando
-  // o store não tem nada — e, mesmo aí, no máximo uma vez a cada 5 min.
+  // FONTE DE VERDADE: tabela `protocolos`. Sempre consultada e revalidada A CADA FOCO
+  // (staleMs:0) — é isso que faz uma alteração feita no servidor (card do Coach,
+  // aprovação por texto, etc.) aparecer ao voltar para a aba. Stale-while-revalidate:
+  // pinta do cache na hora e atualiza em silêncio, sem piscar.
   const userId = useUserId();
   const fetchProtocolo = useCallback(async () => {
     const uid = await getUserId();
@@ -555,7 +568,7 @@ export default function Protocolo() {
   const { data: saved, state: savedState, refresh: refreshProtocolo } = useCachedQuery(
     userId ? `protocolo:${userId}` : null,
     fetchProtocolo,
-    { enabled: Boolean(userId) && !fromStore, staleMs: 5 * 60_000 },
+    { enabled: Boolean(userId), staleMs: 0 },
   );
 
   // ── Geração SOB DEMANDA do protocolo — usuária legada ─────────────────────────
@@ -596,29 +609,12 @@ export default function Protocolo() {
       const { data: urow } = await supabase
         .from('users')
         .select(
-          'genero, pregnancy_status, skincare_routine_type, skincare_routine_description, allergy_type, allergy_description, tipo_pele, concerns, objetivo, sun_exposure, hydration, sleep, birthday',
+          'genero, pregnancy_status, skincare_routine_type, skincare_routine_description, allergy_type, allergy_description, tipo_pele, concerns, sun_exposure, hydration, sleep, birthday',
         )
         .eq('id', uid)
         .maybeSingle();
 
-      const onboardingData: OnboardingData = {
-        concerns: Array.isArray(urow?.concerns) ? (urow!.concerns as string[]) : [],
-        genero: urow?.genero ?? null,
-        pregnancy_status: urow?.pregnancy_status ?? null,
-        birthday: urow?.birthday ?? null,
-        // Nunca vazio: declarado (users) OU o detectado pelo scan (garantido pelo piso acima).
-        skin_type: urow?.tipo_pele ?? scanResult.skin_type_detected ?? null,
-        sun_exposure: urow?.sun_exposure ?? null,
-        hydration: urow?.hydration ?? null,
-        sleep: urow?.sleep ?? null,
-        commitment: null,      // não é persistido em `users`
-        objetivo: urow?.objetivo ?? null,
-        goal_desire: null,     // não é persistido em `users`
-        skincare_routine_type: urow?.skincare_routine_type ?? null,
-        skincare_routine_description: urow?.skincare_routine_description ?? null,
-        allergy_type: urow?.allergy_type ?? null,
-        allergy_description: urow?.allergy_description ?? null,
-      };
+      const onboardingData: OnboardingData = buildOnboardingDataFromUserRow(urow, scanResult);
 
       // Gera + salva com a lib COMO ESTÁ (fetch direto, insert em `protocolos`, encadeia a
       // recomendação). Guarda o resultado, mas ainda NÃO o compromete no store.
@@ -645,9 +641,10 @@ export default function Protocolo() {
       if (!savedRow) return 'falhou';
 
       setProtocolResult(produced);
+      void refreshProtocolo(); // a tabela vira a verdade dentro do mesmo mount
       return 'ok';
     },
-    [setProtocolResult],
+    [setProtocolResult, refreshProtocolo],
   );
 
   // Dispara a geração sob demanda uma vez (trava). Mostra 'generating' enquanto roda.
@@ -663,48 +660,67 @@ export default function Protocolo() {
     // 'ok' → setProtocolResult já povoou o store; o efeito reativo (fromStore) mostra a rotina.
   }, [userId, generateOnDemand]);
 
+  // Aplica um par de rotinas cru no estado de render (title/ingredients via mapStep +
+  // crus para a cerimônia + dicas).
+  const aplica = useCallback((am: RawStep[], pm: RawStep[], ds: (string | null)[]) => {
+    setAmRaw(am); setPmRaw(pm);
+    setAmSteps(am.map(mapStep));
+    setPmSteps(pm.map(mapStep));
+    setDicas(ds);
+  }, []);
+
   useEffect(() => {
-    if (fromStore) {
-      const am = fromStore.morning as RawStep[];
-      const pm = fromStore.night as RawStep[];
-      setAmRaw(am); setPmRaw(pm);
-      setAmSteps(am.map(mapStep));
-      setPmSteps(pm.map(mapStep));
-      // O store guarda os campos soltos; o array dicas só existe após salvar no
-      // Supabase — então reconstruímos na mesma ordem de índices usada no insert.
-      setDicas(fromStore.dicas?.length ? fromStore.dicas : [
-        fromStore.introduction_warnings ?? null,
-        fromStore.expected_timeline?.two_weeks ?? null,
-        fromStore.expected_timeline?.one_month ?? null,
-        fromStore.expected_timeline?.three_months ?? null,
-        fromStore.introduction_schedule ?? null,
-      ]);
+    if (!userId) return;              // ainda resolvendo a sessão
+
+    // FONTE DE VERDADE: a tabela ganha quando QUALQUER período tem dado (||, não &&) —
+    // exigir os dois faria uma linha com um período vazio cair no store e voltar a mentir.
+    const am = (saved?.rotina_am as RawStep[]) ?? [];
+    const pm = (saved?.rotina_pm as RawStep[]) ?? [];
+    if (am.length || pm.length) {
+      aplica(am, pm, Array.isArray(saved?.dicas) ? saved!.dicas : []);
       setLoadState('ready');
       return;
     }
 
-    if (!userId) return;              // ainda resolvendo a sessão
-    if (savedState === 'error') { setLoadState('error'); return; }
-    if (savedState === 'loading') return; // sem cache ainda — mantém 'loading'
-
-    if (saved?.rotina_am?.length && saved?.rotina_pm?.length) {
-      const am = saved.rotina_am as RawStep[];
-      const pm = saved.rotina_pm as RawStep[];
-      setAmRaw(am); setPmRaw(pm);
-      setAmSteps(am.map(mapStep));
-      setPmSteps(pm.map(mapStep));
-      setDicas(Array.isArray(saved.dicas) ? saved.dicas : []);
+    // VÃO — tabela vazia por timing do onboarding OU por insert falho (indistinguíveis):
+    // o store cobre os dois, a tela NUNCA fica em branco.
+    if (fromStore) {
+      aplica(fromStore.morning as RawStep[], fromStore.night as RawStep[], storeDicas(fromStore));
       setLoadState('ready');
-    } else if (!triedGenerate.current) {
-      // Vazio: nenhum protocolo salvo. Usuária legada (tem scan, nunca teve protocolo) →
-      // tenta gerar sob demanda UMA vez por montagem. A trava evita laço se a geração
-      // responder mas a linha continuar vazia.
+      return;
+    }
+
+    // Nem tabela nem store:
+    if (savedState === 'error') { setLoadState('error'); return; }
+    if (savedState === 'loading') return; // tabela ainda resolvendo, sem store → mantém 'loading'
+    if (!triedGenerate.current) {
+      // Usuária legada (tem scan, nunca teve protocolo) → gera sob demanda UMA vez por
+      // montagem. A trava evita laço se a geração responder mas a linha continuar vazia.
       void runOnDemandGeneration();
     } else {
       // Já tentamos gerar nesta montagem e ainda vazio → empty legítimo (sem scan aproveitável).
       setLoadState('empty');
     }
-  }, [fromStore, saved, savedState, userId, runOnDemandGeneration]);
+  }, [fromStore, saved, savedState, userId, runOnDemandGeneration, aplica]);
+
+  // Sincroniza o store a partir da tabela (fonte de verdade) — mantém o cold-start
+  // mostrando a última versão e o store consistente. Preserva os campos soltos do store
+  // (a tabela não os guarda como colunas). Guard de igualdade em morning/night evita laço.
+  useEffect(() => {
+    const am = (saved?.rotina_am as RawStep[]) ?? [];
+    const pm = (saved?.rotina_pm as RawStep[]) ?? [];
+    if (!am.length && !pm.length) return;
+    const same = protocolResult
+      && JSON.stringify(protocolResult.morning) === JSON.stringify(am)
+      && JSON.stringify(protocolResult.night) === JSON.stringify(pm);
+    if (same) return;
+    setProtocolResult({
+      ...(protocolResult ?? ({} as ProtocolResult)),
+      morning: am as unknown as ProtocolResult['morning'],
+      night: pm as unknown as ProtocolResult['night'],
+      dicas: Array.isArray(saved?.dicas) ? saved!.dicas : [],
+    });
+  }, [saved, protocolResult, setProtocolResult]);
 
   // Produtos salvos na rotina (via "Salvar na minha rotina" na tela de Produtos).
   // A foto salva substitui o ícone do passo. Recarrega ao focar a tela — assim um
@@ -808,18 +824,19 @@ export default function Protocolo() {
 
   // ── Cerimônia — tokens de cor/layout (idênticos à produção; usa teal + coral) ─
   const isPM = isNight;
-  const accent = '#FB7B6B';
+  const accent = '#FF9D9D';
+  // Gradientes do modo DIA — recoloridos de pêssego para rosa suave (identidade nova #FF9D9D)
   const dayGradients: string[][] = [
-    ['#FDE8E1', '#FBD5CA', '#F5B8A8'],
-    ['#FEF0E6', '#FADBC7', '#EBB497'],
-    ['#FCEAE5', '#F8C9B9', '#E89F8B'],
-    ['#FFEDE8', '#FFD4C5', '#FB9F89'],
-    ['#FFE5DD', '#FBBFAE', '#E88770'],
+    ['#FFF1F2', '#FFE0E4', '#FFC4CB'],
+    ['#FFF3F4', '#FFDCE1', '#FFB9C1'],
+    ['#FFEFF1', '#FFD6DC', '#FFAEB7'],
+    ['#FFF2F3', '#FFDBE0', '#FFB3BB'],
+    ['#FFECEF', '#FFD0D6', '#FCA8B0'],
   ];
   const currentDayColors = dayGradients[ritualStep % dayGradients.length];
-  const rtInk = isPM ? '#FFFFFF' : '#1D3A44';
-  const rtInkSoft = isPM ? 'rgba(255,255,255,0.65)' : '#486269';
-  const rtInkHair = isPM ? 'rgba(255,255,255,0.18)' : 'rgba(29,58,68,0.2)';
+  const rtInk = isPM ? '#FFFFFF' : '#121212';
+  const rtInkSoft = isPM ? 'rgba(255,255,255,0.65)' : '#515151';
+  const rtInkHair = isPM ? 'rgba(255,255,255,0.18)' : 'rgba(18,18,18,0.2)';
   const chipBg = isPM ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.5)';
   const chipBorder = isPM ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.7)';
   const ritualCurrentStep = rawSteps[ritualStep] ?? rawSteps[rawSteps.length - 1];
@@ -837,11 +854,11 @@ export default function Protocolo() {
   const cerimTitleFirst = cerimTitleParts[0] ?? '';
   const cerimTitleRest = cerimTitleParts.slice(1).join(' ');
   // Tema da tela de celebração
-  const celebTextColor = isPM ? '#F5E6D3' : '#1D3A44';
-  const celebSubtleColor = isPM ? 'rgba(245,230,211,0.6)' : 'rgba(29,58,68,0.55)';
-  const celebRuleColor = isPM ? 'rgba(245,230,211,0.25)' : 'rgba(29,58,68,0.2)';
-  const celebCtaBg = isPM ? '#F5E6D3' : '#1D3A44';
-  const celebCtaText = isPM ? '#0a1420' : '#FFF8F3';
+  const celebTextColor = isPM ? '#F5E6D3' : '#121212';
+  const celebSubtleColor = isPM ? 'rgba(245,230,211,0.6)' : 'rgba(18,18,18,0.55)';
+  const celebRuleColor = isPM ? 'rgba(245,230,211,0.25)' : 'rgba(18,18,18,0.2)';
+  const celebCtaBg = isPM ? '#F5E6D3' : '#FF9D9D';
+  const celebCtaText = isPM ? '#0a1420' : '#FFFFFF';
 
   const brandShadow = {
     shadowColor: BRAND, shadowOffset: { width: 0, height: 8 },
@@ -1108,7 +1125,7 @@ export default function Protocolo() {
                 </SkiaRect>
               </Canvas>
             ) : (
-              <LinearGradient colors={['#FFF8F3', '#FFEFE4']} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} />
             )}
             {isPM && <NightSky />}
 
@@ -1141,7 +1158,7 @@ export default function Protocolo() {
                       c={vec(150, 150)} r={130}
                       colors={isPM
                         ? ['rgba(245,230,211,0.25)', 'rgba(245,230,211,0)']
-                        : ['rgba(251,123,107,0.33)', 'rgba(251,123,107,0)']}
+                        : ['rgba(255,157,157,0.14)', 'rgba(255,157,157,0)']}
                     />
                     <BlurMask blur={24} style="normal" />
                   </SkiaCircle>
@@ -1150,7 +1167,7 @@ export default function Protocolo() {
                 <View style={{
                   position: 'absolute', width: 252, height: 252, borderRadius: 126,
                   top: -16, left: -16, borderWidth: 1,
-                  borderColor: isPM ? 'rgba(245,230,211,0.18)' : 'rgba(251,123,107,0.25)',
+                  borderColor: isPM ? 'rgba(245,230,211,0.18)' : 'rgba(255,157,157,0.18)',
                 }} />
                 {/* Orb body */}
                 <Canvas style={{ width: 220, height: 220, position: 'absolute' }}>
@@ -1159,7 +1176,7 @@ export default function Protocolo() {
                       c={vec(77, 77)} r={198}
                       colors={isPM
                         ? ['#FAF3E3', '#E8D9B8', '#B8A685']
-                        : ['#FFD4B8', accent, '#E85D4E']}
+                        : ['#FFFFFF', '#FFC4C6', '#FF9D9D']}
                     />
                   </SkiaCircle>
                   {isPM && (
@@ -1187,7 +1204,7 @@ export default function Protocolo() {
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
                   <Svg width={48} height={48} viewBox="0 0 48 48" fill="none">
                     <Path d="M14 24.5L21 31.5L34 17"
-                      stroke={isPM ? '#1D3A44' : '#FFF8F3'}
+                      stroke={isPM ? '#121212' : '#FFFFFF'}
                       strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </View>
@@ -1220,7 +1237,7 @@ export default function Protocolo() {
 
               {/* Subtexto */}
               <Animated.Text style={{
-                fontFamily: cerimFontReg, fontSize: 15, lineHeight: 23.25,
+                fontFamily: F.medium, fontSize: 15, lineHeight: 23.25,
                 color: celebSubtleColor, textAlign: 'center', maxWidth: 280,
                 opacity: celebSubtextoAnim,
                 transform: [{ translateY: celebSubtextoAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
@@ -1244,14 +1261,14 @@ export default function Protocolo() {
                 {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
               </Text>
               <TouchableOpacity
-                onPress={() => { haptics.success(); closeRitual(); }}
+                onPress={() => { haptics.success(); requestAppReview(); closeRitual(); }}
                 activeOpacity={0.88}
                 style={{
                   backgroundColor: celebCtaBg, borderRadius: 100,
                   paddingVertical: 20, paddingHorizontal: 24,
                   flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  shadowColor: '#000', shadowOffset: { width: 0, height: 12 },
-                  shadowOpacity: isPM ? 0.4 : 0.22, shadowRadius: 40,
+                  shadowColor: isPM ? '#000' : '#FF9D9D', shadowOffset: { width: 0, height: 12 },
+                  shadowOpacity: isPM ? 0.4 : 0.35, shadowRadius: isPM ? 40 : 24,
                 }}
               >
                 <Text style={{ color: celebCtaText, fontFamily: cerimFont, fontSize: 15, letterSpacing: -0.075 }}>
@@ -1370,11 +1387,11 @@ export default function Protocolo() {
             </View>
 
             {/* Label do passo */}
-            <View style={{ paddingTop: 40, paddingHorizontal: 24, alignItems: 'center', zIndex: 5 }}>
+            <View style={{ paddingTop: 28, paddingHorizontal: 24, alignItems: 'center', zIndex: 5 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ width: 24, height: 0.5, backgroundColor: rtInkHair }} />
                 <Text style={{
-                  fontSize: 10, fontWeight: '500', letterSpacing: 2.5,
+                  fontFamily: F.semi, fontSize: 10, fontWeight: '500', letterSpacing: 2.5,
                   color: rtInkSoft, textTransform: 'uppercase',
                 }}>
                   Passo {ritualStep + 1} · {rawSteps.length}{ritualCurrentStep?.waitTime ? `  ·  ${ritualCurrentStep.waitTime}` : ''}
@@ -1384,7 +1401,7 @@ export default function Protocolo() {
             </View>
 
             {/* Orb com numeral */}
-            <View style={{ paddingTop: 28, alignItems: 'center', zIndex: 5 }}>
+            <View style={{ paddingTop: 18, alignItems: 'center', zIndex: 5 }}>
               <View style={{ width: 220, height: 220, alignItems: 'center', justifyContent: 'center' }}>
                 <Animated.View style={{
                   position: 'absolute', width: 260, height: 260, borderRadius: 130, borderWidth: 0.5,
@@ -1402,7 +1419,7 @@ export default function Protocolo() {
                       c={vec(70, 60)} r={180}
                       colors={isPM
                         ? ['#FFFFFF', '#F4EEE4', '#D8CDB8', '#A89676']
-                        : ['rgba(255,255,255,0.9)', 'rgba(255,230,220,0.7)', 'rgba(251,123,107,0.4)']}
+                        : ['rgba(255,255,255,0.9)', 'rgba(255,224,228,0.7)', 'rgba(255,157,157,0.4)']}
                     />
                   </SkiaCircle>
                   {isPM && (
@@ -1435,53 +1452,73 @@ export default function Protocolo() {
                       y={skiaTextY}
                       text={stepText}
                       font={cerimSkiaFont}
-                      color={isPM ? '#3D2F1F' : '#1D3A44'}
-                    />
+                      color={isPM ? '#3D2F1F' : '#FFFFFF'}
+                    >
+                      {!isPM && (
+                        <SkiaShadow dx={0} dy={2} blur={5} color="rgba(180,60,80,0.55)" />
+                      )}
+                    </SkiaText>
                   )}
                 </Canvas>
               </View>
             </View>
 
-            {/* Título + instrução + chip de ingrediente */}
-            <View style={{ paddingTop: 36, paddingHorizontal: 32, alignItems: 'center', zIndex: 5 }}>
-              <Text style={{
-                fontFamily: cerimFontReg, fontSize: 38, fontWeight: '400',
-                color: rtInk, letterSpacing: -0.95, textAlign: 'center', lineHeight: 40,
-              }}>
-                <Text style={{ fontFamily: cerimFont }}>{cerimTitleFirst}</Text>
-                {cerimTitleRest ? ` ${cerimTitleRest}` : ''}
-              </Text>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 }}>
-                <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
-                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: accent }} />
-                <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
-              </View>
-
-              <Text style={{
-                fontSize: 14, color: rtInkSoft,
-                textAlign: 'center', lineHeight: 21.7, marginTop: 16, maxWidth: 320,
-              }}>{(ritualCurrentStep?.steps ?? []).join(' ') + (ritualCurrentStep?.waitTime ? ` Aguardar ${ritualCurrentStep.waitTime} com o produto aplicado antes de passar para o próximo passo.` : '')}</Text>
-
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                paddingVertical: 7, paddingHorizontal: 13, marginTop: 18, borderRadius: 100,
-                backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
-              }}>
-                <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
-                  <Path d="M5.5 1.5C5.5 1.5 2.5 5 2.5 7a3 3 0 1 0 6 0C8.5 5 5.5 1.5 5.5 1.5z"
-                    stroke={rtInk} strokeWidth={0.9} fill="none" strokeLinejoin="round" />
-                </Svg>
-                <Text style={{ fontFamily: cerimFont, fontSize: 11, letterSpacing: 0.3, color: rtInk }}>
-                  {ritualCurrentStep?.ingredient ?? ''}
+            {/* Título + instrução + chip — área ROLÁVEL (flex:1) que reserva o espaço do CTA.
+                O texto da IA varia de tamanho: curto fica centralizado (igual antes), longo rola,
+                nunca sendo cortado nem colando no botão "Concluir este passo". */}
+            <View style={{ flex: 1, zIndex: 5 }}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{
+                  flexGrow: 1, justifyContent: 'center', alignItems: 'center',
+                  paddingTop: 28, paddingHorizontal: 24, paddingBottom: 16,
+                }}
+              >
+                <Text style={{
+                  fontFamily: cerimFontReg, fontSize: 38, fontWeight: '400',
+                  color: isPM ? rtInk : '#FFFFFF', letterSpacing: -0.95, textAlign: 'center', lineHeight: 42,
+                  ...(isPM ? {} : {
+                    textShadowColor: 'rgba(180,60,80,0.45)',
+                    textShadowOffset: { width: 0, height: 1.5 },
+                    textShadowRadius: 5,
+                  }),
+                }}>
+                  <Text style={{ fontFamily: cerimFont }}>{cerimTitleFirst}</Text>
+                  {cerimTitleRest ? ` ${cerimTitleRest}` : ''}
                 </Text>
-              </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 }}>
+                  <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
+                  <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: accent }} />
+                  <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
+                </View>
+
+                <Text style={{
+                  fontFamily: F.regular, fontSize: 14, color: rtInkSoft,
+                  textAlign: 'center', lineHeight: 21.7, marginTop: 16, maxWidth: 340,
+                }}>{(ritualCurrentStep?.steps ?? []).join(' ') + (ritualCurrentStep?.waitTime ? ` Aguardar ${ritualCurrentStep.waitTime} com o produto aplicado antes de passar para o próximo passo.` : '')}</Text>
+
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  paddingVertical: 7, paddingHorizontal: 13, marginTop: 18, borderRadius: 100,
+                  backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
+                }}>
+                  <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
+                    <Path d="M5.5 1.5C5.5 1.5 2.5 5 2.5 7a3 3 0 1 0 6 0C8.5 5 5.5 1.5 5.5 1.5z"
+                      stroke={rtInk} strokeWidth={0.9} fill="none" strokeLinejoin="round" />
+                  </Svg>
+                  <Text style={{ fontFamily: cerimFont, fontSize: 11, letterSpacing: 0.3, color: rtInk }}>
+                    {ritualCurrentStep?.ingredient ?? ''}
+                  </Text>
+                </View>
+              </ScrollView>
             </View>
 
-            {/* Controles: anterior + CTA principal */}
+            {/* Controles: anterior + CTA principal — EM FLUXO (não absoluto), logo abaixo da
+                área rolável. Isso garante que a rolagem termine onde o botão começa: o texto
+                nunca cola nem passa por baixo do botão, em qualquer tamanho. */}
             <View style={{
-              position: 'absolute', left: 0, right: 0,
-              bottom: insets.bottom + 16, paddingHorizontal: 24, zIndex: 10,
+              paddingHorizontal: 24, paddingTop: 6, paddingBottom: insets.bottom + 16, zIndex: 10,
             }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <TouchableOpacity
@@ -1516,7 +1553,7 @@ export default function Protocolo() {
                   activeOpacity={0.88}
                   style={{
                     flex: 1,
-                    backgroundColor: isPM ? '#FFFFFF' : '#1D3A44',
+                    backgroundColor: '#FFFFFF',
                     borderRadius: 100, paddingVertical: 18, paddingHorizontal: 20,
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                     shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
@@ -1534,13 +1571,13 @@ export default function Protocolo() {
                     </View>
                     <Text style={{
                       fontFamily: cerimFont, fontSize: 14,
-                      color: isPM ? '#1D3A44' : '#FFFFFF', letterSpacing: -0.07,
+                      color: '#121212', letterSpacing: -0.07,
                     }}>
                       {isRitualLast ? 'Finalizar rotina' : 'Concluir este passo'}
                     </Text>
                   </View>
                   <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
-                    <Path d="M6 3L11 8L6 13" stroke={isPM ? '#1D3A44' : '#FFFFFF'} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M6 3L11 8L6 13" stroke="#121212" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </TouchableOpacity>
               </View>

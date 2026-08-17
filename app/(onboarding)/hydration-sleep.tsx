@@ -6,14 +6,20 @@ import { ChevronLeft } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
 
 const STEP = 8;
@@ -22,7 +28,7 @@ const TOTAL = 13;
 const waterOptions = ['Menos de 1L', '1–2L', '2–3L', '3L+'];
 const sleepOptions = ['4–5', '6', '7', '8', '9+'];
 
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+function Chip({ label, selected, onPress, font }: { label: string; selected: boolean; onPress: () => void; font?: string }) {
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -45,7 +51,7 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
       }}
     >
       <Text style={{
-        fontSize: 15, fontWeight: '500', color: DEEP, letterSpacing: -0.2,
+        fontFamily: font, fontSize: 15, fontWeight: '500', color: DEEP, letterSpacing: -0.2,
       }}>
         {label}
       </Text>
@@ -55,8 +61,16 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
 
 export default function HydrationSleep() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+
   const [water, setWater] = useState<string | null>(null);
   const [sleep, setSleep] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
@@ -101,7 +115,7 @@ export default function HydrationSleep() {
           </TouchableOpacity>
           <View style={{
             flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+            backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
           }}>
             <View style={{
               position: 'absolute', top: 0, left: 0, bottom: 0,
@@ -114,26 +128,25 @@ export default function HydrationSleep() {
         {/* QTitleBlock */}
         <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
           <Text style={{
-            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
             letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
           }}>
             seu estilo de vida
           </Text>
           <Text style={{
-            fontSize: 26, fontWeight: '700', color: DEEP,
+            fontFamily: fXBold, fontSize: 26, fontWeight: '800', color: DEEP,
             letterSpacing: -0.85, lineHeight: 28.6,
           }}>
             {'Como está sua hidratação\ne '}
             <Text style={{
-              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-              fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
             }}>
               sono
             </Text>
             {'?'}
           </Text>
           <Text style={{
-            marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
+            fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
             color: DEEP_SOFT, letterSpacing: -0.1,
           }}>
             Sua pele se regenera enquanto você dorme e se hidrata por dentro. Esses dois fatores afetam mais a pele do que qualquer produto.
@@ -146,7 +159,7 @@ export default function HydrationSleep() {
           {/* Water group */}
           <View>
             <Text style={{
-              fontSize: 14, fontWeight: '600', color: DEEP,
+              fontFamily: fBold, fontSize: 14, fontWeight: '600', color: DEEP,
               letterSpacing: -0.2, marginBottom: 12,
             }}>
               Litros de água por dia
@@ -161,6 +174,7 @@ export default function HydrationSleep() {
                 <Chip
                   key={opt}
                   label={opt}
+                  font={fReg}
                   selected={water === opt}
                   onPress={() => {
                     setWater(opt);
@@ -175,7 +189,7 @@ export default function HydrationSleep() {
           {/* Sleep group */}
           <View>
             <Text style={{
-              fontSize: 14, fontWeight: '600', color: DEEP,
+              fontFamily: fBold, fontSize: 14, fontWeight: '600', color: DEEP,
               letterSpacing: -0.2, marginBottom: 12,
             }}>
               Horas de sono por noite
@@ -190,6 +204,7 @@ export default function HydrationSleep() {
                 <Chip
                   key={opt}
                   label={opt}
+                  font={fReg}
                   selected={sleep === opt}
                   onPress={() => {
                     setSleep(opt);
@@ -211,7 +226,7 @@ export default function HydrationSleep() {
             activeOpacity={0.85}
             style={{
               height: 60, borderRadius: 100,
-              backgroundColor: isReady ? CORAL : 'rgba(29,58,68,0.12)',
+              backgroundColor: isReady ? CORAL : 'rgba(18,18,18,0.12)',
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
               shadowColor: isReady ? CORAL : 'transparent',
               shadowOffset: { width: 0, height: 14 },
@@ -220,8 +235,8 @@ export default function HydrationSleep() {
             }}
           >
             <Text style={{
-              fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
-              color: isReady ? '#FFFFFF' : 'rgba(29,58,68,0.42)',
+              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
+              color: isReady ? '#FFFFFF' : 'rgba(18,18,18,0.42)',
             }}>
               Continuar
             </Text>

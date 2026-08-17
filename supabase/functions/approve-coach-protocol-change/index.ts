@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { validateProposal, applyProposal, logRefusal } from '../_shared/protocol-write.ts'
+import { verifyJWT } from '../_shared/jwt.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,70 +9,36 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 
-type ProposedChanges = {
-  action: 'add' | 'remove' | 'pause'
-  step_name: string
-  period: 'morning' | 'night' | 'both' | null
-  duration_days: number | null
-  details: string
-}
-
-type ProtocolStep = {
-  name: string
-  ingredient: string
-  instruction: string
-  [key: string]: unknown
-}
-
-function applyChanges(
-  steps: ProtocolStep[],
-  changes: ProposedChanges,
-): ProtocolStep[] {
-  if (changes.action === 'add') {
-    const newStep: ProtocolStep = {
-      name: changes.step_name,
-      ingredient: changes.step_name,
-      instruction: changes.details || 'Aplique conforme orientação da NIKS.',
-    }
-    return [...steps, newStep]
-  }
-
-  // 'remove' or 'pause'
-  const needle = changes.step_name.toLowerCase()
-  return steps.filter(
-    s =>
-      !s.name.toLowerCase().includes(needle) &&
-      !s.ingredient.toLowerCase().includes(needle),
-  )
-}
+// Log dos guardas de ENTRADA (auth / corpo / sugestão não encontrada). Prefixo próprio,
+// SEPARADO do PROTOCOL_REFUSED (que mede recusa clínica/de schema da PROPOSTA) — misturar
+// os dois arruinaria a métrica de qualidade do que a NIKS propõe.
+const logReject = (reason: string, ctx: Record<string, unknown> = {}) =>
+  console.warn('APPROVE_ENDPOINT_REJECTED', JSON.stringify({ reason, ...ctx }))
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  const json = (body: unknown, status: number) =>
+    new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
   try {
     const authHeader = req.headers.get('authorization')
     if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      logReject('auth-missing')
+      return json({ error: 'Unauthorized' }, 401)
     }
 
-    const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { authorization: authHeader } },
-    })
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+    // Verificação LOCAL do JWT (crypto.subtle) — igual à niks-chat, que migrou de
+    // auth.getUser() por causa de 401 falsos documentados. Fonte única em _shared/jwt.ts.
+    const jwtPayload = await verifyJWT(authHeader.slice(7))
+    if (!jwtPayload?.sub) {
+      logReject('auth-invalid')
+      return json({ error: 'Unauthorized' }, 401)
     }
-    const user_id = user.id
+    const user_id = jwtPayload.sub
 
     const body = await req.json()
     const { suggestion_id, approved } = body as {
@@ -79,10 +47,8 @@ Deno.serve(async (req) => {
     }
 
     if (!suggestion_id || approved === undefined) {
-      return new Response(
-        JSON.stringify({ error: 'suggestion_id e approved são obrigatórios' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      logReject('bad-request', { hasSuggestionId: !!suggestion_id, approvedType: typeof approved })
+      return json({ error: 'suggestion_id e approved são obrigatórios' }, 400)
     }
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
@@ -90,17 +56,15 @@ Deno.serve(async (req) => {
     // Buscar sugestão pendente
     const { data: suggestion, error: suggestionError } = await supabase
       .from('coach_protocol_suggestions')
-      .select('id, proposed_changes')
+      .select('id, proposed_changes, created_at')
       .eq('id', suggestion_id)
       .eq('user_id', user_id)
       .eq('status', 'pending')
       .single()
 
     if (suggestionError || !suggestion) {
-      return new Response(
-        JSON.stringify({ error: 'Sugestão não encontrada ou já processada' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      logReject('suggestion-not-found', { user_id, suggestionId: suggestion_id, error: suggestionError?.message })
+      return json({ error: 'Sugestão não encontrada ou já processada' }, 404)
     }
 
     if (!approved) {
@@ -109,10 +73,45 @@ Deno.serve(async (req) => {
         .update({ status: 'rejected' })
         .eq('id', suggestion_id)
 
-      return new Response(
-        JSON.stringify({ success: true, action: 'rejected' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      return json({ success: true, action: 'rejected' }, 200)
+    }
+
+    const rawChanges = suggestion.proposed_changes
+
+    // Rule 8 — expiração. created_at OBRIGATÓRIO: falta = falha explícita e logada.
+    const createdMs = suggestion.created_at ? new Date(suggestion.created_at).getTime() : NaN
+    if (!Number.isFinite(createdMs)) {
+      console.error('PROTOCOL_MISSING_CREATED_AT', JSON.stringify({
+        scope: 'apply-endpoint', user_id, suggestionId: suggestion_id, created_at: suggestion.created_at ?? null,
+      }))
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+      return json({ success: true, action: 'not_applied', reason: 'missing-created_at' }, 200)
+    }
+    if (Date.now() - createdMs > 24 * 60 * 60 * 1000) {
+      console.warn('PROTOCOL_EXPIRED', JSON.stringify({
+        scope: 'apply-endpoint', user_id, suggestionId: suggestion_id, createdAt: suggestion.created_at,
+      }))
+      await supabase.from('coach_protocol_suggestions').update({ status: 'expired' }).eq('id', suggestion_id)
+      return json({ success: true, action: 'expired' }, 200)
+    }
+
+    // Contenção de pausa (INTACTA).
+    if ((rawChanges as Record<string, unknown> | null)?.action === 'pause') {
+      const rc = rawChanges as Record<string, unknown>
+      console.warn(
+        'approve-coach-protocol-change: PAUSE_CONTAINMENT — pausa aprovada mas NÃO aplicada (sem implementação segura):',
+        JSON.stringify({ user_id, suggestionId: suggestion_id, action: rc.action, step_name: rc.step_name, period: rc.period }),
       )
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+      return json({ success: true, action: 'not_applied', reason: 'pause' }, 200)
+    }
+
+    // Rule 1 — validação de schema em runtime.
+    const validation = validateProposal(rawChanges)
+    if (!validation.ok) {
+      logRefusal('apply-endpoint', validation.reason, { user_id, suggestionId: suggestion_id, payload: rawChanges })
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+      return json({ success: true, action: 'not_applied', reason: validation.reason }, 200)
     }
 
     // Buscar protocolo atual
@@ -125,37 +124,35 @@ Deno.serve(async (req) => {
       .single()
 
     if (protocolError || !protocol) {
-      return new Response(
-        JSON.stringify({ error: 'Protocolo não encontrado' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
+      logRefusal('apply-endpoint', 'protocol-not-found', { user_id, suggestionId: suggestion_id })
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+      return json({ error: 'Protocolo não encontrado' }, 404)
     }
 
-    const changes = suggestion.proposed_changes as ProposedChanges
-    const { period } = changes
-
-    let rotinaAm: ProtocolStep[] = protocol.rotina_am ?? []
-    let rotinaPm: ProtocolStep[] = protocol.rotina_pm ?? []
-
-    if (period === 'morning') {
-      rotinaAm = applyChanges(rotinaAm, changes)
-    } else if (period === 'night') {
-      rotinaPm = applyChanges(rotinaPm, changes)
-    } else {
-      // 'both' or null
-      rotinaAm = applyChanges(rotinaAm, changes)
-      rotinaPm = applyChanges(rotinaPm, changes)
+    const result = applyProposal(
+      { rotina_am: protocol.rotina_am ?? [], rotina_pm: protocol.rotina_pm ?? [] },
+      validation.value,
+    )
+    if (!result.ok) {
+      logRefusal('apply-endpoint', result.reason, { user_id, suggestionId: suggestion_id, payload: validation.value })
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+      return json({ success: true, action: 'not_applied', reason: result.reason }, 200)
     }
 
     const now = new Date().toISOString()
 
+    // Captura de erro de escrita: não marca 'applied' se a gravação falhar.
     const { error: updateProtocolError } = await supabase
       .from('protocolos')
-      .update({ rotina_am: rotinaAm, rotina_pm: rotinaPm, updated_at: now })
+      .update({ rotina_am: result.next.rotina_am, rotina_pm: result.next.rotina_pm, updated_at: now })
       .eq('id', protocol.id)
 
     if (updateProtocolError) {
-      throw updateProtocolError
+      console.error('PROTOCOL_WRITE_FAILED', JSON.stringify({
+        scope: 'apply-endpoint', user_id, suggestionId: suggestion_id, error: updateProtocolError.message,
+      }))
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+      return json({ error: 'Falha ao gravar protocolo' }, 500)
     }
 
     await supabase
@@ -163,24 +160,18 @@ Deno.serve(async (req) => {
       .update({ status: 'applied', approved_at: now, applied_at: now })
       .eq('id', suggestion_id)
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        action: 'applied',
-        protocol: {
-          id: protocol.id,
-          rotina_am: rotinaAm,
-          rotina_pm: rotinaPm,
-          updated_at: now,
-        },
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
+    return json({
+      success: true,
+      action: 'applied',
+      protocol: {
+        id: protocol.id,
+        rotina_am: result.next.rotina_am,
+        rotina_pm: result.next.rotina_pm,
+        updated_at: now,
+      },
+    }, 200)
   } catch (error) {
     console.error('approve-coach-protocol-change: erro não tratado', error)
-    return new Response(
-      JSON.stringify({ error: 'Erro interno' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    )
+    return json({ error: 'Erro interno' }, 500)
   }
 })

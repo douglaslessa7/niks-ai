@@ -17,7 +17,7 @@ Português brasileiro, voz da NIKS: direta, calorosa, precisa, sem pose técnica
 
 ## O que você recebe
 Uma ou duas fotos (o produto e, se a usuária mostrou, os ingredientes) e um bloco de contexto:
-- <UserProfile> — tipo de pele, fototipo, concerns, objetivo, alergias, gravidez/amamentação/tentativa, exposição solar, e se a rotina atual tem produtos prescritos por dermatologista.
+- <UserProfile> — tipo de pele, fototipo, concerns, alergias, gravidez/amamentação/tentativa, exposição solar, e se a rotina atual tem produtos prescritos por dermatologista.
 - <LatestSkinScan> — scan mais recente: score, condições, status da barreira, prioridade clínica, contraindicações.
 - <CurrentProtocol> — a rotina AM e PM que ela já usa, passo a passo, com ativos.
 - <LongTermMemory> — reações e sensibilidades já confirmadas.
@@ -134,7 +134,6 @@ export function buildContextPack(context: ProductContext): string {
   <SkinType>${p.tipo_pele ?? ''}</SkinType>
   <Phototype>${phototype ? `Fitzpatrick ${phototype}` : ''}</Phototype>
   <Concerns>${concerns}</Concerns>
-  <Objective>${p.objetivo ?? ''}</Objective>
   <Allergies>${p.allergy_type ?? ''} — ${p.allergy_description ?? ''}</Allergies>
   <PregnancyStatus>${p.pregnancy_status ?? ''}</PregnancyStatus>
   <SunExposure>${p.sun_exposure ?? ''}</SunExposure>

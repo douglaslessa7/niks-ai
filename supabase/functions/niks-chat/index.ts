@@ -5,86 +5,30 @@ import { geminiModel } from './model.ts'
 import { detectEvolutionIntent } from './safety.ts'
 import { extractAndSave } from './memory.ts'
 import { checkForSuggestion, checkApprovalIntent } from './protocol-actions.ts'
+import { verifyJWT } from '../_shared/jwt.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Marcadores do bloco estruturado que a NIKS emite ao propor alteração de protocolo.
+// O bloco é cortado do stream antes de chegar ao cliente (a usuária nunca o vê).
+const PATCH_OPEN = '[[PROTOCOL_PATCH]]'
+const PATCH_CLOSE = '[[/PROTOCOL_PATCH]]'
+
+// Maior sufixo de `buf` que é prefixo de `marker` — hold-back p/ marcador partido entre chunks.
+function markerOverlap(buf: string, marker: string): number {
+  const max = Math.min(buf.length, marker.length - 1)
+  for (let k = max; k > 0; k--) if (buf.endsWith(marker.slice(0, k))) return k
+  return 0
+}
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 
-// Suporte a HS256 (legacy) e ES256/RS256 (novas JWT Signing Keys do Supabase)
-const NIKS_JWT_SECRET = Deno.env.get('NIKS_JWT_SECRET') ?? ''
-const SUPABASE_JWKS_RAW = Deno.env.get('SUPABASE_JWKS') ?? ''
-
-let jwksKeys: any[] = []
-try {
-  if (SUPABASE_JWKS_RAW) {
-    const parsed = JSON.parse(SUPABASE_JWKS_RAW)
-    jwksKeys = parsed.keys ?? []
-  }
-} catch { /* JWKS parse failed */ }
-
-const decode = (b64url: string) =>
-  atob(b64url.replace(/-/g, '+').replace(/_/g, '/'))
-
-async function verifyJWT(token: string): Promise<{ sub: string } | null> {
-  try {
-    const parts = token.split('.')
-    if (parts.length !== 3) return null
-
-    const [headerB64, payloadB64, sigB64] = parts
-    const header  = JSON.parse(decode(headerB64))
-    const payload = JSON.parse(decode(payloadB64))
-
-    if (!payload.sub) return null
-    if (payload.exp && payload.exp * 1000 < Date.now()) return null
-
-    const alg  = header.alg ?? 'HS256'
-    const sig  = Uint8Array.from(decode(sigB64), c => c.charCodeAt(0))
-    const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`)
-
-    // ── HS256 (legacy JWT secret) ──────────────────────────────────────────
-    if (alg === 'HS256' && NIKS_JWT_SECRET) {
-      const key = await crypto.subtle.importKey(
-        'raw',
-        new TextEncoder().encode(NIKS_JWT_SECRET),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['verify'],
-      )
-      const valid = await crypto.subtle.verify('HMAC', key, sig, data)
-      return valid ? payload : null
-    }
-
-    // ── ES256 / RS256 (novas JWT Signing Keys — usa SUPABASE_JWKS) ─────────
-    if ((alg === 'ES256' || alg === 'RS256') && jwksKeys.length > 0) {
-      const kid = header.kid
-      const jwk = jwksKeys.find((k: any) => !kid || k.kid === kid) ?? jwksKeys[0]
-
-      const importAlg = alg === 'RS256'
-        ? { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }
-        : { name: 'ECDSA', namedCurve: 'P-256' }
-
-      const verifyAlg = alg === 'RS256'
-        ? { name: 'RSASSA-PKCS1-v1_5' }
-        : { name: 'ECDSA', hash: { name: 'SHA-256' } }
-
-      const key   = await crypto.subtle.importKey('jwk', jwk, importAlg, false, ['verify'])
-      const valid = await crypto.subtle.verify(verifyAlg, key, sig, data)
-      return valid ? payload : null
-    }
-
-    console.error('niks-chat: verifyJWT — alg não suportado:', alg,
-      '| jwksKeys:', jwksKeys.length, '| hasLegacySecret:', !!NIKS_JWT_SECRET)
-    return null
-  } catch (e) {
-    console.error('niks-chat: verifyJWT exception:', e)
-    return null
-  }
-}
+// verifyJWT foi extraído para ../_shared/jwt.ts (fonte única, reusado pelo approve endpoint).
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -131,11 +75,13 @@ Deno.serve(async (req) => {
       message,
       clientMessageId,
       images,
+      supportsProtocolCard,
     } = body as {
       conversationId?: string
       message?: string
       clientMessageId?: string
       images?: Array<{ base64: string; mimeType: string }>
+      supportsProtocolCard?: boolean
     }
 
     if (!conversationId || (!message && (!images || images.length === 0))) {
@@ -199,7 +145,7 @@ Deno.serve(async (req) => {
         image_url: imageUrlJson ?? null,
         client_message_id: clientMessageId ?? null,
       }),
-      buildContext(supabase, userId, isEvolutionQuery),
+      buildContext(supabase, userId, conversationId, isEvolutionQuery),
     ])
 
     if (saveResult.error) {
@@ -207,54 +153,119 @@ Deno.serve(async (req) => {
     }
 
     // Montar context pack e iniciar stream
-    const contextPack = buildContextPack(context, message, (images?.length ?? 0) > 0)
+    const contextPack = buildContextPack(context, message, (images?.length ?? 0) > 0, supportsProtocolCard === true)
     const geminiStream = await geminiModel.stream(
       NIKS_SYSTEM_PROMPT,
       contextPack,
       images
     )
 
-    // Intercepta chunks inline (sem tee) — evita backpressure acoplado entre dois leitores
+    // Intercepta chunks inline (sem tee) e CORTA o bloco [[PROTOCOL_PATCH]]…[[/PROTOCOL_PATCH]]
+    // do stream — a usuária nunca vê o marcador. Resistente a marcador partido entre chunks
+    // via hold-back por overlap. Captura os blocos (array) para o checkForSuggestion.
     const decoder = new TextDecoder()
-    let collectedText = ''
-    let resolveFullResponse!: (text: string) => void
-    const fullResponsePromise = new Promise<string>(res => { resolveFullResponse = res })
+    const encoder = new TextEncoder()
+    let holdBuffer = ''
+    let mode: 'normal' | 'suppress' = 'normal'
+    let visibleText = ''
+    let curBlock = ''
+    const blocks: string[] = []
+
+    let resolveResult!: (r: { visible: string; blocks: string[] }) => void
+    const resultPromise = new Promise<{ visible: string; blocks: string[] }>(res => { resolveResult = res })
+
+    const emit = (controller: TransformStreamDefaultController<Uint8Array>, s: string) => {
+      if (!s) return
+      visibleText += s
+      controller.enqueue(encoder.encode(s))
+    }
+
+    const process = (controller: TransformStreamDefaultController<Uint8Array>, isFinal: boolean) => {
+      while (true) {
+        if (mode === 'normal') {
+          const openIdx = holdBuffer.indexOf(PATCH_OPEN)
+          if (openIdx !== -1) {
+            emit(controller, holdBuffer.slice(0, openIdx))
+            holdBuffer = holdBuffer.slice(openIdx + PATCH_OPEN.length)
+            mode = 'suppress'
+            continue
+          }
+          if (isFinal) {
+            // Stream terminou: descarta um marcador de abertura pela metade em vez de vazá-lo.
+            const keep = markerOverlap(holdBuffer, PATCH_OPEN)
+            emit(controller, holdBuffer.slice(0, holdBuffer.length - keep))
+            holdBuffer = ''
+            break
+          }
+          const keep = markerOverlap(holdBuffer, PATCH_OPEN)
+          emit(controller, holdBuffer.slice(0, holdBuffer.length - keep))
+          holdBuffer = holdBuffer.slice(holdBuffer.length - keep)
+          break
+        } else {
+          const closeIdx = holdBuffer.indexOf(PATCH_CLOSE)
+          if (closeIdx !== -1) {
+            curBlock += holdBuffer.slice(0, closeIdx)
+            blocks.push(curBlock)
+            curBlock = ''
+            holdBuffer = holdBuffer.slice(closeIdx + PATCH_CLOSE.length)
+            mode = 'normal'
+            continue
+          }
+          if (isFinal) {
+            // Abriu e nunca fechou (modelo cortado / conexão caiu): descarta e LOGA.
+            console.warn('PROTOCOL_REFUSED', JSON.stringify({ scope: 'stream', reason: 'block-unterminated', userId, conversationId }))
+            curBlock = ''
+            holdBuffer = ''
+            break
+          }
+          const keep = markerOverlap(holdBuffer, PATCH_CLOSE)
+          curBlock += holdBuffer.slice(0, holdBuffer.length - keep)
+          holdBuffer = holdBuffer.slice(holdBuffer.length - keep)
+          break
+        }
+      }
+    }
 
     const interceptor = new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
-        collectedText += decoder.decode(chunk, { stream: true })
-        controller.enqueue(chunk)
+        holdBuffer += decoder.decode(chunk, { stream: true })
+        process(controller, false)
       },
-      flush() {
-        // Flush any remaining bytes from the decoder, then resolve
-        collectedText += decoder.decode()
-        resolveFullResponse(collectedText)
+      flush(controller) {
+        holdBuffer += decoder.decode()
+        process(controller, true)
+        resolveResult({ visible: visibleText, blocks })
       },
     })
 
-    // Conecta o stream do Gemini ao interceptor; erros resolvem com o texto parcial coletado
+    // Conecta o stream do Gemini ao interceptor; erros resolvem com o parcial coletado
     geminiStream.pipeTo(interceptor.writable).catch(err => {
       // Expected when client disconnects (XHR timeout) while stream is active — not a bug
       console.warn('niks-chat: pipe (client disconnected)', err?.message ?? err)
-      resolveFullResponse(collectedText)
+      resolveResult({ visible: visibleText, blocks })
     })
 
     // Operações pós-stream — não bloqueiam a resposta ao cliente
     EdgeRuntime.waitUntil((async () => {
-      const fullResponse = await fullResponsePromise
+      const { visible, blocks: capturedBlocks } = await resultPromise
+      const cleanText = visible.replace(/\s+$/, '')
 
       await supabase.from('coach_messages').insert({
         conversation_id: conversationId,
         user_id: userId,
         role: 'assistant',
-        content: fullResponse,
+        content: cleanText,
       })
 
-      await extractAndSave(supabase, userId, message, fullResponse)
+      await extractAndSave(supabase, userId, message, cleanText)
       if (context.pendingSuggestion) {
-        await checkApprovalIntent(supabase, userId, message, context.pendingSuggestion)
+        // Cliente novo (card): a aprovação é pelo botão → NÃO roda a aprovação por texto.
+        // Cliente antigo (sem a flag): comportamento atual preservado integralmente.
+        if (supportsProtocolCard !== true) {
+          await checkApprovalIntent(supabase, userId, message, context.pendingSuggestion)
+        }
       } else {
-        await checkForSuggestion(supabase, userId, conversationId, fullResponse)
+        await checkForSuggestion(supabase, userId, conversationId, cleanText, capturedBlocks)
       }
     })())
 

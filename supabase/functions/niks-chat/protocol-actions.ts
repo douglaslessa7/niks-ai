@@ -1,20 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { validateProposal, applyProposal, logRefusal } from '../_shared/protocol-write.ts'
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
-const TRIGGER_PHRASE = 'posso incluir isso no seu protocolo?'
-
-type SuggestionPayload = {
-  reason: string
-  proposed_changes: {
-    action: 'add' | 'remove' | 'pause'
-    step_name: string
-    period: 'morning' | 'night' | 'both' | null
-    duration_days: number | null
-    details: string
-  }
-}
+// Duas frases-gatilho, uma por sentido da ação. A frase visível é o consentimento que
+// a usuária leu; ela precisa combinar com o `action` do bloco (ver cruzamento abaixo).
+const INCLUDE_PHRASE = 'posso incluir isso no seu protocolo?' // add e replace
+const REMOVE_PHRASE = 'posso remover isso do seu protocolo?'  // remove
 
 // Extracts the outermost JSON object from a string, handling any preamble
 // the model may have added before the JSON.
@@ -29,107 +22,89 @@ export async function checkForSuggestion(
   supabase: ReturnType<typeof createClient>,
   userId: string,
   conversationId: string,
-  assistantResponse: string
+  visibleText: string,
+  blocks: string[]
 ): Promise<void> {
   try {
-    if (!assistantResponse.toLowerCase().includes(TRIGGER_PHRASE)) return
+    const lowered = (visibleText ?? '').toLowerCase()
+    const hasInclude = lowered.includes(INCLUDE_PHRASE)
+    const hasRemove = lowered.includes(REMOVE_PHRASE)
+    const hasPhrase = hasInclude || hasRemove
+    const blockCount = blocks?.length ?? 0
 
-    // Verificar se já existe sugestão pendente
+    // Gate duplo: a sugestão só nasce se a resposta VISÍVEL tiver a frase-gatilho E
+    // houver exatamente UM bloco válido. A frase é o consentimento que a usuária viu;
+    // o bloco é o dado estruturado. Os descasamentos são logados separadamente para
+    // o usuário medir cada direção do erro do modelo.
+    if (!hasPhrase && blockCount === 0) return // mensagem normal, sem proposta
+    if (hasPhrase && blockCount === 0) {
+      logRefusal('create', 'phrase-without-block', { userId, conversationId })
+      return
+    }
+    if (!hasPhrase && blockCount >= 1) {
+      logRefusal('create', 'block-without-phrase', { userId, conversationId, payload: blocks })
+      return
+    }
+    if (blockCount > 1) {
+      logRefusal('create', 'multiple-blocks', { userId, conversationId, count: blockCount })
+      return
+    }
+
+    // Verificar se já existe sugestão pendente (GLOBAL — no máximo uma viva por
+    // usuária; é o que impede uma segunda proposta enquanto a de outra conversa está
+    // aberta). Pendente com +24h deixa de contar na LEITURA (mesmo corte da regra 8),
+    // senão uma pendente presa numa conversa antiga bloquearia proposta nova para sempre.
+    const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const { data: existing } = await supabase
       .from('coach_protocol_suggestions')
       .select('id')
       .eq('user_id', userId)
       .eq('status', 'pending')
+      .gte('created_at', cutoffIso)
       .limit(1)
 
     if (existing && existing.length > 0) return
 
-    // Extrair justificativa e mudanças via OpenAI
-    const prompt = `A NIKS (coach de skincare) propôs uma alteração no protocolo da usuária na mensagem abaixo.
-Extraia a justificativa clínica e as mudanças propostas.
-Retorne SOMENTE JSON válido, sem markdown, sem texto antes ou depois:
-
-{
-  "reason": "justificativa clínica em linguagem natural, conforme descrita pela NIKS",
-  "proposed_changes": {
-    "action": "add | remove | pause",
-    "step_name": "nome do ativo ou produto mencionado",
-    "period": "morning | night | both | null",
-    "duration_days": null ou número inteiro se mencionado,
-    "details": "qualquer detalhe adicional relevante da proposta"
-  }
-}
-
-Resposta da NIKS: ${assistantResponse}`
-
-    const resp = await fetch(OPENAI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        max_tokens: 512,
-        stream: false,
-        response_format: { type: 'json_object' },
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    if (!resp.ok) {
-      console.error('protocol-actions.ts: OpenAI error (checkForSuggestion)', resp.status, await resp.text())
+    // A NIKS emite o próprio bloco estruturado (não há mais tradutor via LLM).
+    let parsed: any
+    try {
+      parsed = JSON.parse(extractJSON(blocks[0]))
+    } catch (_e) {
+      logRefusal('create', 'block-parse-failed', { userId, conversationId, payload: blocks[0] })
       return
     }
 
-    const data = await resp.json()
-    const text = data.choices[0].message.content
-    const parsed = JSON.parse(extractJSON(text)) as SuggestionPayload
+    // Rule 1 — proposta fora do contrato NÃO vira sugestão e não é gravada.
+    const validation = validateProposal(parsed)
+    if (!validation.ok) {
+      logRefusal('create', validation.reason, { userId, conversationId, payload: parsed })
+      return
+    }
+
+    // Cruzamento de consentimento: a frase que a usuária leu tem que combinar com o
+    // que o bloco faz. Descasamento = ela aprovaria algo diferente do que leu → recusa.
+    const action = validation.value.action
+    if (action === 'remove' && hasInclude) {
+      // GRAVE: leu "incluir", o bloco APAGARIA um passo. Payload completo p/ medir o que
+      // ela tentava remover, não só que errou.
+      logRefusal('create', 'phrase-include-block-remove', { userId, conversationId, payload: validation.value })
+      return
+    }
+    if ((action === 'add' || action === 'replace') && hasRemove) {
+      logRefusal('create', 'phrase-remove-block-add-or-replace', { userId, conversationId })
+      return
+    }
 
     await supabase.from('coach_protocol_suggestions').insert({
       user_id: userId,
       conversation_id: conversationId,
-      reason: parsed.reason,
-      proposed_changes: parsed.proposed_changes,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+      proposed_changes: validation.value,
       status: 'pending',
     })
   } catch (err) {
     console.error('protocol-actions.ts: checkForSuggestion failed', err)
   }
-}
-
-type ProtocolStep = {
-  name: string
-  ingredient: string
-  instruction: string
-  [key: string]: unknown
-}
-
-type ProposedChanges = {
-  action: 'add' | 'remove' | 'pause'
-  step_name: string
-  period: 'morning' | 'night' | 'both' | null
-  duration_days: number | null
-  details: string
-}
-
-function applyProtocolChanges(steps: ProtocolStep[], changes: ProposedChanges): ProtocolStep[] {
-  if (changes.action === 'add') {
-    return [
-      ...steps,
-      {
-        name: changes.step_name,
-        ingredient: changes.step_name,
-        instruction: changes.details || 'Aplique conforme orientação da NIKS.',
-      },
-    ]
-  }
-  const needle = changes.step_name.toLowerCase()
-  return steps.filter(
-    s =>
-      !s.name.toLowerCase().includes(needle) &&
-      !s.ingredient.toLowerCase().includes(needle),
-  )
 }
 
 export async function checkApprovalIntent(
@@ -138,7 +113,8 @@ export async function checkApprovalIntent(
   userMessage: string,
   pendingSuggestion: {
     id: string
-    proposed_changes: any
+    proposed_changes: unknown
+    created_at: string
   },
 ): Promise<void> {
   try {
@@ -192,6 +168,45 @@ Mensagem da usuária: ${userMessage}`
     }
 
     // approved
+    const rawChanges = pendingSuggestion.proposed_changes
+
+    // Rule 8 — expiração. created_at é OBRIGATÓRIO: se faltar, falha explícita e
+    // logada (fail-closed), nunca silêncio. Uma proposta com +24h caduca.
+    const createdMs = pendingSuggestion.created_at ? new Date(pendingSuggestion.created_at).getTime() : NaN
+    if (!Number.isFinite(createdMs)) {
+      console.error('PROTOCOL_MISSING_CREATED_AT', JSON.stringify({
+        scope: 'apply-coach', userId, suggestionId: pendingSuggestion.id, created_at: pendingSuggestion.created_at ?? null,
+      }))
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
+      return
+    }
+    if (Date.now() - createdMs > 24 * 60 * 60 * 1000) {
+      console.warn('PROTOCOL_EXPIRED', JSON.stringify({
+        scope: 'apply-coach', userId, suggestionId: pendingSuggestion.id, createdAt: pendingSuggestion.created_at,
+      }))
+      await supabase.from('coach_protocol_suggestions').update({ status: 'expired' }).eq('id', pendingSuggestion.id)
+      return
+    }
+
+    // Contenção de pausa (INTACTA): 'pause' nunca aplica → 'approved'.
+    if ((rawChanges as Record<string, unknown> | null)?.action === 'pause') {
+      const rc = rawChanges as Record<string, unknown>
+      console.warn(
+        'protocol-actions.ts: PAUSE_CONTAINMENT — pausa aprovada mas NÃO aplicada (sem implementação segura):',
+        JSON.stringify({ userId, suggestionId: pendingSuggestion.id, action: rc.action, step_name: rc.step_name, period: rc.period }),
+      )
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
+      return
+    }
+
+    // Rule 1 — validação de schema em runtime (rede de segurança do que está no banco).
+    const validation = validateProposal(rawChanges)
+    if (!validation.ok) {
+      logRefusal('apply-coach', validation.reason, { userId, suggestionId: pendingSuggestion.id, payload: rawChanges })
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
+      return
+    }
+
     const { data: protocol } = await supabase
       .from('protocolos')
       .select('id, rotina_am, rotina_pm')
@@ -201,31 +216,36 @@ Mensagem da usuária: ${userMessage}`
       .single()
 
     if (!protocol) {
-      console.error('protocol-actions.ts: checkApprovalIntent — protocolo não encontrado')
+      logRefusal('apply-coach', 'protocol-not-found', { userId, suggestionId: pendingSuggestion.id })
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
       return
     }
 
-    const changes = pendingSuggestion.proposed_changes as ProposedChanges
-    const { period } = changes
-
-    let rotinaAm: ProtocolStep[] = protocol.rotina_am ?? []
-    let rotinaPm: ProtocolStep[] = protocol.rotina_pm ?? []
-
-    if (period === 'morning') {
-      rotinaAm = applyProtocolChanges(rotinaAm, changes)
-    } else if (period === 'night') {
-      rotinaPm = applyProtocolChanges(rotinaPm, changes)
-    } else {
-      rotinaAm = applyProtocolChanges(rotinaAm, changes)
-      rotinaPm = applyProtocolChanges(rotinaPm, changes)
+    const result = applyProposal(
+      { rotina_am: protocol.rotina_am ?? [], rotina_pm: protocol.rotina_pm ?? [] },
+      validation.value,
+    )
+    if (!result.ok) {
+      logRefusal('apply-coach', result.reason, { userId, suggestionId: pendingSuggestion.id, payload: validation.value })
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
+      return
     }
 
     const now = new Date().toISOString()
 
-    await supabase
+    // Captura de erro de escrita: não marca 'applied' se a gravação falhar.
+    const { error: writeError } = await supabase
       .from('protocolos')
-      .update({ rotina_am: rotinaAm, rotina_pm: rotinaPm, updated_at: now })
+      .update({ rotina_am: result.next.rotina_am, rotina_pm: result.next.rotina_pm, updated_at: now })
       .eq('id', protocol.id)
+
+    if (writeError) {
+      console.error('PROTOCOL_WRITE_FAILED', JSON.stringify({
+        scope: 'apply-coach', userId, suggestionId: pendingSuggestion.id, error: writeError.message,
+      }))
+      await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
+      return
+    }
 
     await supabase
       .from('coach_protocol_suggestions')

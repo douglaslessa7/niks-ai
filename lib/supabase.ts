@@ -22,7 +22,6 @@ export type User = {
   idade: number | null
   tipo_pele: string | null
   concerns: string[]
-  objetivo: string | null
   plano: string | null
   created_at: string
 }

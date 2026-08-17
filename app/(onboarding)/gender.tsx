@@ -5,15 +5,21 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft, Check } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_WHISPER = 'rgba(29,58,68,0.32)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_WHISPER = '#818181';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
 
 const GENDERS = ['Feminino', 'Masculino', 'Outro'];
@@ -22,8 +28,16 @@ const TOTAL = 13;
 
 export default function Gender() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+
   const [selected, setSelected] = useState<string | null>(null);
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
@@ -42,7 +56,7 @@ export default function Gender() {
       if (gender === 'Feminino') {
         router.push('/(onboarding)/pregnancy');
       } else {
-        router.push('/(onboarding)/goal');
+        router.push('/(onboarding)/concerns');
       }
     }, 300);
   }, []);
@@ -78,7 +92,7 @@ export default function Gender() {
           </TouchableOpacity>
           <View style={{
             flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(29,58,68,0.08)',
+            backgroundColor: 'rgba(18,18,18,0.06)',
             overflow: 'hidden',
           }}>
             <View style={{
@@ -93,20 +107,19 @@ export default function Gender() {
         {/* QTitleBlock */}
         <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
           <Text style={{
-            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
             letterSpacing: 2.4, textTransform: 'uppercase',
             marginBottom: 14,
           }}>
             sobre você
           </Text>
           <Text style={{
-            fontSize: 30, fontWeight: '700', color: DEEP,
+            fontFamily: fXBold, fontSize: 30, fontWeight: '800', color: DEEP,
             letterSpacing: -0.85, lineHeight: 33,
           }}>
             {'Qual é o '}
             <Text style={{
-              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-              fontStyle: 'italic', fontWeight: '500',
+              fontFamily: fXBold, fontWeight: '800',
               color: CORAL, letterSpacing: -1,
             }}>
               seu
@@ -114,7 +127,7 @@ export default function Gender() {
             {' gênero?'}
           </Text>
           <Text style={{
-            marginTop: 14,
+            fontFamily: fReg, marginTop: 14,
             fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT,
             letterSpacing: -0.1,
           }}>
@@ -148,7 +161,7 @@ export default function Gender() {
               >
                 <Text style={{
                   flex: 1,
-                  fontSize: 18, fontWeight: '500', color: DEEP,
+                  fontFamily: fReg, fontSize: 18, fontWeight: '500', color: DEEP,
                   letterSpacing: -0.2,
                 }}>
                   {gender}
@@ -168,7 +181,7 @@ export default function Gender() {
           })}
 
           <Text style={{
-            marginTop: 6,
+            fontFamily: fReg, marginTop: 6,
             textAlign: 'center',
             fontSize: 12.5, color: DEEP_WHISPER,
             letterSpacing: -0.05,

@@ -2,35 +2,67 @@ import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { supabase } from '../../lib/supabase';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import { useAppStore } from '../../store/onboarding';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 
 // FONTE ÚNICA da captura de nome ("Como você quer ser chamada?"). Usada por:
-//   1. `app/(onboarding)/nome.tsx` — etapa do onboarding (após salvar, navega).
+//   1. `app/(onboarding)/nome.tsx` — etapa INICIAL do onboarding, ANTES do signup
+//      (mode="store"): ainda não há sessão, então só guarda o nome no store
+//      (`pendingName`); quem grava no Supabase é o signup, via `saveToSupabase`.
 //   2. `app/(app)/_layout.tsx` — quando a usuária entra com sessão + assinatura
-//      mas `users.nome` vazio; renderiza no lugar do app (após salvar, só libera
-//      a renderização, sem navegar). Antes disso era um router.replace que criava
-//      um loop de navegação com o guard do (onboarding)/_layout.
+//      mas `users.nome` vazio (mode="session", default); renderiza no lugar do app
+//      (após salvar, só libera a renderização, sem navegar). Antes disso era um
+//      router.replace que criava um loop com o guard do (onboarding)/_layout.
 //
 // O que fazer após o save é responsabilidade de quem monta (prop `onSaved`) —
 // o componente nunca navega sozinho. Visual e lógica de save vivem só aqui:
 // duplicar já se queimou antes (ver `components/product/ProductAnalysis.tsx`).
-export default function NameCapture({ onSaved }: { onSaved: () => void }) {
+//
+// `mode`:
+//   'session' (default) — grava direto em `users.nome` (upsert à prova de RLS),
+//                         invalida cache e liga o cupom; exige sessão ativa.
+//   'store'             — não toca no Supabase (não há sessão); só devolve o nome
+//                         em `onSaved(name)` para o chamador guardar no store.
+export default function NameCapture({
+  onSaved,
+  mode = 'session',
+}: {
+  onSaved: (name?: string) => void;
+  mode?: 'session' | 'store';
+}) {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
-  const [nome, setNome] = useState('');
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+  const pendingName = useAppStore((s) => s.pendingName);
+  const [nome, setNome] = useState(mode === 'store' ? (pendingName ?? '') : '');
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
+    // Modo store: etapa inicial do onboarding, sem sessão. Nada a buscar no
+    // Supabase — o campo já foi pré-preenchido com o `pendingName` do store.
+    if (mode === 'store') return;
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -44,12 +76,20 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
         (user.user_metadata?.name as string | undefined) ?? '';
       if (existing) setNome(existing.split(' ')[0]);
     })();
-  }, []);
+  }, [mode]);
 
   const handleContinue = async () => {
     haptics.action();
     const trimmed = nome.trim();
     if (!trimmed) return;
+
+    // Modo store (pré-signup): sem sessão, sem Supabase. Só devolve o nome para o
+    // chamador guardar no store; a gravação em `users.nome` acontece no cadastro.
+    if (mode === 'store') {
+      onSaved(trimmed);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -72,7 +112,7 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
       // dois continuariam mostrando o nome antigo/vazio (mesmo motivo da set-name.tsx).
       invalidateCache(`perfil:${user.id}`);
       invalidateCache(`chat:${user.id}`);
-      onSaved();
+      onSaved(trimmed);
     } catch (e) {
       console.warn('[NameCapture] Erro ao salvar nome:', e);
       Alert.alert('Erro ao salvar', 'Não conseguimos salvar seu nome. Verifique sua conexão e tente novamente.');
@@ -94,17 +134,17 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
           >
             {/* Title block */}
             <View style={{ paddingTop: 34, paddingHorizontal: 28 }}>
-              <Text style={{ fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
+              <Text style={{ fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
                 sobre você
               </Text>
-              <Text style={{ fontSize: 30, fontWeight: '700', color: DEEP, letterSpacing: -0.85, lineHeight: 33.6 }}>
+              <Text style={{ fontFamily: fXBold, fontSize: 30, fontWeight: '800', color: DEEP, letterSpacing: -0.85, lineHeight: 33.6 }}>
                 {'Como você quer ser '}
-                <Text style={{ fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined, fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1 }}>
+                <Text style={{ fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1 }}>
                   chamada
                 </Text>
                 {'?'}
               </Text>
-              <Text style={{ marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
+              <Text style={{ fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
                 Esse é o nome que aparecerá na tela inicial do app.
               </Text>
             </View>
@@ -115,7 +155,7 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
                 height: 62, borderRadius: 18,
                 backgroundColor: '#FFFFFF',
                 borderWidth: isFocused ? 1.5 : 1,
-                borderColor: isFocused ? CORAL : 'rgba(29,58,68,0.10)',
+                borderColor: isFocused ? CORAL : 'rgba(18,18,18,0.10)',
                 shadowColor: CORAL,
                 shadowOffset: { width: 0, height: isFocused ? 6 : 2 },
                 shadowOpacity: isFocused ? 0.22 : 0.04,
@@ -127,7 +167,7 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
                   value={nome}
                   onChangeText={setNome}
                   placeholder="Escreva seu nome"
-                  placeholderTextColor="rgba(29,58,68,0.30)"
+                  placeholderTextColor="rgba(18,18,18,0.30)"
                   autoCapitalize="words"
                   autoCorrect={false}
                   returnKeyType="done"
@@ -135,6 +175,7 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
                   onFocus={() => setIsFocused(true)}
                   onBlur={() => setIsFocused(false)}
                   style={{
+                    fontFamily: fReg,
                     fontSize: 17,
                     color: DEEP,
                     letterSpacing: -0.2,
@@ -154,7 +195,7 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
                 activeOpacity={0.85}
                 style={{
                   height: 60, borderRadius: 100,
-                  backgroundColor: active ? CORAL : 'rgba(29,58,68,0.18)',
+                  backgroundColor: active ? CORAL : 'rgba(18,18,18,0.18)',
                   alignItems: 'center', justifyContent: 'center',
                   shadowColor: CORAL,
                   shadowOffset: { width: 0, height: active ? 8 : 0 },
@@ -165,7 +206,7 @@ export default function NameCapture({ onSaved }: { onSaved: () => void }) {
               >
                 {loading
                   ? <ActivityIndicator color="#FFFFFF" />
-                  : <Text style={{ fontSize: 17, fontWeight: '600', color: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)', letterSpacing: -0.2 }}>Continuar</Text>
+                  : <Text style={{ fontFamily: fSemi, fontSize: 17, fontWeight: '600', color: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)', letterSpacing: -0.2 }}>Continuar</Text>
                 }
               </TouchableOpacity>
             </View>

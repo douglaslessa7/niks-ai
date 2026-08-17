@@ -351,8 +351,16 @@ export default function ProductLoading() {
                     />
                   </Svg>
 
-                  {/* Número da porcentagem */}
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                  {/* Número da porcentagem — espaçador invisível à esquerda (mesma largura do "%")
+                      centraliza o NÚMERO na horizontal; o translateY compensa a folga do
+                      descender da Nunito (números não usam), centralizando na vertical */}
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', transform: [{ translateY: 12 }] }}>
+                    <Text style={{
+                      fontFamily: fBold, fontSize: 28, color: DEEP,
+                      letterSpacing: -1, marginBottom: 16, marginRight: 2, opacity: 0,
+                    }}>
+                      %
+                    </Text>
                     <Text style={{
                       fontFamily: fExtra, fontSize: 86, color: DEEP,
                       letterSpacing: -3, lineHeight: 92,

@@ -278,7 +278,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { user_id, scan_id } = await req.json().catch(() => ({}))
+    const { user_id, scan_id, regenerate } = await req.json().catch(() => ({}))
     if (!user_id) return json({ error: 'user_id é obrigatório' }, 400)
 
     const supabase = createClient(
@@ -292,14 +292,17 @@ Deno.serve(async (req) => {
       .select('recomendacao, scan_id, created_at')
       .eq('user_id', user_id)
       .maybeSingle()
-    if (existing) {
+    // `regenerate` (regeneração no 1º scan in-app): pula o guard e sobrescreve a linha,
+    // para as recomendações baterem com o protocolo novo. Muda a regra "gera uma vez" —
+    // intencional: recomendação apontando para passo que não existe mais é pior que uma nova.
+    if (existing && !regenerate) {
       return json({ recomendacao: existing.recomendacao, cached: true })
     }
 
     // ── Busca perfil + scan + protocolo (todos já persistidos no disparo) ─────
     const { data: user } = await supabase
       .from('users')
-      .select('tipo_pele, concerns, allergy_type, allergy_description, pregnancy_status, skincare_routine_description, objetivo')
+      .select('tipo_pele, concerns, allergy_type, allergy_description, pregnancy_status, skincare_routine_description')
       .eq('id', user_id)
       .maybeSingle()
     if (!user) return json({ error: 'usuária não encontrada' }, 404)
@@ -424,7 +427,7 @@ Deno.serve(async (req) => {
     if (resolved.length === 0) {
       // Nada a recomendar: salva vazio (mantém a guarda de "gerar uma vez") e retorna.
       await supabase.from('recomendacoes_produtos')
-        .upsert({ user_id, scan_id: resolvedScanId, recomendacao: [] }, { onConflict: 'user_id', ignoreDuplicates: true })
+        .upsert({ user_id, scan_id: resolvedScanId, recomendacao: [] }, { onConflict: 'user_id', ignoreDuplicates: !regenerate })
         .select().maybeSingle()
       return json({ recomendacao: [], empty: true })
     }
@@ -451,7 +454,6 @@ Responda SOMENTE com JSON no formato:
       gestante_ou_lactante: isPregnant,
       alergia_descricao: user.allergy_description ?? null,
       ja_usa: user.skincare_routine_description ?? null,
-      objetivo: user.objetivo ?? null,
     }
     const passosInput = iaSteps.map((e) => ({
       index: e.iaIndex,
@@ -556,7 +558,7 @@ Responda SOMENTE com JSON no formato:
     // ── Salva (on conflict user_id do nothing) e retorna ─────────────────────
     const { data: inserted } = await supabase
       .from('recomendacoes_produtos')
-      .upsert({ user_id, scan_id: resolvedScanId, recomendacao }, { onConflict: 'user_id', ignoreDuplicates: true })
+      .upsert({ user_id, scan_id: resolvedScanId, recomendacao }, { onConflict: 'user_id', ignoreDuplicates: !regenerate })
       .select('recomendacao')
       .maybeSingle()
 

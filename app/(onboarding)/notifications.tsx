@@ -5,19 +5,32 @@ import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { Canvas, Circle as SkiaCircle, RadialGradient, vec } from '@shopify/react-native-skia';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { supabase } from '../../lib/supabase';
 import { requestPushPermission, savePushToken } from '../../lib/notifications';
 import { haptics } from '../../lib/haptics';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 
 export default function Notifications() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [hasRequested, setHasRequested] = useState(false);
@@ -68,16 +81,16 @@ export default function Notifications() {
 
         {/* Title block */}
         <View style={{ paddingTop: 34, paddingHorizontal: 28 }}>
-          <Text style={{ fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
+          <Text style={{ fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
             quase lá
           </Text>
-          <Text style={{ fontSize: 30, fontWeight: '700', color: DEEP, letterSpacing: -0.85, lineHeight: 33.6 }}>
+          <Text style={{ fontFamily: fXBold, fontSize: 30, fontWeight: '800', color: DEEP, letterSpacing: -0.85, lineHeight: 33.6 }}>
             {'Ative as '}
-            <Text style={{ fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined, fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1 }}>
+            <Text style={{ fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1 }}>
               notificações
             </Text>
           </Text>
-          <Text style={{ marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
+          <Text style={{ fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
             {subtitle}
           </Text>
         </View>
@@ -98,10 +111,10 @@ export default function Notifications() {
                   c={vec(130, 130)}
                   r={130}
                   colors={[
-                    'rgba(251,123,107,0.16)',
-                    'rgba(251,123,107,0.08)',
-                    'rgba(251,123,107,0.00)',
-                    'rgba(251,123,107,0.00)',
+                    'rgba(255,157,157,0.16)',
+                    'rgba(255,157,157,0.08)',
+                    'rgba(255,157,157,0.00)',
+                    'rgba(255,157,157,0.00)',
                   ]}
                   positions={[0, 0.45, 0.70, 1]}
                 />
@@ -112,7 +125,7 @@ export default function Notifications() {
             <View style={{
               width: 168, height: 168, borderRadius: 84,
               backgroundColor: '#FFFFFF',
-              borderWidth: 1, borderColor: 'rgba(29,58,68,0.06)',
+              borderWidth: 1, borderColor: 'rgba(18,18,18,0.06)',
               shadowColor: CORAL,
               shadowOffset: { width: 0, height: 18 },
               shadowOpacity: 0.30,
@@ -138,7 +151,7 @@ export default function Notifications() {
               <View style={{
                 position: 'absolute', top: 34, right: 52,
                 width: 20, height: 20, borderRadius: 10,
-                backgroundColor: 'rgba(251,123,107,0.18)',
+                backgroundColor: 'rgba(255,157,157,0.18)',
                 alignItems: 'center', justifyContent: 'center',
               }}>
                 <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: CORAL }} />
@@ -166,7 +179,7 @@ export default function Notifications() {
           >
             {loading
               ? <ActivityIndicator color="#FFFFFF" />
-              : <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF', letterSpacing: -0.2 }}>Ativar notificações</Text>
+              : <Text style={{ fontFamily: fSemi, fontSize: 17, fontWeight: '600', color: '#FFFFFF', letterSpacing: -0.2 }}>Ativar notificações</Text>
             }
           </TouchableOpacity>
 
@@ -176,12 +189,12 @@ export default function Notifications() {
               activeOpacity={0.85}
               style={{
                 height: 60, borderRadius: 100,
-                borderWidth: 1, borderColor: 'rgba(29,58,68,0.14)',
+                borderWidth: 1, borderColor: 'rgba(18,18,18,0.14)',
                 backgroundColor: 'transparent',
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Text style={{ fontSize: 16, fontWeight: '600', color: DEEP, letterSpacing: -0.15 }}>Já ativei!</Text>
+              <Text style={{ fontFamily: fSemi, fontSize: 16, fontWeight: '600', color: DEEP, letterSpacing: -0.15 }}>Já ativei!</Text>
             </TouchableOpacity>
           )}
         </View>

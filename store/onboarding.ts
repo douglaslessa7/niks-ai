@@ -128,7 +128,10 @@ export type ScanResult = {
     consequence: string
     benefit: string
   }>
-  goal_alignment?: {
+  // Card "Suas preocupações" na tela de resultado: a IA conecta os concerns
+  // declarados no onboarding com os achados do scan (antes era sobre `objetivo`,
+  // removido na Sessão 54; virou `concerns_alignment` na Sessão 55).
+  concerns_alignment?: {
     alinhamento: 'confirmado' | 'parcial' | 'divergente'
     regioes_afetadas: string[]
     mensagem: string
@@ -194,7 +197,6 @@ export type OnboardingData = {
   hydration: string | null
   sleep: string | null
   commitment: string | null
-  objetivo: string | null
   goal_desire?: string | null
   skincare_routine_type?: 'zero' | 'complement' | 'prescribed' | 'unsure' | null
   skincare_routine_description?: string | null
@@ -222,6 +224,12 @@ type AppStore = {
   // RevenueCat usado na validação, guardado para casar a aplicação exata em cupom_aplicacoes.
   appliedCoupon: { codigo: string; rcAppUserId: string } | null
   setAppliedCoupon: (c: { codigo: string; rcAppUserId: string } | null) => void
+  // Nome escolhido na tela "Como você quer ser chamada?", capturada AGORA no início
+  // do onboarding — antes do signup, quando ainda NÃO há sessão. Guardado localmente
+  // (persistido, ver partialize) até o cadastro, onde `saveToSupabase` o grava em
+  // `users.nome`. Mesmo ciclo de vida do `appliedCoupon`.
+  pendingName: string | null
+  setPendingName: (name: string | null) => void
   // Tutorial de preparação do scan (scan-prep-app) — mostrado UMA vez só na vida.
   // Persistido (ver partialize): depois de visto, o botão "Escanear" vai direto à câmera.
   scanTutorialSeen: boolean
@@ -276,6 +284,12 @@ type AppStore = {
   setProtocolResult: (result: ProtocolResult) => void
   protocolGenerating: boolean
   setProtocolGenerating: (v: boolean) => void
+  // Regeneração do protocolo no 1º scan in-app: roda em background. Ambos EM MEMÓRIA
+  // (fora do partialize): guard de "já rodando nesta sessão" + promessa do modal.
+  regenInFlight: boolean
+  setRegenInFlight: (v: boolean) => void
+  routineUpdatingNotice: boolean
+  setRoutineUpdatingNotice: (v: boolean) => void
   selectedScan: { result: ScanResult; imageUri: string } | null
   setSelectedScan: (scan: { result: ScanResult; imageUri: string } | null) => void
   selectedFoodResult: FoodReportResult | null
@@ -300,7 +314,6 @@ const initialOnboarding: OnboardingData = {
   hydration: null,
   sleep: null,
   commitment: null,
-  objetivo: null,
   goal_desire: null,
   skincare_routine_type: null,
   skincare_routine_description: null,
@@ -323,6 +336,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   appliedCoupon: null,
   setAppliedCoupon: (c) => set({ appliedCoupon: c }),
+  pendingName: null,
+  setPendingName: (name) => set({ pendingName: name }),
   scanTutorialSeen: false,
   setScanTutorialSeen: (v) => set({ scanTutorialSeen: v }),
   onboarding: initialOnboarding,
@@ -384,6 +399,10 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   setProtocolResult: (result) => set({ protocolResult: result }),
   setProtocolGenerating: (v) => set({ protocolGenerating: v }),
+  regenInFlight: false,
+  setRegenInFlight: (v) => set({ regenInFlight: v }),
+  routineUpdatingNotice: false,
+  setRoutineUpdatingNotice: (v) => set({ routineUpdatingNotice: v }),
 
   setSelectedScan: (scan) => set({ selectedScan: scan }),
 
@@ -397,7 +416,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   setSkinPreviewUrl: (url) => set({ skinPreviewUrl: url }),
 
   saveToSupabase: async (userId: string) => {
-    const { onboarding, scanResult, scanImageUri, skinImageBase64 } = get()
+    const { onboarding, scanResult, scanImageUri, skinImageBase64, pendingName } = get()
 
     let idade: number | null = null
     if (onboarding.birthday) {
@@ -419,6 +438,9 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
       .upsert({
         id: userId,
         email: user?.email ?? '',
+        // Nome capturado no início do onboarding (tela "Como você quer ser chamada?").
+        // `|| null` para não sobrescrever um nome existente com string vazia.
+        nome: pendingName?.trim() || null,
         genero: onboarding.genero,
         pregnancy_status: onboarding.pregnancy_status ?? null,
         skincare_routine_type: onboarding.skincare_routine_type ?? null,
@@ -428,7 +450,6 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
         idade,
         tipo_pele: onboarding.skin_type,
         concerns: onboarding.concerns,
-        objetivo: onboarding.objetivo,
         sun_exposure: onboarding.sun_exposure,
         hydration: onboarding.hydration,
         sleep: onboarding.sleep,
@@ -492,5 +513,6 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     protocolResult: s.protocolResult, // a Rotina abre instantânea, sem rede
     scanTutorialSeen: s.scanTutorialSeen, // tutorial de prep é uma-vez-só, para sempre
     appliedCoupon: s.appliedCoupon, // cupom aplicado antes do signup — precisa sobreviver até o cadastro
+    pendingName: s.pendingName, // nome capturado antes do signup — sobrevive até o cadastro
   }),
 }))

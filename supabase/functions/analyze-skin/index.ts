@@ -40,7 +40,6 @@ Deno.serve(async (req) => {
       skinProfile.hydration ? `Hidratação declarada: ${skinProfile.hydration}` : null,
       skinProfile.sleep ? `Qualidade do sono: ${skinProfile.sleep}` : null,
       skinProfile.sunscreen ? `Uso de protetor solar: ${skinProfile.sunscreen}` : null,
-      skinProfile.objetivo ? `Objetivo principal: ${skinProfile.objetivo}` : null,
     ].filter(Boolean).join('\n') : ''
 
     const systemPrompt = `Você é um sistema especializado em análise visual de pele com conhecimento clínico equivalente a um dermatologista experiente. Sua função é analisar fotografias faciais e extrair uma ficha clínica estruturada com máxima precisão visual.
@@ -368,14 +367,14 @@ Para cada região do rosto onde você identificou alguma condição relevante, g
 
 Gere region_insights APENAS para regiões onde há condição relevante. Se a região está sem alterações significativas, não inclua.
 
-Se houver um objetivo declarado pelo usuário (campo 'objetivo' no contexto), gere um 'goal_alignment':
+Se a usuária declarou preocupações (campo 'concerns' no contexto — linha "Preocupações declaradas"), gere um 'concerns_alignment':
 
-- 'alinhamento': "confirmado" se os achados do scan são consistentes com o objetivo declarado; "parcial" se o scan revela condições adicionais que o usuário não mencionou; "divergente" se o scan sugere prioridade diferente do objetivo declarado
-- 'regioes_afetadas': array com as regiões onde os achados principais relacionados ao objetivo estão presentes
-- 'mensagem': 2 frases conectando o objetivo do usuário com o que a análise encontrou. Primeira frase: confirma ou contextualiza o objetivo. Segunda frase: o que o programa vai fazer a respeito. Tom: direto, clínico mas acessível, sem exagero motivacional.
-  Exemplo para objetivo "controlar acne" com acne comedonal na testa e HPI nas bochechas: "A análise confirma acne ativa na testa com hiperpigmentação residual nas bochechas — padrão compatível com seu objetivo. O protocolo vai focar em desobstruir os folículos e prevenir novas manchas enquanto estabiliza a oleosidade."
+- 'alinhamento': "confirmado" se os achados do scan são consistentes com as preocupações declaradas; "parcial" se o scan confirma parte delas e revela condições adicionais que ela não mencionou; "divergente" se o scan sugere que a prioridade visível é diferente das preocupações declaradas
+- 'regioes_afetadas': array com as regiões onde os achados relacionados às preocupações estão presentes
+- 'mensagem': 2 frases conectando as preocupações da usuária com o que a análise encontrou. Primeira frase: valida/contextualiza as preocupações dela à luz dos achados (comece por algo como "Suas preocupações fazem sentido"). Segunda frase: o que o protocolo vai fazer a respeito. Tom: direto, clínico mas acessível, sem exagero motivacional.
+  Exemplo para concerns ["Acne/espinhas","Manchas"] com acne comedonal na testa e HPI nas bochechas: "Suas preocupações fazem sentido: a análise confirma acne ativa na testa e hiperpigmentação residual nas bochechas. O protocolo vai focar em desobstruir os folículos e clarear as manchas enquanto estabiliza a oleosidade."
 
-Se não houver objetivo declarado, omitir o campo goal_alignment.
+Se a usuária não declarou preocupações, omitir o campo concerns_alignment.
 
 ---
 
@@ -544,7 +543,7 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
       "benefit": <string>
     }
   ],
-  "goal_alignment": {
+  "concerns_alignment": {
     "alinhamento": <"confirmado"|"parcial"|"divergente">,
     "regioes_afetadas": <array de strings>,
     "mensagem": <string>

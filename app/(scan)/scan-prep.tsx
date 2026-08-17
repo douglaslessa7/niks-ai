@@ -5,15 +5,22 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft, Sun, Sparkles, User, Glasses, Smile } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+// Tokens "Novo design app NIKS" (mesma identidade da home/chat/welcome)
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
 
 const STEP = 13;
@@ -29,8 +36,15 @@ const TIPS = [
 
 export default function ScanPrep() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
   const router = useRouter();
   const { track } = useMixpanel();
   const { scanSource } = useAppStore();
@@ -73,7 +87,7 @@ export default function ScanPrep() {
             {scanSource !== 'app' && (
               <View style={{
                 flex: 1, height: 4, borderRadius: 100,
-                backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+                backgroundColor: 'rgba(18,18,18,0.06)', overflow: 'hidden',
               }}>
                 <View style={{
                   position: 'absolute', top: 0, left: 0, bottom: 0,
@@ -87,26 +101,25 @@ export default function ScanPrep() {
           {/* Title block */}
           <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
             <Text style={{
-              fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
+              fontFamily: fSemi, fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
               letterSpacing: 2.6, textTransform: 'uppercase', marginBottom: 14,
             }}>
               análise da pele
             </Text>
             <Text style={{
-              fontSize: 28, fontWeight: '700', color: DEEP,
+              fontFamily: fXBold, fontSize: 28, fontWeight: '800', color: DEEP,
               letterSpacing: -0.85, lineHeight: 31.36,
             }}>
               {'Agora vamos analisar a sua '}
               <Text style={{
-                fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+                fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
               }}>
                 pele
               </Text>
               {' por foto.'}
             </Text>
             <Text style={{
-              marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
+              fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
               color: DEEP_SOFT, letterSpacing: -0.1,
             }}>
               Para uma análise mais precisa, se certifique:
@@ -131,7 +144,7 @@ export default function ScanPrep() {
                   <Icon size={22} color="#FFFFFF" strokeWidth={2} />
                 </View>
                 <Text style={{
-                  fontSize: 16.5, fontWeight: '600', color: DEEP,
+                  fontFamily: fSemi, fontSize: 16.5, fontWeight: '600', color: DEEP,
                   letterSpacing: -0.2, lineHeight: 21.45,
                   flex: 1,
                 }}>
@@ -156,7 +169,7 @@ export default function ScanPrep() {
               }}
             >
               <Text style={{
-                fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
+                fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
               }}>
                 Abrir câmera
               </Text>

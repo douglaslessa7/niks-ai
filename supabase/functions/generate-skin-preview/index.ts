@@ -38,21 +38,40 @@ serve(async (req) => {
     const imageFile = new File([imageBlob], 'skin.jpg', { type: 'image/jpeg' })
 
     // Monta FormData para OpenAI
+    // `quality: medium` = equilíbrio velocidade/fidelidade — 'high' (padrão) chega a
+    // levar 1-2 min por geração e é o que fazia a tela travar. Ajuste aqui se precisar.
     const formData = new FormData()
     formData.append('model', 'gpt-image-2')
     formData.append('image', imageFile)
     formData.append('prompt', SKIN_IMPROVEMENT_PROMPT)
     formData.append('n', '1')
     formData.append('size', '1024x1024')
+    formData.append('quality', 'medium')
 
-    // Chama OpenAI Images Edit
-    const openaiResponse = await fetch('https://api.openai.com/v1/images/edits', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-      },
-      body: formData,
-    })
+    // Chama OpenAI Images Edit — com timeout de 90s para nunca ficar pendurado pra sempre
+    // (a OpenAI às vezes congestiona; sem isto a função — e a tela — travavam sem limite).
+    const openaiController = new AbortController()
+    const openaiTimeout = setTimeout(() => openaiController.abort(), 90_000)
+    let openaiResponse: Response
+    try {
+      openaiResponse = await fetch('https://api.openai.com/v1/images/edits', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+        },
+        body: formData,
+        signal: openaiController.signal,
+      })
+    } catch (fetchErr) {
+      const aborted = (fetchErr as Error)?.name === 'AbortError'
+      console.error(aborted ? 'OpenAI timed out after 90s' : 'OpenAI fetch failed:', fetchErr)
+      return new Response(
+        JSON.stringify({ error: aborted ? 'Image generation timed out' : 'Image generation failed' }),
+        { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    } finally {
+      clearTimeout(openaiTimeout)
+    }
 
     if (!openaiResponse.ok) {
       const errorText = await openaiResponse.text()

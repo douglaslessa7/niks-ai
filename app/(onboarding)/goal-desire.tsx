@@ -6,14 +6,20 @@ import { ChevronLeft, Check } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
 
 const STEP = 11;
@@ -30,8 +36,16 @@ const DESIRES = [
 
 export default function GoalDesire() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+
   const [selected, setSelected] = useState<string | null>(null);
   const { track } = useMixpanel();
   const router = useRouter();
@@ -79,7 +93,7 @@ export default function GoalDesire() {
           </TouchableOpacity>
           <View style={{
             flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+            backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
           }}>
             <View style={{
               position: 'absolute', top: 0, left: 0, bottom: 0,
@@ -92,26 +106,25 @@ export default function GoalDesire() {
         {/* QTitleBlock */}
         <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
           <Text style={{
-            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
             letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
           }}>
             seu porquê
           </Text>
           <Text style={{
-            fontSize: 26, fontWeight: '700', color: DEEP,
+            fontFamily: fXBold, fontSize: 26, fontWeight: '800', color: DEEP,
             letterSpacing: -0.85, lineHeight: 28.6,
           }}>
             {'Qual é o seu verdadeiro '}
             <Text style={{
-              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-              fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
             }}>
               objetivo
             </Text>
             {'?'}
           </Text>
           <Text style={{
-            marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
+            fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
             color: DEEP_SOFT, letterSpacing: -0.1,
           }}>
             Pode ser honesta — é só pra gente entender você melhor.
@@ -145,7 +158,7 @@ export default function GoalDesire() {
                 }}
               >
                 <Text style={{
-                  flex: 1, fontSize: 15, fontWeight: '500', color: DEEP,
+                  flex: 1, fontFamily: fReg, fontSize: 15, fontWeight: '500', color: DEEP,
                   letterSpacing: -0.2, lineHeight: 19.5,
                 }}>
                   {desire}
@@ -171,7 +184,7 @@ export default function GoalDesire() {
             activeOpacity={0.85}
             style={{
               height: 60, borderRadius: 100,
-              backgroundColor: selected ? CORAL : 'rgba(29,58,68,0.12)',
+              backgroundColor: selected ? CORAL : 'rgba(18,18,18,0.12)',
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
               shadowColor: selected ? CORAL : 'transparent',
               shadowOffset: { width: 0, height: 14 },
@@ -180,8 +193,8 @@ export default function GoalDesire() {
             }}
           >
             <Text style={{
-              fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
-              color: selected ? '#FFFFFF' : 'rgba(29,58,68,0.42)',
+              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
+              color: selected ? '#FFFFFF' : 'rgba(18,18,18,0.42)',
             }}>
               Continuar
             </Text>

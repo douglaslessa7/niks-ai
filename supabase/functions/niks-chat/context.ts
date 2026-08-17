@@ -111,12 +111,19 @@ async function getMemories(supabase: ReturnType<typeof createSupabaseClient>, us
   return data ?? []
 }
 
-async function getPendingSuggestion(supabase: ReturnType<typeof createSupabaseClient>, userId: string) {
+async function getPendingSuggestion(supabase: ReturnType<typeof createSupabaseClient>, userId: string, conversationId: string) {
+  // Escopada à conversa (uma pendente não vaza para outra) E com validade de 24h na
+  // LEITURA. A regra 8 só expira no apply, que nunca roda para uma pendente fora de
+  // alcance (conversas do Coach são diárias); sem esta janela, uma pendente de conversa
+  // antiga ficaria presa e — com o guard de criação global — travaria a usuária.
+  const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { data } = await supabase
     .from('coach_protocol_suggestions')
     .select('*')
     .eq('user_id', userId)
+    .eq('conversation_id', conversationId)
     .eq('status', 'pending')
+    .gte('created_at', cutoffIso)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -126,6 +133,7 @@ async function getPendingSuggestion(supabase: ReturnType<typeof createSupabaseCl
 export async function buildContext(
   supabase: ReturnType<typeof createSupabaseClient>,
   userId: string,
+  conversationId: string,
   includeFullScanHistory: boolean
 ): Promise<UserContext> {
   const promises = [
@@ -136,7 +144,7 @@ export async function buildContext(
     getRecentFoodScans(supabase, userId),
     getHistory(supabase, userId),
     getMemories(supabase, userId),
-    getPendingSuggestion(supabase, userId),
+    getPendingSuggestion(supabase, userId, conversationId),
   ]
 
   const results = await Promise.allSettled(promises)

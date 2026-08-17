@@ -1,20 +1,26 @@
 import { useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
-import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
+import Svg, { Path } from 'react-native-svg';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_WHISPER = 'rgba(29,58,68,0.32)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_WHISPER = '#818181';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
 
 const STEP = 12;
@@ -24,8 +30,16 @@ const WITHOUT_H = Math.round(CHART_H * 0.22); // 48
 
 export default function SocialProof() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+
   const { track } = useMixpanel();
   const router = useRouter();
   const { scanSource, setScanSource } = useAppStore();
@@ -60,7 +74,7 @@ export default function SocialProof() {
           </TouchableOpacity>
           <View style={{
             flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+            backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
           }}>
             <View style={{
               position: 'absolute', top: 0, left: 0, bottom: 0,
@@ -73,19 +87,18 @@ export default function SocialProof() {
         {/* QTitleBlock */}
         <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
           <Text style={{
-            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
             letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
           }}>
             seu potencial
           </Text>
           <Text style={{
-            fontSize: 26, fontWeight: '700', color: DEEP,
+            fontFamily: fXBold, fontSize: 26, fontWeight: '800', color: DEEP,
             letterSpacing: -0.85, lineHeight: 28.6,
           }}>
             {'Com o NIKS, você vai conseguir 3x '}
             <Text style={{
-              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-              fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
             }}>
               mais rápido
             </Text>
@@ -109,33 +122,20 @@ export default function SocialProof() {
             {/* Column headers */}
             <View style={{ flexDirection: 'row', gap: 14, marginBottom: 16 }}>
               <Text style={{
-                flex: 1, fontSize: 10.5, fontWeight: '700', color: DEEP_WHISPER,
+                flex: 1, fontFamily: fXBold, fontSize: 10.5, fontWeight: '700', color: DEEP_WHISPER,
                 letterSpacing: 2.4, textTransform: 'uppercase', textAlign: 'center',
               }}>
                 sem o NIKS
               </Text>
               <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                {/* Orb spark — radial gradient peach, igual ao design de referência */}
-                <View style={{
-                  shadowColor: CORAL,
-                  shadowOffset: { width: 0, height: 0 },
-                  shadowOpacity: 0.5,
-                  shadowRadius: 6,
-                }}>
-                  <Svg width={10} height={10} viewBox="0 0 10 10">
-                    <Defs>
-                      <RadialGradient id="spOrb" cx="35%" cy="30%" r="70%">
-                        <Stop offset="0%" stopColor="#FFEFE4" />
-                        <Stop offset="35%" stopColor="#F9C9B6" />
-                        <Stop offset="75%" stopColor="#E89178" />
-                        <Stop offset="100%" stopColor="#C86651" />
-                      </RadialGradient>
-                    </Defs>
-                    <Circle cx="5" cy="5" r="5" fill="url(#spOrb)" />
-                  </Svg>
-                </View>
+                {/* Logo NIKS (sparkle) tintada no rosa padrão — substitui a orb do design antigo */}
+                <Image
+                  source={require('../../assets/home/niks-logo.png')}
+                  resizeMode="contain"
+                  style={{ width: 14, height: 14, tintColor: CORAL }}
+                />
                 <Text style={{
-                  fontSize: 10.5, fontWeight: '700', color: DEEP,
+                  fontFamily: fXBold, fontSize: 10.5, fontWeight: '700', color: DEEP,
                   letterSpacing: 2.4, textTransform: 'uppercase',
                 }}>
                   com o NIKS
@@ -148,19 +148,19 @@ export default function SocialProof() {
               {/* Without bar — short stump */}
               <View style={{
                 flex: 1, height: WITHOUT_H, borderRadius: 18,
-                backgroundColor: 'rgba(29,58,68,0.06)',
+                backgroundColor: 'rgba(18,18,18,0.06)',
                 borderWidth: 0.5, borderColor: DEEP_HAIR,
                 alignItems: 'center', justifyContent: 'center',
                 paddingHorizontal: 8, paddingVertical: 6,
               }}>
                 <Text style={{
-                  fontSize: 22, fontWeight: '700', color: DEEP,
-                  letterSpacing: -0.6, lineHeight: 22,
+                  fontFamily: fXBold, fontSize: 22, fontWeight: '700', color: DEEP,
+                  letterSpacing: -0.6, lineHeight: 28,
                 }}>
                   22%
                 </Text>
                 <Text style={{
-                  marginTop: 4, fontSize: 11, color: DEEP_SOFT, letterSpacing: -0.05,
+                  fontFamily: fReg, marginTop: 4, fontSize: 11, color: DEEP_SOFT, letterSpacing: -0.05,
                 }}>
                   Eficácia
                 </Text>
@@ -179,15 +179,14 @@ export default function SocialProof() {
                 paddingHorizontal: 8,
               }}>
                 <Text style={{
-                  fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                  fontStyle: 'italic', fontWeight: '600',
+                  fontFamily: fXBold, fontWeight: '800',
                   fontSize: 64, color: '#FFFFFF',
-                  letterSpacing: -1.5, lineHeight: 64,
+                  letterSpacing: -1.5, lineHeight: 78,
                 }}>
                   3x
                 </Text>
                 <Text style={{
-                  marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.78)',
+                  fontFamily: fReg, marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.78)',
                   letterSpacing: -0.05, fontWeight: '500',
                 }}>
                   Mais resultado
@@ -197,7 +196,7 @@ export default function SocialProof() {
 
             {/* Caption */}
             <Text style={{
-              marginTop: 20, fontSize: 13, lineHeight: 19.5,
+              fontFamily: fReg, marginTop: 20, fontSize: 13, lineHeight: 19.5,
               color: DEEP_SOFT, letterSpacing: -0.05, textAlign: 'center',
               paddingHorizontal: 6,
             }}>
@@ -232,7 +231,7 @@ export default function SocialProof() {
             }}
           >
             <Text style={{
-              fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
+              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
             }}>
               Continuar
             </Text>

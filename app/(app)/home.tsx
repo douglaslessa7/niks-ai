@@ -24,6 +24,7 @@ import { CATALOGO_DICAS, Dica } from '../../lib/dicas/catalogo';
 import { getDicaDoDia } from '../../lib/dicas/dicaDoDia';
 import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
+import { Skeleton } from '../../components/Skeleton';
 
 // Habilita LayoutAnimation no Android (iOS já vem ligado)
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -181,11 +182,19 @@ export default function Home() {
     };
   }, []);
 
-  const { data: homeData } = useCachedQuery(
+  const { data: homeData, state: homeState } = useCachedQuery(
     userId ? `home:${userId}` : null,
     fetchHome,
     { enabled: Boolean(userId) },
   );
+
+  // Pré-carregamento: enquanto `homeData` não chegou (sessão + cache do disco + rede),
+  // mostramos skeletons no lugar dos placeholders vazios. Assim que os dados carregam,
+  // `homeData` vira um objeto (mesmo para quem nunca escaneou — aí some o skeleton e
+  // aparece o estado real de "faça seu primeiro scan"). Ver components/Skeleton.tsx.
+  // Em erro na 1ª carga (sem rede e sem cache), cai no placeholder em vez de pulsar
+  // pra sempre — `homeState` só é 'error' quando não há nada para mostrar.
+  const loading = homeData == null && homeState !== 'error';
 
   useEffect(() => {
     if (!homeData) return;
@@ -247,7 +256,11 @@ export default function Home() {
           {/* ── Niks score ─────────────────────────────────────────────── */}
           <View style={styles.scoreBlock}>
             <Image source={theme.logo} style={[styles.scoreLogo, { width: LOGO, height: Math.round(LOGO * (199 / 196)) }]} />
-            <Text style={[styles.scoreNumber, { fontFamily: fXBold, color: theme.score }]}>{skinScore != null ? skinScore : '—'}</Text>
+            {loading ? (
+              <Skeleton style={{ width: 92, height: 56, borderRadius: 16, marginTop: 8, marginBottom: 6 }} />
+            ) : (
+              <Text style={[styles.scoreNumber, { fontFamily: fXBold, color: theme.score }]}>{skinScore != null ? skinScore : '—'}</Text>
+            )}
             <Text style={[styles.scoreLabel, { fontFamily: fXBold }]}>Niks score</Text>
             <Image
               source={theme.underline}
@@ -273,7 +286,9 @@ export default function Home() {
             >
               {/* Foto (círculo interno) */}
               <View style={[styles.photoCircle, { width: PHOTO, height: PHOTO, borderRadius: PHOTO / 2 }]}>
-                {fotoUrl ? (
+                {loading ? (
+                  <Skeleton style={{ width: '100%', height: '100%', borderRadius: PHOTO / 2 }} />
+                ) : fotoUrl ? (
                   <Image source={{ uri: fotoUrl }} style={styles.photo} resizeMode="cover" />
                 ) : (
                   <View style={styles.photoPlaceholder}>
@@ -342,15 +357,19 @@ export default function Home() {
                 >
                   {m.label}
                 </Text>
-                <Text
-                  style={{
-                    position: 'absolute', left: 0, top: numTop * MS,
-                    fontFamily: fExo, fontSize: 28.206 * MS,
-                    color: '#000000', letterSpacing: -0.5641 * MS, textTransform: 'uppercase',
-                  }}
-                >
-                  {v == null ? '—' : v}
-                </Text>
+                {loading ? (
+                  <Skeleton style={{ position: 'absolute', left: 0, top: numTop * MS, width: 34 * MS, height: 24 * MS, borderRadius: 6 }} />
+                ) : (
+                  <Text
+                    style={{
+                      position: 'absolute', left: 0, top: numTop * MS,
+                      fontFamily: fExo, fontSize: 28.206 * MS,
+                      color: '#000000', letterSpacing: -0.5641 * MS, textTransform: 'uppercase',
+                    }}
+                  >
+                    {v == null ? '—' : v}
+                  </Text>
+                )}
                 <View
                   style={{
                     position: 'absolute', left: 0, top: trackTop * MS,

@@ -14,6 +14,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import { regenerateProtocolInApp } from '../../lib/regenerateProtocolInApp';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -52,7 +53,7 @@ const WHITE_D = RING_SIZE - 30;   // disco branco central (dentro do anel)
 
 export default function LoadingDentroApp() {
   const router = useRouter();
-  const { skinImageBase64, skinImageUri, skinCollagesBase64, onboarding, setScanResult, setSelectedScan, setSkinPreviewUrl } = useAppStore();
+  const { skinImageBase64, skinImageUri, skinCollagesBase64, onboarding, setScanResult, setSelectedScan } = useAppStore();
   const { track } = useMixpanel();
 
   const [percentage, setPercentage] = useState(0);
@@ -113,29 +114,9 @@ export default function LoadingDentroApp() {
   useEffect(() => {
     retryCount.current = 0;
 
-    const runSkinPreview = async () => {
-      try {
-        const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/generate-skin-preview`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'apikey': SUPABASE_ANON_KEY,
-            },
-            body: JSON.stringify({ image: skinImageBase64 }),
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.preview_url) setSkinPreviewUrl(data.preview_url);
-        }
-      } catch (e) {
-        console.warn('Skin preview generation failed (non-blocking):', e);
-      }
-    };
-    runSkinPreview();
+    // NOTA: a geração da preview "antes/depois" (generate-skin-preview) é EXCLUSIVA do
+    // loading do ONBOARDING (app/(scan)/loading.tsx). Esta tela — o loading de scans
+    // feitos DENTRO do app — nunca deve disparar essa geração.
 
     const tickProgress = () => {
       const current = currentPercentageRef.current;
@@ -201,7 +182,6 @@ export default function LoadingDentroApp() {
                 sun_exposure: onboarding.sun_exposure,
                 hydration: onboarding.hydration,
                 sleep: onboarding.sleep,
-                objetivo: onboarding.objetivo,
               },
             }),
           }
@@ -234,7 +214,7 @@ export default function LoadingDentroApp() {
                 fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl;
               }
             }
-            await supabase.from('skin_scans').insert({
+            const { data: scanRow } = await supabase.from('skin_scans').insert({
               user_id: user.id,
               foto_url: fotoUrl,
               skin_score: data.skin_score,
@@ -243,10 +223,14 @@ export default function LoadingDentroApp() {
               areas_atencao: data.pontos_fracos,
               resumo: data.headline,
               full_result: data,
-            });
+            }).select('id').single();
             // Novo scan = novo score, novas métricas, nova foto. A home lê de
             // cache, então precisa ser invalidada aqui ou mostraria o scan antigo.
             invalidateCache(`home:${user.id}`);
+            // Regeneração do protocolo no 1º scan in-app — BACKGROUND, não bloqueia a
+            // navegação. A função de módulo sobrevive à desmontagem desta tela; os guards
+            // internos (marcador + regenInFlight) garantem "uma única vez".
+            void regenerateProtocolInApp(user.id, data, scanRow?.id ?? null);
           }
         } catch (e) {
           console.warn('Failed to save scan to DB:', e);
@@ -421,8 +405,16 @@ export default function LoadingDentroApp() {
                     />
                   </Svg>
 
-                  {/* Número da porcentagem */}
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                  {/* Número da porcentagem — espaçador invisível à esquerda (mesma largura do "%")
+                      centraliza o NÚMERO na horizontal; o translateY compensa a folga do
+                      descender da Nunito (números não usam), centralizando na vertical */}
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', transform: [{ translateY: 12 }] }}>
+                    <Text style={{
+                      fontFamily: fBold, fontSize: 28, color: DEEP,
+                      letterSpacing: -1, marginBottom: 16, marginRight: 2, opacity: 0,
+                    }}>
+                      %
+                    </Text>
                     <Text style={{
                       fontFamily: fExtra, fontSize: 86, color: DEEP,
                       letterSpacing: -3, lineHeight: 92,

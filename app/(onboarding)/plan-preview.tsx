@@ -1,20 +1,28 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, Animated, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle as SvgCircle } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+// Tokens "Novo design app NIKS" (mesma identidade da home/chat/welcome)
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
+const GREEN = '#3DBE79'; // borda dos cards de "% de melhora" — sensação de resultado positivo
 
 const CONCERN_PCT: Record<string, number> = {
   'Acne/espinhas': 78,
@@ -72,11 +80,15 @@ function CheckIcon() {
 
 export default function PlanPreview() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
-    'PlayfairDisplay-Regular': require('../../assets/fonts/PlayfairDisplay-Regular.ttf'),
-    'CormorantGaramond-Italic': require('../../assets/fonts/CormorantGaramond-Italic.ttf'),
-    'DMSans-MediumItalic': require('../../assets/fonts/DMSans-MediumItalic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
   const { width: screenW } = useWindowDimensions();
   const { track } = useMixpanel();
   const router = useRouter();
@@ -88,6 +100,17 @@ export default function PlanPreview() {
 
   const desireTitle = DESIRE_TITLE_MAP[onboarding.goal_desire ?? ''] ?? DEFAULT_DESIRE_TITLE;
 
+  // Rede de segurança: se a preview da IA não chegou em ~45s, paramos de girar o
+  // spinner "pra sempre" e caímos na própria foto da pessoa (com o brilho do card),
+  // para a tela nunca ficar presa num loading eterno.
+  const [previewTimedOut, setPreviewTimedOut] = useState(false);
+  useEffect(() => {
+    if (skinPreviewUrl) return;
+    const t = setTimeout(() => setPreviewTimedOut(true), 45_000);
+    return () => clearTimeout(t);
+  }, [skinPreviewUrl]);
+  const afterUri = skinPreviewUrl ?? (previewTimedOut ? scanImageUri : null);
+
   const spinAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -96,10 +119,13 @@ export default function PlanPreview() {
   }, []);
   const spinRotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
-  const goals = useMemo(() => {
-    if (!onboarding.objetivo) return [];
-    return onboarding.objetivo.split(', ').filter(Boolean).slice(0, 3);
-  }, [onboarding.objetivo]);
+  // Objetivos fixos exibidos em "Resultados garantidos" (não dependem mais de uma tela de seleção)
+  const goals = [
+    'Glow natural e saudável',
+    'Acabar com espinhas',
+    'Pele mais firme e jovem',
+    'Encontrar os melhores produtos',
+  ];
 
   const metricConcerns = useMemo(() => {
     return onboarding.concerns.slice(0, 3).map((name) => ({
@@ -131,26 +157,25 @@ export default function PlanPreview() {
           {/* Title block — centered */}
           <View style={{ paddingHorizontal: 28, alignItems: 'center' }}>
             <Text style={{
-              fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
+              fontFamily: fSemi, fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
               letterSpacing: 2.6, textTransform: 'uppercase', marginBottom: 12,
             }}>
               análise concluída
             </Text>
             <Text style={{
-              fontSize: 28, fontWeight: '700', color: DEEP,
+              fontFamily: fXBold, fontSize: 28, fontWeight: '800', color: DEEP,
               letterSpacing: -0.85, lineHeight: 30.8, textAlign: 'center',
             }}>
               {'Sua rotina de skincare\nestá '}
               <Text style={{
-                fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+                fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
               }}>
                 pronta
               </Text>
               {'.'}
             </Text>
             <Text style={{
-              marginTop: 12, fontSize: 14, lineHeight: 21, color: DEEP_SOFT,
+              fontFamily: fReg, marginTop: 12, fontSize: 14, lineHeight: 21, color: DEEP_SOFT,
               letterSpacing: -0.05, textAlign: 'center', maxWidth: 320,
             }}>
               Veja a projeção que nossa equipe fez da sua transformação usando o NIKS:
@@ -166,7 +191,7 @@ export default function PlanPreview() {
                 <View style={{
                   width: '100%', aspectRatio: 3 / 4,
                   borderRadius: 20, padding: 4,
-                  backgroundColor: 'rgba(29,58,68,0.10)',
+                  backgroundColor: 'rgba(18,18,18,0.10)',
                   shadowColor: '#2B2724',
                   shadowOffset: { width: 0, height: 10 },
                   shadowOpacity: 0.16, shadowRadius: 24, elevation: 3,
@@ -178,7 +203,7 @@ export default function PlanPreview() {
                       resizeMode="cover"
                     />
                   ) : (
-                    <View style={{ flex: 1, borderRadius: 16, backgroundColor: 'rgba(29,58,68,0.08)' }} />
+                    <View style={{ flex: 1, borderRadius: 16, backgroundColor: 'rgba(18,18,18,0.08)' }} />
                   )}
                   <View style={{
                     position: 'absolute', bottom: 10, left: 0, right: 0,
@@ -191,7 +216,7 @@ export default function PlanPreview() {
                       shadowOpacity: 0.12, shadowRadius: 8,
                     }}>
                       <Text style={{
-                        fontSize: 10.5, fontWeight: '700', color: DEEP,
+                        fontFamily: fSemi, fontSize: 10.5, fontWeight: '700', color: DEEP,
                         letterSpacing: 1.8, textTransform: 'uppercase',
                       }}>
                         Hoje
@@ -199,9 +224,9 @@ export default function PlanPreview() {
                     </View>
                   </View>
                 </View>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: DEEP_SOFT, letterSpacing: -0.05, textAlign: 'center' }}>
+                <Text style={{ fontFamily: fSemi, fontSize: 12, fontWeight: '600', color: DEEP_SOFT, letterSpacing: -0.05, textAlign: 'center' }}>
                   {'Seu Skin Score: '}
-                  <Text style={{ color: CORAL, fontWeight: '700' }}>
+                  <Text style={{ fontFamily: fBold, color: CORAL, fontWeight: '700' }}>
                     {currentScore > 0 ? currentScore : '—'}
                   </Text>
                 </Text>
@@ -210,7 +235,7 @@ export default function PlanPreview() {
               {/* "Em 8 semanas" card — glow */}
               <View style={{ flex: 1, alignItems: 'center', gap: 10 }}>
                 <LinearGradient
-                  colors={[CORAL, '#F9C9B6']}
+                  colors={[CORAL, '#FFC9C9']}
                   start={{ x: 0.1, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={{
@@ -221,16 +246,16 @@ export default function PlanPreview() {
                     shadowOpacity: 0.45, shadowRadius: 40, elevation: 8,
                   }}
                 >
-                  {skinPreviewUrl ? (
+                  {afterUri ? (
                     <Image
-                      source={{ uri: skinPreviewUrl }}
+                      source={{ uri: afterUri }}
                       style={{ flex: 1, borderRadius: 16 }}
                       resizeMode="cover"
                     />
                   ) : (
                     <View style={{
                       flex: 1, borderRadius: 16,
-                      backgroundColor: 'rgba(251,123,107,0.10)',
+                      backgroundColor: 'rgba(255,157,157,0.10)',
                       alignItems: 'center', justifyContent: 'center', gap: 12,
                     }}>
                       <Animated.View style={{ transform: [{ rotate: spinRotate }] }}>
@@ -247,7 +272,7 @@ export default function PlanPreview() {
                         </Svg>
                       </Animated.View>
                       <Text style={{
-                        fontSize: 11, fontWeight: '700', color: '#FFFFFF',
+                        fontFamily: fBold, fontSize: 11, fontWeight: '700', color: '#FFFFFF',
                         letterSpacing: 0.4, textAlign: 'center', lineHeight: 15, opacity: 0.9,
                       }}>
                         {'Preparando sua\ntransformação...'}
@@ -265,7 +290,7 @@ export default function PlanPreview() {
                       shadowOpacity: 0.4, shadowRadius: 14,
                     }}>
                       <Text style={{
-                        fontSize: 10.5, fontWeight: '700', color: '#FFFFFF',
+                        fontFamily: fSemi, fontSize: 10.5, fontWeight: '700', color: '#FFFFFF',
                         letterSpacing: 1.8, textTransform: 'uppercase',
                       }}>
                         Em 8 semanas
@@ -276,9 +301,9 @@ export default function PlanPreview() {
                     <SparkleIcon size={18} color="#FFFFFF" />
                   </View>
                 </LinearGradient>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: DEEP_SOFT, letterSpacing: -0.05, textAlign: 'center' }}>
+                <Text style={{ fontFamily: fSemi, fontSize: 12, fontWeight: '600', color: DEEP_SOFT, letterSpacing: -0.05, textAlign: 'center' }}>
                   {'Seu Skin Score: '}
-                  <Text style={{ color: CORAL, fontWeight: '700' }}>97</Text>
+                  <Text style={{ fontFamily: fBold, color: CORAL, fontWeight: '700' }}>97</Text>
                 </Text>
               </View>
             </View>
@@ -309,7 +334,7 @@ export default function PlanPreview() {
           {metricConcerns.length > 0 && (
             <View style={{ paddingHorizontal: 24, marginTop: 28 }}>
               <Text style={{
-                fontSize: 10.5, fontWeight: '700', color: CORAL,
+                fontFamily: fSemi, fontSize: 10.5, fontWeight: '700', color: CORAL,
                 letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 12,
               }}>
                 Onde você mais verá resultados:
@@ -320,38 +345,31 @@ export default function PlanPreview() {
                     flex: 1,
                     paddingTop: 18, paddingHorizontal: 10, paddingBottom: 16,
                     borderRadius: 20, backgroundColor: '#FFFFFF',
-                    borderWidth: 1, borderColor: CORAL,
+                    borderWidth: 1, borderColor: GREEN,
                     shadowColor: '#2B2724', shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.05, shadowRadius: 14,
                     alignItems: 'center',
                   }}>
                     <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 1 }}>
                       <Text style={{
-                        fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                        fontSize: 40, color: CORAL,
-                        letterSpacing: -1.6, lineHeight: 40,
+                        fontFamily: fXBold,
+                        fontSize: 40, color: GREEN,
+                        letterSpacing: -1.6, lineHeight: 44,
                         fontVariant: ['tabular-nums'],
                       }}>{pct}</Text>
                       <Text style={{
-                        fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                        fontSize: 20, color: CORAL,
+                        fontFamily: fBold,
+                        fontSize: 20, color: GREEN,
                         letterSpacing: -0.4,
                         fontVariant: ['tabular-nums'],
                       }}>%</Text>
                     </View>
                     <Text style={{
-                      marginTop: 8,
-                      fontSize: 9, fontWeight: '700', color: CORAL_DEEP,
-                      letterSpacing: 1.8, textTransform: 'uppercase', opacity: 0.85,
-                    }}>
-                      DE MELHORA
-                    </Text>
-                    <Text style={{
-                      marginTop: 4,
+                      fontFamily: fSemi, marginTop: 6,
                       fontSize: 12.5, fontWeight: '600', color: DEEP,
                       letterSpacing: -0.1, lineHeight: 15.6, textAlign: 'center',
                     }}>
-                      {name}
+                      {`Menos ${name.toLowerCase()}`}
                     </Text>
                   </View>
                 ))}
@@ -363,23 +381,23 @@ export default function PlanPreview() {
           {goals.length > 0 && (
             <View style={{ paddingHorizontal: 28, marginTop: 32 }}>
               <Text style={{
-                fontSize: 22, fontWeight: '700', color: DEEP,
+                fontFamily: fXBold, fontSize: 22, fontWeight: '800', color: DEEP,
                 letterSpacing: -0.6, lineHeight: 26,
               }}>
                 {'Resultados '}
                 <Text style={{
-                  fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                  fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -0.7,
+                  fontFamily: fXBold,
+                  fontWeight: '800', color: CORAL, letterSpacing: -0.7,
                 }}>
                   garantidos
                 </Text>
                 {':'}
               </Text>
               <Text style={{
-                marginTop: 8, fontSize: 13.5, lineHeight: 20.25,
+                fontFamily: fReg, marginTop: 8, fontSize: 13.5, lineHeight: 20.25,
                 color: DEEP_SOFT, letterSpacing: -0.05,
               }}>
-                Os objetivos que você escolheu serão o foco do seu skincare.
+                Estes objetivos serão o foco do seu skincare.
               </Text>
               <View style={{ marginTop: 16, gap: 10 }}>
                 {goals.map((goal, i) => (
@@ -387,7 +405,7 @@ export default function PlanPreview() {
                     flexDirection: 'row', alignItems: 'center', gap: 12,
                     padding: 14, paddingHorizontal: 16,
                     backgroundColor: '#FFFFFF', borderRadius: 16,
-                    borderWidth: 1, borderColor: 'rgba(29,58,68,0.08)',
+                    borderWidth: 1, borderColor: 'rgba(18,18,18,0.08)',
                     shadowColor: '#2B2724', shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.03, shadowRadius: 14,
                   }}>
@@ -401,7 +419,7 @@ export default function PlanPreview() {
                       <CheckIcon />
                     </View>
                     <Text style={{
-                      flex: 1, fontSize: 15, fontWeight: '600', color: DEEP, letterSpacing: -0.15,
+                      fontFamily: fSemi, flex: 1, fontSize: 15, fontWeight: '600', color: DEEP, letterSpacing: -0.15,
                     }}>
                       {goal}
                     </Text>
@@ -414,13 +432,12 @@ export default function PlanPreview() {
           {/* Título dinâmico baseado no desejo selecionado em goal-desire */}
           <View style={{ paddingHorizontal: 28, marginTop: 32 }}>
             <Text style={{
-              fontSize: 22, fontWeight: '700', color: DEEP,
+              fontFamily: fXBold, fontSize: 22, fontWeight: '800', color: DEEP,
               letterSpacing: -0.6, lineHeight: 26,
             }}>
               {desireTitle.prefix}
               <Text style={{
-                fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-                fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -0.7,
+                fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -0.7,
               }}>
                 {desireTitle.italic}
               </Text>
@@ -436,8 +453,8 @@ export default function PlanPreview() {
                     <ArrowIcon size={20} color={CORAL} />
                   </View>
                   <Text style={{
-                    flex: 1, fontSize: 14, lineHeight: 21,
-                    color: '#000000', letterSpacing: -0.05,
+                    fontFamily: fReg, flex: 1, fontSize: 14, lineHeight: 21,
+                    color: '#121212', letterSpacing: -0.05,
                   }}>
                     {text}
                   </Text>
@@ -467,7 +484,7 @@ export default function PlanPreview() {
             }}
           >
             <Text style={{
-              fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
+              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
             }}>
               Continuar
             </Text>

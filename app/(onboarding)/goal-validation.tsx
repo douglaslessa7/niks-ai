@@ -5,6 +5,12 @@ import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import Svg, {
   Path,
   Circle,
@@ -19,11 +25,11 @@ import Svg, {
 } from 'react-native-svg';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
 
 const STEP = 4;
@@ -69,16 +75,16 @@ function Chart({ width }: { width: number }) {
       {/* Horizontal dashed gridlines */}
       {[42, 82, 122].map((y) => (
         <Line key={`h${y}`} x1="14" y1={y} x2={W - 14} y2={y}
-          stroke="rgba(29,58,68,0.22)" strokeWidth="0.9" strokeDasharray="4 5" />
+          stroke="rgba(18,18,18,0.22)" strokeWidth="0.9" strokeDasharray="4 5" />
       ))}
       {/* Vertical dashed gridlines */}
       {[88, 162, 236].map((x) => (
         <Line key={`v${x}`} x1={x} y1="20" x2={x} y2={H - 14}
-          stroke="rgba(29,58,68,0.18)" strokeWidth="0.9" strokeDasharray="4 5" />
+          stroke="rgba(18,18,18,0.18)" strokeWidth="0.9" strokeDasharray="4 5" />
       ))}
       {/* Baseline */}
       <Line x1="14" y1={H - 12} x2={W - 14} y2={H - 12}
-        stroke="rgba(29,58,68,0.18)" strokeWidth="1" strokeLinecap="round" />
+        stroke="rgba(18,18,18,0.18)" strokeWidth="1" strokeLinecap="round" />
 
       {/* Area fill */}
       <Path d={areaPath} fill="url(#gvAreaGrad)" />
@@ -93,7 +99,7 @@ function Chart({ width }: { width: number }) {
       ))}
 
       {/* Final NIKS orb */}
-      <Circle cx={pts[3].x} cy={pts[3].y} r="14" fill="#FB7B6B" opacity="0.18" filter="url(#gvGlow)" />
+      <Circle cx={pts[3].x} cy={pts[3].y} r="14" fill="#FF9D9D" opacity="0.18" filter="url(#gvGlow)" />
       <Circle cx={pts[3].x} cy={pts[3].y} r="10.5" fill="url(#gvOrb)" stroke="#FFFFFF" strokeWidth="2" />
       <Ellipse cx={pts[3].x - 2.5} cy={pts[3].y - 3} rx="2.6" ry="1.6" fill="#FFFFFF" opacity="0.55" />
     </Svg>
@@ -102,8 +108,16 @@ function Chart({ width }: { width: number }) {
 
 export default function GoalValidation() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+
   const { width: screenW } = useWindowDimensions();
   const { track } = useMixpanel();
   const router = useRouter();
@@ -140,7 +154,7 @@ export default function GoalValidation() {
           </TouchableOpacity>
           <View style={{
             flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+            backgroundColor: 'rgba(18,18,18,0.06)', overflow: 'hidden',
           }}>
             <View style={{
               position: 'absolute', top: 0, left: 0, bottom: 0,
@@ -153,7 +167,7 @@ export default function GoalValidation() {
         {/* QTitleBlock */}
         <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
           <Text style={{
-            fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
+            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
             letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
           }}>
             seu potencial
@@ -162,21 +176,20 @@ export default function GoalValidation() {
             numberOfLines={1}
             adjustsFontSizeToFit
             style={{
-              fontSize: 27, fontWeight: '700', color: DEEP,
+              fontFamily: fXBold, fontSize: 27, fontWeight: '800', color: DEEP,
               letterSpacing: -0.85, lineHeight: 32,
             }}
           >
             {'Você tem '}
             <Text style={{
-              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-              fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -1,
+              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
             }}>
               tudo
             </Text>
             {' para conseguir'}
           </Text>
           <Text style={{
-            fontSize: 27, fontWeight: '700', color: DEEP,
+            fontFamily: fXBold, fontSize: 27, fontWeight: '800', color: DEEP,
             letterSpacing: -0.85, lineHeight: 32,
           }}>
             o que quer.
@@ -198,7 +211,7 @@ export default function GoalValidation() {
           }}>
             {/* Eyebrow inside card */}
             <Text style={{
-              fontSize: 10, fontWeight: '600', color: DEEP_SOFT,
+              fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: DEEP_SOFT,
               letterSpacing: 2.2, textTransform: 'uppercase', marginBottom: 8,
             }}>
               evolução da sua pele
@@ -208,7 +221,7 @@ export default function GoalValidation() {
 
             {/* Caption */}
             <Text style={{
-              marginTop: 14, fontSize: 13, lineHeight: 19.5,
+              fontFamily: fReg, marginTop: 14, fontSize: 13, lineHeight: 19.5,
               color: DEEP_SOFT, letterSpacing: -0.05, textAlign: 'center',
               paddingHorizontal: 6,
             }}>
@@ -225,7 +238,7 @@ export default function GoalValidation() {
             onPress={() => {
               haptics.action();
               track('onboarding_step_completed', { step_number: 19, step_name: 'Goal Validation', step_total: 23 });
-              router.push('/(onboarding)/concerns');
+              router.push('/(onboarding)/skin-type');
             }}
             activeOpacity={0.85}
             style={{
@@ -238,7 +251,7 @@ export default function GoalValidation() {
             }}
           >
             <Text style={{
-              fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
+              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
             }}>
               Continuar
             </Text>

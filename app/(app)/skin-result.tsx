@@ -1,12 +1,13 @@
 import { View, Text, TouchableOpacity, ScrollView, Image, ActivityIndicator, Animated } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, Shield, Droplets, Sparkles, Leaf, Sun } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore, ScanResult } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
+import { requestAppReview } from '../../lib/storeReview';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -192,7 +193,7 @@ const regionCropOffset: Record<string, number> = {
 
 export default function SkinResult() {
   const router = useRouter();
-  const { scanResult, scanImageUri, selectedScan } = useAppStore();
+  const { scanResult, scanImageUri, selectedScan, routineUpdatingNotice, setRoutineUpdatingNotice } = useAppStore();
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -203,10 +204,20 @@ export default function SkinResult() {
     return () => { useAppStore.getState().setSelectedScan(null); };
   }, []);
 
+  // Card-promessa flutuante (identidade NIKS): aparece quando a regeneração do protocolo
+  // COMEÇOU (1º scan in-app). Reage à flag virar true (a regeneração a liga só após seus
+  // guards), não só na montagem. Disparo inalterado — só a apresentação muda.
+  const [showRoutineCard, setShowRoutineCard] = useState(false);
+  useEffect(() => {
+    if (!routineUpdatingNotice) return;
+    setRoutineUpdatingNotice(false);
+    setShowRoutineCard(true);
+  }, [routineUpdatingNotice]);
+
   if (!result) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#FAFAF8', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#FB7B6B" />
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#FF9D9D" />
       </SafeAreaView>
     );
   }
@@ -301,14 +312,14 @@ export default function SkinResult() {
             {/* Badges — canto inferior direito */}
             <View style={{ position: 'absolute', bottom: 18, right: 16, alignItems: 'flex-end', gap: 7 }}>
               {result.skin_type_sebaceous ? (
-                <View style={{ backgroundColor: '#fb7b6b', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
+                <View style={{ backgroundColor: '#FF9D9D', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
                   <Text style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '600', letterSpacing: 0.5 }}>
                     {result.skin_type_sebaceous.charAt(0).toUpperCase() + result.skin_type_sebaceous.slice(1)}
                   </Text>
                 </View>
               ) : null}
               {result.skin_phototype ? (
-                <View style={{ backgroundColor: '#fb7b6b', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
+                <View style={{ backgroundColor: '#FF9D9D', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 }}>
                   <Text style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '600', letterSpacing: 0.5 }}>
                     Fitzpatrick {result.skin_phototype}
                   </Text>
@@ -321,7 +332,7 @@ export default function SkinResult() {
       {/* ── Header flutuante ─────────────────────────────────────── */}
       <SafeAreaView style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }} edges={['top']}>
         <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity onPress={() => { haptics.tap(); router.back(); }} activeOpacity={0.7} style={{ padding: 4 }}>
+          <TouchableOpacity onPress={() => { haptics.tap(); requestAppReview(); router.back(); }} activeOpacity={0.7} style={{ padding: 4 }}>
             <ChevronLeft size={24} color="#FFFFFF" strokeWidth={2} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
@@ -346,9 +357,9 @@ export default function SkinResult() {
         <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
 
         {/* ── 3. Headline + Qualidade/Precisão ─────────────────────── */}
-        <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: '#EFEFED' }}>
+        <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: '#E3E3E6' }}>
           {result.headline ? (
-            <Text style={{ fontSize: 15, fontWeight: '700', color: '#1D3A44', lineHeight: 22, marginBottom: 12, textAlign: 'center' }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#1A1A1A', lineHeight: 22, marginBottom: 12, textAlign: 'center' }}>
               {result.headline}
             </Text>
           ) : null}
@@ -365,7 +376,7 @@ export default function SkinResult() {
               {result.confianca_analise ? (
                 <Text style={{ fontSize: 12, color: '#999' }}>
                   Precisão{' '}
-                  <Text style={{ fontWeight: '600', color: '#1D3A44' }}>
+                  <Text style={{ fontWeight: '600', color: '#1A1A1A' }}>
                     · {result.confianca_analise.score}%
                   </Text>
                 </Text>
@@ -374,28 +385,28 @@ export default function SkinResult() {
           ) : null}
         </View>
 
-        {/* ── 3b. Objetivo Validado ────────────────────────────────── */}
-        {result.goal_alignment ? (() => {
-          const ga = result.goal_alignment!;
+        {/* ── 3b. Suas preocupações (validadas pela análise) ───────── */}
+        {result.concerns_alignment ? (() => {
+          const ga = result.concerns_alignment!;
           const borderColor = ga.alinhamento === 'confirmado' ? '#10B981' : ga.alinhamento === 'parcial' ? '#F59E0B' : '#E8754A';
           const badgeStyle = ga.alinhamento === 'confirmado'
-            ? { bg: '#ECFDF5', color: '#065F46', text: '✓ Alinha com a análise' }
+            ? { bg: '#ECFDF5', color: '#065F46', text: '✓ Confirmado pela análise' }
             : ga.alinhamento === 'parcial'
-            ? { bg: '#FFFBEB', color: '#92400E', text: '~ Parcialmente alinhado' }
+            ? { bg: '#FFFBEB', color: '#92400E', text: '~ Parcialmente confirmado' }
             : { bg: '#FFF5F4', color: '#991B1B', text: '⚠ A análise sugere outra prioridade' };
           return (
             <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, marginHorizontal: 20, marginBottom: 12, marginTop: 24, padding: 20 }}>
               <View style={{ width: 3, position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: borderColor, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }} />
               <View style={{ paddingLeft: 16 }}>
                 <Text style={{ fontSize: 11, fontWeight: '600', color: '#999', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' }}>
-                  Seu Objetivo
+                  Suas preocupações
                 </Text>
                 <View style={{ backgroundColor: badgeStyle.bg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 12 }}>
                   <Text style={{ fontSize: 11, fontWeight: '600', color: badgeStyle.color }}>
                     {badgeStyle.text}
                   </Text>
                 </View>
-                <View style={{ height: 1, backgroundColor: '#F0EDE8', marginBottom: 12 }} />
+                <View style={{ height: 1, backgroundColor: '#E3E3E6', marginBottom: 12 }} />
                 <Text style={{ fontSize: 14, color: '#444', lineHeight: 20 }}>
                   {ga.mensagem}
                 </Text>
@@ -406,7 +417,7 @@ export default function SkinResult() {
 
         {/* ── 4. Análise por Região ─────────────────────────────────── */}
         <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginBottom: 32 }}>
-          <Text style={{ fontSize: 24, fontWeight: '400', fontStyle: 'italic', fontFamily: 'Georgia', color: '#fb7b6b', marginBottom: 16 }}>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: '#FF9D9D', marginBottom: 16 }}>
             Análise por Região
           </Text>
 
@@ -424,7 +435,7 @@ export default function SkinResult() {
               return (
                 <View key={i}>
                   {i > 0 ? (
-                    <View style={{ height: 1, backgroundColor: '#EFEFED', marginVertical: 4 }} />
+                    <View style={{ height: 1, backgroundColor: '#E3E3E6', marginVertical: 4 }} />
                   ) : null}
                   <View style={{ flexDirection: 'row', gap: 16, paddingVertical: 20 }}>
                     {/* Crop da foto */}
@@ -437,7 +448,7 @@ export default function SkinResult() {
                         />
                       </View>
                     ) : (
-                      <View style={{ width: 80, height: 80, borderRadius: 12, backgroundColor: '#E8E4DF', flexShrink: 0 }} />
+                      <View style={{ width: 80, height: 80, borderRadius: 12, backgroundColor: '#F4F4F4', flexShrink: 0 }} />
                     )}
 
                     {/* Conteúdo da região */}
@@ -459,7 +470,7 @@ export default function SkinResult() {
                         {region.issues.length > 0 ? (
                           <View
                             style={{
-                              backgroundColor: '#FB7B6B',
+                              backgroundColor: '#FF9D9D',
                               borderRadius: 20,
                               paddingHorizontal: 10,
                               paddingVertical: 4,
@@ -488,10 +499,10 @@ export default function SkinResult() {
                         const insight = result.region_insights?.find(r => r.region === region.regionKey);
                         return insight ? (
                           <>
-                            <View style={{ height: 1, backgroundColor: '#F0EDE8', marginVertical: 10 }} />
+                            <View style={{ height: 1, backgroundColor: '#E3E3E6', marginVertical: 10 }} />
                             <Text style={{ fontSize: 13, lineHeight: 18 }}>
                               <Text style={{ color: '#E8754A', fontWeight: '600' }}>{'→ '}</Text>
-                              <Text style={{ color: '#1D3A44', fontStyle: 'italic' }}>{insight.benefit}</Text>
+                              <Text style={{ color: '#1A1A1A', fontWeight: '600' }}>{insight.benefit}</Text>
                             </Text>
                           </>
                         ) : null;
@@ -527,7 +538,7 @@ export default function SkinResult() {
                   key={n}
                   style={{
                     fontSize: 18,
-                    color: n <= (pig.intensity_score ?? 0) ? '#fb7b6b' : '#D8D8D8',
+                    color: n <= (pig.intensity_score ?? 0) ? '#FF9D9D' : '#D8D8D8',
                   }}
                 >
                   {n <= (pig.intensity_score ?? 0) ? '●' : '○'}
@@ -545,13 +556,13 @@ export default function SkinResult() {
         {/* ── 3c. O que fazer pela sua pele ───────────────────────── */}
         {result.action_recommendations?.length ? (
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 20, marginBottom: 12, padding: 20 }}>
-            <Text style={{ fontSize: 24, fontWeight: '400', fontStyle: 'italic', fontFamily: 'Georgia', color: '#fb7b6b', marginBottom: 16, marginTop: 0 }}>
+            <Text style={{ fontSize: 24, fontWeight: '800', color: '#FF9D9D', marginBottom: 16, marginTop: 0 }}>
               O que fazer pela sua pele
             </Text>
             {result.action_recommendations.map((rec, i) => (
               <View key={i}>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 42, fontWeight: '800', color: '#fb7b6b', lineHeight: 42, width: 48, marginRight: 8 }}>
+                  <Text style={{ fontSize: 42, fontWeight: '800', color: '#FF9D9D', lineHeight: 42, width: 48, marginRight: 8 }}>
                     {i + 1}
                   </Text>
                   <View style={{ flex: 1 }}>
@@ -562,7 +573,7 @@ export default function SkinResult() {
                   </View>
                 </View>
                 {i < result.action_recommendations!.length - 1 ? (
-                  <View style={{ height: 1, backgroundColor: '#F0EDE8', marginVertical: 14 }} />
+                  <View style={{ height: 1, backgroundColor: '#E3E3E6', marginVertical: 14 }} />
                 ) : null}
               </View>
             ))}
@@ -571,13 +582,13 @@ export default function SkinResult() {
 
         {/* ── 5. Condição Geral — grid 2x2 ─────────────────────────── */}
         <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginTop: 12, marginBottom: 12 }}>
-          <Text style={{ fontSize: 24, fontWeight: '400', fontStyle: 'italic', fontFamily: 'Georgia', color: '#fb7b6b', marginBottom: 16 }}>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: '#FF9D9D', marginBottom: 16 }}>
             Condição Geral
           </Text>
           <View
             style={{
               borderWidth: 1,
-              borderColor: '#E8E6E0',
+              borderColor: '#E3E3E6',
               backgroundColor: 'white',
               overflow: 'hidden',
             }}
@@ -590,7 +601,7 @@ export default function SkinResult() {
                   padding: 16,
                   borderRightWidth: 1,
                   borderBottomWidth: 1,
-                  borderColor: '#E8E6E0',
+                  borderColor: '#E3E3E6',
                 }}
               >
                 <Text
@@ -613,7 +624,7 @@ export default function SkinResult() {
                   flex: 1,
                   padding: 16,
                   borderBottomWidth: 1,
-                  borderColor: '#E8E6E0',
+                  borderColor: '#E3E3E6',
                 }}
               >
                 <Text
@@ -639,7 +650,7 @@ export default function SkinResult() {
                   flex: 1,
                   padding: 16,
                   borderRightWidth: 1,
-                  borderColor: '#E8E6E0',
+                  borderColor: '#E3E3E6',
                 }}
               >
                 <Text
@@ -681,7 +692,7 @@ export default function SkinResult() {
         {result.prioridade_clinica ? (
           <View
             style={{
-              backgroundColor: '#fb7b6b',
+              backgroundColor: '#FF9D9D',
               borderRadius: 16,
               marginHorizontal: 20,
               marginBottom: 32,
@@ -762,9 +773,9 @@ export default function SkinResult() {
                 </Text>
                 {pontosFracosArr.map((item, i) => (
                   <View key={i}>
-                    {i > 0 ? <View style={{ height: 1, backgroundColor: '#F0F0F0' }} /> : null}
+                    {i > 0 ? <View style={{ height: 1, backgroundColor: '#E3E3E6' }} /> : null}
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 14 }}>
-                      <Text style={{ fontSize: 16, color: '#FB7B6B', fontWeight: '700', lineHeight: 22 }}>
+                      <Text style={{ fontSize: 16, color: '#FF9D9D', fontWeight: '700', lineHeight: 22 }}>
                         —
                       </Text>
                       <Text style={{ flex: 1, fontSize: 15, color: '#1A1A1A', lineHeight: 22 }}>
@@ -809,7 +820,7 @@ export default function SkinResult() {
                         padding: 16,
                         marginRight: 12,
                         borderWidth: 1,
-                        borderColor: '#F0EDE8',
+                        borderColor: '#E3E3E6',
                       }}
                     >
                       <View
@@ -817,14 +828,14 @@ export default function SkinResult() {
                           width: 36,
                           height: 36,
                           borderRadius: 20,
-                          backgroundColor: '#fb7b6b',
+                          backgroundColor: '#FF9D9D',
                           justifyContent: 'center',
                           alignItems: 'center',
                         }}
                       >
                         {skinStrengthIcons[item.icon]}
                       </View>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1D3A44', marginTop: 10, marginBottom: 6 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#1A1A1A', marginTop: 10, marginBottom: 6 }}>
                         {item.title}
                       </Text>
                       <Text style={{ fontSize: 13, color: '#666', lineHeight: 18 }}>{item.body}</Text>
@@ -847,7 +858,7 @@ export default function SkinResult() {
                 </Text>
                 {pontosFortesArr.map((item, i) => (
                   <View key={i}>
-                    {i > 0 ? <View style={{ height: 1, backgroundColor: '#F0F0F0' }} /> : null}
+                    {i > 0 ? <View style={{ height: 1, backgroundColor: '#E3E3E6' }} /> : null}
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 14 }}>
                       <Text style={{ fontSize: 16, color: '#4CAF50', fontWeight: '700', lineHeight: 22 }}>
                         ✓
@@ -953,6 +964,52 @@ export default function SkinResult() {
 
         </View>
       </Animated.ScrollView>
+
+      {/* Card-promessa flutuante: rotina atualizando após o 1º scan in-app. Sem overlay
+          escuro — o conteúdo atrás continua visível; o card só flutua por cima. Tokens
+          reais: card/texto da própria skin-result; sombra/botão do loading-dentro-app. */}
+      {showRoutineCard && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, zIndex: 50,
+        }}>
+          <View style={{
+            width: '100%',
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            padding: 20,
+            shadowColor: '#FF9D9D',
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: 0.28,
+            shadowRadius: 28,
+            elevation: 10,
+          }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#1A1A1A', textAlign: 'center', marginBottom: 8 }}>
+              Atualizando sua rotina
+            </Text>
+            <Text style={{ fontSize: 15, color: '#1A1A1A', lineHeight: 23, textAlign: 'center', marginBottom: 20 }}>
+              Estamos atualizando sua rotina com base neste novo scan.
+            </Text>
+            <TouchableOpacity
+              onPress={() => { haptics.tap(); setShowRoutineCard(false); }}
+              style={{
+                backgroundColor: '#FF9D9D',
+                borderRadius: 100,
+                height: 60,
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#FF9D9D',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.45,
+                shadowRadius: 16,
+                elevation: 8,
+              }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '700', color: '#FFFFFF' }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

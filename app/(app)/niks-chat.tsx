@@ -626,6 +626,23 @@ type HistoryConversation = {
   relativeTime: string
 }
 
+// ── Coach protocol suggestion (card de aprovação — Bloco 3) ───────────────────
+type ProposedChanges = {
+  action?: string
+  period?: string
+  step_name?: string
+  ingredient?: string
+  instruction?: string | null
+  schedule_days?: string[] | null
+  replaces?: string | null
+}
+type CoachSuggestion = {
+  id: string
+  reason: string
+  proposed_changes: ProposedChanges
+  status: 'pending' | 'applied' | 'rejected' | 'expired' | 'approved'
+}
+
 // ── Message type ──────────────────────────────────────────────────────────────
 type Message = {
   id: string
@@ -633,6 +650,168 @@ type Message = {
   content: string
   isStreaming?: boolean
   imageUris?: string[]
+  suggestion?: CoachSuggestion
+}
+
+// Frase-gatilho (visível — o bloco [[PROTOCOL_PATCH]] já foi cortado no servidor).
+// Só quando ela aparece o app procura a sugestão pendente que o servidor acabou de criar.
+// Duas frases-gatilho (inclusão/substituição e remoção). O poll do card procura
+// qualquer uma no texto visível — o bloco já foi cortado no servidor.
+const TRIGGER_PHRASES = [
+  'posso incluir isso no seu protocolo?',
+  'posso remover isso do seu protocolo?',
+]
+const APPROVE_URL = 'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/approve-coach-protocol-change'
+
+// Lê a sugestão pendente da conversa (escopada + 24h no servidor → sempre 0 ou 1).
+async function fetchPendingSuggestion(conversationId: string): Promise<CoachSuggestion | null> {
+  const { data } = await supabase
+    .from('coach_protocol_suggestions')
+    .select('id, reason, proposed_changes, status')
+    .eq('conversation_id', conversationId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return (data as CoachSuggestion | null) ?? null
+}
+
+// Mesmo padrão de aquisição de token do sendMessage: só renova perto de expirar.
+async function getAccessToken(): Promise<string | null> {
+  try {
+    const { data: { session: current } } = await supabase.auth.getSession()
+    const expiresAt = current?.expires_at ?? 0
+    const nowSecs = Math.floor(Date.now() / 1000)
+    if (current?.access_token && expiresAt - nowSecs > 300) return current.access_token
+    const { data: refreshed, error } = await supabase.auth.refreshSession()
+    return (!error && refreshed.session?.access_token) ? refreshed.session.access_token : (current?.access_token ?? null)
+  } catch {
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token ?? null
+  }
+}
+
+// Chama a Edge Function approve-coach-protocol-change. Contrato REAL do endpoint:
+// { suggestion_id, approved } + Bearer JWT (o user_id sai do token, não do corpo).
+async function approveProtocolChange(
+  suggestionId: string,
+  approved: boolean,
+): Promise<{ ok: boolean; action?: string; protocol?: any }> {
+  const token = await getAccessToken()
+  if (!token) return { ok: false }
+  try {
+    const resp = await fetch(APPROVE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ suggestion_id: suggestionId, approved }),
+    })
+    const data = await resp.json().catch(() => ({} as any))
+    if (!resp.ok) {
+      console.warn('approveProtocolChange: falhou', resp.status, JSON.stringify(data))
+      return { ok: false, action: data?.action }
+    }
+    return { ok: true, action: data?.action, protocol: data?.protocol }
+  } catch {
+    return { ok: false }
+  }
+}
+
+// Resumo legível do proposed_changes para o card.
+function formatChangeSummary(pc: ProposedChanges): string {
+  const verbo = pc.action === 'add' ? 'Incluir' : pc.action === 'remove' ? 'Remover' : pc.action === 'replace' ? 'Trocar por' : 'Ajustar'
+  const periodo = pc.period === 'am' ? 'rotina da manhã' : pc.period === 'pm' ? 'rotina da noite' : 'sua rotina'
+  const item = (pc.ingredient || pc.step_name || 'passo').trim()
+  const dias = Array.isArray(pc.schedule_days) && pc.schedule_days.length ? ` (${pc.schedule_days.join('/')})` : ''
+  return `${verbo} ${item}${dias} — ${periodo}`
+}
+
+// ── ProtocolApprovalCard ──────────────────────────────────────────────────────
+function ProtocolApprovalCard({
+  suggestion, onDecide, fBold, fSemi, fReg,
+}: {
+  suggestion: CoachSuggestion
+  onDecide: (approved: boolean) => Promise<{ ok: boolean; action?: string }>
+  fBold?: string; fSemi?: string; fReg?: string
+}) {
+  const [submitting, setSubmitting] = useState<null | 'approve' | 'reject'>(null)
+  const [failed, setFailed] = useState(false)
+
+  const decide = async (approved: boolean) => {
+    haptics.action()
+    setSubmitting(approved ? 'approve' : 'reject')
+    setFailed(false)
+    const res = await onDecide(approved)
+    setSubmitting(null)
+    if (!res.ok && res.action !== 'expired') setFailed(true)
+  }
+
+  if (suggestion.status !== 'pending') {
+    const label = suggestion.status === 'applied' ? 'Aprovado ✓'
+      : suggestion.status === 'rejected' ? 'Recusado'
+      : suggestion.status === 'expired' ? 'Essa sugestão expirou'
+      : 'Resolvido'
+    return (
+      <View style={{
+        alignSelf: 'flex-start', maxWidth: '92%', marginLeft: 40,
+        backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BD, borderRadius: 18,
+        paddingVertical: 14, paddingHorizontal: 18,
+      }}>
+        <Text style={{ fontFamily: fSemi, fontSize: 13, letterSpacing: -0.2, color: INK_MUTE }}>{label}</Text>
+      </View>
+    )
+  }
+
+  return (
+    <View style={{
+      alignSelf: 'flex-start', maxWidth: '92%', marginLeft: 40,
+      backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BD, borderRadius: 18,
+      paddingVertical: 16, paddingHorizontal: 18,
+    }}>
+      <Text style={{ fontFamily: fBold, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', color: CORAL, marginBottom: 8 }}>
+        Sugestão para seu protocolo
+      </Text>
+      <Text style={{ fontFamily: fSemi, fontSize: 14, lineHeight: 19, letterSpacing: -0.3, color: INK, marginBottom: 6 }}>
+        {formatChangeSummary(suggestion.proposed_changes)}
+      </Text>
+      {!!suggestion.reason && (
+        <Text style={{ fontFamily: fReg, fontSize: 13, lineHeight: 18, letterSpacing: -0.2, color: INK_SOFT }}>
+          {suggestion.reason}
+        </Text>
+      )}
+      {failed && (
+        <Text style={{ fontFamily: fReg, fontSize: 12, color: '#C0392B', marginTop: 8 }}>
+          Não consegui registrar agora. Tenta de novo.
+        </Text>
+      )}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+        <TouchableOpacity onPress={() => decide(true)} disabled={submitting !== null} activeOpacity={0.9} style={{ flex: 1 }}>
+          <LinearGradient
+            colors={RED_GRAD}
+            start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }}
+            style={{ height: 44, borderRadius: 100, alignItems: 'center', justifyContent: 'center', opacity: submitting !== null ? 0.6 : 1 }}
+          >
+            <Text style={{ fontFamily: fBold, fontSize: 14, color: '#fff' }}>
+              {submitting === 'approve' ? 'Aprovando…' : 'Aprovar'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => decide(false)}
+          disabled={submitting !== null}
+          activeOpacity={0.85}
+          style={{ flex: 1, height: 44, borderRadius: 100, borderWidth: 1, borderColor: CARD_BD, alignItems: 'center', justifyContent: 'center', opacity: submitting !== null ? 0.6 : 1 }}
+        >
+          <Text style={{ fontFamily: fSemi, fontSize: 14, color: INK_SOFT }}>
+            {submitting === 'reject' ? 'Recusando…' : 'Recusar'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
@@ -760,6 +939,7 @@ export default function NiksChat() {
       }))
       setConversationTime(msgs[0].created_at)
       setMode('active')
+      void attachPendingToLast(chatData.conversationId)
     } else {
       setMessages([])
       setMode('empty')
@@ -771,6 +951,55 @@ export default function NiksChat() {
     setMode('empty')
     setMessages([])
     setConversationTime(null)
+  }
+
+  // Anexa a sugestão pendente da conversa à última mensagem da NIKS (ao recarregar /
+  // trocar de aba) — senão o card some. Escopado por conversa → 0 ou 1.
+  const attachPendingToLast = async (convId: string) => {
+    const sug = await fetchPendingSuggestion(convId)
+    if (!sug) return
+    setMessages(prev => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].role === 'assistant') {
+          const copy = [...prev]
+          copy[i] = { ...copy[i], suggestion: sug }
+          return copy
+        }
+      }
+      return prev
+    })
+  }
+
+  // Corrida: a sugestão nasce no waitUntil do servidor, que pode terminar DEPOIS do
+  // onload. Poll curto até aparecer; se esgotar, não há card (recusa legítima do
+  // gate duplo / bloco inválido) — comportamento correto.
+  const hydrateSuggestion = async (convId: string, messageId: string) => {
+    for (let i = 0; i < 6; i++) {
+      const sug = await fetchPendingSuggestion(convId)
+      if (sug) {
+        setMessages(prev => prev.map(m => (m.id === messageId ? { ...m, suggestion: sug } : m)))
+        return
+      }
+      await new Promise(r => setTimeout(r, 700))
+    }
+  }
+
+  const handleSuggestionDecision = async (
+    messageId: string, suggestionId: string, approved: boolean,
+  ): Promise<{ ok: boolean; action?: string }> => {
+    const res = await approveProtocolChange(suggestionId, approved)
+    setMessages(prev => prev.map(m => {
+      if (m.id !== messageId || !m.suggestion) return m
+      let status = m.suggestion.status
+      if (res.ok) status = approved ? 'applied' : 'rejected'
+      else if (res.action === 'expired') status = 'expired'
+      return { ...m, suggestion: { ...m.suggestion, status } }
+    }))
+    // ── Bloco 4 (NÃO implementar agora) — ponto de integração da tela de Rotina ──
+    // Em res.ok && approved && res.protocol: mapear rotina_am→morning / rotina_pm→night,
+    // chamar setProtocolResult(...) e invalidateCache(`protocolo:${userId}`) para a
+    // Rotina refletir a mudança (o store persistido tem precedência sobre a tabela).
+    return { ok: res.ok, action: res.action }
   }
 
   const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
@@ -880,6 +1109,12 @@ export default function NiksChat() {
       // A conversa cresceu no banco — marca o cache como velho para que a próxima
       // entrada na aba busque o histórico atualizado em vez de servir o antigo.
       if (cachedUserId) invalidateCache(`chat:${cachedUserId}`)
+      // Se a NIKS propôs (frase-gatilho no texto visível), busca a sugestão que o
+      // servidor acabou de criar e ancora o card à mensagem dela.
+      const loweredResp = xhr.responseText.toLowerCase()
+      if (activeConvId && TRIGGER_PHRASES.some(p => loweredResp.includes(p))) {
+        void hydrateSuggestion(activeConvId, assistantMsgId)
+      }
     }
 
     xhr.onerror = () => {
@@ -908,6 +1143,7 @@ export default function NiksChat() {
       message: text,
       clientMessageId,
       images: images?.map(i => ({ base64: i.base64, mimeType: i.mimeType })),
+      supportsProtocolCard: true,
     }))
   }
 
@@ -1062,6 +1298,7 @@ export default function NiksChat() {
       }
     }))
     setMode('active')
+    void attachPendingToLast(convId)
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100)
   }
 
@@ -1201,9 +1438,18 @@ export default function NiksChat() {
                   return <TypingDots key={m.id} />
                 }
                 return (
-                  <NiksMessage key={m.id} fReg={fReg} streaming={m.isStreaming}>
-                    {m.content}
-                  </NiksMessage>
+                  <View key={m.id} style={{ gap: 10 }}>
+                    <NiksMessage fReg={fReg} streaming={m.isStreaming}>
+                      {m.content}
+                    </NiksMessage>
+                    {m.suggestion && (
+                      <ProtocolApprovalCard
+                        suggestion={m.suggestion}
+                        onDecide={(approved) => handleSuggestionDecision(m.id, m.suggestion!.id, approved)}
+                        fBold={fBold} fSemi={fSemi} fReg={fReg}
+                      />
+                    )}
+                  </View>
                 )
               })}
             </ScrollView>

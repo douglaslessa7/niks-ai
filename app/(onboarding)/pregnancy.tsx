@@ -6,14 +6,20 @@ import { ChevronLeft, Check } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useFonts } from 'expo-font';
+import {
+  Nunito_800ExtraBold,
+  Nunito_700Bold,
+  Nunito_600SemiBold,
+  Nunito_400Regular,
+} from '@expo-google-fonts/nunito';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_HAIR = 'rgba(29,58,68,0.10)';
-const CORAL = '#FB7B6B';
-const CORAL_DEEP = '#E5654F';
+const DEEP = '#121212';
+const DEEP_SOFT = '#515151';
+const DEEP_HAIR = 'rgba(18,18,18,0.10)';
+const CORAL = '#FF9D9D';
+const CORAL_DEEP = '#F2808E';
 const CREAM = '#FFFFFF';
 
 const STEP = 2;
@@ -30,8 +36,16 @@ const OPTIONS: { label: string; value: PregnancyStatus }[] = [
 
 export default function Pregnancy() {
   const [fontsLoaded] = useFonts({
-    'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
+    Nunito_800ExtraBold,
+    Nunito_700Bold,
+    Nunito_600SemiBold,
+    Nunito_400Regular,
   });
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
+  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+
   const [selected, setSelected] = useState<PregnancyStatus | null>(null);
   const { setOnboardingField } = useAppStore();
   const { track } = useMixpanel();
@@ -50,7 +64,7 @@ export default function Pregnancy() {
   const handleContinue = () => {
     haptics.action();
     track('onboarding_step_completed', { step_name: 'pregnancy' });
-    router.push('/(onboarding)/goal');
+    router.push('/(onboarding)/concerns');
   };
 
   return (
@@ -79,7 +93,7 @@ export default function Pregnancy() {
           </TouchableOpacity>
           <View style={{
             flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(29,58,68,0.08)', overflow: 'hidden',
+            backgroundColor: 'rgba(18,18,18,0.06)', overflow: 'hidden',
           }}>
             <View style={{
               position: 'absolute', top: 0, left: 0, bottom: 0,
@@ -96,8 +110,8 @@ export default function Pregnancy() {
             flexDirection: 'row', alignItems: 'center', gap: 8,
             paddingVertical: 7, paddingLeft: 10, paddingRight: 12,
             borderRadius: 100,
-            backgroundColor: 'rgba(251,123,107,0.10)',
-            borderWidth: 0.5, borderColor: 'rgba(251,123,107,0.30)',
+            backgroundColor: 'rgba(255,157,157,0.10)',
+            borderWidth: 0.5, borderColor: 'rgba(255,157,157,0.30)',
             alignSelf: 'flex-start',
             marginBottom: 18,
           }}>
@@ -109,7 +123,7 @@ export default function Pregnancy() {
               shadowRadius: 4,
             }} />
             <Text style={{
-              fontSize: 10, fontWeight: '700', color: CORAL_DEEP,
+              fontFamily: fXBold, fontSize: 10, fontWeight: '700', color: CORAL_DEEP,
               letterSpacing: 2.8, textTransform: 'uppercase',
             }}>
               importante
@@ -118,13 +132,12 @@ export default function Pregnancy() {
 
           {/* Title */}
           <Text style={{
-            fontSize: 26, fontWeight: '700', color: DEEP,
+            fontFamily: fXBold, fontSize: 26, fontWeight: '800', color: DEEP,
             letterSpacing: -0.65, lineHeight: 31.2,
           }}>
             {'Alguns ativos do skincare precisam ser '}
             <Text style={{
-              fontFamily: fontsLoaded ? 'PlayfairDisplay-Italic' : undefined,
-              fontStyle: 'italic', fontWeight: '500', color: CORAL, letterSpacing: -0.7,
+              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -0.7,
             }}>
               evitados
             </Text>
@@ -133,7 +146,7 @@ export default function Pregnancy() {
 
           {/* Subtitle */}
           <Text style={{
-            marginTop: 12, fontSize: 14.5, lineHeight: 21.75,
+            fontFamily: fReg, marginTop: 12, fontSize: 14.5, lineHeight: 21.75,
             color: DEEP_SOFT, letterSpacing: -0.1,
           }}>
             Selecione a que se aplica a você.
@@ -167,7 +180,7 @@ export default function Pregnancy() {
                 }}
               >
                 <Text style={{
-                  flex: 1, fontSize: 16, fontWeight: '500', color: DEEP,
+                  flex: 1, fontFamily: fReg, fontSize: 16, fontWeight: '500', color: DEEP,
                   letterSpacing: -0.2, lineHeight: 19.5,
                 }}>
                   {label}
@@ -192,7 +205,7 @@ export default function Pregnancy() {
             activeOpacity={selected ? 0.85 : 1}
             style={{
               height: 60, borderRadius: 100,
-              backgroundColor: selected ? CORAL : 'rgba(29,58,68,0.13)',
+              backgroundColor: selected ? CORAL : 'rgba(18,18,18,0.13)',
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
               shadowColor: CORAL,
               shadowOffset: { width: 0, height: selected ? 14 : 0 },
@@ -201,13 +214,13 @@ export default function Pregnancy() {
             }}
           >
             <Text style={{
-              fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
-              color: selected ? '#FFFFFF' : 'rgba(29,58,68,0.35)',
+              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
+              color: selected ? '#FFFFFF' : 'rgba(18,18,18,0.35)',
             }}>
               Continuar
             </Text>
             <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-              <Path d="M5 12h14M13 6l6 6-6 6" stroke={selected ? '#fff' : 'rgba(29,58,68,0.35)'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              <Path d="M5 12h14M13 6l6 6-6 6" stroke={selected ? '#fff' : 'rgba(18,18,18,0.35)'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
           </TouchableOpacity>
         </View>

@@ -8,6 +8,7 @@ export async function generateAndSaveProtocol({
   onboardingData,
   skinScanId,
   userId,
+  regenerate,
   onSuccess,
   onFinally,
 }: {
@@ -15,6 +16,7 @@ export async function generateAndSaveProtocol({
   onboardingData: OnboardingData;
   skinScanId: string | null;
   userId: string;
+  regenerate?: boolean;
   onSuccess: (result: ProtocolResult) => void;
   onFinally: () => void;
 }) {
@@ -77,6 +79,7 @@ export async function generateAndSaveProtocol({
       rotina_am: data.morning,
       rotina_pm: data.night,
       dicas,
+      updated_at: new Date().toISOString(), // linha nova é inequivocamente a mais recente
     });
 
     // Encadeia a recomendação de produtos reais. A função é auto-guardada
@@ -93,7 +96,7 @@ export async function generateAndSaveProtocol({
             'apikey': ANON_KEY,
             'Authorization': `Bearer ${ANON_KEY}`,
           },
-          body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null }),
+          body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null, regenerate: regenerate ?? false }),
         }
       );
     } catch (recErr) {

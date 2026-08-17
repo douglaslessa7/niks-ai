@@ -27,7 +27,7 @@ export async function extractAndSave(
   try {
     const prompt = `Analise esta troca de mensagens entre usuária e coach de skincare.
 Extraia APENAS fatos duradouros e clinicamente relevantes sobre a usuária.
-Não extraia preferências temporárias, estados de humor ou informações já presentes no perfil de onboarding (tipo de pele, idade, gênero, objetivo).
+Não extraia preferências temporárias, estados de humor ou informações já presentes no perfil de onboarding (tipo de pele, idade, gênero).
 Retorne SOMENTE JSON válido, sem markdown, sem texto antes ou depois:
 
 {

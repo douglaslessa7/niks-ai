@@ -1,6 +1,171 @@
+import { detectTargetActive } from '../_shared/protocol-write.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// ── Camada de validação determinística do protocolo gerado ─────────────────────────
+// Objetivo: o ativo declarado pela usuária (prescribed/complement) precisa constar como
+// PASSO, e dois ativos da mesma classe não podem coexistir no mesmo período. Reusa
+// detectTargetActive (fonte única) — não é um classificador novo. Toda falha degrada
+// para o texto original: protocolo imperfeito é melhor que nenhum protocolo.
+
+type Violation =
+  | { kind: 'CHECK1_CLASS_IGNORED'; molecule: string; klass: string }
+  | { kind: 'CHECK1_MOLECULE_SUBSTITUTED'; molecule: string; klass: string; substitute: string; period: 'AM' | 'PM' }
+  | { kind: 'CHECK2_CLASS_COLLISION'; klass: string; period: 'AM' | 'PM'; steps: string[] }
+
+type VLog = (reason: string, ctx?: Record<string, unknown>) => void
+
+// Enumera TODOS os ativos reconhecíveis na descrição (instrumentação), reusando
+// detectTargetActive num laço que remove a molécula já casada antes de repetir.
+function recognizeDeclaredActives(desc: string): { label: string; molecule: string }[] {
+  const out: { label: string; molecule: string }[] = []
+  let work = (desc || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  for (let i = 0; i < 6 && work.trim(); i++) {
+    const a = detectTargetActive('', work)
+    if (a.kind !== 'known' || !a.molecule || !a.label) break
+    if (out.some((o) => o.molecule === a.molecule)) break
+    out.push({ label: a.label, molecule: a.molecule })
+    work = work.replace(new RegExp(a.molecule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), ' ')
+  }
+  return out
+}
+
+// Ativos reconhecíveis nos passos de um período (só kind === 'known').
+function stepActives(steps: unknown): { label: string; molecule: string; name: string }[] {
+  if (!Array.isArray(steps)) return []
+  const out: { label: string; molecule: string; name: string }[] = []
+  for (const s of steps) {
+    const a = detectTargetActive(String(s?.name ?? ''), String(s?.ingredient ?? ''))
+    if (a.kind === 'known' && a.label && a.molecule) out.push({ label: a.label, molecule: a.molecule, name: String(s?.name ?? '') })
+  }
+  return out
+}
+
+// Roda as duas checagens. logInstr=false na revalidação, para não duplicar instrumentação.
+function collectViolations(proto: any, type: unknown, desc: unknown, vlog: VLog, logInstr: boolean): Violation[] {
+  const violations: Violation[] = []
+  const amAct = stepActives(proto?.morning)
+  const pmAct = stepActives(proto?.night)
+  const allAct = [...amAct, ...pmAct]
+
+  // Checagem 1 — molécula declarada presente como passo (só prescribed/complement).
+  if ((type === 'prescribed' || type === 'complement') && desc) {
+    const recognized = recognizeDeclaredActives(String(desc))
+    if (logInstr && recognized.length > 1) vlog('DECLARED_MULTIPLE_ACTIVES', { actives: recognized })
+    if (recognized.length === 0) {
+      if (logInstr) vlog('DECLARED_ACTIVE_UNRECOGNIZED', { desc })
+    } else {
+      const d = recognized[0] // usa só o 1º ativo (limitação registrada no plano)
+      if (!allAct.some((x) => x.molecule === d.molecule)) {
+        const sub = allAct.find((x) => x.label === d.label)
+        if (sub) {
+          const period: 'AM' | 'PM' = amAct.some((x) => x.label === d.label) ? 'AM' : 'PM'
+          violations.push({ kind: 'CHECK1_MOLECULE_SUBSTITUTED', molecule: d.molecule, klass: d.label, substitute: sub.molecule, period })
+        } else {
+          violations.push({ kind: 'CHECK1_CLASS_IGNORED', molecule: d.molecule, klass: d.label })
+        }
+      }
+    }
+  }
+
+  // Checagem 2 — colisão de classe no mesmo período (todos os tipos).
+  for (const [period, acts] of [['AM', amAct], ['PM', pmAct]] as const) {
+    const byLabel: Record<string, string[]> = {}
+    for (const x of acts) (byLabel[x.label] ||= []).push(x.name)
+    for (const [klass, names] of Object.entries(byLabel)) {
+      if (names.length >= 2) violations.push({ kind: 'CHECK2_CLASS_COLLISION', klass, period, steps: names })
+    }
+  }
+
+  return violations
+}
+
+function correctiveMessage(vs: Violation[]): string {
+  const lines = vs.map((v) =>
+    v.kind === 'CHECK1_MOLECULE_SUBSTITUTED'
+      ? `- A usuária JÁ USA ${v.molecule} (classe ${v.klass}). O protocolo trouxe ${v.substitute} no período ${v.period}, da MESMA classe — isso NÃO substitui o que ela já usa, DOBRA o ativo. Inclua ${v.molecule} como passo e não prescreva um segundo ${v.klass}.`
+      : v.kind === 'CHECK1_CLASS_IGNORED'
+      ? `- A usuária declarou usar ${v.molecule} e ele NÃO aparece como passo. Inclua ${v.molecule} como um passo do protocolo (não só citado na instrução).`
+      : `- Dois ativos da classe ${v.klass} no período ${v.period} (${v.steps.join(', ')}). Mantenha só UM ativo dessa classe por período; se ambos forem necessários, alterne por dias (sufixo de dias no campo ingredient).`
+  )
+  return `O protocolo que você acabou de gerar tem problemas clínicos objetivos que precisam ser corrigidos:\n${lines.join('\n')}\n\nReescreva o protocolo COMPLETO no MESMO formato JSON estrito (mesmos campos), corrigindo apenas os pontos acima e mantendo todo o resto. Retorne apenas JSON válido.`
+}
+
+// Segunda chamada corretiva. MESMO modelo/params da chamada principal, com timeout.
+async function correctiveCall(systemPrompt: string, userMessage: string, firstText: string, corrective: string): Promise<string | null> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 60000)
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4.1-mini',
+        max_completion_tokens: 8192,
+        stream: false,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+          { role: 'assistant', content: firstText },
+          { role: 'user', content: corrective },
+        ],
+      }),
+      signal: controller.signal,
+    })
+    if (!r.ok) return null
+    const d = await r.json()
+    return d?.choices?.[0]?.message?.content ?? null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function validateAndMaybeFix(text: string, onboardingData: any, systemPrompt: string, userMessage: string, vlog: VLog): Promise<string> {
+  let proto: any
+  try {
+    proto = JSON.parse(text)
+  } catch {
+    vlog('PARSE_FAILED')
+    return text // status quo: cliente faz o parse e trata
+  }
+
+  const type = onboardingData?.skincare_routine_type
+  const desc = onboardingData?.skincare_routine_description
+
+  let violations: Violation[]
+  try {
+    violations = collectViolations(proto, type, desc, vlog, true)
+  } catch (e) {
+    vlog('VALIDATION_ERROR', { error: String(e) })
+    return text
+  }
+
+  if (violations.length === 0) return text
+
+  vlog('RETRY_TRIGGERED', { violations })
+  const fixed = await correctiveCall(systemPrompt, userMessage, text, correctiveMessage(violations))
+  if (!fixed) {
+    vlog('RETRY_CALL_FAILED') // rede/timeout/não-ok → grava a 1ª resposta
+    return text
+  }
+
+  try {
+    const remaining = collectViolations(JSON.parse(fixed), type, desc, vlog, false)
+    vlog(remaining.length === 0 ? 'RETRY_RECOVERED' : 'RETRY_STILL_FAILING', remaining.length ? { violations: remaining } : {})
+    return fixed // grava a 2ª mesmo se ainda imperfeita
+  } catch {
+    vlog('RETRY_PARSE_FAILED') // 2ª ilegível → volta para a 1ª (que é parseável)
+    return text
+  }
 }
 
 Deno.serve(async (req) => {
@@ -152,7 +317,7 @@ O campo waitTime contém SOMENTE tempo de espera real ("5–10 min", "10–20 mi
 5. Hidratante/barreira (ceramidas, emoliente rico conforme tipo de pele e clima)
 6. Oclusivo (somente se barreira comprometida, pele muito seca, ou clima seco/frio)
 
-Elimine passos sem justificativa clínica real. Um protocolo enxuto e focado supera um protocolo genérico com passos desnecessários. Para o passo de hidratante AM: inclua se a pele for seca, normal ou mista-seca, se a barreira estiver comprometida, ou se o FPS escolhido não tiver base hidratante suficiente. Omita apenas se a pele for oleosa/acneica E o FPS já suprir a hidratação necessária.
+Elimine passos sem justificativa clínica real. Um protocolo enxuto e focado supera um protocolo genérico com passos desnecessários. Essa regra NÃO se aplica aos ativos que a usuária já usa (\`skincare_routine_description\` com type \`'complement'\` ou \`'prescribed'\`) — eles são ponto fixo do protocolo e nunca são cortados por enxugamento. Para o passo de hidratante AM: inclua se a pele for seca, normal ou mista-seca, se a barreira estiver comprometida, ou se o FPS escolhido não tiver base hidratante suficiente. Omita apenas se a pele for oleosa/acneica E o FPS já suprir a hidratação necessária.
 
 ---
 
@@ -217,8 +382,6 @@ Os dados de \`onboardingData\` devem personalizar ativamente o protocolo. Não i
 
 **\`concerns\`**: use o array de preocupações para validar se o protocolo aborda CADA item listado. Se uma preocupação não estiver sendo tratada, justifique no \`introduction_warnings\`.
 
-**\`objetivo\`**: alinhe a escolha dos ativos ao objetivo declarado. Se objetivo = "manchas", priorize azelaico + vitamina C + SPF com óxido de ferro. Se objetivo = "acne", priorize BHA + retinol + niacinamida. Se objetivo = "glow", priorize vitamina C + AHA + hidratação.
-
 **\`sun_exposure\`**: se alta exposição solar → SPF com óxidos de ferro é OBRIGATÓRIO independente do fotótipo; mencionar reaplicação a cada 2h nos \`introduction_warnings\`. Se baixa exposição → SPF continua obrigatório mas com menor ênfase em reaplicação.
 
 **\`sunscreen\`**: se o usuário declarou que nunca usa protetor solar → o \`introduction_warnings\` DEVE conter alerta forte sobre a necessidade absoluta do SPF, especialmente se há HPI ou AHAs/retinoides no protocolo.
@@ -240,10 +403,10 @@ Os dados de \`onboardingData\` devem personalizar ativamente o protocolo. Não i
 **\`skincare_routine_type\`**:
 - \`'zero'\` → criar protocolo completamente do zero, sem considerar produtos existentes
 - \`'unsure'\` → criar protocolo do zero; se \`skincare_routine_description\` existir, usá-la apenas para evitar sobreposição de ativos, não para construir em torno dos produtos existentes
-- \`'complement'\` → ler \`skincare_routine_description\` com atenção; respeitar os produtos que já funcionam para o usuário; o protocolo deve COMPLEMENTAR o que já existe, não substituir; mencionar no \`introduction_warnings\` quais produtos existentes foram mantidos e onde se encaixam na rotina
-- \`'prescribed'\` → MÁXIMA PRIORIDADE: os produtos descritos em \`skincare_routine_description\` foram prescritos por dermatologista; o protocolo DEVE ser construído em torno deles; nunca contradizer ou substituir uma prescrição médica; mencionar no \`introduction_warnings\` que os produtos prescritos foram mantidos como base do protocolo e os novos ativos foram escolhidos para complementar sem conflito
+- \`'complement'\` → ler \`skincare_routine_description\` com atenção; os ativos e produtos que a usuária já usa DEVEM aparecer como PASSOS do protocolo, no período em que ela os usa, com nome próprio. Citar o produto apenas na \`instruction\`, no \`introduction_warnings\` ou no prognóstico NÃO cumpre essa regra — se não é um passo, para ela o produto sumiu da rotina. Os ativos novos que você acrescentar existem para completar o que falta, nunca para substituir o que já funciona; mencionar no \`introduction_warnings\` onde cada produto existente se encaixa na rotina
+- \`'prescribed'\` → MÁXIMA PRIORIDADE: os produtos descritos em \`skincare_routine_description\` foram prescritos por dermatologista. Cada um DEVE aparecer como PASSO do protocolo, com nome próprio, no período correto — citar na \`instruction\` ou no prognóstico não cumpre a regra. O protocolo é construído em torno deles; nunca contradizer, substituir ou omitir uma prescrição médica; mencionar no \`introduction_warnings\` que os produtos prescritos foram mantidos como base e que os novos ativos foram escolhidos para complementar sem conflito
 
-**\`skincare_routine_description\`**: texto livre descrito pelo usuário. Ler com atenção para identificar ativos em uso (ex: "vitamina C de manhã" → não duplicar vitamina C no protocolo AM), frequências (ex: "retinol 3x por semana" → ajustar cronograma para não conflitar) e produtos específicos.
+**\`skincare_routine_description\`**: texto livre descrito pelo usuário. Ler com atenção para identificar ativos em uso, frequências e produtos específicos. REGRA DE FAMÍLIA DE ATIVOS: cada ativo identificado entra como passo do protocolo, e nenhum outro ativo da MESMA FAMÍLIA pode ser acrescentado. As famílias são: retinoides (retinol, retinaldeído, tretinoína, adapaleno, HPR, hidroxipinacolona), AHAs (glicólico, lático, mandélico, PHA), BHA (salicílico, LHA), vitamina C e derivados (L-AA, SAP, MAP, ascorbil glucosídeo), niacinamida, ácido azelaico. Exemplos: ela usa adapaleno → o adapaleno é um passo do PM e nenhum retinol, retinaldeído ou tretinoína entra no protocolo; ela usa vitamina C de manhã → a vitamina C dela é um passo do AM e nenhum outro derivado de vitamina C é acrescentado. Prescrever um segundo ativo da mesma família não é alternar — é dobrar o mesmo ativo, com risco real de irritação. Para frequências declaradas ("retinol 3x por semana"), respeitar o que ela já faz no campo \`ingredient\` com o padrão de dias.
 
 ---
 
@@ -312,7 +475,7 @@ Schema obrigatório (respeite os nomes dos campos exatamente):
     const userMessage = `Ficha clínica (resultado do analyze-skin):
 ${JSON.stringify(scanResult, null, 2)}
 
-Dados do onboarding (perfil, objetivos, estilo de vida):
+Dados do onboarding (perfil, estilo de vida):
 ${JSON.stringify(onboardingData || {}, null, 2)}
 
 ${flags ? `FLAGS CRÍTICAS — APLIQUE OBRIGATORIAMENTE:\n${flags}\n` : ''}
@@ -373,7 +536,13 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
 
     const text = data.choices[0].message.content
 
-    return new Response(text, {
+    // Camada de validação determinística: garante que o ativo declarado entre como passo
+    // e que não haja dois ativos da mesma classe no mesmo período. Nunca deixa sem protocolo.
+    const vlog = (reason: string, ctx: Record<string, unknown> = {}) =>
+      console.warn('PROTOCOL_VALIDATION', JSON.stringify({ reason, ...ctx }))
+    const finalText = await validateAndMaybeFix(text, onboardingData, systemPrompt, userMessage, vlog)
+
+    return new Response(finalText, {
       headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
     })
   } catch (error) {

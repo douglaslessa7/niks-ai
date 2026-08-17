@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
+import { requestAppReview } from '../../lib/storeReview';
 
 // Tela de RESULTADO do scan de produto (fluxo da câmera → loading → aqui).
 // O layout inteiro vive em `components/product/ProductAnalysis` — o MESMO componente que o
@@ -19,7 +20,7 @@ export default function ProductResult() {
     <ProductAnalysis
       result={productScanResult}
       photoUri={photoUri}
-      onClose={() => router.replace('/(app)/recomendacao-produtos' as any)}
+      onClose={() => { requestAppReview(); router.replace('/(app)/recomendacao-produtos' as any); }}
       onRescan={() => router.replace('/(scan)/product-camera' as any)}
       rescanLabel={productScanResult?.status === 'precisa_foto' ? 'Escanear os ingredientes' : 'Escanear outro produto'}
     />
