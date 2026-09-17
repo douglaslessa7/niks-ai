@@ -566,8 +566,30 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
     const openaiUrl = 'https://api.openai.com/v1/chat/completions'
     const openaiKey = Deno.env.get('OPENAI_API_KEY')
 
-    let data: any = null
+    // ─────────────────────────────────────────────────────────────────────────
+    // Chaves que a UI (`results` / `skin-result`) consome e que o schema SEMPRE
+    // exige. Servem de teste de completude: relatório sem elas aparece pela metade
+    // na tela (região sem texto, "Oleosidade —", sem "Por onde começar") sem nenhum
+    // erro visível — o pior tipo de falha, porque parece que funcionou.
+    //
+    // ⚠️ Só entram aqui campos que o prompt manda preencher SEMPRE (os objetos vêm
+    // com `present: false` quando não há achado). Não incluir campo condicional —
+    // isso transformaria resposta boa em retentativa cara.
+    // ⚠️ Manter em sincronia com a mesma lista em `analyze-skin-app`.
+    // ─────────────────────────────────────────────────────────────────────────
+    const REQUIRED_KEYS = [
+      'skin_score', 'headline', 'skin_phototype', 'skin_type_sebaceous',
+      'skin_hydration', 'barrier_status', 'acne', 'pigmentacao', 'textura_poros',
+      'brilho_sebaceo', 'envelhecimento', 'pontos_fortes', 'pontos_fracos',
+      'prioridade_clinica',
+    ]
+    const missingKeys = (r: any): string[] =>
+      REQUIRED_KEYS.filter((k) => r?.[k] === undefined || r?.[k] === null)
+
+    let result: any = null          // melhor resposta obtida até aqui
+    let bestMissing: string[] = REQUIRED_KEYS
     let lastError = ''
+
     for (let attempt = 1; attempt <= 3; attempt++) {
       const response = await fetch(openaiUrl, {
         method: 'POST',
@@ -577,7 +599,11 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
         },
         body: JSON.stringify({
           model: 'gpt-5.4-mini',
-          max_completion_tokens: 4096,
+          // ⚠️ NÃO baixar. Teto de tokens de SAÍDA; nos modelos de raciocínio ele
+          // inclui os tokens de raciocínio. Com 4096, ~5% das análises voltavam
+          // CORTADAS no meio do JSON (paravam em `acne` e todo o resto do relatório
+          // sumia, sem erro nenhum). Medido no banco em ago/2026.
+          max_completion_tokens: 16000,
           stream: false,
           response_format: { type: 'json_object' },
           messages: [
@@ -593,28 +619,72 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
         }),
       })
 
-      data = await response.json()
+      const data = await response.json()
+
       const isUnavailable = !response.ok && (response.status === 503 || response.status === 500)
       if (isUnavailable) {
-        lastError = JSON.stringify(data)
+        lastError = `HTTP ${response.status}: ${JSON.stringify(data)}`
         if (attempt < 3) {
           await new Promise(resolve => setTimeout(resolve, 3000))
           continue
         }
+        break
       }
-      break
+
+      const choice = data?.choices?.[0]
+      if (!choice) {
+        lastError = `sem choices: ${JSON.stringify(data)}`
+        console.error(`[analyze-skin] tentativa ${attempt}: ${lastError}`)
+        if (attempt < 3) continue
+        break
+      }
+
+      // Observabilidade: é por aqui que se descobre truncamento sem depender do
+      // relato de uma usuária. `finish_reason: 'length'` = bateu no teto acima.
+      console.log(`[analyze-skin] tentativa ${attempt} · finish_reason=${choice.finish_reason} · usage=${JSON.stringify(data.usage ?? {})}`)
+
+      if (choice.finish_reason === 'length') {
+        lastError = 'resposta truncada (finish_reason=length)'
+        console.error(`[analyze-skin] tentativa ${attempt}: ${lastError}`)
+        if (attempt < 3) continue
+        break
+      }
+
+      let parsed: any
+      try {
+        parsed = JSON.parse(choice.message.content)
+      } catch (_e) {
+        lastError = 'JSON inválido na resposta do modelo'
+        console.error(`[analyze-skin] tentativa ${attempt}: ${lastError}`)
+        if (attempt < 3) continue
+        break
+      }
+
+      const missing = missingKeys(parsed)
+      if (missing.length < bestMissing.length) {
+        result = parsed
+        bestMissing = missing
+      }
+      if (missing.length === 0) break
+
+      lastError = `campos obrigatórios ausentes: ${missing.join(', ')}`
+      console.error(`[analyze-skin] tentativa ${attempt}: ${lastError}`)
+      // Retenta: relatório incompleto na tela é pior que uma chamada a mais.
     }
 
-    if (!data.choices || data.choices.length === 0) {
-      console.error('OpenAI returned no choices. Full response:', JSON.stringify(data))
+    if (!result) {
+      console.error(`[analyze-skin] falhou nas 3 tentativas. Último erro: ${lastError}`)
       return new Response(
         JSON.stringify({ error: 'Erro interno ao analisar a pele' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-
-    const rawText = data.choices[0].message.content
-    const result = JSON.parse(rawText)
+    if (bestMissing.length > 0) {
+      // Aceita a MENOS incompleta em vez de estourar erro: score + headline + acne já
+      // valem uma tela, e falhar aqui queimaria mais 3 chamadas no retry do cliente.
+      // O log acima é o que denuncia o problema.
+      console.error(`[analyze-skin] devolvendo resposta INCOMPLETA — ausentes: ${bestMissing.join(', ')}`)
+    }
 
     // Mapeamento de compatibilidade para campos que o app consome
     if (result.skin_type_sebaceous && !result.skin_type_detected) {

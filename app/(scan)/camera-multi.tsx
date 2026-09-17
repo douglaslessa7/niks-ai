@@ -13,6 +13,11 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
 import { captureRef } from 'react-native-view-shot';
+import { Image as ExpoImage } from 'expo-image';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withTiming, withSequence, withDelay, withSpring,
+  Easing, runOnJS, useReducedMotion,
+} from 'react-native-reanimated';
 import { useFonts } from 'expo-font';
 import {
   Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold, Nunito_400Regular,
@@ -45,6 +50,19 @@ const CORAL      = '#FF9D9D';
 const CARD_BD    = '#E3E3E6';
 const PLACEHOLDER = '#F3F3F4';
 
+// Geometria da pilha de miniaturas (espelha styles.stackWrap/stackCard) — é o
+// destino do voo da foto. Mudou o estilo da pilha, mude aqui junto.
+const STACK_LEFT   = 32;
+const STACK_BOTTOM = 56;
+const STACK_BOX    = 62;
+const STACK_CARD   = 56;
+const STACK_INSET  = 3;
+
+// Tempos da animação "foto voando para a pilha" (ms).
+const FLY_SETTLE = 110;  // foto congelada encolhe e vira cartão
+const FLY_HOLD   = 20;   // pausa: "tirei"
+const FLY_TRAVEL = 360;  // viagem até a pilha
+
 const MAX_SIDE = 1080;  // maior lado de cada foto guardada (memória: 6 fotos full estouram)
 const TARGET   = 2048;  // lado maior de cada colagem exportada, em PIXELS
 
@@ -56,18 +74,23 @@ type Step = {
   hint: string;
   short: string;                  // rótulo curto, usado sob as células da revisão
   turn?: 'left' | 'right';        // desenha a seta direcional (só nos perfis)
+  example: number;                // foto-modelo mostrada no círculo "Exemplo" (require)
+  exampleLabel: string;           // etiqueta rosa sob o círculo do exemplo
 };
 
 // Ordem = ordem de captura = ordem das células nas colagens.
 // Índices 0..3 → Layout A (2×2) · índices 4..5 → Layout B (2 perfis).
 // Textos sempre no FEMININO — o público do app é feminino.
+// ⚠️ Exemplos dos PERFIS seguem a SETA e o preview espelhado: em `perfil_esq` (seta ←)
+// o nariz da modelo aponta para a ESQUERDA da tela. Trocar uma foto = substituir o
+// .jpg em assets/scan-examples/ (360×360, nome sem acento).
 const STEPS: Step[] = [
-  { id: 'neutra',     title: 'Expressão neutra', short: 'Neutra',   hint: 'Olhe para a câmera com o rosto relaxado, sem sorrir.' },
-  { id: 'sorriso',    title: 'Sorrindo',         short: 'Sorrindo', hint: 'Dê um sorriso aberto, mostrando os dentes.' },
-  { id: 'surpresa',   title: 'Surpresa',         short: 'Surpresa', hint: 'Faça cara de surpresa: levante bem as sobrancelhas e abra os olhos.' },
-  { id: 'brava',      title: 'Brava',            short: 'Brava',    hint: 'Faça cara de brava: franza a testa e junte as sobrancelhas.' },
-  { id: 'perfil_esq', title: 'Perfil esquerdo',  short: 'Perfil esq.', hint: 'Vire o rosto para a sua esquerda, sem mexer os ombros.', turn: 'left' },
-  { id: 'perfil_dir', title: 'Perfil direito',   short: 'Perfil dir.', hint: 'Vire o rosto para a sua direita, sem mexer os ombros.',  turn: 'right' },
+  { id: 'neutra',     title: 'Expressão neutra', short: 'Neutra',   hint: 'Olhe para a câmera com o rosto relaxado, sem sorrir.', example: require('../../assets/scan-examples/neutra.jpg'), exampleLabel: 'Neutro' },
+  { id: 'sorriso',    title: 'Sorrindo',         short: 'Sorrindo', hint: 'Dê um sorriso aberto, mostrando os dentes.', example: require('../../assets/scan-examples/sorriso.jpg'), exampleLabel: 'Sorrindo' },
+  { id: 'surpresa',   title: 'Surpresa',         short: 'Surpresa', hint: 'Faça cara de surpresa: levante bem as sobrancelhas e abra os olhos.', example: require('../../assets/scan-examples/surpresa.jpg'), exampleLabel: 'Surpresa' },
+  { id: 'brava',      title: 'Brava',            short: 'Brava',    hint: 'Faça cara de brava: franza a testa e junte as sobrancelhas.', example: require('../../assets/scan-examples/brava.jpg'), exampleLabel: 'Brava' },
+  { id: 'perfil_esq', title: 'Perfil esquerdo',  short: 'Perfil esq.', hint: 'Vire o rosto para a sua esquerda, sem mexer os ombros.', turn: 'left', example: require('../../assets/scan-examples/perfil_esq.jpg'), exampleLabel: 'Esquerda' },
+  { id: 'perfil_dir', title: 'Perfil direito',   short: 'Perfil dir.', hint: 'Vire o rosto para a sua direita, sem mexer os ombros.',  turn: 'right', example: require('../../assets/scan-examples/perfil_dir.jpg'), exampleLabel: 'Direita' },
 ];
 
 const TOTAL = STEPS.length;
@@ -154,23 +177,191 @@ export default function CameraMulti() {
     });
   };
 
+  // ── Animação: flash + foto voando para a pilha ─────────────────────────────
+  // A foto recém-tirada congela por cima da câmera, encolhe num cartão e voa em
+  // curva até a pilha do canto inferior esquerdo. Só ao POUSAR ela entra em
+  // `photos` — é aí que o contador sobe e a instrução troca para o próximo passo,
+  // então a usuária lê a sequência "tirei → foi guardada → próxima".
+  // ⚠️ O mutex `capturingRef` fica preso durante o voo e é solto no pouso.
+  const reduceMotion = useReducedMotion();
+  const boxRef = useRef({ w: 0, h: 0 }); // tamanho da tela (onLayout do container)
+  const [flying, setFlying] = useState<
+    { id: number; target: number; uri: string; mirrored: boolean; isLast: boolean } | null
+  >(null);
+  const flyingRef = useRef(flying);
+  flyingRef.current = flying;
+  const flightIdRef = useRef(0);
+  const flightStartedRef = useRef(-1);
+  const finalUriRef = useRef(new Map<number, Promise<string>>()); // id do voo → foto reduzida
+
+  const flash = useSharedValue(0);
+  const fcx = useSharedValue(0);  // centro X do cartão
+  const fcy = useSharedValue(0);  // centro Y do cartão
+  const fw = useSharedValue(0);
+  const fh = useSharedValue(0);
+  const fr = useSharedValue(0);   // borderRadius
+  const fb = useSharedValue(0);   // borderWidth
+  const frot = useSharedValue(0);
+  const fop = useSharedValue(0);
+  const stackScale = useSharedValue(1);
+  const badgeScale = useSharedValue(1);
+
+  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
+  const flyStyle = useAnimatedStyle(() => ({
+    left: fcx.value - fw.value / 2,
+    top: fcy.value - fh.value / 2,
+    width: fw.value,
+    height: fh.value,
+    borderRadius: fr.value,
+    borderWidth: fb.value,
+    opacity: fop.value,
+    transform: [{ rotate: `${frot.value}deg` }],
+  }));
+  const stackAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: stackScale.value }] }));
+
+  // Círculo "Exemplo": pop sutil a cada troca de passo — acontece logo depois que a
+  // foto pousa na pilha, puxando o olhar para o próximo modelo a seguir.
+  const exampleScale = useSharedValue(1);
+  const exampleAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: exampleScale.value }] }));
+  useEffect(() => {
+    if (activeIndex < 0 || reduceMotion) return;
+    exampleScale.value = 0.88;
+    exampleScale.value = withSpring(1, { damping: 10, stiffness: 220, mass: 0.6 });
+  }, [activeIndex]);
+  const badgeAnimStyle = useAnimatedStyle(() => ({ transform: [{ scale: badgeScale.value }] }));
+
+  const clearFlying = (id: number) => {
+    // Só limpa se ainda for o MESMO voo — a próxima foto pode já ter decolado.
+    setFlying((cur) => (cur?.id === id ? null : cur));
+  };
+
+  const land = async (id: number, target: number, isLast: boolean) => {
+    // A foto reduzida (a que é guardada) foi processada em paralelo ao voo —
+    // normalmente já terminou quando o cartão pousa.
+    const pending = finalUriRef.current.get(id);
+    finalUriRef.current.delete(id);
+    let uri: string | null = null;
+    try { uri = pending ? await pending : null; } catch { uri = null; }
+    capturingRef.current = false;
+    const fadeOut = () => {
+      // Some por cima da miniatura real — sem piscar.
+      fop.value = withDelay(30, withTiming(0, { duration: 90 }, (done) => {
+        if (done) runOnJS(clearFlying)(id);
+      }));
+    };
+    if (!uri) {
+      fadeOut();
+      Alert.alert('Erro', 'Não foi possível tirar a foto. Tente novamente.');
+      return;
+    }
+    fill(target, uri);
+    if (isLast) haptics.success(); else haptics.tap();
+    // A pilha "recebe" a foto: pulinho + badge saltando.
+    stackScale.value = withSequence(
+      withTiming(1.16, { duration: 90, easing: Easing.out(Easing.quad) }),
+      withSpring(1, { damping: 8, stiffness: 260, mass: 0.6 }),
+    );
+    badgeScale.value = withSequence(
+      withDelay(40, withTiming(1.4, { duration: 110, easing: Easing.out(Easing.quad) })),
+      withSpring(1, { damping: 7, stiffness: 240, mass: 0.6 }),
+    );
+    fadeOut();
+  };
+
+  // Chamado quando a imagem do cartão decodifica (ou pelo timer de segurança).
+  const startFlight = () => {
+    const f = flyingRef.current;
+    if (!f || flightStartedRef.current === f.id) return;
+    flightStartedRef.current = f.id;
+
+    const { w: W, h: H } = boxRef.current;
+    const endX = STACK_LEFT + STACK_INSET + STACK_CARD / 2;
+    const endY = H - STACK_BOTTOM - STACK_BOX + STACK_INSET + STACK_CARD / 2;
+    const settle = { duration: FLY_SETTLE, easing: Easing.out(Easing.cubic) };
+    const travel = (easing: (t: number) => number) => ({ duration: FLY_TRAVEL, easing });
+
+    // Estado inicial: foto congelada ocupando a tela inteira.
+    fcx.value = W / 2; fcy.value = H / 2; fw.value = W; fh.value = H;
+    fr.value = 0; fb.value = 0; frot.value = 0; fop.value = 1;
+
+    // 1) vira cartão · 2) pausa · 3) viaja. X desacelera e Y acelera → a trajetória
+    // faz uma curva (vai para a esquerda e "cai" dentro da pilha), não uma reta.
+    const shrink = Easing.out(Easing.cubic);
+    fw.value = withSequence(withTiming(W * 0.78, settle), withDelay(FLY_HOLD, withTiming(STACK_CARD, travel(shrink))));
+    fh.value = withSequence(withTiming(H * 0.78, settle), withDelay(FLY_HOLD, withTiming(STACK_CARD, travel(shrink))));
+    fr.value = withSequence(withTiming(28, settle), withDelay(FLY_HOLD, withTiming(12, travel(shrink))));
+    fb.value = withSequence(withTiming(4, settle), withDelay(FLY_HOLD, withTiming(2, travel(shrink))));
+    frot.value = withSequence(
+      withTiming(0, settle),
+      withDelay(FLY_HOLD, withTiming(-9, { duration: FLY_TRAVEL * 0.6, easing: Easing.out(Easing.quad) })),
+      withTiming(0, { duration: FLY_TRAVEL * 0.4, easing: Easing.inOut(Easing.quad) }),
+    );
+    fcx.value = withSequence(withTiming(W / 2, settle), withDelay(FLY_HOLD, withTiming(endX, travel(Easing.out(Easing.cubic)))));
+    const { id, target, isLast } = f;
+    fcy.value = withSequence(
+      withTiming(H / 2, settle),
+      withDelay(FLY_HOLD, withTiming(endY, travel(Easing.in(Easing.quad)), () => {
+        // Sem checar `finished`: se o voo for interrompido, a foto NUNCA pode se perder.
+        runOnJS(land)(id, target, isLast);
+      })),
+    );
+  };
+
+  // Rede de segurança: se o onLoad do cartão não vier, decola mesmo assim.
+  useEffect(() => {
+    if (!flying) return;
+    const t = setTimeout(startFlight, 400);
+    return () => clearTimeout(t);
+  }, [flying?.id]);
+
+  // Entrega a foto: com animação (padrão) ou direto (reduzir movimento / sem medida).
+  // `displayUri` = o que o cartão voador mostra (a foto crua, disponível na hora);
+  // `finalUri`   = a foto reduzida que vai para `photos`, ainda processando.
+  // Separar os dois é o que faz o cartão aparecer sem esperar o downscale.
+  const deliver = (target: number, displayUri: string, finalUri: Promise<string>, mirrored: boolean) => {
+    finalUri.catch(() => {}); // o erro é tratado em quem aguarda; evita aviso de rejeição solta
+    const isLast = photos.filter(Boolean).length === TOTAL - 1;
+    if (reduceMotion || boxRef.current.w === 0) {
+      finalUri
+        .then((uri) => fill(target, uri))
+        .catch(() => Alert.alert('Erro', 'Não foi possível tirar a foto. Tente novamente.'))
+        .finally(() => { capturingRef.current = false; });
+      return;
+    }
+    // Já nasce em tela cheia (invisível): uma <Image> de tamanho 0 pode nunca decodificar.
+    const { w: W, h: H } = boxRef.current;
+    fop.value = 0; fcx.value = W / 2; fcy.value = H / 2; fw.value = W; fh.value = H;
+    flightIdRef.current += 1;
+    finalUriRef.current.set(flightIdRef.current, finalUri);
+    setFlying({ id: flightIdRef.current, target, uri: displayUri, mirrored, isLast });
+  };
+
   const handleCapture = async () => {
     if (capturingRef.current || activeIndex < 0 || building) return;
     haptics.action();
     if (!cameraRef.current) return;
     capturingRef.current = true;
+    // Clarão de obturador no instante do toque (antes da foto processar).
+    if (!reduceMotion) {
+      flash.value = withSequence(
+        withTiming(0.8, { duration: 40 }),
+        withTiming(0, { duration: 200, easing: Easing.out(Easing.quad) }),
+      );
+    }
     // ⚠️ Congela o alvo ANTES do await: `activeIndex` muda durante a captura e a
     // foto cairia na célula errada.
     const target = activeIndex;
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
       if (!photo?.uri) throw new Error('Falha ao capturar');
-      const uri = await downscale(photo.uri, photo.width, photo.height);
-      fill(target, uri);
+      // Downscale SEM await: roda em paralelo ao voo (erro tratado no pouso).
+      const finalUri = downscale(photo.uri, photo.width, photo.height);
+      // `mirrored`: o preview da câmera frontal é espelhado e a foto salva não —
+      // o cartão voador é espelhado só na TELA para bater com o que ela acabou de ver.
+      deliver(target, photo.uri, finalUri, true); // solta o mutex no pouso
     } catch {
-      Alert.alert('Erro', 'Não foi possível tirar a foto. Tente novamente.');
-    } finally {
       capturingRef.current = false;
+      Alert.alert('Erro', 'Não foi possível tirar a foto. Tente novamente.');
     }
   };
 
@@ -182,6 +373,7 @@ export default function CameraMulti() {
     haptics.tap();
     capturingRef.current = true;
     const target = activeIndex;
+    let handedOff = false; // true = o voo solta o mutex ao pousar
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -193,12 +385,13 @@ export default function CameraMulti() {
         // pula etapas testa um fluxo que não existe.
         const uri = await downscale(asset.uri, asset.width, asset.height);
         if (fillAll) setPhotos(Array(TOTAL).fill(uri));
-        else if (target >= 0) fill(target, uri);
+        // Um slot só → mesma animação da câmera (é como se vê o voo no simulador).
+        else if (target >= 0) { handedOff = true; deliver(target, uri, Promise.resolve(uri), false); }
       }
     } catch {
       Alert.alert('Erro', 'Não foi possível selecionar a foto.');
     } finally {
-      capturingRef.current = false;
+      if (!handedOff) capturingRef.current = false;
     }
   };
 
@@ -319,7 +512,13 @@ export default function CameraMulti() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        boxRef.current = { w: width, h: height };
+      }}
+    >
       {/* Fechar */}
       <TouchableOpacity
         onPress={() => { haptics.tap(); router.back(); }}
@@ -335,6 +534,23 @@ export default function CameraMulti() {
           {activeIndex >= 0 ? `Foto ${activeIndex + 1} de ${TOTAL}` : `${TOTAL} de ${TOTAL} fotos`}
         </Text>
       </View>
+
+      {/* Exemplo do passo atual — círculo com a foto-modelo + etiqueta com o nome do passo.
+          `transition` do expo-image faz o crossfade quando o passo troca. */}
+      {step && (
+        <Animated.View pointerEvents="none" style={[styles.exampleWrap, exampleAnimStyle]}>
+          {/* Sombra por FORA do recorte: `overflow:hidden` apaga sombra no iOS, e sem
+              ela a borda branca some contra parede clara. */}
+          <View style={styles.exampleShadow}>
+            <View style={styles.exampleCircle}>
+              <ExpoImage source={step.example} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
+            </View>
+          </View>
+          <View style={styles.examplePill}>
+            <Text style={[styles.examplePillText, { fontFamily: f7 }]}>{step.exampleLabel}</Text>
+          </View>
+        </Animated.View>
+      )}
 
       {/* Câmera real. `active={!reviewOpen}` PAUSA a sessão sem desmontar — remontar
           recria a sessão de captura do iOS e dá flash/delay (decisão 26). */}
@@ -419,21 +635,44 @@ export default function CameraMulti() {
           disabled={building}
           style={styles.stackWrap}
         >
-          {/* As "cartas de baixo" são retângulos VAZIOS de propósito — carregar 6
-              bitmaps decodificados só para sugerir uma pilha custa memória à toa. */}
-          {takenCount >= 3 && (
-            <View style={[styles.stackCard, styles.stackGhost, { transform: [{ rotate: '-8deg' }], opacity: 0.5 }]} />
-          )}
-          {takenCount >= 2 && (
-            <View style={[styles.stackCard, styles.stackGhost, { transform: [{ rotate: '5deg' }], opacity: 0.75 }]} />
-          )}
-          {lastPhotoUri && (
-            <Image source={{ uri: lastPhotoUri }} style={styles.stackCard} resizeMode="cover" />
-          )}
-          <View style={styles.badge}>
-            <Text style={[styles.badgeText, { fontFamily: f7 }]}>{takenCount}</Text>
-          </View>
+          <Animated.View style={[StyleSheet.absoluteFill, stackAnimStyle]}>
+            {/* As "cartas de baixo" são retângulos VAZIOS de propósito — carregar 6
+                bitmaps decodificados só para sugerir uma pilha custa memória à toa. */}
+            {takenCount >= 3 && (
+              <View style={[styles.stackCard, styles.stackGhost, { transform: [{ rotate: '-8deg' }], opacity: 0.5 }]} />
+            )}
+            {takenCount >= 2 && (
+              <View style={[styles.stackCard, styles.stackGhost, { transform: [{ rotate: '5deg' }], opacity: 0.75 }]} />
+            )}
+            {lastPhotoUri && (
+              <Image source={{ uri: lastPhotoUri }} style={styles.stackCard} resizeMode="cover" />
+            )}
+            <Animated.View style={[styles.badge, badgeAnimStyle]}>
+              <Text style={[styles.badgeText, { fontFamily: f7 }]}>{takenCount}</Text>
+            </Animated.View>
+          </Animated.View>
         </TouchableOpacity>
+      )}
+
+      {/* Clarão do obturador */}
+      <Animated.View pointerEvents="none" style={[styles.flash, flashStyle]} />
+
+      {/* Foto voando para a pilha. Nasce invisível (fop = 0) e só decola quando a
+          imagem decodifica — senão voaria um cartão cinza. */}
+      {flying && (
+        <Animated.View key={flying.id} pointerEvents="none" style={[styles.flyCard, flyStyle]}>
+          {/* ⚠️ expo-image, NÃO o <Image> do RN: aqui entra a foto CRUA da câmera, cuja
+              rotação vem só no EXIF. O <Image> do RN ignora o EXIF e mostrava a foto
+              deitada; o expo-image aplica. (A foto reduzida já sai girada certo.) */}
+          <ExpoImage
+            source={{ uri: flying.uri }}
+            style={[StyleSheet.absoluteFill, flying.mirrored && { transform: [{ scaleX: -1 }] }]}
+            contentFit="cover"
+            transition={0}
+            onLoad={startFlight}
+            onError={startFlight}
+          />
+        </Animated.View>
       )}
 
       {/* Galeria — SÓ em __DEV__ (no simulador é o único jeito de fornecer fotos).
@@ -611,7 +850,24 @@ const styles = StyleSheet.create({
   },
   counterText: { color: 'rgba(255,255,255,0.85)', fontSize: 14 },
 
-  cameraPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // `paddingTop` desce a moldura ~20pt para abrir espaço ao círculo "Exemplo".
+  cameraPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 40 },
+
+  exampleWrap: { position: 'absolute', top: 100, left: 0, right: 0, alignItems: 'center', zIndex: 9 },
+  exampleShadow: {
+    borderRadius: 42,
+    shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
+  },
+  exampleCircle: {
+    width: 84, height: 84, borderRadius: 42, overflow: 'hidden',
+    borderWidth: 3, borderColor: WHITE, backgroundColor: PLACEHOLDER,
+  },
+  examplePill: {
+    marginTop: -11, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 100,
+    backgroundColor: CORAL,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+  },
+  examplePillText: { color: WHITE, fontSize: 11, letterSpacing: 0.3 },
   guideContainer: { width: 256, height: 320 },
   corner: { position: 'absolute', width: 32, height: 32 },
   cornerTL: { top: 0, left: 32, borderTopWidth: 2, borderLeftWidth: 2, borderColor: 'white', borderTopLeftRadius: 8 },
@@ -645,6 +901,12 @@ const styles = StyleSheet.create({
     backgroundColor: CORAL, alignItems: 'center', justifyContent: 'center',
   },
   badgeText: { color: WHITE, fontSize: 12 },
+
+  flash: { ...StyleSheet.absoluteFillObject, backgroundColor: WHITE, zIndex: 14 },
+  flyCard: {
+    position: 'absolute', zIndex: 15, overflow: 'hidden',
+    borderColor: WHITE, backgroundColor: PLACEHOLDER,
+  },
 
   galleryBtn: {
     position: 'absolute', bottom: 56, right: 32,

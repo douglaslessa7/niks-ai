@@ -330,16 +330,18 @@ function Background({ isNight, width, height, s }: { isNight: boolean; width: nu
 
 // ── Card de passo (expansível inline) ───────────────────────────────────────
 function StepCard({
-  step, n, showLine, T, s, F, photoUrl,
+  step, n, showLine, T, s, F, photoUrl, period,
 }: {
   step: Step; n: number; showLine: boolean; T: Theme; s: (n: number) => number;
   F: { xbold?: string; bold?: string; semi?: string; medium?: string; regular?: string };
   photoUrl?: string;
+  period: 'am' | 'pm';
 }) {
   const [open, setOpen] = useState(false);
   const [lineH, setLineH] = useState(0);
   const chev = useRef(new Animated.Value(0)).current;
   const router = useRouter();
+  const setProductDetailStep = useAppStore((st) => st.setProductDetailStep);
 
   const toggle = () => {
     haptics.tap();
@@ -416,9 +418,16 @@ function StepCard({
               textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: s(5),
             }}>Como fazer</Text>
             <Text style={{ fontFamily: F.regular, fontSize: s(14), lineHeight: s(22), color: T.textBody }}>{step.how}</Text>
-            {/* Atalho para a tela de recomendação de produtos */}
+            {/* Atalho para a tela de recomendação de produtos — abre DIRETO o detalhe
+                do produto recomendado para ESTE passo (deep-link por nome do passo +
+                período; a Rotina não conhece o produto_id). Sem match, a tela de
+                Produtos abre normalmente no topo. */}
             <TouchableOpacity
-              onPress={() => { haptics.tap(); router.push('/recomendacao-produtos' as any); }}
+              onPress={() => {
+                haptics.tap();
+                setProductDetailStep({ passo: step.title, periodo: period });
+                router.push('/recomendacao-produtos' as any);
+              }}
               activeOpacity={0.7}
               style={{ flexDirection: 'row', alignItems: 'center', gap: s(6), marginTop: s(12) }}
             >
@@ -970,7 +979,7 @@ export default function Protocolo() {
                   <StepCard
                     key={`${period}-${i}`}
                     step={step} n={i + 1} showLine={i < steps.length - 1}
-                    T={T} s={s} F={F}
+                    T={T} s={s} F={F} period={period}
                     photoUrl={savedProducts[normStepKey(step.title)]?.imageUrl}
                   />
                 ))}

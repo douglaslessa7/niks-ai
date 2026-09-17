@@ -144,7 +144,13 @@ const buildRegionalAnalysis = (result: ScanResult | null | undefined): RegionalE
   // NARIZ / ZONA T
   const noseIssues: string[] = [];
   if (result?.brilho_sebaceo?.location?.includes('nariz')) noseIssues.push('oleosidade');
-  if (result?.textura_poros?.pore_visibility !== 'normal') noseIssues.push('poros dilatados');
+  // ⚠️ Precisa EXISTIR e ser diferente de 'normal'. Sem o `!= null`, um resultado em
+  // que a IA não devolveu `textura_poros` cai em `undefined !== 'normal'` → true, e a
+  // tela AFIRMA "poros dilatados" que ninguém analisou. Era o que acontecia com as
+  // respostas truncadas da `analyze-skin-app`.
+  if (result?.textura_poros?.pore_visibility != null && result.textura_poros.pore_visibility !== 'normal') {
+    noseIssues.push('poros dilatados');
+  }
   if (noseIssues.length > 0) regions.push({ zone: 'Nariz e Zona T', issues: noseIssues, detail: result?.textura_poros?.insight, regionKey: 'nariz_zona_t' });
 
   // BOCHECHAS

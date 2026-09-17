@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { CollageGridId } from '../lib/collageGrid'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
@@ -215,6 +216,11 @@ type AppStore = {
   // produto_id cujo detalhe deve abrir ao entrar em recomendacao-produtos (deep-link da home)
   productDetailTarget: string | null
   setProductDetailTarget: (id: string | null) => void
+  // Passo da rotina cujo produto recomendado deve abrir ao entrar em recomendacao-produtos
+  // (deep-link do "Ver produto recomendado" da tela de Rotina). A Rotina não conhece o
+  // produto_id — só o NOME do passo (= `passo` da recomendação) e o período do toggle.
+  productDetailStep: { passo: string; periodo: 'am' | 'pm' } | null
+  setProductDetailStep: (v: { passo: string; periodo: 'am' | 'pm' } | null) => void
   subscriptionVerified: boolean
   setSubscriptionVerified: (v: boolean) => void
 
@@ -253,6 +259,12 @@ type AppStore = {
   // Viajam pelo store, nunca por router params (truncam no bridge do RN).
   collagePhotos: string[]
   setCollagePhotos: (uris: string[]) => void
+  // Grade escolhida na `share-capture` (bandeja de layout, molde do Instagram). Viaja
+  // junto com `collagePhotos` porque a colagem final NÃO consegue mais deduzir o layout
+  // da quantidade de fotos: 2 fotos podem ser empilhadas ou lado a lado. Fora do
+  // `partialize` pelo mesmo motivo que as fotos — é hand-off de tela, de vida curta.
+  collageGrid: CollageGridId
+  setCollageGrid: (id: CollageGridId) => void
   // Adesivo escolhido na bandeja de `share-preview`. `null` = ainda não escolheu →
   // a tela cai no padrão (só o Niks score). Guardado no store, e não em state local,
   // para sobreviver ao vai-e-vem entre `share-capture` e `share-preview`.
@@ -331,6 +343,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   productDetailTarget: null,
   setProductDetailTarget: (id) => set({ productDetailTarget: id }),
+  productDetailStep: null,
+  setProductDetailStep: (v) => set({ productDetailStep: v }),
   subscriptionVerified: false,
   setSubscriptionVerified: (v) => set({ subscriptionVerified: v }),
 
@@ -378,6 +392,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   collagePhotos: [],
   setCollagePhotos: (uris) => set({ collagePhotos: uris }),
+  collageGrid: 'grid4',
+  setCollageGrid: (id) => set({ collageGrid: id }),
   stickerSpec: null,
   setStickerSpec: (spec) => set({ stickerSpec: spec }),
   stickerSheetSeen: false,
@@ -485,7 +501,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, collagePhotos: [], stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
 }), {
   // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
   // O store era 100% em memória, então TODO cache dele morria ao fechar o app —

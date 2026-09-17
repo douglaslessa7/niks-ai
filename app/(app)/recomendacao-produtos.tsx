@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { concernLabel } from '../../lib/concernLabels';
-import { saveProductForStep } from '../../lib/savedProducts';
+import { saveProductForStep, normStepKey } from '../../lib/savedProducts';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
 import { haptics } from '../../lib/haptics';
 
@@ -150,6 +150,10 @@ export default function RecomendacaoProdutos() {
   // Deep-link da home ("Para você"): produto_id cujo detalhe deve abrir ao entrar aqui.
   const productDetailTarget = useAppStore((s) => s.productDetailTarget);
   const setProductDetailTarget = useAppStore((s) => s.setProductDetailTarget);
+  // Deep-link da Rotina ("Ver produto recomendado"): passo + período, porque a tela de
+  // Rotina conhece o NOME do passo, não o produto_id.
+  const productDetailStep = useAppStore((s) => s.productDetailStep);
+  const setProductDetailStep = useAppStore((s) => s.setProductDetailStep);
 
   // Abas: "Recomendados" (recomendação salva) | "Escaneados" (histórico de scans).
   const [tab, setTab] = useState<'recomendados' | 'escaneados'>('recomendados');
@@ -307,6 +311,20 @@ export default function RecomendacaoProdutos() {
     if (hit) { setTab('recomendados'); setDetail(hit); }
     setProductDetailTarget(null);
   }, [productDetailTarget, state, am, pm, setProductDetailTarget]);
+
+  // Deep-link da Rotina: abre o detalhe do produto do passo tocado. Casa pelo NOME do
+  // passo normalizado (mesma chave de `lib/savedProducts`) dentro do período de origem;
+  // se não achar lá, procura no outro período (passos 'am+pm' aparecem nos dois). Passo
+  // sem produto (`empty`) ou nome que não casa → só abre a tela no topo, como antes.
+  useEffect(() => {
+    if (!productDetailStep || state !== 'ready') return;
+    const key = normStepKey(productDetailStep.passo);
+    const [primary, secondary] = productDetailStep.periodo === 'pm' ? [pm, am] : [am, pm];
+    const match = (list: Item[]) => list.find((it) => !it.empty && normStepKey(it.step) === key);
+    const hit = match(primary) ?? match(secondary);
+    if (hit) { setTab('recomendados'); setDetail(hit); }
+    setProductDetailStep(null);
+  }, [productDetailStep, state, am, pm, setProductDetailStep]);
 
   // ── Histórico "Escaneados" (tabela product_scans, RLS = só as próprias linhas) ──
   // A foto está no bucket privado `product-scans`; gera URLs assinadas em lote.

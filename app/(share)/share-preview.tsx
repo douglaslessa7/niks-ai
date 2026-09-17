@@ -25,6 +25,7 @@ import {
   StickerSpec, StickerPose, SPEC_SCORE_ONLY,
   stickerAspect, stickerBaseFraction, specId, normalizeSpec,
 } from '../../lib/stickerSpec';
+import { CollageGrid, getGrid, gridForCount, cellRects, COLLAGE_GAP_FRACTION } from '../../lib/collageGrid';
 
 // ── Preview da colagem + exportação 1080×1920 ─────────────────────────────────
 // Bloco D. As fotos chegam pelo store (`collagePhotos`) — nunca por router params.
@@ -64,7 +65,7 @@ const EXPORT_H = 1920 / PX;           // 640pt @3x · 960pt @2x  (mantém 9:16)
 // imagem exportada seja o que a usuária vê, e não uma segunda implementação que derrapa.
 // Linhas com `flex: 1` (sem flexWrap) — mesma lição do Bloco A.
 function Collage({
-  photos, width, gap, skinScore, metricas, spec, pose,
+  photos, width, gap, skinScore, metricas, spec, pose, grid,
 }: {
   photos: string[];
   width: number;
@@ -73,16 +74,29 @@ function Collage({
   metricas: Metricas;
   spec: StickerSpec;
   pose: StickerPose | null; // null = não desenha o adesivo (o preview usa o interativo)
+  grid: CollageGrid;        // grade ESCOLHIDA na share-capture (ver lib/collageGrid)
 }) {
   const height = (width * 16) / 9;
 
-  // Layout adaptativo: 1 = inteira · 2 = faixas empilhadas · 3 = larga em cima +
-  // duas embaixo · 4 = grid 2×2. Cada sub-array é uma linha de células.
-  const rows: number[][] =
-    photos.length === 1 ? [[0]]
-    : photos.length === 2 ? [[0], [1]]
-    : photos.length === 3 ? [[0], [1, 2]]
-    : [[0, 1], [2, 3]];
+  // ⚠️ O layout NÃO é mais deduzido da quantidade de fotos. Ele vem da grade que a
+  // usuária escolheu na captura, porque a mesma quantidade admite mais de um arranjo
+  // (2 fotos: empilhadas OU lado a lado). A dedução antiga virou `gridForCount`, usada
+  // só como rede de segurança quando o hand-off do store não bate.
+  //
+  // ⚠️⚠️ CÉLULAS ABSOLUTAS a partir de `cellRects` — NÃO linhas de `flex: 1`.
+  // Com `flex: 1` o Yoga arredonda cada célula para o pixel e entre duas vizinhas
+  // sobrava uma FRESTA sub-pixel, por onde o fundo aparecia. Como o fundo era branco,
+  // isso virava uma LINHA BRANCA entre as fotos — o bug que o usuário reportou três
+  // vezes e que SOBREVIVEU até à goteira zero, justamente porque nunca foi goteira.
+  // Bônus: a colagem passa a sair da mesma conta que a grade da tela de captura.
+  const rects = cellRects(grid, width, height, gap);
+  // Sangria: cada célula cresce 1pt para cada lado, então as vizinhas se SOBREPÕEM em
+  // 2pt e nenhum arredondamento consegue abrir fresta. Só quando a goteira é zero — com
+  // goteira, a sangria comeria justamente a goteira.
+  // ⚠️ 1pt (e não 0,5) porque no @3x meio ponto ainda arredonda para 1px de cada lado,
+  // e a sobreposição precisava sobreviver ao arredondamento nas TRÊS escalas em que a
+  // colagem é desenhada (captura, preview ~293pt, export 360pt).
+  const bleed = gap > 0 ? 0 : 1;
 
   // Largura do adesivo nesta escala; a altura vem da proporção da FORMA escolhida
   // (1 no círculo, baseW/baseH no card).
@@ -90,23 +104,38 @@ function Collage({
   const sh = sw / stickerAspect(spec);
 
   return (
-    <View style={{ width, height, backgroundColor: WHITE, overflow: 'hidden' }}>
-      {rows.map((row, r) => (
-        <View key={r} style={{ flex: 1, flexDirection: 'row', marginTop: r === 0 ? 0 : gap }}>
-          {row.map((idx, c) => (
-            <View
-              key={idx}
-              style={{ flex: 1, marginLeft: c === 0 ? 0 : gap, backgroundColor: '#F3F3F4' }}
-            >
-              <Image
-                source={{ uri: photos[idx] }}
-                resizeMode="cover" // nunca esticada
-                style={{ width: '100%', height: '100%' }}
-              />
-            </View>
-          ))}
-        </View>
-      ))}
+    <View
+      style={{
+        width, height, overflow: 'hidden',
+        // ⚠️ Só é branco quando existe goteira DE PROPÓSITO. Com goteira zero o fundo
+        // nunca deveria aparecer (ver `bleed`) — e branco era exatamente a cor que
+        // transformava qualquer fresta numa linha visível entre as fotos.
+        backgroundColor: gap > 0 ? WHITE : '#000',
+      }}
+    >
+      {/* ⚠️ A foto é a PRÓPRIA célula: `<Image>` posicionada direto no retângulo, sem
+          View-embrulho, sem `overflow: 'hidden'` e sem tamanho em '100%'. É EXATAMENTE
+          a mesma estrutura da tela de captura — e foi por isso que lá as fotos se
+          encostavam sem emenda enquanto aqui aparecia uma borda clara.
+          O embrulho antigo somava dois arredondamentos a mais (a caixa e a
+          porcentagem) e ainda RECORTAVA a imagem numa fronteira fracionária; esse
+          recorte deixa uma fileira de pixels meio transparentes, que é a "linha" que o
+          usuário via. `resizeMode="cover"` já recorta dentro do próprio frame — o
+          embrulho nunca foi necessário. */}
+      {rects.map((r, i) =>
+        photos[i] ? (
+          <Image
+            key={i}
+            source={{ uri: photos[i] }}
+            resizeMode="cover" // nunca esticada
+            style={{
+              position: 'absolute',
+              left: r.left - bleed, top: r.top - bleed,
+              width: r.width + bleed * 2, height: r.height + bleed * 2,
+            }}
+          />
+        ) : null
+      )}
 
       {/* Adesivo — posição/tamanho vêm das FRAÇÕES, então acompanham a escala: o
           mesmo enquadramento vale no preview (349pt) e no export (360pt). */}
@@ -141,7 +170,13 @@ export default function SharePreview() {
   const S = width / 393;
 
   const collagePhotos = useAppStore((s) => s.collagePhotos);
-  const photos = collagePhotos.slice(0, 4);
+  const collageGrid = useAppStore((s) => s.collageGrid);
+  // A grade só vale se casar com o que chegou: um hand-off antigo (app reaberto no meio
+  // do fluxo) desenharia células vazias. Nesse caso cai no layout histórico por
+  // quantidade — a colagem sai certa, só não necessariamente no arranjo pedido.
+  const storedGrid = getGrid(collageGrid);
+  const grid = collagePhotos.length === storedGrid.cells ? storedGrid : gridForCount(collagePhotos.length);
+  const photos = collagePhotos.slice(0, grid.cells);
 
   // Geometria do preview (mesma conta da share-capture) — antes do state, porque a
   // pose inicial do adesivo depende dela.
@@ -160,10 +195,12 @@ export default function SharePreview() {
   const availH = height - insets.top - insets.bottom - HEADER_H - BUTTON_BLOCK - SUBCAP_BLOCK - 16 * S;
   const PREVIEW_W = Math.min(availW, (availH * 9) / 16);
   const PREVIEW_H = (PREVIEW_W * 16) / 9;
-  const GAP = 2 * S;
+  // ⚠️ Goteira por FRAÇÃO da colagem (ver `COLLAGE_GAP_FRACTION`), nunca em pontos: em
+  // pontos, a mesma goteira do preview saía ~4× mais grossa no arquivo exportado.
+  const GAP = PREVIEW_W * COLLAGE_GAP_FRACTION;
   // O gap tem de ser a MESMA fração da largura nas duas escalas, senão a colagem
   // exportada sairia com linhas mais grossas/finas que a da tela.
-  const EXPORT_GAP = (GAP / PREVIEW_W) * EXPORT_W;
+  const EXPORT_GAP = EXPORT_W * COLLAGE_GAP_FRACTION;
 
   const [skinScore, setSkinScore] = useState<number | null>(null);
   const [metricas, setMetricas] = useState<Metricas>(null);
@@ -471,12 +508,19 @@ export default function SharePreview() {
               // Cantos RETOS, iguais aos da view de export (que não tem raio) — senão
               // a tela mostraria a colagem arredondada e a imagem sairia retangular.
               width: PREVIEW_W, height: PREVIEW_H,
-              overflow: 'hidden', backgroundColor: WHITE,
+              overflow: 'hidden',
+              // ⚠️ PRETO, não branco: esta era a ÚLTIMA superfície branca atrás da
+              // colagem. Qualquer sobra de arredondamento aqui aparecia como a "linha
+              // branca entre as fotos". Com preto, uma eventual sobra vira uma sombra
+              // fina — e, mais importante, denuncia a origem: linha clara = alguma
+              // superfície branca ainda no caminho; linha escura = antialias de borda.
+              backgroundColor: '#000',
             }}
           >
             {/* Fotos — mesmo componente/layout que o export usa */}
             <Collage
               photos={photos}
+              grid={grid}
               width={PREVIEW_W}
               gap={GAP}
               skinScore={skinScore}
@@ -600,6 +644,7 @@ export default function SharePreview() {
           <View ref={exportRef} collapsable={false} style={{ width: EXPORT_W, height: EXPORT_H }}>
             <Collage
               photos={photos}
+              grid={grid}
               width={EXPORT_W}
               gap={EXPORT_GAP}
               skinScore={skinScore}
