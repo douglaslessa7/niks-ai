@@ -8,6 +8,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
+import { trackNativePresentation } from '../../lib/nativePresentation';
 import { useFonts } from 'expo-font';
 import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
 import { Exo2_700Bold } from '@expo-google-fonts/exo-2';
@@ -83,12 +84,12 @@ export default function Home() {
   // A foto crua viaja pelo store (regra do projeto: nunca por router params).
   const pickHomePhoto = useCallback(async () => {
     haptics.tap();
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const result = await trackNativePresentation(() => ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 1, // sem perda aqui; a compressão acontece depois do recorte
       exif: false,
-    });
+    }));
     if (result.canceled || !result.assets?.[0]) return;
     const a = result.assets[0];
     setHomePhotoDraft({ uri: a.uri, width: a.width, height: a.height });

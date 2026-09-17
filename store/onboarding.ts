@@ -204,6 +204,17 @@ export type OnboardingData = {
   allergy_description?: string | null
 }
 
+// Conteúdo recebido pelo share sheet (feature "Compartilhar com o NIKS").
+// `id` distingue dois shares seguidos do mesmo conteúdo (guard de consumo único).
+export type PendingShare =
+  // `pageImageUrl`: foto lida no próprio Safari pelo preprocessor da extensão
+  // (JSON-LD Product / og:image). Quando existe, o app usa direto e pula a
+  // Edge Function `extrair-imagem-produto`.
+  | { id: string; kind: 'url'; sourceUrl: string; title: string | null; pageImageUrl: string | null }
+  // Link que já aponta para um arquivo de imagem (foto compartilhada do Safari).
+  | { id: string; kind: 'image_url'; imageUrl: string; title: string | null }
+  | { id: string; kind: 'image'; imageUri: string; mimeType: string | null }
+
 type AppStore = {
   tabBarTheme: 'light' | 'dark'
   setTabBarTheme: (theme: 'light' | 'dark') => void
@@ -249,6 +260,16 @@ type AppStore = {
   setProductImage: (base64: string, mimeType: string) => void
   productScanResult: any | null
   setProductScanResult: (result: any | null) => void
+  // Feature "Compartilhar com o NIKS": conteúdo vindo do share sheet, aguardando o
+  // guard de assinatura do (app) liberar. Em memória de propósito (fora do
+  // `partialize`) — é hand-off de vida curta, e a extensão guarda o original no App Group.
+  pendingShare: PendingShare | null
+  setPendingShare: (share: PendingShare | null) => void
+  // Link de onde o produto veio e o título da página (og:title) — separados da
+  // imagem para não misturar os dois. Só existem no fluxo de share por link.
+  productSourceUrl: string | null
+  productSourceTitle: string | null
+  setProductSource: (url: string | null, title: string | null) => void
   // Colagem do Story (feature Compartilhar): URIs das fotos, na ordem das células.
   // Viajam pelo store, nunca por router params (truncam no bridge do RN).
   collagePhotos: string[]
@@ -376,6 +397,12 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   setProductScanResult: (result) => set({ productScanResult: result }),
 
+  pendingShare: null,
+  setPendingShare: (share) => set({ pendingShare: share }),
+  productSourceUrl: null,
+  productSourceTitle: null,
+  setProductSource: (url, title) => set({ productSourceUrl: url, productSourceTitle: title }),
+
   collagePhotos: [],
   setCollagePhotos: (uris) => set({ collagePhotos: uris }),
   stickerSpec: null,
@@ -485,7 +512,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, collagePhotos: [], stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
 }), {
   // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
   // O store era 100% em memória, então TODO cache dele morria ao fechar o app —

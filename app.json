@@ -3,7 +3,7 @@
     "name": "NIKS",
     "newArchEnabled": true,
     "slug": "niks-ai",
-    "version": "1.0.47",
+    "version": "1.0.48",
     "orientation": "portrait",
     "icon": "./assets/icon-niks.png",
     "userInterfaceStyle": "light",
@@ -89,6 +89,22 @@
       ],
       "expo-localization",
       "expo-tracking-transparency",
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
+            "NSExtensionActivationSupportsImageWithMaxCount": 1,
+            "NSExtensionActivationSupportsText": true
+          },
+          "iosShareExtensionName": "NIKS Share",
+          "iosShareExtensionDisplayName": "NIKS",
+          "iosAppGroupIdentifier": "group.br.com.niksai.app",
+          "preprocessorInjectJS": "// ⚠️ MANTER EM SINCRONIA com lib/pageImageScript.ts (mesma lógica, usada pela WebView invisível).\n    // NIKS: foto do produto lida no próprio Safari (o iPhone não cai no anti-robô que\n    // bloqueia o backend). Vai em metas['niks:image'] como URL absoluta.\n    try {\n      var niksAbs = function (u) { try { return u ? new URL(u, document.baseURI).href : null; } catch (e) { return null; } };\n      var niksImg = null;\n      var niksLd = document.querySelectorAll('script[type=\"application/ld+json\"]');\n      for (var i = 0; i < niksLd.length && !niksImg; i++) {\n        try {\n          var queue = [JSON.parse(niksLd[i].textContent)];\n          while (queue.length && !niksImg) {\n            var node = queue.shift();\n            if (!node || typeof node !== 'object') continue;\n            if (Array.isArray(node)) { queue.push.apply(queue, node); continue; }\n            if (node['@graph']) queue.push(node['@graph']);\n            var types = [].concat(node['@type'] || []);\n            if (types.some(function (t) { return /Product/.test(String(t)); })) {\n              var img = [].concat(node.image || [])[0];\n              niksImg = niksAbs(typeof img === 'string' ? img : img && (img.url || img.contentUrl));\n            }\n          }\n        } catch (e) {}\n      }\n      if (!niksImg) niksImg = niksAbs(metas['og:image:secure_url'] || metas['og:image'] || metas['twitter:image']);\n      if (!niksImg) {\n        var landing = document.querySelector('#landingImage, #main-image, #imgBlkFront');\n        niksImg = niksAbs(landing && (landing.getAttribute('data-old-hires') || landing.currentSrc || landing.src));\n      }\n      if (niksImg) metas['niks:image'] = niksImg;\n    } catch (e) {}",
+          "disableAndroid": true
+        }
+      ],
       [
         "expo-build-properties",
         {

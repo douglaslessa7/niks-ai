@@ -16,6 +16,8 @@ import Superwall from 'expo-superwall/compat';
 import Purchases from 'react-native-purchases';
 import { MixpanelProvider, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
+import { ShareIntentProvider } from 'expo-share-intent';
+import { ShareIntentBridge } from '../components/share/ShareIntentBridge';
 
 const PAYWALLO_CONFIG = {
   appKey: process.env.EXPO_PUBLIC_PAYWALLO_APP_KEY ?? '',
@@ -144,7 +146,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
     track('app_opened');
   }, []);
 
-  return <>{children}</>;
+  return (
+    <>
+      <ShareIntentBridge />
+      {children}
+    </>
+  );
 }
 
 export default function RootLayout() {
@@ -210,6 +217,9 @@ export default function RootLayout() {
 
     // Despachante: NÃO altera o tratamento de auth — só decide quem recebe a URL.
     const handleDeepLink = (url: string) => {
+      // Link da Share Extension ("Compartilhar com o NIKS") — tratado pelo
+      // ShareIntentProvider/ShareIntentBridge; não é auth nem Superwall.
+      if (url.includes('dataUrl=')) return;
       if (isAuthUrl(url)) {
         // Link de autenticação do Supabase → fluxo de auth, exatamente como hoje.
         handleAuthUrl(url);
@@ -243,25 +253,29 @@ export default function RootLayout() {
   if (!attResolved) return null;
 
   return (
-  <PaywalloProvider config={PAYWALLO_CONFIG}>
-    <MixpanelProvider>
-      <SuperwallProvider
-        apiKeys={SUPERWALL_API_KEYS}
-        options={{ manualPurchaseManagement: true }}
-      >
-        <CustomPurchaseControllerProvider controller={superwallPurchaseController}>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <SafeAreaProvider>
-              <AppShell>
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
-                </Stack>
-              </AppShell>
-            </SafeAreaProvider>
-          </GestureHandlerRootView>
-        </CustomPurchaseControllerProvider>
-      </SuperwallProvider>
-    </MixpanelProvider>
-  </PaywalloProvider>
+    // ShareIntentProvider por fora de tudo (exigência do expo-share-intent).
+    // `scheme` explícito: o app tem vários CFBundleURLSchemes (Google Sign-In etc.).
+    <ShareIntentProvider options={{ scheme: 'niks-ai', disabled: Platform.OS !== 'ios' }}>
+    <PaywalloProvider config={PAYWALLO_CONFIG}>
+      <MixpanelProvider>
+        <SuperwallProvider
+          apiKeys={SUPERWALL_API_KEYS}
+          options={{ manualPurchaseManagement: true }}
+        >
+          <CustomPurchaseControllerProvider controller={superwallPurchaseController}>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <SafeAreaProvider>
+                <AppShell>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+                  </Stack>
+                </AppShell>
+              </SafeAreaProvider>
+            </GestureHandlerRootView>
+          </CustomPurchaseControllerProvider>
+        </SuperwallProvider>
+      </MixpanelProvider>
+    </PaywalloProvider>
+    </ShareIntentProvider>
   );
 }
