@@ -1,6 +1,26 @@
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
+
+export const ANDROID_CHANNEL_ID = 'default';
+
+/**
+ * No Android 8+ toda notificação precisa pertencer a um canal, e é o canal —
+ * não o payload — que define som, vibração e se ela aparece como banner.
+ * Sem isso as notificações chegam silenciosas e sem heads-up.
+ * Precisa rodar antes de pedir permissão / registrar o token.
+ */
+export async function setupAndroidNotificationChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+    name: 'Lembretes NIKS',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FF6F61',
+    sound: 'default',
+  });
+}
 
 // Configura como as notificações aparecem quando o app está aberto
 Notifications.setNotificationHandler({
@@ -18,6 +38,8 @@ Notifications.setNotificationHandler({
  * Retorna null se o usuário recusar.
  */
 export async function requestPushPermission(): Promise<string | null> {
+  await setupAndroidNotificationChannel();
+
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 

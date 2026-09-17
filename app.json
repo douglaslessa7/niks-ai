@@ -24,6 +24,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "O NIKS AI precisa da câmera para analisar sua pele e suas refeições.",
         "NSPhotoLibraryUsageDescription": "O NIKS AI precisa acessar suas fotos para análise de pele.",
+        "NSUserTrackingUsageDescription": "Usamos isso para mostrar anúncios mais relevantes e medir a eficácia das campanhas.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "appleTeamId": "FZRSWCG9BR"
@@ -37,15 +38,6 @@
       "package": "br.com.niksai.app",
       "versionCode": 1,
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
@@ -93,6 +85,19 @@
           "photosPermission": "O NIKS AI precisa acessar suas fotos.",
           "savePhotosPermission": "Permita salvar sua colagem NIKS na galeria de fotos.",
           "isAccessMediaLocationEnabled": false
+        }
+      ],
+      "expo-localization",
+      "expo-tracking-transparency",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              { "name": "GoogleUtilities", "modular_headers": true },
+              { "name": "RecaptchaInterop", "modular_headers": true }
+            ]
+          }
         }
       ]
     ],

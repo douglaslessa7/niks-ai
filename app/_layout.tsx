@@ -1,8 +1,12 @@
 import '../global.css';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { AppState, Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { initRevenueCat, loginRevenueCat, ENTITLEMENT_ID } from '../lib/revenuecat';
+import { PaywalloProvider } from '@virex-tech/paywallo-sdk';
+import * as Application from 'expo-application';
+import * as TrackingTransparency from 'expo-tracking-transparency';
+import { initRevenueCat, loginRevenueCat, matchesProduct, ENTITLEMENT_ID } from '../lib/revenuecat';
 import { supabase } from '../lib/supabase';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
@@ -12,6 +16,77 @@ import Superwall from 'expo-superwall/compat';
 import Purchases from 'react-native-purchases';
 import { MixpanelProvider, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
+
+const PAYWALLO_CONFIG = {
+  appKey: process.env.EXPO_PUBLIC_PAYWALLO_APP_KEY ?? '',
+  appVersion: Application.nativeApplicationVersion ?? undefined,
+  debug: __DEV__,
+  environment: 'Production' as const,
+  skan: true,
+};
+
+/**
+ * Resolve o prompt de ATT antes de montar o PaywalloProvider.
+ *
+ * O SDK do Paywallo não pede esse prompt sozinho — se ele inicializar com o ATT
+ * ainda indefinido, o iOS não entrega o IDFA e a atribuição do install degrada
+ * (sem madid no CAPI). Por isso a árvore de render inteira fica atrás deste gate.
+ *
+ * O prompt só aparece com o app em foreground: chamado durante um cold start
+ * ainda inativo, o iOS retorna `undetermined` na hora sem mostrar nada — que é
+ * exatamente a falha silenciosa que o gate existe para evitar. Daí a espera pelo
+ * primeiro estado `active`.
+ */
+function useAttResolved(): boolean {
+  const [attResolved, setAttResolved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const whenActive = () =>
+      new Promise<void>((resolve) => {
+        if (AppState.currentState === 'active') return resolve();
+        const sub = AppState.addEventListener('change', (state) => {
+          if (state === 'active') {
+            sub.remove();
+            resolve();
+          }
+        });
+      });
+
+    (async () => {
+      if (Platform.OS === 'ios') {
+        try {
+          await whenActive();
+          await TrackingTransparency.requestTrackingPermissionsAsync();
+        } catch (error) {
+          // Recusa do usuário, prompt indisponível ou erro do módulo nativo não
+          // podem travar o boot — segue sem IDFA, que é degradação aceitável.
+          console.warn('[att] Falha ao resolver o prompt de tracking:', error);
+        }
+      }
+      // Android não tem ATT: libera direto, sem pedir nada.
+      if (!cancelled) setAttResolved(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return attResolved;
+}
+
+// Cada plataforma tem seu próprio app no dashboard do Superwall, com chave
+// própria. Passar só a do iOS deixaria o SDK sem configuração no Android e
+// nenhum paywall abriria lá.
+const superwallKey = (value: string | undefined) =>
+  value?.startsWith('pk_') ? value : '';
+
+const SUPERWALL_API_KEYS = {
+  ios: superwallKey(process.env.EXPO_PUBLIC_SUPERWALL_IOS_KEY) || 'pk_4iUsZwW_-ME9WdK3IcXYp',
+  android: superwallKey(process.env.EXPO_PUBLIC_SUPERWALL_ANDROID_KEY),
+};
 
 // Delega compras e restaurações do Superwall para o RevenueCat.
 // Sem este controller, o Superwall processa via StoreKit direto e o RevenueCat
@@ -27,7 +102,7 @@ const superwallPurchaseController = {
       // de paywall depois de já ter pago.
       const offerings = await Purchases.getOfferings();
       const allPackages = Object.values(offerings.all).flatMap((o) => o.availablePackages);
-      const pkg = allPackages.find((p) => p.product.identifier === productId);
+      const pkg = allPackages.find((p) => matchesProduct(p.product.identifier, productId));
       if (!pkg) {
         // Só chega aqui se o produto não existe em NENHUMA offering — falha real de
         // configuração no RevenueCat. Loga o cenário completo para não falhar às cegas.
@@ -73,6 +148,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  const attResolved = useAttResolved();
+
   useEffect(() => {
     Superwall.shared.preloadAllPaywalls();
   }, []);
@@ -160,10 +237,16 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, []);
 
+  // Segura a árvore inteira até o ATT estar resolvido — o PaywalloProvider não
+  // pode montar antes disso. Todos os hooks acima já rodaram, então este early
+  // return não altera a ordem de hooks entre renders.
+  if (!attResolved) return null;
+
   return (
+  <PaywalloProvider config={PAYWALLO_CONFIG}>
     <MixpanelProvider>
       <SuperwallProvider
-        apiKeys={{ ios: 'pk_4iUsZwW_-ME9WdK3IcXYp' }}
+        apiKeys={SUPERWALL_API_KEYS}
         options={{ manualPurchaseManagement: true }}
       >
         <CustomPurchaseControllerProvider controller={superwallPurchaseController}>
@@ -179,5 +262,6 @@ export default function RootLayout() {
         </CustomPurchaseControllerProvider>
       </SuperwallProvider>
     </MixpanelProvider>
+  </PaywalloProvider>
   );
 }
