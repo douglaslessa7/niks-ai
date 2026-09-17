@@ -87,7 +87,7 @@ export async function generateAndSaveProtocol({
     // depois do insert do protocolo — porque `recomendar-produtos` lê o
     // protocolo no banco. Falha aqui não pode quebrar o fluxo do protocolo.
     try {
-      await fetch(
+      const recRes = await fetch(
         'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/recomendar-produtos',
         {
           method: 'POST',
@@ -99,8 +99,16 @@ export async function generateAndSaveProtocol({
           body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null, regenerate: regenerate ?? false }),
         }
       );
+      // Continua NÃO bloqueante (regra mantida) — só deixa de ser invisível. O `catch`
+      // abaixo só pega erro de rede: um 409 ("protocolo ainda não disponível") ou um 500
+      // são respostas bem-sucedidas para o fetch e passavam reto, sem log nem retry.
+      // 409 aqui significa que o insert em `protocolos` não landou antes desta chamada.
+      if (!recRes.ok) {
+        const body = await recRes.text().catch(() => '');
+        console.error('[generateProtocol] recomendar-produtos HTTP', recRes.status, body.slice(0, 300));
+      }
     } catch (recErr) {
-      console.warn('[generateProtocol] recomendar-produtos falhou (não bloqueante):', recErr);
+      console.error('[generateProtocol] recomendar-produtos falhou (rede, não bloqueante):', recErr);
     }
   } catch (err) {
     console.error('[generateProtocol] Unexpected error:', err);

@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, ScrollView, Linking, Alert, Image } from 'react-native';
-import { requestAppReview } from '../../lib/storeReview';
+import { requestAppReview, manageSubscriptionsUrl } from '../../lib/storeReview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -185,10 +185,10 @@ export default function Perfil() {
       // Já tem permissão — abre Ajustes para o usuário gerenciar
       Alert.alert(
         'Notificações ativas',
-        'Suas notificações já estão ativadas. Para gerenciá-las, acesse os Ajustes do seu iPhone.',
+        'Suas notificações já estão ativadas. Para gerenciá-las, acesse os ajustes do seu celular.',
         [
           { text: 'Fechar', style: 'cancel' },
-          { text: 'Abrir Ajustes', onPress: () => Linking.openURL('app-settings:') },
+          { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
         ]
       );
       return;
@@ -205,10 +205,10 @@ export default function Perfil() {
       // Usuário recusou — direciona para Ajustes
       Alert.alert(
         'Permissão necessária',
-        'Para receber notificações, ative-as nos Ajustes do seu iPhone.',
+        'Para receber notificações, ative-as nos ajustes do seu celular.',
         [
           { text: 'Agora não', style: 'cancel' },
-          { text: 'Abrir Ajustes', onPress: () => Linking.openURL('app-settings:') },
+          { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
         ]
       );
     }
@@ -370,7 +370,7 @@ export default function Perfil() {
             <View style={CARD}>
               <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => { haptics.tap(); Linking.openURL('itms-apps://apps.apple.com/account/subscriptions'); }}
+                onPress={() => { haptics.tap(); Linking.openURL(manageSubscriptionsUrl()); }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 14 }}
               >
                 <IconChip>

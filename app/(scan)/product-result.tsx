@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
 import { requestAppReview } from '../../lib/storeReview';
+import { clearShareResume } from '../../lib/shareResume';
 
 // Tela de RESULTADO do scan de produto (fluxo da câmera → loading → aqui).
 // O layout inteiro vive em `components/product/ProductAnalysis` — o MESMO componente que o
@@ -10,6 +12,11 @@ import { requestAppReview } from '../../lib/storeReview';
 
 export default function ProductResult() {
   const router = useRouter();
+
+  // Chegar aqui encerra o fluxo do "Compartilhar com o NIKS": descarta a retomada
+  // guardada em `lib/shareResume` (que existe só para a tela de carregamento
+  // sobreviver a um remount). Inofensivo no fluxo da câmera, que não usa retomada.
+  useEffect(() => { clearShareResume(); }, []);
   const { productScanResult, productImageBase64, productImageMimeType } = useAppStore();
 
   const photoUri = productImageBase64

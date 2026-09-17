@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, Animated, TouchableOpacity } from 'react-native';
 import { useFonts } from 'expo-font';
 import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
@@ -9,9 +9,8 @@ import Svg, {
   Path, Line, Circle, Defs,
   LinearGradient as SvgLinearGradient, Stop,
 } from 'react-native-svg';
-import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
-import { useAppStore } from '../../store/onboarding';
+import { useProductAnalysis } from '../../hooks/useProductAnalysis';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -20,16 +19,14 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 // NIKS: fundo branco com leve véu rosa, fontes Nunito e o rosa padrão #FF9D9D no
 // arco de progresso. A LÓGICA é a mesma de antes: chama a Edge Function
 // `analisar-produto` (verificação de JWT interna → precisa do token da sessão) e,
-// ao terminar, navega para a tela de resultado.
+// ao terminar, navega para a tela de resultado. A lógica mora em
+// `hooks/useProductAnalysis` (compartilhada com `share-product-loading`).
 
 const DEEP = '#1D3A44';
 const DEEP_SOFT = 'rgba(29,58,68,0.55)';
 const PINK = '#FF9D9D';           // rosa padrão do app
 const PINK_SOFT = '#FFC9C9';      // parada clara do gradiente do arco
 const CREAM = '#FFFFFF';
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 // Frases que rodam abaixo do círculo conforme a análise avança (equivalente ao
 // "Analyzing your test results" da referência, adaptado ao fluxo de produto).
@@ -50,21 +47,9 @@ const WHITE_D = RING_SIZE - 30;   // disco branco central (dentro do anel)
 
 export default function ProductLoading() {
   const router = useRouter();
-  const { productImageBase64, productImageMimeType, setProductScanResult } = useAppStore();
+  const { percentage, showDemandNotice, countdown, countdownPaused, showError } =
+    useProductAnalysis({ enabled: true, origem: 'camera' });
 
-  const [percentage, setPercentage] = useState(0);
-  const [showDemandNotice, setShowDemandNotice] = useState(false);
-  const [countdown, setCountdown] = useState(60);
-  const [countdownPaused, setCountdownPaused] = useState(false);
-  const [showError, setShowError] = useState(false);
-  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentPercentageRef = useRef(0);
-  const retryCount = useRef(0);
-  // clientScanId estável entre tentativas → idempotência no `analisar-produto`
-  // (retry não gera scan duplicado).
-  const clientScanIdRef = useRef(`prod_${Date.now()}_${Math.floor(Math.random() * 1e6)}`);
-  const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const demandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const haloAnim = useRef(new Animated.Value(1)).current;
   const ringProgressAnim = useRef(new Animated.Value(0)).current;
   const phraseFadeAnim = useRef(new Animated.Value(1)).current;
@@ -109,135 +94,6 @@ export default function ProductLoading() {
     phraseFadeAnim.setValue(0);
     Animated.timing(phraseFadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, [phraseIdx]);
-
-  useEffect(() => {
-    retryCount.current = 0;
-
-    const tickProgress = () => {
-      const current = currentPercentageRef.current;
-      if (current >= 99) return;
-      let delay: number;
-      if (current < 60) delay = 90;
-      else if (current < 75) delay = 220;
-      else if (current < 85) delay = 500;
-      else if (current < 92) delay = 1200;
-      else if (current < 96) delay = 3500;
-      else delay = 8000;
-      progressTimerRef.current = setTimeout(() => {
-        const next = current + 1;
-        currentPercentageRef.current = next;
-        setPercentage(next);
-        tickProgress();
-      }, delay);
-    };
-    tickProgress();
-
-    // Obtém um token de sessão válido (mesmo padrão do niks-chat): só faz refresh
-    // se estiver perto de expirar (<5 min), para evitar round-trip extra.
-    const getAccessToken = async (): Promise<string | null> => {
-      try {
-        const { data: { session: current } } = await supabase.auth.getSession();
-        const expiresAt = current?.expires_at ?? 0;
-        const nowSecs = Math.floor(Date.now() / 1000);
-        if (current?.access_token && expiresAt - nowSecs > 300) {
-          return current.access_token;
-        }
-        const { data: refreshed, error } = await supabase.auth.refreshSession();
-        return (!error && refreshed.session?.access_token)
-          ? refreshed.session.access_token
-          : (current?.access_token ?? null);
-      } catch {
-        const { data: { session } } = await supabase.auth.getSession();
-        return session?.access_token ?? null;
-      }
-    };
-
-    const runAnalysis = async () => {
-      try {
-        if (!productImageBase64) throw new Error('Sem imagem do produto');
-
-        const accessToken = await getAccessToken();
-        if (!accessToken) throw new Error('Sem sessão válida');
-
-        const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/analisar-produto`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${accessToken}`,
-              'apikey': SUPABASE_ANON_KEY,
-            },
-            body: JSON.stringify({
-              images: [{ base64: productImageBase64, mimeType: productImageMimeType ?? 'image/jpeg' }],
-              clientScanId: clientScanIdRef.current,
-            }),
-          }
-        );
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(JSON.stringify(errBody));
-        }
-        const data = await response.json();
-
-        setProductScanResult(data);
-        setPercentage(100);
-
-        setTimeout(() => {
-          router.replace('/(scan)/product-result' as any);
-        }, 500);
-      } catch (err) {
-        if (retryCount.current < 2) {
-          retryCount.current += 1;
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          await runAnalysis();
-        } else {
-          if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
-          setShowError(true);
-        }
-      }
-    };
-    runAnalysis();
-
-    return () => { if (progressTimerRef.current) clearTimeout(progressTimerRef.current); };
-  }, []);
-
-  useEffect(() => {
-    if (percentage >= 99 && !showError) {
-      demandTimerRef.current = setTimeout(() => setShowDemandNotice(true), 3000);
-    } else {
-      if (demandTimerRef.current) clearTimeout(demandTimerRef.current);
-      setShowDemandNotice(false);
-    }
-    return () => { if (demandTimerRef.current) clearTimeout(demandTimerRef.current); };
-  }, [percentage, showError]);
-
-  useEffect(() => {
-    if (!showDemandNotice) {
-      if (countdownRef.current) clearTimeout(countdownRef.current);
-      setCountdown(60);
-      setCountdownPaused(false);
-      return;
-    }
-    const tick = (current: number, paused: boolean) => {
-      if (paused) return;
-      if (current <= 1) {
-        setCountdownPaused(true);
-        setCountdown(0);
-        countdownRef.current = setTimeout(() => {
-          setCountdown(60);
-          setCountdownPaused(false);
-          countdownRef.current = setTimeout(() => tick(60, false), 1000);
-        }, 3000);
-        return;
-      }
-      const next = current - 1;
-      setCountdown(next);
-      countdownRef.current = setTimeout(() => tick(next, false), 1000);
-    };
-    countdownRef.current = setTimeout(() => tick(60, false), 1000);
-    return () => { if (countdownRef.current) clearTimeout(countdownRef.current); };
-  }, [showDemandNotice]);
 
   return (
     <View style={{ flex: 1, backgroundColor: CREAM }}>

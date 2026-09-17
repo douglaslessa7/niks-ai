@@ -1,5 +1,5 @@
-import { Tabs, usePathname, useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
+import { useState, useEffect, useRef } from 'react';
 import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,8 @@ import { haptics } from '../../lib/haptics';
 import { getCustomerInfo, isSubscribed, loginRevenueCat } from '../../lib/revenuecat';
 import { useAppStore } from '../../store/onboarding';
 import NameCapture from '../../components/onboarding/NameCapture';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { isNativePresentationOpen, waitForNativePresentationToClose } from '../../lib/nativePresentation';
 
 // ── Bottom navbar — réplica do design "Fixed bottom bar" (navbar-design/Navbar.dc.html) ──
 // Ícones line/stroke SVG idênticos ao design. Cores/estados do design:
@@ -238,6 +240,50 @@ export default function AppLayout() {
       setReady(true);
     });
   }, []);
+
+  // "Compartilhar com o NIKS": ÚNICO ponto que abre a análise de um produto
+  // compartilhado. Só roda com `ready` (sessão + assinatura já verificadas pelo
+  // guard acima) e sem captura de nome pendente — então o share nunca pula o
+  // paywall. Cobre cold start, app em background e retomada depois de
+  // login/paywall (todos terminam montando este layout). O ref impede abrir duas
+  // vezes o mesmo share (StrictMode / re-render).
+  const pendingShare = useAppStore((s) => s.pendingShare);
+  const consumedShareIdRef = useRef<string | null>(null);
+  const segments = useSegments();
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  const { track } = useMixpanel();
+  useEffect(() => {
+    if (!ready || needsName || !pendingShare) return;
+    if (consumedShareIdRef.current === pendingShare.id) return;
+    consumedShareIdRef.current = pendingShare.id;
+
+    let cancelled = false;
+    (async () => {
+      // 1. Seletor nativo aberto (ex.: galeria da foto da home): o JS não consegue
+      //    fechá-lo, então espera a usuária fechar. Empilhar por baixo dele deixava a
+      //    tela escondida e o consentimento sem conseguir aparecer.
+      if (isNativePresentationOpen()) {
+        console.warn('[share] share recebido com seletor nativo aberto — aguardando fechar');
+        track('product_share_blocked_by_modal', { tipo: 'seletor_nativo' });
+        await waitForNativePresentationToClose();
+        if (cancelled) return;
+        console.log('[share] seletor nativo fechado — seguindo para a análise');
+      }
+
+      // 2. Telas do Stack por cima do (app) (câmera, resultado, ajustar-foto…):
+      //    volta para o (app) antes de empilhar, para nada ficar por cima.
+      const topGroup = segmentsRef.current[0];
+      if (topGroup !== '(app)' && router.canDismiss()) {
+        console.warn(`[share] share recebido com ${topGroup} por cima — dismissAll antes do push`);
+        track('product_share_blocked_by_modal', { tipo: 'tela_empilhada', grupo: topGroup ?? null });
+        router.dismissAll();
+      }
+
+      router.push('/(scan)/share-product-loading' as any);
+    })();
+    return () => { cancelled = true; };
+  }, [ready, needsName, pendingShare]);
 
   if (!ready) return null;
 

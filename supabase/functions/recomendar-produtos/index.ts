@@ -65,6 +65,38 @@ function categoriaProduto(label: string, icon: IconName): string | null {
   }
 }
 
+// ── Passo de ÁREA DOS OLHOS ──────────────────────────────────────────────────
+// Passos de olhos morriam em TRÊS caminhos distintos, todos silenciosos menos o 3º:
+//   1. label 'Tratamento'  → detectTargetActive kind:'eye' → `continue`
+//   2. label 'Cuidado'     → categoriaProduto devolve null
+//   3. label 'Hidratação'  → virava 'hidratante' e recomendava CREME FACIAL para os olhos
+// `isOlhos` resolve os três num ponto só, porque não depende do label.
+//
+// Vocabulário: as MESMAS keywords do branch 'eye' de detectTargetActive (fonte única).
+// Exige expressão POSICIONAL composta — a palavra 'olhos' sozinha NÃO casa, senão
+// "Demaquilante para os olhos" arrastaria passos que não são tratamento periocular.
+// `norm` (definido logo abaixo) cobre caixa E acento: "Área dos Olhos", "área dos olhos"
+// e "ÁREA DOS OLHOS" casam igual. Chamado só em runtime, então a ordem não é problema.
+const OLHOS_KEYWORDS = [
+  'olheira', 'periocular', 'area dos olhos', 'contorno dos olhos', 'para os olhos', 'para olhos',
+]
+function isOlhos(name: string, ingredient: string): boolean {
+  const t = norm(`${name} ${ingredient}`)
+  return OLHOS_KEYWORDS.some((k) => t.includes(k))
+}
+// Só estes labels podem virar 'olhos' — são exatamente os três caminhos acima.
+// Limpeza/Proteção/Tônico/Finalização/Barreira ficam de fora DE PROPÓSITO: é o que
+// mantém "Demaquilante para os olhos" como limpeza (recebe demaquilante, não creme de olhos).
+const OLHOS_LABELS = new Set(['Tratamento', 'Cuidado', 'Hidratação'])
+//
+// RANQUEAMENTO — dívida conhecida: ~75 das ~225 ocorrências de passo de olhos no banco
+// pedem CAFEÍNA ("Cafeína + Niacinamida", "Cafeína + Peptídeos"), e só 4 dos 15 produtos
+// da categoria têm `cafeina` em ativos_principais. O `stepIntent` não conhece 'cafeina',
+// então o nudge de ordenação cai em niacinamida (7 produtos) e peptideos (6) — aceitável,
+// mas não é o que o passo pede. Ensinar 'cafeina' ao stepIntent ficou FORA deste bloco de
+// propósito: stepIntent é caminho compartilhado por TODAS as categorias, e mexer nele
+// mudaria o ranqueamento de passos que não são de olhos.
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mapas PT → código (perfil da usuária → vocabulário da tabela produtos)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -343,7 +375,11 @@ Deno.serve(async (req) => {
         const ingredient = (raw?.ingredient ?? '').trim()
         if (!name) continue
         const { category, icon } = classifyStep(name, ingredient)
-        const cat = categoriaProduto(category, icon)
+        // Olhos resolve ANTES do mapa de categorias e cobre os três caminhos de uma vez.
+        // `category` (o label) NÃO muda: é ele que a tela exibe e tem que bater com a Rotina.
+        const cat = (OLHOS_LABELS.has(category) && isOlhos(name, ingredient))
+          ? 'olhos'
+          : categoriaProduto(category, icon)
         if (!cat) continue // 'Cuidado' / não reconhecido → omite o passo
         const key = norm(name)
         const found = stepsByName.get(key)
@@ -403,10 +439,17 @@ Deno.serve(async (req) => {
 
     for (const step of steps) {
       const pref = stepIntent(step.name, step.ingredient) // preferência de intenção (nudge)
-      if (step.label === 'Tratamento') {
+      // `olhos` é STAPLE (sem gate), mesmo classificando como 'Tratamento': o gate existe
+      // para o colapso de escolha num pool de 70 séruns; com 15 produtos numa categoria
+      // própria ele só produziria pool vazio (aha/bha/tranexamico/azelaico = 0 produtos),
+      // e pool vazio em Tratamento vira card `sem_produto` VISÍVEL — pior que o silêncio.
+      if (step.label === 'Tratamento' && step.categoria !== 'olhos') {
         // Só passos de Tratamento são gateados por ingrediente.
         const target = detectTargetActive(step.name, step.ingredient)
-        if (target.kind === 'eye') continue // olhos/olheiras → omite em silêncio
+        // Inalcançável desde que 'olhos' virou staple (as keywords de isOlhos cobrem as
+        // deste branch). Mantido como rede: se os dois vocabulários divergirem, o passo
+        // volta a ser omitido em silêncio em vez de cair no pool errado.
+        if (target.kind === 'eye') continue
         if (target.kind === 'unknown') { resolved.push({ kind: 'sem_produto', step, ingrediente_alvo: step.ingredient }); continue }
         const elig = await poolFor(step.categoria, target.codes, pref) // gate pelo ativo-alvo
         // Ativo-alvo conhecido e nada casou (não existe ou tudo cortado por alergia/gestante) → sem_produto honesto.
@@ -458,7 +501,10 @@ Responda SOMENTE com JSON no formato:
     const passosInput = iaSteps.map((e) => ({
       index: e.iaIndex,
       passo: e.step.name,
-      categoria: e.step.label,
+      // Rótulo p/ a IA. Em olhos, `label` seria 'Hidratação'/'Tratamento' e induziria copy
+      // de produto facial ("ótimo hidratante para você") sobre um creme de olhos.
+      // NÃO afeta o JSON salvo nem a tela: a exibição continua vindo de `step.label`.
+      categoria: e.step.categoria === 'olhos' ? 'Olhos' : e.step.label,
       ingrediente_alvo: e.step.ingredient,
       produtos_elegiveis: e.produtos.map((p: any) => ({
         produto_id: p.id,

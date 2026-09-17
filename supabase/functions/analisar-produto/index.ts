@@ -133,10 +133,16 @@ Deno.serve(async (req) => {
     const userId = jwtPayload.sub
 
     const body = JSON.parse(rawBody)
-    const { images, clientScanId } = body as {
+    const { images, clientScanId, productName } = body as {
       images?: Array<{ base64: string; mimeType: string }>
       clientScanId?: string
+      // Título da página de onde o produto foi compartilhado (feature "Compartilhar
+      // com o NIKS"). Opcional: a câmera não manda. Não muda o schema de saída.
+      productName?: string
     }
+    const productNameHint = typeof productName === 'string'
+      ? productName.replace(/\s+/g, ' ').trim().slice(0, 200)
+      : ''
 
     // Validação: sem nenhuma imagem → 400. images[0] é o PRODUTO (obrigatório).
     if (!Array.isArray(images) || images.length === 0 || !images[0]?.base64) {
@@ -159,7 +165,14 @@ Deno.serve(async (req) => {
     const userContent: any[] = [
       {
         type: 'text',
-        text: `${contextPack}\n\nAnalise o produto na(s) foto(s) segundo o contexto acima.`,
+        text: `${contextPack}\n\nAnalise o produto na(s) foto(s) segundo o contexto acima.` +
+          (productNameHint
+            ? `\n\nContexto extra (não verificado — título da página de onde a usuária compartilhou o produto): "${productNameHint}".\n` +
+              `Regras para esse título:\n` +
+              `- Ele só pode ajudar a identificar \`produto.nome\` e \`produto.marca\`. Se a foto contradizer o título, vale a foto.\n` +
+              `- \`produto.ativos_detectados\` vem SOMENTE do que estiver legível na foto (rótulo ou lista de ingredientes). Nunca inclua um ativo porque ele aparece no título ou porque o título sugere a fórmula. Se nenhum ativo estiver legível na foto, retorne \`ativos_detectados\` vazio.\n` +
+              `- O título não aumenta a \`confianca\`: ela continua calibrada só pelo que a foto mostra.`
+            : ''),
       },
     ]
     for (const img of images) {

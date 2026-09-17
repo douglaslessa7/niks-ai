@@ -3,7 +3,9 @@ import {
   KeyboardAvoidingView, Platform, Keyboard, Image,
   TouchableWithoutFeedback,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker from 'expo-image-picker'
+import { trackNativePresentation } from '../../lib/nativePresentation'
+;
 import * as ImageManipulator from 'expo-image-manipulator';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
@@ -1182,17 +1184,17 @@ export default function NiksChat() {
   const pickImage = async (source: 'camera' | 'gallery') => {
     if (pendingImages.length >= 5) return
 
-    const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({
+    const result = await trackNativePresentation(() => source === 'camera'
+      ? ImagePicker.launchCameraAsync({
           mediaTypes: ['images'] as any,
           quality: 0.8,
           allowsEditing: false,
         })
-      : await ImagePicker.launchImageLibraryAsync({
+      : ImagePicker.launchImageLibraryAsync({
           mediaTypes: ['images'] as any,
           quality: 0.8,
           allowsEditing: false,
-        })
+        }))
 
     if (result.canceled || !result.assets?.[0]) return
 

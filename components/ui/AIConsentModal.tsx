@@ -16,9 +16,18 @@ interface AIConsentModalProps {
   visible: boolean;
   onAccept: () => void;
   onDecline: () => void;
+  /**
+   * `modal` (padrão): `<Modal>` nativo — usado pelas câmeras.
+   * `inline`: camada absoluta DENTRO da tela, sem `<Modal>`. Para telas abertas por
+   * fora do fluxo normal (share-product-loading): o `<Modal>` nativo não aparece se
+   * houver outro controlador apresentado (ex.: seletor de fotos) — o iOS recusa com
+   * "already presenting" e o consentimento some para sempre. A tela precisa ocupar
+   * a janela inteira (a camada cobre só a própria tela).
+   */
+  presentation?: 'modal' | 'inline';
 }
 
-export function AIConsentModal({ visible, onAccept, onDecline }: AIConsentModalProps) {
+export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'modal' }: AIConsentModalProps) {
   const translateY = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
@@ -34,8 +43,8 @@ export function AIConsentModal({ visible, onAccept, onDecline }: AIConsentModalP
     }
   }, [visible]);
 
-  return (
-    <Modal transparent visible={visible} animationType="none" onRequestClose={onDecline}>
+  const content = (
+    <>
       {/* Backdrop — não fecha o modal */}
       <Pressable style={styles.backdrop} />
 
@@ -101,11 +110,26 @@ export function AIConsentModal({ visible, onAccept, onDecline }: AIConsentModalP
           <Text style={styles.btnSecondaryText}>Cancelar</Text>
         </TouchableOpacity>
       </Animated.View>
+    </>
+  );
+
+  if (presentation === 'inline') {
+    if (!visible) return null;
+    return <View style={[StyleSheet.absoluteFill, styles.inlineLayer]}>{content}</View>;
+  }
+
+  return (
+    <Modal transparent visible={visible} animationType="none" onRequestClose={onDecline}>
+      {content}
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  inlineLayer: {
+    zIndex: 1000,
+    elevation: 1000,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
