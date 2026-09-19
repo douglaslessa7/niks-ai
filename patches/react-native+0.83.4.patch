@@ -1,0 +1,18 @@
+diff --git a/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp b/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp
+index 8d58bb3..05bebad 100644
+--- a/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp
++++ b/node_modules/react-native/ReactCommon/hermes/executor/HermesExecutorFactory.cpp
+@@ -7,6 +7,13 @@
+ 
+ #include "HermesExecutorFactory.h"
+ 
++// NIKS: `ReentrancyCheck` (abaixo, dentro de `#ifndef NDEBUG`) usa std::thread e
++// std::this_thread, mas este arquivo nunca incluiu <thread>. So compilava porque,
++// em Debug, HERMES_ENABLE_DEBUGGER traz os headers do inspetor do Hermes, que
++// arrastam <thread> junto. Em Release sem -DNDEBUG o bloco compila sem esse
++// socorro e quebra. Ver README > "Patches de node_modules".
++#include <thread>
++
+ #include <cxxreact/MessageQueueThread.h>
+ #include <cxxreact/TraceSection.h>
+ #include <hermes/hermes.h>

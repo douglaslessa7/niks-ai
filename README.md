@@ -71,7 +71,7 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 ## SPLASH SCREEN + ÍCONE + NOME DO APP + GOTCHAS NATIVOS (iOS/Android)
 
 **Nome do app: `NIKS`** (era "NIKS AI"). É o nome que aparece sob o ícone na home screen. Vive em **3 lugares** — mudar nos três: `app.json` → `expo.name`, `ios/NIKSAI/Info.plist` → `CFBundleDisplayName`, `android/app/src/main/res/values/strings.xml` → `app_name`.
-> O `PRODUCT_NAME` do Xcode continua **`NIKSAI`** de propósito (é o `CFBundleName`, nome interno do binário — o usuário nunca vê). Trocar mexeria no pbxproj, no caminho do bundle e possivelmente em certificados. O nome da **listagem na App Store** é outra coisa ainda: vem do App Store Connect, não do código.
+> ⚠️ **DESATUALIZADO — o `PRODUCT_NAME` do app hoje é `NIKS`** (lido do `project.pbxproj`; o produto sai como `NIKS.app`). O que continua `NIKSAI` é o **target**, a **pasta** `ios/NIKSAI/` e o **scheme**. O texto abaixo é histórico: dizia que o `PRODUCT_NAME` seguia `NIKSAI` de propósito (é o `CFBundleName`, nome interno do binário — o usuário nunca vê). Trocar mexeria no pbxproj, no caminho do bundle e possivelmente em certificados. O nome da **listagem na App Store** é outra coisa ainda: vem do App Store Connect, não do código.
 
 **Ícone atual: `assets/icon-niks.png`** — 1024×1024 **RGB opaco** (a Apple rejeita ícone com canal alpha). É a **logo invertida**: flor branca sobre fundo rosa `#FF9D9D`, logo a 70% do canvas. O `assets/icon.png` antigo continua no repo (não foi sobrescrito) — reverter = apontar `app.json` de volta e recopiar o PNG nativo.
 
@@ -87,14 +87,18 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 > ⚠️ **A pasta `ios/` (e `android/`) é gitignorada e regenerável (workflow prebuild).** Por isso mudanças em assets nativos **não aparecem no `git status`**, e o **`app.json` é a fonte de verdade** — mas veja o ponto abaixo.
 
 > ⚠️ **`npx expo run:ios` NÃO re-roda o prebuild quando a pasta `ios/` já existe** → ele buildA do `ios/` atual e **ignora mudanças de splash, ÍCONE e NOME no `app.json`**. Para propagar depois de existir `ios/`, use **`npx expo prebuild -p ios`** (ver o aviso sobre `--clean` abaixo) **ou** edite os assets nativos direto:
-> - **Ícone (iOS):** `ios/NIKSAI/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png` — é um **PNG único de 1024**, basta substituí-lo. Foi o caminho usado (mais cirúrgico que prebuild, e `ios/` é gitignorada/regenerável).
+> - **Ícone (iOS):** `ios/NIKSAI/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png` — é um **PNG único de 1024**, basta substituí-lo. Foi o caminho usado (mais cirúrgico que prebuild, e `ios/` é gitignorada/regenerável). ⚠️ **Mas agora o `prebuild` roda com frequência neste projeto, e ele REESCREVE esse PNG a partir do `expo.icon` do `app.json`.** Trocar só o arquivo nativo é revertido silenciosamente no próximo `prebuild` — a fonte de verdade é o `app.json`.
 > - **Nome (iOS):** `ios/NIKSAI/Info.plist` → `CFBundleDisplayName`. **Nome (Android):** `values/strings.xml` → `app_name`.
 > - **Splash (iOS):** `ios/NIKSAI/Images.xcassets/SplashScreenLegacy.imageset/image.png` (+@2x/@3x) e a cor em `SplashScreenBackground.colorset/Contents.json` + `SplashScreen.storyboard` (`UILaunchStoryboardName = SplashScreen`).
 > - **Splash (Android):** `android/app/src/main/res/drawable-*/splashscreen_logo.png` (5 densidades, logo transparente centralizada) + `values/colors.xml` → `splashscreen_background`.
 
 > ⚠️ **Prefira `npx expo prebuild -p ios` SEM `--clean` para propagar config nova (plugins/permissões).** O `--clean` **regenera o `ios/` do zero** e apaga tudo que **não** está expresso no `app.json` — inclusive a capability **In-App Purchase**, que é configurada à mão no Xcode e sem a qual o `getOfferings()` do RevenueCat falha **silenciosamente em produção** (ver GOTCHA na decisão 16). O prebuild não-clean aplica os mods (Info.plist, Podfile) **por cima** do projeto existente e preserva o pbxproj — na feature de compartilhamento ele só mudou aspas (`PRODUCT_NAME = NIKSAI` → `"NIKSAI"`), mantendo `DEVELOPMENT_TEAM`, entitlements e o User Script Sandboxing desligado. Depois do prebuild, rodar `pod install --project-directory=ios`. Use `--clean` só como último recurso, sabendo que terá de **reativar a capability de In-App Purchase no Xcode** depois.
 >
-> ⚠️ **ESTADO REAL (set/2026): a pasta nativa hoje JÁ É `ios/NIKS/` + `ios/NIKS.xcodeproj` + target `NIKS`** (não `ios/NIKSAI/` como vários trechos deste README dizem) — algum `--clean` já rodou depois da troca do nome. Leia `NIKSAI` como `NIKS` nos caminhos nativos. Consequência prática: nenhuma extensão/target novo pode se chamar só `NIKS` (colide com o target do app — ver "Feature: Compartilhar com o NIKS").
+> ⚠️ **ESTADO REAL (set/2026 — lido do disco e do `project.pbxproj`, não de memória): a pasta nativa É `ios/NIKSAI/`**, com `ios/NIKSAI.xcodeproj`, `ios/NIKSAI.xcworkspace` e scheme `NIKSAI`. São **dois targets**: `NIKSAI` (o app) e `NIKSShare` (a Share Extension). **Os caminhos `NIKSAI` deste README estão certos** — use-os como estão.
+> 
+> ⚠️ **O que mudou de verdade foi o `PRODUCT_NAME` do app: hoje é `NIKS`** (o produto sai como `NIKS.app`), **não `NIKSAI`** — a nota da seção do ícone, que diz que ele "continua `NIKSAI`", está vencida. É daí que vem a regra prática: nenhum target novo pode ter `PRODUCT_NAME = NIKS`, porque colidiria com o produto do app — foi por isso que a extensão nasceu `NIKSShare` (ver "Feature: Compartilhar com o NIKS").
+> 
+> 🗑️ **Correção (set/2026):** esta linha afirmava em negrito que a pasta "JÁ É `ios/NIKS/`" porque "algum `--clean` já rodou". **Era falso** — nenhum `--clean` rodou, e a afirmação contradizia o próprio aviso duas linhas abaixo (que trata `ios/NIKS/` como o desastre a evitar). Quem seguisse esta linha montaria comandos de `xcodebuild` que não existem.
 >
 > ⚠️ **Motivo NOVO e mais grave para nunca rodar `--clean`:** agora que `expo.name` é **`NIKS`** (era "NIKS AI"), o `--clean` regeneraria a pasta nativa como **`ios/NIKS/`** em vez de `ios/NIKSAI/` — os caminhos deste README, o `PRODUCT_NAME`, o Podfile e o projeto do Xcode **quebram todos de uma vez**. O prebuild **sem** `--clean` continua seguro (aplica os mods por cima e preserva o pbxproj).
 
@@ -1774,6 +1778,104 @@ expo-media-library      ← salvar a colagem na galeria. ⚠️ Já estava no pa
 
 ---
 
+## REACT NATIVE COMPILADO DO FONTE (`buildReactNativeFromSource: true`)
+
+No `app.json`, dentro do plugin `expo-build-properties` → `ios`. **Não remover sem ler isto.**
+
+**O padrão do SDK 55 é o contrário:** o React Native vem como **binário pronto** (`React-Core-prebuilt/React.xcframework` + `ReactNativeDependencies`), ligado automaticamente pelo `ios/Podfile` quando `ios.buildReactNativeFromSource` não é `'true'`. É muito mais rápido de compilar.
+
+**Por que desligamos.** O binário pronto é compilado em **Release**, então tudo que vive dentro de `#if RCT_DEV` **não existe nele** — conferido com `nm` no `.xcframework`: `RCTBridge`, `RCTRootView`, `RCTDevSettings` e `RCTDevMenu` estão lá; `RCTPackagerConnection`, `RCTPackagerClient`, `RCTInspectorDevServerHelper` e `RCTReconnectingWebSocket` **não**. E o `expo-dev-launcher` (o dev client, linkado **só no Debug**) precisa do `RCTPackagerConnection` em dois pontos — um deles é uma *categoria* sobre a classe, que não pode existir sem ela. Resultado: **o build de desenvolvimento não linkava**, com `Undefined symbols: _OBJC_CLASS_$_RCTPackagerConnection`.
+
+> ⚠️ **Não adianta "tirar o expo-dev-client do Release" — ele já não está lá.** O `Pods-NIKSAI.release.xcconfig` linka apenas `-l"expo-dev-menu-interface"`; `expo-dev-launcher` e `expo-dev-menu` só aparecem no `.debug.xcconfig`. O erro sempre foi **no Debug**. Voltar ao prebuilt daria Archive rápido e **quebraria o desenvolvimento do dia a dia**.
+
+**O custo:** a primeira compilação passa a compilar o React Native inteiro (bem mais lenta, em Debug e em Release); as seguintes voltam ao normal. ⚠️ **E consome muito mais disco:** um Archive assim precisa de vários GB livres. Com o disco cheio, o build falha em pontos aleatórios e **sem mensagem útil** — fácil de confundir com bug de código. Antes de um Archive, conferir `df -h /System/Volumes/Data`; o `ModuleCache.noindex` do `DerivedData` sozinho chega a 5 GB e pode ser apagado sem medo (regenera). E abriu-se o bug do `HermesExecutorFactory.cpp` — ver a seção abaixo.
+
+**Como conferir que está valendo:** depois do `pod install`, o log diz `Removing React-Core-prebuilt` / `Removing ReactNativeDependencies`, e a pasta `ios/Pods/React-Core-prebuilt/` deixa de existir.
+
+---
+
+## PATCHES DE `node_modules` (patch-package)
+
+Aplicados automaticamente pelo `postinstall` (`"postinstall": "patch-package"`, v8.0.1). Vivem em `patches/`. ⚠️ **Ao atualizar qualquer um destes pacotes, o `patch-package` vai FALHAR ao aplicar** — isso é o comportamento desejado, é o alarme. Na hora, conferir se o upstream já corrigiu antes de refazer o patch às cegas.
+
+| Patch | O que faz |
+|---|---|
+| `react-native+0.83.4.patch` | `#include <thread>` em `ReactCommon/hermes/executor/HermesExecutorFactory.cpp` — ver abaixo |
+| `expo-share-intent+6.1.1.patch` | opção `iosShareExtensionDisplayName` (não existe no pacote) + dedupe do App Group nos entitlements. Ver "Feature: Compartilhar com o NIKS" |
+| `@virex-tech+paywallo-sdk+2.9.0.patch` | SDK do paywall |
+| `@expo+cli+55.0.21.patch` | troca `debug(\`startSession: ${pairRecord}\`)` por `debug('startSession: %o', pairRecord)` no `LockdowndClient` (instalação no device). Cosmético, sem efeito no build |
+
+### `react-native+0.83.4.patch` — `#include <thread>` no `HermesExecutorFactory.cpp`
+
+**Uma linha, e ela é obrigatória para o Archive passar.**
+
+**O bug (é do React Native, não nosso).** O arquivo `ReactCommon/hermes/executor/HermesExecutorFactory.cpp` tem a struct `ReentrancyCheck` dentro de um `#ifndef NDEBUG`, e essa struct usa `std::thread::id` e `std::this_thread::get_id()`. **Mas o arquivo nunca incluiu `<thread>`.** Ele só compilava por acidente: quando `HERMES_ENABLE_DEBUGGER` está definido, entram os headers do inspetor do Hermes, e são eles que arrastam o `<thread>` junto.
+
+**Por que isso só apareceu agora.** Enquanto o React Native vinha como binário pronto (`React-Core-prebuilt`), este arquivo não era compilado aqui. Ao ligar `buildReactNativeFromSource: true` (necessário para o `expo-dev-client` — ver a seção logo acima), ele passou a ser compilado, e as duas proteções falham ao mesmo tempo em Release:
+
+| | `HERMES_ENABLE_DEBUGGER` | `NDEBUG` | Resultado |
+|---|---|---|---|
+| **Debug** | definido (só no Debug, por `scripts/cocoapods/utils.rb`) | ausente | o bloco compila, mas o `<thread>` chega pelos headers do inspetor → **passa** |
+| **Release** | ausente | **deveria estar, não está** | o bloco compila sem socorro nenhum → **12 erros** |
+
+Sintoma exato: `No member named 'thread' in namespace 'std'`, `use of undeclared identifier 'expected'`, mais erros em cascata sobre `WithRuntimeDecorator` e construtores do `HermesExecutor…`.
+
+**Por que não consertamos pelo `NDEBUG`.** O `-DNDEBUG` deveria ser posto pela função `add_ndebug_flag_to_pods_in_release` do RN, no `post_install`. Medido num Archive real: ele chegou em **1 de 255 targets** — só no agregado `Pods-NIKSAI`, que é o único caso em que a função grava num arquivo `.xcconfig` em disco. O `Pods.xcodeproj` em disco **tem** o flag para o `React-hermes` Release e o `xcodebuild -showBuildSettings` o resolve, mas duas builds seguidas não o usaram; a divergência não foi explicada. **O include não depende de nada disso** — é por isso que ele é a correção certa.
+
+⚠️ **Ao subir a versão do React Native:** conferir primeiro se o upstream já adicionou o `#include <thread>` nesse arquivo. Se sim, **apagar o patch**, não refazê-lo. Se não, regerar com `npx patch-package react-native`. Teste rápido de 10 segundos, sem build completo — compile só esse arquivo com os flags de Release e **sem** `-DNDEBUG`: se passar, o upstream corrigiu.
+
+⚠️ **Ao rodar `npx patch-package <pacote>`, conferir o patch gerado antes de commitar.** Na primeira tentativa ele engoliu um `.DS_Store` que o Finder tinha deixado dentro de `node_modules/react-native/` — o patch recriaria esse lixo em toda instalação. Foi removido e o patch regerado.
+
+---
+
+## QUANDO O BUILD FALHA E O LOG NÃO DIZ O MOTIVO
+
+Duas falhas desta sessão só foram resolvidas porque o log **de verdade** foi lido. Vale conhecer o caminho antes de precisar.
+
+**1. O log do Xcode é um arquivo comprimido, não o que aparece na tela.**
+```bash
+ls -lt ~/Library/Developer/Xcode/DerivedData/NIKSAI-*/Logs/Build/*.xcactivitylog | head -3
+gunzip -c <o mais recente> > /tmp/build.log
+```
+
+**2. Os flags do compilador NÃO estão nesse log.** O comando do `clang` aparece truncado, terminando num `@/…/<hash>-common-args.resp`. **É nesse `.resp` que vivem `-std=`, os `-D` e os includes** — é por isso que se conclui, errado, que "o log não mostra nada". O arquivo fica ao lado dos objetos:
+```
+…/Pods.build/Release-iphoneos/<Pod>.build/Objects-normal/arm64/*-common-args.resp
+```
+Com ele dá para **reproduzir a compilação de um único arquivo** fora do Xcode, em segundos, e testar hipóteses uma a uma:
+```bash
+clang -x c++ @<arquivo.resp> -include <o .pch do pod> -c <arquivo.cpp> -o /tmp/teste.o
+```
+Foi assim que o bug do `HermesExecutorFactory.cpp` foi isolado (ver "Patches de `node_modules`"): mesmo comando, um `-D` de diferença, 12 erros contra 0.
+
+**3. Tarefa que falha SEM imprimir nada não errou — ela morreu.** No log, toda tarefa bem-sucedida registra saída e métricas (`TaskMetrics`). Quando a falhada não tem nenhum dos dois, o processo caiu. O relatório está em `~/Library/Logs/DiagnosticReports/` — procure pelo horário do build.
+
+### Caso real: "Compile asset catalogs failed" que **não** é o ícone
+
+**Sintoma:** o Archive falha em `CompileAssetCatalogVariant thinned … Images.xcassets --app-icon AppIcon`, com `Command … failed with a nonzero exit code` e **nenhuma outra linha**. O Debug no device passa.
+
+**Não é o ícone, e não vale a pena reinvestigar isso.** Já foi medido: `App-Icon-1024x1024@1x.png` é **1024×1024, RGB, sem canal alpha** (o que a Apple exige), nenhum asset faltando ou corrompido, e o `actool` rodado à mão **com o comando exato do Archive** termina com **exit 0**, gerando `Assets.car` normalmente.
+
+**A causa real:** o `actool` delega o trabalho ao processo `ibtoold`, e ele morreu de **SIGSEGV**. A pilha não tem nada de imagem — é uma thread de fundo que conversa com o serviço do **Simulador**:
+```
+objc_release
+-[SimServiceContext initWithDeveloperDir:connectionType:error:]
+IDESimulatorAvailabilityProvider.startObservingSimulatorUpdates()
+```
+Confirmação independente: `launchctl list | grep -i coresimulator` mostrava `CoreSimulatorService` com última saída **-9 (SIGKILL)** e `SimLaunchHost-arm64` com **-11 (SIGSEGV)** — este último no ar havia **dois meses**.
+
+**A correção** (nada de mexer no ícone ou no catálogo):
+```bash
+xcrun simctl shutdown all
+launchctl remove com.apple.CoreSimulator.CoreSimulatorService   # sobe sozinho
+launchctl remove com.apple.CoreSimulator.SimLaunchHost-arm64
+```
+Depois, `launchctl list | grep -i coresimulator` não deve ter nenhum código negativo. Reiniciar o Mac tem o mesmo efeito.
+
+> ⚠️ **É intermitente, não determinístico** — é uma corrida na inicialização do `ibtoold` contra um serviço de simulador em estado ruim. Pode passar numa segunda tentativa sem nada ter sido feito, e pode voltar depois. Não conclua que "o que você mexeu antes resolveu".
+
+---
+
 ## DESIGN SYSTEM — HOME SCREEN (Sessão 22)
 
 ### Tela Home (`app/(app)/home.tsx`)
@@ -1907,13 +2009,13 @@ A usuária, navegando no Mercado Livre, Safari ou site de marca, toca em **Compa
 **Lib: `expo-share-intent` 6.x** (linha do SDK 55). A extensão é **nativa e leve**: só grava o conteúdo no App Group e abre o app via `niks-ai://dataUrl=…`. **Nada de React Native dentro da extensão** (limite de ~120 MB de memória) — toda a UI roda no app principal. Android desligado (`disableAndroid: true`).
 
 **Config (`app.json` → plugin `expo-share-intent`):** `iosActivationRules` (WebURL 1, WebPage 1, Image 1, Text), `iosAppGroupIdentifier: group.br.com.niksai.app`, `preprocessorInjectJS` (JS que roda **na página do Safari** antes da extensão: grava `metas['niks:image']` = JSON-LD `Product.image` → `og:image`/`twitter:image` → `#landingImage` da Amazon, sempre como URL absoluta; o pacote já mandava as metatags cruas em `shareIntent.meta`), `iosShareExtensionName: "NIKS Share"` (→ target/pasta **`NIKSShare`**, bundle id **`br.com.niksai.app.share-extension`**) e `iosShareExtensionDisplayName: "NIKS"` (nome que aparece no share sheet).
-> ⚠️ **O target NÃO pode se chamar `NIKS`**: colide com o target do app (pasta nativa é `ios/NIKS/`) — o plugin **pula a criação** ("already exists") e, pior, **escreve os arquivos da extensão dentro de `ios/NIKS/`** (sobrescreve o `PrivacyInfo.xcprivacy` do app). Por isso o nome interno é `NIKS Share` e o nome exibido vem da opção `iosShareExtensionDisplayName`, **que não existe no pacote original — é um patch nosso** (`patches/expo-share-intent+6.1.1.patch`, aplicado pelo `postinstall`). O mesmo patch corrige um **2º bug do plugin**: a cada `prebuild` não-clean ele **duplicava** `group.br.com.niksai.app` em `NIKS.entitlements` (agora deduplica com `Set`). Ao atualizar o pacote, refazer o patch.
+> ⚠️ **O target NÃO pode se chamar `NIKS`**: colide com o target do app (o `PRODUCT_NAME` do app é `NIKS`) — o plugin **pula a criação** ("already exists") e, pior, **escreve os arquivos da extensão dentro de `ios/NIKS/`** (sobrescreve o `PrivacyInfo.xcprivacy` do app). Por isso o nome interno é `NIKS Share` e o nome exibido vem da opção `iosShareExtensionDisplayName`, **que não existe no pacote original — é um patch nosso** (`patches/expo-share-intent+6.1.1.patch`, aplicado pelo `postinstall`). O mesmo patch corrige um **2º bug do plugin**: a cada `prebuild` não-clean ele **duplicava** `group.br.com.niksai.app` em `NIKS.entitlements` (agora deduplica com `Set`). Ao atualizar o pacote, refazer o patch.
 >
 > ℹ️ O plugin **reescreve os arquivos de `ios/NIKSShare/` a cada prebuild** (Info.plist, preprocessor, ViewController) mesmo quando pula a criação do target — mudar `preprocessorInjectJS`/`iosActivationRules` no `app.json` + `prebuild` sem `--clean` basta.
 >
 > ⚠️ **A CADA BUMP DE VERSÃO, corrigir a versão da extensão à mão.** O prebuild não-clean **pula** o target já existente (`NIKSShare already exists in project. Skipping…`), então ele atualiza o `CFBundleShortVersionString` do app mas **deixa o `MARKETING_VERSION` da extensão no valor antigo** — e a Apple recusa o upload quando app e `.appex` divergem. Depois de subir a versão no `app.json` e rodar o prebuild:
 > ```bash
-> sed -i '' 's/MARKETING_VERSION = <versão antiga>;/MARKETING_VERSION = <versão nova>;/g' ios/NIKS.xcodeproj/project.pbxproj
+> sed -i '' 's/MARKETING_VERSION = <versão antiga>;/MARKETING_VERSION = <versão nova>;/g' ios/NIKSAI.xcodeproj/project.pbxproj
 > ```
 > (o `CURRENT_PROJECT_VERSION` da extensão já acompanha o `buildNumber`). Conferir no binário: `plutil -extract CFBundleShortVersionString raw <NIKS.app>/PlugIns/NIKSShare.appex/Info.plist`.
 >
@@ -1973,11 +2075,11 @@ A usuária, navegando no Mercado Livre, Safari ou site de marca, toca em **Compa
 > pod 'GoogleUtilities', :modular_headers => true
 > pod 'RecaptchaInterop', :modular_headers => true
 > ```
-> Como `ios/` é gitignorada, isso **se perde num `prebuild --clean`** (mais um motivo para nunca rodar) e precisa ser refeito se o Podfile for regenerado.
+> ⚠️ **Correção (set/2026): perde-se em QUALQUER `prebuild`, não só no `--clean`.** O `prebuild` **sem** `--clean` também reescreve o `ios/Podfile` do zero — conferido: depois dos prebuilds desta sessão, as duas linhas sumiram. **Estado atual:** o `pod install` passa sem elas, e `GoogleUtilities`/`RecaptchaInterop` **nem aparecem no `Podfile.lock`** (nada os puxa hoje). Ou seja, não precisa refazer por precaução — mas se o erro de *"do not define modules"* voltar, a correção é esta, e ela some no próximo `prebuild`.
 
 **⚠️ Testar a Share Extension NO SIMULADOR exige build ASSINADO.** Com `CODE_SIGNING_ALLOWED=NO` o Xcode não embute os entitlements, o App Group **não existe** e cada processo escreve num `group.br.com.niksai.app.plist` próprio: a extensão grava, o app lê vazio e o share "não chega" (bug real, set/2026 — custou uma sessão inteira de investigação). Build correto para o simulador:
 > ```bash
-> xcodebuild -workspace ios/NIKS.xcworkspace -scheme NIKS -configuration Debug \
+> xcodebuild -workspace ios/NIKSAI.xcworkspace -scheme NIKSAI -configuration Debug \
 >   -destination 'platform=iOS Simulator,id=<UDID>' \
 >   CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" build
 > ```
@@ -2632,6 +2734,8 @@ Um grid 2×2 feito com `flexWrap: 'wrap'` + `gap`, dando às células largura fi
 Descoberto no grid da colagem (`app/(share)/share-capture.tsx`).
 
 ---
+
+*Sessão 61 — Setembro 2026 — **O Archive voltou a passar: React Native compilado do fonte + patch no Hermes + um crash do Xcode disfarçado de erro de ícone.** Três falhas de build encadeadas, cada uma escondendo a seguinte. **(1)** O dev client não linkava (`Undefined symbols: _OBJC_CLASS_$_RCTPackagerConnection`): o React Native do SDK 55 vem como **binário pronto compilado em Release**, sem nada que viva dentro de `#if RCT_DEV` — e o `expo-dev-launcher` depende justamente dessa classe. Liguei **`buildReactNativeFromSource: true`**. ⚠️ Avaliada e **descartada** a alternativa "tirar o dev-client do Release": ele **já não está no Release** (só no Debug) — o erro sempre foi no build de desenvolvimento. **(2)** Com o RN compilando do fonte, apareceu um bug do próprio RN 0.83.4: `HermesExecutorFactory.cpp` usa `std::thread` dentro de `#ifndef NDEBUG` **sem nunca incluir `<thread>`** — só compila em Debug, onde os headers do inspetor do Hermes trazem o `<thread>` de carona. Corrigido por **`patches/react-native+0.83.4.patch`** (uma linha). O `-DNDEBUG` que deveria neutralizar o bloco chegou em **1 de 255 targets** do Archive. **(3)** Antes disso, o Archive falhava em "Compile asset catalogs" **sem mensagem nenhuma** — e **não era o ícone** (verificado: 1024×1024, RGB, sem alpha; o `actool` à mão sai com exit 0). O `ibtoold` morria de **SIGSEGV numa thread do CoreSimulator**; resolvido reiniciando o serviço do Simulador. **Também nesta sessão:** merge da `newdesign` (trabalho local de colagem/animação + "Compartilhar com o NIKS"), com os dois conflitos resolvidos por **união** e as sessões renumeradas (havia duas "58"); e quatro afirmações **falsas** deste README corrigidas — a pasta nativa (é `ios/NIKSAI/`, nunca virou `ios/NIKS/`), o `PRODUCT_NAME` (hoje é `NIKS`), o gotcha dos `extraPods` (perde-se em **qualquer** prebuild) e o caminho do ícone (o prebuild o sobrescreve a partir do `app.json`). Ver "React Native compilado do fonte", "Patches de `node_modules`" e "Quando o build falha e o log não diz o motivo".*
 
 *Sessão 60 — Setembro 2026 — **Animação "foto voando para a pilha" no scan de 6 fotos (`camera-multi.tsx`).** Antes, a foto só aparecia na pilha do canto e o número subia, sem nenhum retorno visual. Agora: clarão no toque → foto congela, vira cartão e voa em curva até a pilha → pilha pula, badge salta, vibração leve; a instrução só troca no pouso. Ajustado no device em 3 rodadas: (1) tudo mais rápido; (2) o "antes da descida" ainda lento — a causa real era esperar o `downscale` antes do voo, que passou a rodar em paralelo (o cartão mostra a foto crua); (3) com a foto crua o cartão aparecia deitado, porque o `<Image>` do RN ignora a rotação do EXIF — trocado por `expo-image`. Foto salva/enviada à análise inalterada. **Na mesma sessão: exemplo visual por passo** — círculo com foto-modelo (geradas por IA, `assets/scan-examples/`) + etiqueta com o nome do passo abaixo do contador, inspirado no Doji; perfis mapeados pela seta, não pelo nome dos arquivos. Ver "Scan de pele multi-foto (13b)".*
 

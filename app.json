@@ -3,7 +3,7 @@
     "name": "NIKS",
     "newArchEnabled": true,
     "slug": "niks-ai",
-    "version": "1.0.48",
+    "version": "1.0.54",
     "orientation": "portrait",
     "icon": "./assets/icon-niks.png",
     "userInterfaceStyle": "light",
@@ -109,6 +109,7 @@
         "expo-build-properties",
         {
           "ios": {
+            "buildReactNativeFromSource": true,
             "extraPods": [
               { "name": "GoogleUtilities", "modular_headers": true },
               { "name": "RecaptchaInterop", "modular_headers": true }
