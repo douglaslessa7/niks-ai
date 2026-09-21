@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Image, StyleSheet,
   useWindowDimensions, LayoutAnimation, Platform, UIManager,
@@ -26,6 +26,7 @@ import { getDicaDoDia } from '../../lib/dicas/dicaDoDia';
 import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { Skeleton } from '../../components/Skeleton';
+import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
 
 // Habilita LayoutAnimation no Android (iOS já vem ligado)
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -235,10 +236,36 @@ export default function Home() {
   // escaneou (`skinScore == null`), que já tem o placeholder da foto.
   const legacyScan = skinScore != null && metricas == null;
 
+  // ── Alvos do tutorial de primeiro acesso (coach marks) ───────────────────
+  // As posições vão para `lib/coachMarks`; quem desenha o recorte é o overlay
+  // montado no `(app)/_layout.tsx` (a navbar mora lá, e o tutorial precisa
+  // iluminá-la). Ver "Feature: Tutorial de primeiro acesso" no README.
+  const scanMark = useCoachMark('scan', 'pill');
+  // ⚠️ Sem scan o card de métricas está `disabled` — e a frase do tutorial
+  // ("toque nas suas métricas para compartilhar") seria mentira. Não registrar o
+  // alvo faz o overlay PULAR esse passo sozinho. A usuária vinda do onboarding
+  // sempre tem scan; isto é a rede de segurança para qualquer outro caminho.
+  const metricsMark = useCoachMark('metrics', 'rect', { radius: 16, enabled: skinScore != null });
+
+  // A home abre com skeleton no cold start. O tutorial só pode começar com os
+  // dados na tela — destacar um card pulsando explicaria a coisa errada.
+  useEffect(() => {
+    setCoachStageReady(!loading);
+    return () => setCoachStageReady(false);
+  }, [loading]);
+
+  // O overlay avisa antes de medir: a home volta ao topo para o card de métricas
+  // estar visível (ela rola, e medir com a tela rolada poria o buraco no lugar
+  // errado). `animated: false` — é preparação, não animação para a usuária ver.
+  const scrollRef = useRef<ScrollView | null>(null);
+  useEffect(() => onCoachPrepare(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }), []);
 
   return (
     <View style={styles.root}>
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -329,7 +356,11 @@ export default function Home() {
           style={[styles.metricsCardTouch, { marginTop: -CARD_OVERLAP }]}
           onPress={() => { haptics.tap(); router.push('/(share)/share-capture' as any); }}
         >
-        <View style={[styles.metricsCard, { height: 187 * MS }]}>
+        <View
+          ref={metricsMark.ref}
+          onLayout={metricsMark.onLayout}
+          style={[styles.metricsCard, { height: 187 * MS }]}
+        >
           {/* Wrapper absoluto que PREENCHE o card: as métricas seguem posicionadas pelas
               coordenadas do Figma (left/top a partir de 0), idêntico a antes. Existe só
               para apagar as 6 de uma vez no estado legado, virando fundo do aviso. */}
@@ -498,6 +529,9 @@ export default function Home() {
       {/* ── Botão Escanear — fixo, logo acima da tab bar (não rola com o conteúdo) ──
           bottom = BAR_HEIGHT da navbar (80px, node 1:27) + 12px de respiro. */}
       <View style={styles.scanWrap} pointerEvents="box-none">
+        {/* A View de medida do coach mark abraça só o botão (o `scanWrap` é
+            full-width e daria uma pílula do tamanho da tela). */}
+        <View ref={scanMark.ref} onLayout={scanMark.onLayout}>
         <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.action(); startFaceScan(); }}>
           <LinearGradient
             colors={['#FF9D9D', '#FF9D9D']}
@@ -509,6 +543,7 @@ export default function Home() {
             <Text style={[styles.scanText, { fontFamily: fBold }]}>Escanear</Text>
           </LinearGradient>
         </TouchableOpacity>
+        </View>
       </View>
 
     </View>

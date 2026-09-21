@@ -14,6 +14,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { requestPushPermission, savePushToken } from '../../lib/notifications';
 import { haptics } from '../../lib/haptics';
+import { useAppStore } from '../../store/onboarding';
 
 const DEEP = '#121212';
 const DEEP_SOFT = '#515151';
@@ -32,6 +33,7 @@ export default function Notifications() {
   const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
   const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
   const router = useRouter();
+  const armHomeTutorial = useAppStore((s) => s.armHomeTutorial);
   const [loading, setLoading] = useState(false);
   const [hasRequested, setHasRequested] = useState(false);
   const [userName, setUserName] = useState('');
@@ -48,6 +50,12 @@ export default function Notifications() {
   }, []);
 
   const navigateToApp = () => {
+    // ÚNICO ponto em que uma usuária NOVA entra no app (as outras rotas para a
+    // home — login, paywall de reengajamento, `index` com sessão — são de conta
+    // já existente). É por isso que o tutorial de primeiro acesso é armado aqui:
+    // quem atualiza o app ou loga numa conta antiga nunca passa por esta linha e
+    // portanto nunca vê o tutorial. Ver "Feature: Tutorial de primeiro acesso".
+    armHomeTutorial();
     router.replace('/(app)/home');
   };
 
