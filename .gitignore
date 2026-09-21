@@ -40,3 +40,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Arquivos de trabalho da CLI do Supabase (project-ref, versões, pooler url).
+# Regenerados por `supabase link` — ver "Migrations" no README.
+supabase/.temp/
