@@ -18,6 +18,12 @@ import { MixpanelProvider, useMixpanel } from '../lib/mixpanel/MixpanelProvider'
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
 import { ShareIntentProvider } from 'expo-share-intent';
 import { ShareIntentBridge } from '../components/share/ShareIntentBridge';
+import {
+  armSuppressReapresentar,
+  canShowDownsell,
+  markDownsellShown,
+  requestDownsell,
+} from '../lib/paywallFlow';
 
 const PAYWALLO_CONFIG = {
   appKey: process.env.EXPO_PUBLIC_PAYWALLO_APP_KEY ?? '',
@@ -123,7 +129,24 @@ const superwallPurchaseController = {
       const active = typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined';
       return active ? { type: 'purchased' } : { type: 'failed', error: 'Entitlement não ativo' };
     } catch (error: any) {
-      if (error?.userCancelled) return { type: 'cancelled' };
+      if (error?.userCancelled) {
+        // Cancelou a folha de pagamento da Apple. É o mesmo momento de desistência
+        // que o placement `transaction_abandon` do Superwall cobriria — só que ele
+        // é pago, então detectamos aqui. Mesmo molde do botão de cupom: arma a
+        // supressão (senão o onDismiss reapresentaria o paywall normal por cima),
+        // fecha o paywall e pede o downsell — que a paywall-soft registra com os
+        // callbacks de fail closed.
+        //
+        // Se o downsell JÁ apareceu nesta sessão (inclusive se o cancelamento foi
+        // DENTRO dele), nada disso roda: ela segue no paywall, como antes.
+        if (canShowDownsell()) {
+          markDownsellShown();
+          armSuppressReapresentar();
+          try { await Superwall.shared.dismiss(); } catch {}
+          requestDownsell();
+        }
+        return { type: 'cancelled' };
+      }
       return { type: 'failed', error: error?.message ?? 'Erro na compra' };
     }
   },

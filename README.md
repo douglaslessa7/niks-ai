@@ -224,7 +224,7 @@ const { data, state, refresh } = useCachedQuery(
 
 **2. `persist` no store Zustand** (`store/onboarding.ts`). O store era 100% em memória, então o cache do protocolo **nunca funcionava** na prática — depois de qualquer restart ele caía direto no fallback do Supabase.
 
-> ⚠️ **O `partialize` é uma LISTA BRANCA deliberada — hoje `skinScore`, `protocolResult`, `scanTutorialSeen`, `appliedCoupon`, `pendingName`, `homeTutorialPending` e `homeTutorialSeen`.** Não adicionar campo sem entender o porquê de cada exclusão: `subscriptionVerified` **precisa** voltar a `false` no cold start (RevenueCat, decisão 16); `niksChatMode` **precisa** cair em `'empty'` no cold start; `*ImageBase64`/`*ImageUri`/`collagePhotos`/`homePhotoDraft` são base64 de foto (**estouram o AsyncStorage**) e hand-offs de vida curta entre telas. `scanTutorialSeen` está **dentro** justamente porque o tutorial de prep deve aparecer uma vez só e nunca mais (o oposto de `stickerSheetSeen`, que fica fora). `appliedCoupon` está **dentro** porque o cupom é aplicado ANTES do signup e precisa sobreviver até o cadastro para ligar ao `user_id` (ver "Sistema de cupons de influenciadora", seção 15). `homeTutorialPending`/`homeTutorialSeen` estão **dentro** porque o tutorial de primeiro acesso é armado no fim do onboarding (e o app pode morrer antes da home) — mas ⚠️ **eles são CACHE do aparelho, não a verdade**: a regra "uma vez por conta" mora em `users.home_tutorial_seen_at`, e o **logout zera os dois** (`clearHomeTutorialFlags`), senão o `seen` de uma conta vazava para a próxima criada no mesmo aparelho. Ver "Feature: Tutorial de primeiro acesso da home". ⚠️ **Cuidado com a supressão de reapresentação do paywall (`lib/paywallFlow.ts`): essa NUNCA pode ser persistida** — é de uso único e em memória de propósito; persistir viraria brecha para escapar do paywall.
+> ⚠️ **O `partialize` é uma LISTA BRANCA deliberada — hoje `skinScore`, `protocolResult`, `scanTutorialSeen`, `appliedCoupon`, `pendingName`, `homeTutorialPending` e `homeTutorialSeen`.** Não adicionar campo sem entender o porquê de cada exclusão: `subscriptionVerified` **precisa** voltar a `false` no cold start (RevenueCat, decisão 16); `niksChatMode` **precisa** cair em `'empty'` no cold start; `*ImageBase64`/`*ImageUri`/`collagePhotos`/`homePhotoDraft` são base64 de foto (**estouram o AsyncStorage**) e hand-offs de vida curta entre telas. `scanTutorialSeen` está **dentro** justamente porque o tutorial de prep deve aparecer uma vez só e nunca mais (o oposto de `stickerSheetSeen`, que fica fora). `appliedCoupon` está **dentro** porque o cupom é aplicado ANTES do signup e precisa sobreviver até o cadastro para ligar ao `user_id` (ver "Sistema de cupons de influenciadora", seção 15). `homeTutorialPending`/`homeTutorialSeen` estão **dentro** porque o tutorial de primeiro acesso é armado no fim do onboarding (e o app pode morrer antes da home) — mas ⚠️ **eles são CACHE do aparelho, não a verdade**: a regra "uma vez por conta" mora em `users.home_tutorial_seen_at`, e o **logout zera os dois** (`clearHomeTutorialFlags`), senão o `seen` de uma conta vazava para a próxima criada no mesmo aparelho. Ver "Feature: Tutorial de primeiro acesso da home". ⚠️ **Cuidado com o estado de paywall de `lib/paywallFlow.ts` — supressão de reapresentação e flag do downsell: NUNCA persistir.** A supressão é de uso único e o downsell é "uma vez por SESSÃO", os dois em memória de propósito; persistir viraria brecha para escapar do paywall (e, no caso do downsell, um flag preso em ligado deixaria a usuária sem a segunda oferta para sempre).
 
 ### ⚠️ Regra de ouro: escreveu no banco, invalide o cache
 
@@ -1366,15 +1366,18 @@ O controller implementado:
 const superwallPurchaseController = {
   onPurchase: async ({ productId }) => {
     // Procura o package em TODAS as offerings, não só na atual (offerings.current).
-    // O produto de cupom (br.com.niksai.app.anual.promo10) vive numa offering que
-    // NÃO é a default (promo10); limitar a busca a offerings.current faria a compra
-    // dele falhar em silêncio (Superwall acha que falhou, RC não é notificado → loop).
+    // Os produtos de cupom (…anual.promo10, offering `promo10`) e de downsell
+    // (…anual.99, offering `downsell`) vivem em offerings que NÃO são a default;
+    // limitar a busca a offerings.current faria a compra deles falhar em silêncio
+    // (Superwall acha que falhou, RC não é notificado → loop de paywall).
     const allPackages = Object.values(offerings.all).flatMap(o => o.availablePackages);
     const pkg = allPackages.find(p => p.product.identifier === productId);
     // Se não achar em NENHUMA offering, console.error com a lista de offerings/produtos
     // (falha real de config no RevenueCat) — nunca falha às cegas.
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     // Retorna 'purchased' se o entitlement 'premium' ficou ativo
+    // catch: error.userCancelled → dispara o DOWNSELL (ver subseção abaixo) e
+    // retorna 'cancelled'. É aqui que a desistência na folha da Apple é detectada.
   },
   onPurchaseRestore: async () => {
     const customerInfo = await Purchases.restorePurchases();
@@ -1428,6 +1431,38 @@ Cada influenciadora tem um cupom próprio (o primeiro é `MAISENA10`). Quem digi
 > ⚠️ **Como testar o paywall/cupom (não é trivial):** você precisa de um Apple ID **sem assinatura ativa** — senão o app corretamente detecta a assinatura e pula o paywall. **TestFlight não usa a "Conta de Sandbox" dos Ajustes** (essa é só pra build de dev do Xcode). O jeito confiável: `npx expo run:ios --device --configuration Release` (**Release obrigatório** — em Debug o `__DEV__` pula o paywall direto pro signup) + um **Sandbox Tester novo** que nunca comprou. 🐛 **Sintoma comum que NÃO é bug:** "cliquei no cupom e caí no signup em vez do paywall de desconto" = a conta já é assinante (o único caminho pro signup em produção está dentro de `if (isSubscribed)`; não-assinante volta pro paywall, nunca signup). Assinaturas de sandbox persistem e renovam sozinhas — qualquer compra de teste anterior deixa o entitlement ativo.
 
 **Consulta de desempenho:** `select * from cupom_desempenho` no SQL editor do Supabase — aplicações, conversões e taxa por cupom.
+
+#### Downsell — segunda chance, UMA vez por sessão
+
+Quem sai do paywall **sem assinar** ganha uma oferta mais barata (anual R$99,90) antes de voltar ao paywall normal. **Dois gatilhos, um único flag em memória** (`lib/paywallFlow.ts`): (a) **fechar o paywall no X** — o `onDismiss` do `paywall-soft` já reapresentava o paywall (fail closed), e agora o placement dessa reapresentação sai de `nextPaywallPlacement()`: `paywall_downsell` na 1ª saída da sessão, `paywall_onboarding` daí em diante; (b) **cancelar a folha de pagamento da Apple** — detectado no `onPurchase` do CustomPurchaseController (`error.userCancelled`).
+
+> ⚠️ **Por que o cancelamento na Apple é detectado em CÓDIGO e não pelo placement `transaction_abandon` do Superwall:** esse placement exige o plano **Scale (US$199/mês)** e estamos no **Startup**. Não é desconhecimento da feature — é preço. Se um dia o plano subir, o caminho (b) pode ser aposentado em favor dele.
+
+**A ordem no caminho (b) é obrigatória:** marca o flag → `armSuppressReapresentar()` → `Superwall.shared.dismiss()` → `requestDownsell()`. Sem a supressão (a MESMA do botão de cupom), o `onDismiss` do paywall que acabamos de fechar reapresentaria o `paywall_onboarding` **por cima** do downsell.
+
+> ⚠️ **A ponte `requestDownsell`/`subscribeDownsellRequest` não é indireção gratuita — não "simplifique" chamando `Superwall.shared.register` do controller.** O `superwallPurchaseController` é um objeto de **módulo** em `app/_layout.tsx` e não tem acesso ao `registerPlacement` do `usePlacement` — e é esse hook que carrega os callbacks de **fail closed**. Registrado por fora, o `paywall_downsell` ficaria sem `onSkip`/`onError`, e um placement não configurado (ou um erro do SDK) deixaria a usuária **sem paywall nenhum**. Então o controller **pede** e a `paywall-soft` **registra**. Sem inscrito (tela desmontada), o pedido é descartado — o guard de `(app)/_layout.tsx` segue sendo a rede de segurança.
+
+**Regras de borda (todas intencionais):** downsell **já mostrado** na sessão → cancelar de novo não faz nada, ela continua no paywall; **cancelar DENTRO do próprio downsell** → nada (o flag já está marcado); fechar o downsell no X, ou `onSkip`/`onError` dele → **`paywall_onboarding`**. O flag é **por sessão, em memória** — ver o aviso do `partialize` em "CACHE DE DADOS": nada de estado de paywall em disco.
+
+> O downsell vale para **qualquer** paywall que rode no `paywall_onboarding` — hoje há um **A/B entre "Paywall OG" e "Teste Anual 129,90"**, e os dois caem no mesmo downsell.
+
+**Configuração FORA do repositório (não é dedutível do código — se a compra falhar, é aqui que se olha):**
+
+| Camada | Estado |
+|---|---|
+| App Store Connect | `br.com.niksai.app.anual.99` — R$99,90/ano, grupo de assinatura **"NIKS AI Pro"**, **aprovado** |
+| RevenueCat | produto importado, anexado ao entitlement **`premium`** (o que o app checa) e posto na offering **`downsell`** (**não** é a default — ver o `onPurchase` acima) |
+| Superwall | produto cadastrado · paywall **"Downsell Anual 99"** (duplicado do "Paywall OG", só com o produto `.99` e **sem** o botão "Tenho Cupom") · campanha **"Downsell"**, placement **`paywall_downsell`**, audiência All Users / unsubscribed users, paywall a 100% |
+
+> ⚠️ **REGRA GERAL que esta feature confirmou:** todo produto vendido num paywall do Superwall precisa existir **no RevenueCat**, estar **no entitlement** e **em alguma offering**. Faltando qualquer uma das três, a compra falha **em silêncio** e vira loop de paywall — o Superwall entende "falhou", a Apple pode ter cobrado.
+
+> ⚠️ **Os preços no TEXTO do paywall de downsell ("R$ 8,33/mês", o preço riscado) são texto fixo, não variável do produto.** Mudar o preço no App Store Connect **não** atualiza o paywall — tem de editar o texto no editor do Superwall, senão a tela passa a mentir o preço.
+
+> ℹ️ **"Entitlement" quer dizer duas coisas diferentes aqui, e elas não precisam ter o mesmo nome:** o que o app checa é o **do RevenueCat**, `premium` (`ENTITLEMENT_ID` em `lib/revenuecat.ts`) — é a ele que o produto `.99` está anexado; o **`pro` é o entitlement do Superwall**, conceito separado, do lado de lá. Não "alinhe" os dois achando que é divergência.
+
+**Pendências:**
+- **Teste real no iPhone dos dois caminhos** (fechar no X e cancelar na Apple) — build **Release** + **Sandbox Tester novo**, ver o aviso "Como testar o paywall/cupom" acima. Validada até agora só a máquina de estado do flag.
+- **App Store Connect:** o produto `br.com.niksai.app.anual.149` ("NIKS Anual 149,90") está com **preço de R$99,90 no Brasil** — nome ou preço errado. **Não** está no RevenueCat nem em uso por nenhum paywall; resolver antes de algum dia usá-lo.
 
 **`paywall-detailed.tsx` — removido do projeto:**
 Era o paywall customizado (planos mensal/anual, trial de 3 dias, integração RevenueCat direta) do fluxo anterior ao Superwall. Arquivo deletado — não existe mais no projeto.
@@ -2915,6 +2950,8 @@ Um grid 2×2 feito com `flexWrap: 'wrap'` + `gap`, dando às células largura fi
 Descoberto no grid da colagem (`app/(share)/share-capture.tsx`).
 
 ---
+
+*Sessão 65 — Setembro 2026 — **Downsell: segunda chance (anual R$99,90) para quem sai do paywall sem assinar.** Dois gatilhos dividindo **um único flag em memória** (`lib/paywallFlow.ts`): fechar o paywall **no X** (o `onDismiss` já reapresentava — agora o placement vem de `nextPaywallPlacement()`, downsell na 1ª saída da sessão e `paywall_onboarding` depois) e **cancelar a folha de pagamento da Apple**. **(1) O cancelamento é detectado em código** (`onPurchase` → `error.userCancelled`) **porque o placement `transaction_abandon` do Superwall exige o plano Scale (US$199/mês) e estamos no Startup** — é preço, não desconhecimento. **(2) Ordem obrigatória** no caminho do cancelamento: marca o flag → `armSuppressReapresentar()` (a MESMA supressão do botão de cupom) → `dismiss()` → pede o downsell; sem a supressão, o `onDismiss` do paywall recém-fechado reapresentaria o `paywall_onboarding` **por cima** do downsell. **(3) A ponte `requestDownsell`/`subscribeDownsellRequest` não é indireção gratuita:** o controller é objeto de **módulo** e não tem o `registerPlacement` do `usePlacement` — registrar por `Superwall.shared.register` de lá deixaria o `paywall_downsell` **sem os callbacks de fail closed**, e um placement mal configurado deixaria a usuária sem paywall nenhum. **(4) Bordas intencionais:** cancelar DENTRO do downsell não faz nada; fechar/`onSkip`/`onError` do downsell → `paywall_onboarding`. **(5) Dashboards (fora do repo):** produto `br.com.niksai.app.anual.99` aprovado no ASC (grupo "NIKS AI Pro"), no RevenueCat dentro da offering **`downsell`** (não-default — o `onPurchase` já varria `offerings.all` por causa do cupom, então a compra funciona), e paywall "Downsell Anual 99" na campanha "Downsell". ⚠️ **Os preços no texto do paywall são TEXTO FIXO** — mudar o preço na Apple exige editar o texto no Superwall. ℹ️ O produto está no entitlement **`premium`** do RevenueCat (o que o app checa); o **`pro` é o entitlement do Superwall**, conceito separado — nomes diferentes de propósito, não é divergência. **Validada só a máquina de estado do flag; falta o teste no iPhone** (Release + Sandbox Tester novo) dos dois caminhos. Ver "Guard de assinatura → Downsell".*
 
 *Sessão 64 — Setembro 2026 — **O tutorial da home virou UMA VEZ POR CONTA (era uma vez por aparelho).** Auditoria de 6 cenários no código encontrou dois furos na regra de negócio. **(1) Conta que já viu, vendo de novo:** os flags viviam só no store persistido, que morre no logout e não existe em aparelho novo — então quem **refazia o onboarding** (entrar por "Começar" em vez de "Entrar", restaurar a compra no paywall e logar com Google/Apple de uma conta existente) via o tutorial outra vez. O `signup.tsx` não distingue conta nova de existente, então o `pending` era armado do mesmo jeito. **Correção:** nova coluna **`users.home_tutorial_seen_at`** (migration `20260921120000`, **já aplicada em produção**) como verdade da regra; os flags locais viraram cache dela. A leitura **pega carona no `fetchHome`** (que já consultava `users` pela `foto_home_url`) → **zero ida à rede a mais**. **(2) Conta NOVA não vendo:** o `persist.clearStorage()` do logout limpa o disco, **não a memória**, e o `reset()` não tocava nesses campos — o `seen: true` da conta anterior sobrevivia na sessão e bloqueava a conta nova criada em seguida, ainda regravando o `seen` herdado no disco dela. **Correção:** `clearHomeTutorialFlags()` no `clearLocalData`. ⚠️ **`scanTutorialSeen` ficou de fora de propósito** (zerá-lo faria quem sai e volta na mesma conta rever o tutorial das 6 fotos) — ele tem o mesmo vazamento e segue assim, por decisão. **(3) A ordem virou regra:** aplicar o "já viu" do servidor e liberar o palco acontecem **no mesmo `useEffect`**, nessa ordem, senão o tutorial apareceria por um instante para quem já viu; e `homeTutorialSeenAt === undefined` (cache de versão anterior à coluna) **segura** o tutorial em vez de liberá-lo. **(4)** O atalho de `__DEV__` do Perfil passou a **limpar a coluna e invalidar o cache da home antes de navegar** — sem isso ele funcionaria uma vez só. ⚠️ **As 3 migrations de agosto (backfills de `produtos`) continuam PENDENTES no remoto** — não foram aplicadas junto, de propósito. Ver "Feature: Tutorial de primeiro acesso da home → Quem vê".*
 
