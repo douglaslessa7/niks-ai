@@ -1,0 +1,11 @@
+-- Tutorial de primeiro acesso da home (coach marks): marcador de "esta CONTA já viu".
+--
+-- Por que no banco e não só no aparelho: os flags locais (`homeTutorialPending` /
+-- `homeTutorialSeen`, no store persistido) morrem no logout e não existem num
+-- aparelho novo nem depois de reinstalar. Sem esta coluna, uma conta que JÁ viu o
+-- tutorial voltava a vê-lo ao refazer o onboarding (entrar por "Começar" em vez de
+-- "Entrar", restaurar a compra no paywall e logar com Google/Apple de uma conta
+-- existente) — ver "Feature: Tutorial de primeiro acesso da home" no README.
+--
+-- Null = nunca viu. O app só escreve aqui uma vez, ao concluir a última parada.
+alter table users add column if not exists home_tutorial_seen_at timestamptz;

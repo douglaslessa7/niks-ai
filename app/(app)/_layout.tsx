@@ -1,5 +1,5 @@
 import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { isNativePresentationOpen, waitForNativePresentationToClose } from '../../lib/nativePresentation';
 import { useCoachMark, useCoachStageReady } from '../../lib/coachMarks';
 import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
+import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
 // ── Bottom navbar — réplica do design "Fixed bottom bar" (navbar-design/Navbar.dc.html) ──
 // Ícones line/stroke SVG idênticos ao design. Cores/estados do design:
@@ -323,6 +324,14 @@ export default function AppLayout() {
   const homeTutorialPending = useAppStore((s) => s.homeTutorialPending);
   const homeTutorialSeen = useAppStore((s) => s.homeTutorialSeen);
   const finishHomeTutorial = useAppStore((s) => s.finishHomeTutorial);
+  // Concluir tranca nos DOIS lugares: o flag local corta o tutorial na hora (sem
+  // esperar a rede) e o servidor guarda o "esta CONTA já viu", que é o que
+  // sobrevive a logout, reinstalação e troca de aparelho. A escrita é
+  // fire-and-forget — ver `lib/homeTutorial.ts`.
+  const handleCoachFinish = useCallback(() => {
+    finishHomeTutorial();
+    void markHomeTutorialSeenOnServer();
+  }, [finishHomeTutorial]);
   const coachStageReady = useCoachStageReady();
   const pathname = usePathname();
   const showCoachMarks =
@@ -364,7 +373,7 @@ export default function AppLayout() {
           `home.tsx` ele ficaria ABAIXO da navbar por mais zIndex que levasse
           (zIndex só vale entre irmãos; a navbar é do layout, a home é filha do
           <Tabs>). Ver "Feature: Tutorial de primeiro acesso" no README. */}
-      {showCoachMarks && <HomeCoachMarks onFinish={finishHomeTutorial} />}
+      {showCoachMarks && <HomeCoachMarks onFinish={handleCoachFinish} />}
     </View>
   );
 }

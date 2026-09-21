@@ -134,9 +134,12 @@ export default function Home() {
         .limit(1)
         .maybeSingle(),
       // Foto escolhida pela usuária na galeria (se houver) — ver precedência abaixo.
+      // `home_tutorial_seen_at` pega CARONA nesta consulta (é a verdade de "esta
+      // CONTA já viu o tutorial de primeiro acesso"): assim a regra "uma vez por
+      // conta" não custa nenhuma ida à rede a mais. Ver `lib/homeTutorial.ts`.
       supabase
         .from('users')
-        .select('foto_home_url')
+        .select('foto_home_url, home_tutorial_seen_at')
         .eq('id', userId)
         .maybeSingle(),
       // "Para você": 2 primeiros produtos recomendados (principal de cada passo, na
@@ -181,6 +184,10 @@ export default function Home() {
       skinScore: typeof full?.skin_score === 'number' ? full.skin_score : null,
       metricas: full?.metricas ?? null,
       featured: feat,
+      // `null` = esta conta NUNCA viu o tutorial. Nunca `undefined` aqui: um
+      // `undefined` significa "payload de uma versão antiga do cache, ainda não
+      // sei a resposta" e é o que segura o tutorial (ver o efeito lá embaixo).
+      homeTutorialSeenAt: (userRow?.home_tutorial_seen_at ?? null) as string | null,
     };
   }, []);
 
@@ -247,12 +254,25 @@ export default function Home() {
   // sempre tem scan; isto é a rede de segurança para qualquer outro caminho.
   const metricsMark = useCoachMark('metrics', 'rect', { radius: 16, enabled: skinScore != null });
 
-  // A home abre com skeleton no cold start. O tutorial só pode começar com os
-  // dados na tela — destacar um card pulsando explicaria a coisa errada.
+  // ── Liberação do palco: UM efeito só, com a ordem explícita ────────────────
+  // (1) aplica no flag local o "já viu" que veio do servidor e só DEPOIS (2)
+  // libera o tutorial. A ordem é a regra de negócio: no caso da conta existente
+  // que refaz o onboarding, o `pending` está armado e o que impede o tutorial de
+  // abrir é o servidor — se o palco fosse liberado antes, ele apareceria por um
+  // instante antes de sumir. Um efeito só (em vez de dois) tira a ordem da mão da
+  // ordem de declaração dos hooks.
+  //
+  // `homeTutorialSeenAt === undefined` significa "ainda não sei" — payload de uma
+  // versão do cache anterior a esta coluna. Nesse caso o palco NÃO é liberado: é
+  // melhor não mostrar o tutorial do que mostrá-lo para quem já viu. (Conta nova
+  // nunca cai aqui: o cache dela nasce junto com este código.)
+  const homeTutorialSeenAt = homeData?.homeTutorialSeenAt;
+  const markHomeTutorialSeen = useAppStore((s) => s.markHomeTutorialSeen);
   useEffect(() => {
-    setCoachStageReady(!loading);
+    if (homeTutorialSeenAt) markHomeTutorialSeen();
+    setCoachStageReady(!loading && homeTutorialSeenAt !== undefined);
     return () => setCoachStageReady(false);
-  }, [loading]);
+  }, [loading, homeTutorialSeenAt, markHomeTutorialSeen]);
 
   // O overlay avisa antes de medir: a home volta ao topo para o card de métricas
   // estar visível (ela rola, e medir com a tela rolada poria o buraco no lugar

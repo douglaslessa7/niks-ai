@@ -263,10 +263,22 @@ type AppStore = {
   //   • `homeTutorialSeen` — trava permanente, gravada ao concluir a última parada.
   // Persistidos porque o app pode morrer entre o onboarding e a home (armado) e
   // porque "uma vez na vida" tem de sobreviver a fechar o app (visto).
+  // ⚠️ Os dois são do APARELHO, não da conta. A verdade de "esta CONTA já viu" mora
+  // em `users.home_tutorial_seen_at` (ver `lib/homeTutorial.ts`): estes flags são um
+  // CACHE local dela, para o tutorial não piscar enquanto a resposta do servidor não
+  // chega. Quem manda é o servidor.
   homeTutorialPending: boolean
   armHomeTutorial: () => void
   homeTutorialSeen: boolean
   finishHomeTutorial: () => void
+  /** Aplica no cache local o "já viu" que veio do servidor. Não escreve no banco. */
+  markHomeTutorialSeen: () => void
+  /**
+   * Zera SÓ os flags do tutorial da home — usado no logout (`clearLocalData`).
+   * ⚠️ Não mexe no `scanTutorialSeen` de propósito: aquele é do aparelho mesmo, e
+   * zerá-lo faria quem sai e volta na MESMA conta rever o tutorial das 6 fotos.
+   */
+  clearHomeTutorialFlags: () => void
   /** Só em __DEV__: rearma o tutorial para poder testar sem reinstalar o app. */
   replayHomeTutorial: () => void
   onboarding: OnboardingData
@@ -400,6 +412,12 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   // Desarma E tranca: `pending` sozinho reabriria o tutorial no próximo cold start
   // se a gravação de `seen` falhasse; `seen` sozinho não distinguiria usuária nova.
   finishHomeTutorial: () => set({ homeTutorialPending: false, homeTutorialSeen: true }),
+  markHomeTutorialSeen: () => set({ homeTutorialSeen: true }),
+  // ⚠️ Chamado no LOGOUT. Sem isto, o `seen: true` da conta anterior continuava em
+  // memória (o `persist.clearStorage()` limpa o disco, não o estado) e a PRÓXIMA
+  // conta criada no mesmo aparelho nunca via o tutorial — e ainda regravava o
+  // `seen: true` herdado no disco dela.
+  clearHomeTutorialFlags: () => set({ homeTutorialPending: false, homeTutorialSeen: false }),
   replayHomeTutorial: () => set({ homeTutorialPending: true, homeTutorialSeen: false }),
   onboarding: initialOnboarding,
   scanSource: 'onboarding',

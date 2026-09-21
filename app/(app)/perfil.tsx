@@ -27,6 +27,7 @@ import { useAppStore } from '../../store/onboarding';
 import { requestPushPermission, savePushToken } from '../../lib/notifications';
 import { useCachedQuery } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import { clearHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
 // ── Color tokens (novo design system NIKS — home/protocolo/chat) ──────────────
 const INK        = '#121212';
@@ -469,8 +470,13 @@ export default function Perfil() {
                 <Row
                   icon={<Sparkles size={19} color={CORAL_DEEP} strokeWidth={2} />}
                   label="Rever tutorial da home"
-                  onPress={() => {
+                  onPress={async () => {
                     haptics.tap();
+                    // ⚠️ Limpar SÓ o flag local não basta: a home lê
+                    // `users.home_tutorial_seen_at` e trancaria tudo de novo na
+                    // primeira busca. Limpa a coluna (e o cache da home) ANTES de
+                    // navegar — por isso este é aguardado.
+                    await clearHomeTutorialSeenOnServer().catch(() => {});
                     replayHomeTutorial();
                     router.push('/home' as any); // mesma forma de trocar de aba que a navbar usa
                   }}
