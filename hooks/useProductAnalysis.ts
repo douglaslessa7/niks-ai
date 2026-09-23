@@ -2,10 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../store/onboarding';
 import { useMixpanel } from '../lib/mixpanel/MixpanelProvider';
-import { getAccessToken } from '../lib/sessionToken';
-
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+import { analisarProduto, novoClientScanId } from '../lib/analisarProduto';
 
 export type ProductScanOrigem = 'camera' | 'share_url' | 'share_image';
 
@@ -30,7 +27,8 @@ type Options = {
 /**
  * LÓGICA das telas de carregamento do scan de produto (`product-loading` e
  * `share-product-loading`). O visual fica em cada tela; aqui mora:
- *  - chamada à Edge Function `analisar-produto` com o token da sessão;
+ *  - chamada à Edge Function `analisar-produto` (via `lib/analisarProduto`, o mesmo
+ *    módulo que a análise em lote da Coleção usa — não há duas cópias da chamada);
  *  - `clientScanId` estável (retry não duplica scan em `product_scans`);
  *  - guard `useRef` contra execução dupla (StrictMode / remount — decisão 25);
  *  - % realista que desacelera perto de 99;
@@ -58,7 +56,7 @@ export function useProductAnalysis({
   const currentPercentageRef = useRef(percentFloor);
   const retryCount = useRef(0);
   // clientScanId estável entre tentativas → idempotência no `analisar-produto`.
-  const clientScanIdRef = useRef(`prod_${Date.now()}_${Math.floor(Math.random() * 1e6)}`);
+  const clientScanIdRef = useRef(novoClientScanId());
   const runningRef = useRef(false);
   const startedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -103,28 +101,11 @@ export function useProductAnalysis({
         const { productImageBase64, productImageMimeType } = useAppStore.getState();
         if (!productImageBase64) throw new Error('Sem imagem do produto');
 
-        const accessToken = await getAccessToken();
-        if (!accessToken) throw new Error('Sem sessão válida');
-
-        const name = productNameRef.current?.trim();
-        const response = await fetch(`${SUPABASE_URL}/functions/v1/analisar-produto`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({
-            images: [{ base64: productImageBase64, mimeType: productImageMimeType ?? 'image/jpeg' }],
-            clientScanId: clientScanIdRef.current,
-            ...(name ? { productName: name } : {}),
-          }),
+        const data = await analisarProduto({
+          images: [{ base64: productImageBase64, mimeType: productImageMimeType ?? 'image/jpeg' }],
+          clientScanId: clientScanIdRef.current,
+          productName: productNameRef.current,
         });
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(JSON.stringify(errBody));
-        }
-        const data = await response.json();
         if (!mountedRef.current) return;
 
         if (progressTimerRef.current) clearTimeout(progressTimerRef.current);

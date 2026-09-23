@@ -38,7 +38,9 @@ import { generateAndSaveProtocol } from '../../lib/generateProtocol';
 import { buildOnboardingDataFromUserRow } from '../../lib/buildOnboardingDataFromUserRow';
 import { markStepCompleted } from '../../lib/routineProgress';
 import { requestAppReview } from '../../lib/storeReview';
-import { getSavedProducts, normStepKey, type SavedProduct } from '../../lib/savedProducts';
+import { normStepKey } from '../../lib/savedProducts';
+import { getProdutosDosPassos, type ProdutoDoPasso } from '../../lib/rotinaProdutos';
+import { useColecaoOnboarding } from '../../hooks/useColecaoOnboarding';
 import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
@@ -330,13 +332,24 @@ function Background({ isNight, width, height, s }: { isNight: boolean; width: nu
 
 // ── Card de passo (expansível inline) ───────────────────────────────────────
 function StepCard({
-  step, n, showLine, T, s, F, photoUrl, period,
+  step, n, showLine, T, s, F, produto, period,
 }: {
   step: Step; n: number; showLine: boolean; T: Theme; s: (n: number) => number;
   F: { xbold?: string; bold?: string; semi?: string; medium?: string; regular?: string };
-  photoUrl?: string;
+  /** Produto ESCOLHIDO para este passo (da Coleção ou fixado). Ver `lib/rotinaProdutos`. */
+  produto?: ProdutoDoPasso;
   period: 'am' | 'pm';
 }) {
+  const photoUrl = produto?.photoUrl;
+  // Subtítulo do passo: quando existe produto escolhido, mostra MARCA + NOME dele —
+  // é o que ela vai pegar na pia. Sem produto, mantém o `ingredient` do protocolo
+  // (o ativo + concentração), que é a informação útil enquanto não há produto.
+  // ⚠️ Antes mostrava sempre o `ingredient`, e como o prompt do `generate-protocol`
+  // manda repetir o TIPO do produto nos dois campos (`name` = "Gel de Limpeza
+  // Suave", `ingredient` = "Gel de Limpeza com Ácido Salicílico 2%"), o card lia
+  // como se estivesse duplicando texto.
+  const produtoLabel = [produto?.marca, produto?.nome].filter(Boolean).join(' ').trim();
+  const subtitulo = produtoLabel || step.ingredients;
   const [open, setOpen] = useState(false);
   const [lineH, setLineH] = useState(0);
   const chev = useRef(new Animated.Value(0)).current;
@@ -403,7 +416,7 @@ function StepCard({
               textTransform: 'uppercase', letterSpacing: 0.48, marginBottom: 2,
             }}>{step.category}</Text>
             <Text style={{ fontFamily: F.xbold, fontSize: s(16.5), color: T.textHeading, lineHeight: s(19) }}>{step.title}</Text>
-            <Text style={{ fontFamily: F.semi, fontSize: s(12.5), color: T.textMuted, marginTop: 2 }}>{step.ingredients}</Text>
+            <Text style={{ fontFamily: F.semi, fontSize: s(12.5), color: T.textMuted, marginTop: 2 }}>{subtitulo}</Text>
           </View>
           <Animated.View style={{ flexShrink: 0, marginLeft: s(6), transform: [{ rotate }] }}>
             <Icon name="chevron" size={s(20)} color={T.chevron} />
@@ -731,13 +744,25 @@ export default function Protocolo() {
     });
   }, [saved, protocolResult, setProtocolResult]);
 
-  // Produtos salvos na rotina (via "Salvar na minha rotina" na tela de Produtos).
-  // A foto salva substitui o ícone do passo. Recarrega ao focar a tela — assim um
-  // produto recém-salvo já aparece ao voltar.
-  const [savedProducts, setSavedProducts] = useState<Record<string, SavedProduct>>({});
+  const { gate: colecaoGate } = useColecaoOnboarding();
+
+  // Produto ESCOLHIDO para cada passo (foto + marca + nome): substitui o ícone do
+  // passo e vira o subtítulo do card. Duas origens, as duas decididas por ELA —
+  // a Minha Coleção (`em_casa`) e o produto fixado ("Adicionar à minha rotina").
+  // Mera recomendação da IA não entra (ver `lib/rotinaProdutos`).
+  // ⚠️ Sem cache: a foto da Coleção é URL assinada e expira em 1h.
+  // Indexado por `normStepKey(nome do passo)`, a mesma chave do deep-link.
+  const [stepProdutos, setStepProdutos] = useState<Record<string, ProdutoDoPasso>>({});
   useFocusEffect(useCallback(() => {
     let active = true;
-    getSavedProducts().then((m) => { if (active) setSavedProducts(m); });
+    (async () => {
+      try {
+        const map = await getProdutosDosPassos();
+        if (active) setStepProdutos(map);
+      } catch (e) {
+        console.warn('[protocolo] produtos dos passos falharam:', e);
+      }
+    })();
     return () => { active = false; };
   }, []));
 
@@ -907,6 +932,11 @@ export default function Protocolo() {
     <View style={{ flex: 1, backgroundColor: T.bg }}>
       <Background isNight={isNight} width={width} height={height} s={s} />
 
+      {/* Primeiro fluxo da Minha Coleção ("você tem produtos em casa?"). Mora AQUI
+          porque a Rotina é o gatilho: abrir esta aba pela primeira vez, ou tocar em
+          "Escanear" na home (que redireciona para cá). Aparece uma vez por conta. */}
+      {colecaoGate}
+
       <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         <ScrollView
           style={{ flex: 1 }}
@@ -980,7 +1010,7 @@ export default function Protocolo() {
                     key={`${period}-${i}`}
                     step={step} n={i + 1} showLine={i < steps.length - 1}
                     T={T} s={s} F={F} period={period}
-                    photoUrl={savedProducts[normStepKey(step.title)]?.imageUrl}
+                    produto={stepProdutos[normStepKey(step.title)]}
                   />
                 ))}
               </View>

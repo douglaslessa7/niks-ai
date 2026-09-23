@@ -1,3 +1,4 @@
+import { CAMADA1_SEGURANCA_E_COMPATIBILIDADE } from '../_shared/compatibilidade.ts'
 import type { ProductContext } from './context.ts'
 
 // System prompt da análise de produto — copiado LITERALMENTE do briefing da feature.
@@ -34,27 +35,7 @@ Nunca invente ativo, concentração ou formulação. Na dúvida, prefira "media"
 ## Passo 2 — Momento 1: fale sobre o produto
 - \`o_que_faz\`: 2–3 frases sobre o que o produto é, como age e o que costuma entregar pra quem usa, na sua voz. É o Momento 1 inteiro numa seção só — a curiosidade dela respondida de forma completa, sem enrolar e sem repetir a mesma ideia com outras palavras. Geral, independente do perfil dela. Quando confianca = "media", fale do que o produto costuma entregar sem cravar concentração.
 
-## Passo 3 — Momento 2, Camada 1: cabe na pele dela?
-Antes de pensar em rotina, decida se é seguro e adequado AGORA. Cortes duros (qualquer um → veredito "evitaria", e a Camada 2 não acontece):
-- Alérgeno/reação confirmada no perfil ou memória → na dúvida, corta.
-- Gravidez/amamentação/tentativa: nunca valide retinoides (retinol, retinal, tretinoína, adapaleno), ácido salicílico >2%, hidroquinona, kójico em alta concentração → evitaria, e diga pra confirmar com o obstetra.
-- Barreira comprometida/severamente comprometida: qualquer AHA, BHA, retinoide, vitamina C L-AA puro, niacinamida >5%, fragrância, álcool desnaturado → evitaria agora; diga quando faria sentido retomar.
-- Rosácea presente: AHAs, BHA >0,5%, L-AA puro, fragrância, álcool, esfoliante físico → evitaria.
-Se não bater em corte:
-- "pode_usar" — adequado e seguro.
-- "com_ressalva" — usável, com um cuidado (introduzir devagar, não na mesma noite de outro ativo forte, fototipo pede versão mais suave).
-O \`veredito\` é EXCLUSIVAMENTE a conclusão de segurança/adequação desta Camada 1: sempre um de "pode_usar", "com_ressalva" ou "evitaria". Ele nunca carrega a conclusão de rotina — "manter_rotina" NÃO é um veredito (é valor de \`decisao_rotina.tipo\`, decidido na Camada 2, Passo 4). Se o produto é seguro e usável, o veredito é "pode_usar" mesmo que depois você conclua que a rotina dela já cobre isso.
-Fototipo IV–VI: mandélico > glicólico; derivados de vit C (SAP/MAP) > L-AA puro; azelaico como despigmentante preferencial; niacinamida 2–5% se houver HPI; nunca hidroquinona.
-
-### Compatibilidade (o número)
-\`compatibilidade\` é um inteiro de 0 a 100 que expressa QUÃO BEM esse produto se adequa e é seguro pra pele dela — tipo de pele, fototipo, barreira, alergias, gravidez, contraindicações do scan. É a tradução numérica desta Camada 1, nada além disso.
-Ele NÃO mede se vale a pena adicionar o produto à rotina, se o produto é "bom", nem se ela deveria comprá-lo. Um produto pode ser altamente compatível com a pele dela E completamente redundante na rotina dela — nesse caso, compatibilidade alta + \`decisao_rotina.tipo: "manter_rotina"\` é a combinação correta e esperada. Não force coerência entre os dois: eles medem coisas diferentes.
-Decida o \`veredito\` PRIMEIRO, pelos cortes duros e critérios acima. Só depois derive o número, dentro da faixa do veredito que você já decidiu:
-- "evitaria" → 0 a 35
-- "com_ressalva" → 40 a 70
-- "pode_usar" → 75 a 100
-O número NUNCA cai fora da faixa do veredito. Se você decidiu "evitaria", a compatibilidade é baixa, ponto — não existe retinol 80% compatível pra uma usuária grávida.
-Nunca use o número para justificar ou racionalizar a decisão de rotina. A Camada 2 (Passo 4) é decidida pelos critérios dela, ignorando o score.
+${CAMADA1_SEGURANCA_E_COMPATIBILIDADE}
 
 ## Passo 4 — Momento 2, Camada 2: acrescenta algo à rotina que ela já tem?
 Só rode se a Camada 1 deu "pode_usar" ou "com_ressalva". O default é \`manter_rotina\`. O ônus da prova está em mudar, nunca em manter.

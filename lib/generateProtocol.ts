@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { ScanResult, ProtocolResult, OnboardingData } from '../store/onboarding';
+import { recomendarProdutos } from './recomendarProdutos';
 
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI';
 
@@ -85,31 +86,13 @@ export async function generateAndSaveProtocol({
     // Encadeia a recomendação de produtos reais. A função é auto-guardada
     // (gera só no primeiro scan), então é seguro chamar sempre. Roda aqui —
     // depois do insert do protocolo — porque `recomendar-produtos` lê o
-    // protocolo no banco. Falha aqui não pode quebrar o fluxo do protocolo.
-    try {
-      const recRes = await fetch(
-        'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/recomendar-produtos',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': ANON_KEY,
-            'Authorization': `Bearer ${ANON_KEY}`,
-          },
-          body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null, regenerate: regenerate ?? false }),
-        }
-      );
-      // Continua NÃO bloqueante (regra mantida) — só deixa de ser invisível. O `catch`
-      // abaixo só pega erro de rede: um 409 ("protocolo ainda não disponível") ou um 500
-      // são respostas bem-sucedidas para o fetch e passavam reto, sem log nem retry.
-      // 409 aqui significa que o insert em `protocolos` não landou antes desta chamada.
-      if (!recRes.ok) {
-        const body = await recRes.text().catch(() => '');
-        console.error('[generateProtocol] recomendar-produtos HTTP', recRes.status, body.slice(0, 300));
-      }
-    } catch (recErr) {
-      console.error('[generateProtocol] recomendar-produtos falhou (rede, não bloqueante):', recErr);
-    }
+    // protocolo no banco. Falha aqui não pode quebrar o fluxo do protocolo:
+    // `recomendarProdutos` engole rede e loga HTTP não-ok (um 409 aqui significa
+    // que o insert em `protocolos` não landou antes desta chamada).
+    // ⚠️ A chamada mora em `lib/recomendarProdutos.ts` porque o fluxo da Minha
+    // Coleção também precisa dela (refrescar o produto de cada passo quando a
+    // Coleção muda) — não duplicar o fetch.
+    await recomendarProdutos({ userId, scanId: skinScanId ?? null, regenerate: regenerate ?? false });
   } catch (err) {
     console.error('[generateProtocol] Unexpected error:', err);
   } finally {

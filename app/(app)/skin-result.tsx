@@ -5,6 +5,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, Shield, Droplets, Sparkles, Leaf, Sun } from 'lucide-react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFonts } from 'expo-font';
+import { Nunito_800ExtraBold } from '@expo-google-fonts/nunito';
 import { useAppStore, ScanResult } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { requestAppReview } from '../../lib/storeReview';
@@ -12,6 +14,21 @@ import { requestAppReview } from '../../lib/storeReview';
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const HERO_HEIGHT = 380;
+
+// ── Geometria do CTA flutuante "Seguir para a minha rotina" ───────────────────
+// ⚠️ A `GlobalBottomBar` do `(app)/_layout.tsx` é renderizada POR CIMA desta tela
+// (skin-result é um `Tabs.Screen` com `href: null` — some da barra como aba, mas a
+// barra continua desenhada). E, pela decisão 18, nenhum zIndex de um filho vence o
+// pai: o botão TEM de ficar acima dos 80px da navbar, como o "Escanear" da home.
+// ⚠️ NÃO somar `insets.bottom` ao respiro: a navbar já cobre o home indicator —
+// somar a safe area de novo abriria um vão grande sobre o menu (mesma armadilha
+// documentada no `ChatInputBar` do niks-chat).
+const NAVBAR_H = 80;
+const CTA_H = 60;
+const CTA_GAP = 20;   // respiro entre o botão e a navbar
+const CTA_FADE = 24;  // altura do fade branco acima do botão
+/** Altura total que o bloco do CTA ocupa a partir da base da tela. */
+const CTA_BLOCK = NAVBAR_H + CTA_GAP + CTA_H + CTA_FADE;
 
 const skinStrengthIcons: Record<string, React.ReactNode> = {
   shield: <Shield size={18} color="#FFFFFF" strokeWidth={2} />,
@@ -220,6 +237,34 @@ export default function SkinResult() {
     setShowRoutineCard(true);
   }, [routineUpdatingNotice]);
 
+  // ── CTA flutuante "Seguir para a minha rotina" ────────────────────────────
+  // Mesmo padrão do CTA do resultado do ONBOARDING (`(scan)/results.tsx`): o botão
+  // é irmão do ScrollView (fora dele) e SURGE quando a pessoa passa pela seção
+  // "O que fazer pela sua pele" — não fica no fim do conteúdo, onde só seria
+  // descoberto por quem rolasse tudo.
+  const [sectionY, setSectionY] = useState<number | null>(null);
+  const [viewportH, setViewportH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const [floatActive, setFloatActive] = useState(false);
+  const triggerRef = useRef<number | null>(null);
+
+  const [fontsLoaded] = useFonts({ Nunito_800ExtraBold });
+  // `undefined` (não `''`) enquanto carrega: o RN cai na fonte do sistema sem
+  // flash de layout (regra do projeto).
+  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
+
+  // Liga o TOQUE do botão só quando ele já está visível — a opacidade é animada no
+  // native driver e não dá para lê-la aqui, então o listener de scroll é que diz.
+  useEffect(() => {
+    const id = scrollY.addListener(({ value }) => {
+      const trigger = triggerRef.current;
+      if (trigger == null) return;
+      const active = value >= trigger;
+      setFloatActive(prev => (prev === active ? prev : active));
+    });
+    return () => scrollY.removeListener(id);
+  }, []);
+
   if (!result) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
@@ -241,6 +286,44 @@ export default function SkinResult() {
   const contraindicacoesArr: string[] = result.contraindicacoes ?? [];
   const pig = result.pigmentacao;
   const today = new Date();
+
+  // Offset de scroll em que o CTA começa a aparecer: quando o topo da seção
+  // "O que fazer pela sua pele" alcança o meio da tela. Fallback para resultados
+  // SEM essa seção: 40% do scroll — nunca deixar a usuária sem CTA.
+  let triggerY: number | null = null;
+  if (viewportH > 0 && contentH > 0) {
+    const maxScroll = Math.max(0, contentH - viewportH);
+    if (sectionY != null) {
+      const desired = HERO_HEIGHT + sectionY - viewportH * 0.5;
+      triggerY = Math.max(0, Math.min(desired, maxScroll));
+    } else {
+      triggerY = maxScroll * 0.4;
+    }
+  }
+  triggerRef.current = triggerY;
+
+  const floatOpacity = triggerY == null ? new Animated.Value(0) : scrollY.interpolate({
+    inputRange: [triggerY - 60, triggerY],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+  const floatTranslateY = triggerY == null ? new Animated.Value(24) : scrollY.interpolate({
+    inputRange: [triggerY - 60, triggerY],
+    outputRange: [24, 0],
+    extrapolate: 'clamp',
+  });
+
+  // ⚠️ A avaliação da App Store (`requestAppReview`) NÃO é disparada aqui — ela
+  // continua SÓ no botão voltar. Dois motivos: (1) o gatilho documentado é "SAIR do
+  // resultado", uma ação terminal; seguir para a rotina é uma ação de AVANÇO, e abrir
+  // o pop-up nativo por cima interromperia a usuária no meio da tarefa; (2) com a
+  // chamada num caminho só, "uma vez por visita" vale por construção, sem guard —
+  // com ela nos dois, sair pelo CTA e voltar para tocar no voltar dispararia duas
+  // vezes na mesma sessão. Não adicionar a chamada aqui.
+  const handleSeguirParaRotina = () => {
+    haptics.action();
+    router.push('/protocolo' as any);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -357,7 +440,11 @@ export default function SkinResult() {
         )}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: HERO_HEIGHT, paddingBottom: insets.bottom + 80 }}
+        onLayout={e => setViewportH(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setContentH(h)}
+        // O `CTA_BLOCK` (navbar + respiro + botão + fade) entra no padding para o
+        // último conteúdo rolar inteiro, sem ficar atrás do botão nem da navbar.
+        contentContainerStyle={{ paddingTop: HERO_HEIGHT, paddingBottom: insets.bottom + CTA_BLOCK }}
         style={{ flex: 1, zIndex: 1 }}
       >
         <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
@@ -560,8 +647,12 @@ export default function SkinResult() {
         ) : null}
 
         {/* ── 3c. O que fazer pela sua pele ───────────────────────── */}
+        {/* O `onLayout` daqui é o gatilho do CTA flutuante (ver `triggerY`). */}
         {result.action_recommendations?.length ? (
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 20, marginBottom: 12, padding: 20 }}>
+          <View
+            onLayout={e => setSectionY(e.nativeEvent.layout.y)}
+            style={{ backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 20, marginBottom: 12, padding: 20 }}
+          >
             <Text style={{ fontSize: 24, fontWeight: '800', color: '#FF9D9D', marginBottom: 16, marginTop: 0 }}>
               O que fazer pela sua pele
             </Text>
@@ -970,6 +1061,56 @@ export default function SkinResult() {
 
         </View>
       </Animated.ScrollView>
+
+      {/* ── CTA flutuante "Seguir para a minha rotina" ─────────────────────────
+          IRMÃO do ScrollView (fora dele), fixo na base, surgindo com fade +
+          slide-up a partir da seção "O que fazer pela sua pele". `pointerEvents`
+          alterna 'none'/'box-none' para não capturar toque enquanto invisível —
+          sem isso ele roubaria o scroll da área de baixo da tela o tempo todo. */}
+      <Animated.View
+        pointerEvents={floatActive ? 'box-none' : 'none'}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: 24,
+          paddingTop: CTA_FADE,
+          paddingBottom: NAVBAR_H + CTA_GAP,
+          opacity: floatOpacity,
+          transform: [{ translateY: floatTranslateY }],
+          zIndex: 20,
+        }}
+      >
+        {/* Fade branco: o conteúdo desaparece por trás do botão em vez de ser
+            cortado por uma borda dura. ⚠️ Nunca usar 'transparent' como stop
+            (decisão 21: interpola para preto translúcido). */}
+        <LinearGradient
+          colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)', '#FFFFFF']}
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, top: 0 }}
+          pointerEvents="none"
+        />
+        <TouchableOpacity
+          onPress={handleSeguirParaRotina}
+          activeOpacity={0.9}
+          style={{
+            backgroundColor: '#FF9D9D',
+            borderRadius: 100,
+            height: CTA_H,
+            alignItems: 'center',
+            justifyContent: 'center',
+            shadowColor: '#FF9D9D',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.45,
+            shadowRadius: 16,
+            elevation: 8,
+          }}
+        >
+          <Text style={{ fontFamily: fXBold, fontSize: 17, color: '#FFFFFF' }}>
+            Seguir para a minha rotina
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* Card-promessa flutuante: rotina atualizando após o 1º scan in-app. Sem overlay
           escuro — o conteúdo atrás continua visível; o card só flutua por cima. Tokens

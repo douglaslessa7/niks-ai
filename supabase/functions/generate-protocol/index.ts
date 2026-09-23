@@ -1,4 +1,4 @@
-import { detectTargetActive } from '../_shared/protocol-write.ts'
+import { detectTargetActive, marcaComercialEm } from '../_shared/protocol-write.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,14 +7,19 @@ const corsHeaders = {
 
 // ── Camada de validação determinística do protocolo gerado ─────────────────────────
 // Objetivo: o ativo declarado pela usuária (prescribed/complement) precisa constar como
-// PASSO, e dois ativos da mesma classe não podem coexistir no mesmo período. Reusa
-// detectTargetActive (fonte única) — não é um classificador novo. Toda falha degrada
+// PASSO, dois ativos da mesma classe não podem coexistir no mesmo período, e o campo
+// `ingredient` não pode trazer MARCA/nome comercial. Reusa detectTargetActive e
+// marcaComercialEm (fonte única) — não é um classificador novo. Toda falha degrada
 // para o texto original: protocolo imperfeito é melhor que nenhum protocolo.
 
 type Violation =
   | { kind: 'CHECK1_CLASS_IGNORED'; molecule: string; klass: string }
   | { kind: 'CHECK1_MOLECULE_SUBSTITUTED'; molecule: string; klass: string; substitute: string; period: 'AM' | 'PM' }
   | { kind: 'CHECK2_CLASS_COLLISION'; klass: string; period: 'AM' | 'PM'; steps: string[] }
+  // Marca/nome comercial num campo que é de ATIVO. O prompt proíbe; esta checagem é
+  // o que dá dente à proibição (prompt sozinho já falhou em produção — ver README,
+  // callout "Subtítulo do passo").
+  | { kind: 'CHECK3_BRAND_IN_INGREDIENT'; marca: string; period: 'AM' | 'PM'; step: string; ingredient: string }
 
 type VLog = (reason: string, ctx?: Record<string, unknown>) => void
 
@@ -71,6 +76,21 @@ function collectViolations(proto: any, type: unknown, desc: unknown, vlog: VLog,
     }
   }
 
+  // Checagem 3 — marca/nome comercial no `ingredient` (todos os tipos, AM e PM).
+  for (const [period, steps] of [['AM', proto?.morning], ['PM', proto?.night]] as const) {
+    if (!Array.isArray(steps)) continue
+    for (const st of steps) {
+      const ing = String(st?.ingredient ?? '')
+      const marca = marcaComercialEm(ing)
+      if (marca) {
+        violations.push({
+          kind: 'CHECK3_BRAND_IN_INGREDIENT', marca, period,
+          step: String(st?.name ?? ''), ingredient: ing,
+        })
+      }
+    }
+  }
+
   // Checagem 2 — colisão de classe no mesmo período (todos os tipos).
   for (const [period, acts] of [['AM', amAct], ['PM', pmAct]] as const) {
     const byLabel: Record<string, string[]> = {}
@@ -89,6 +109,8 @@ function correctiveMessage(vs: Violation[]): string {
       ? `- A usuária JÁ USA ${v.molecule} (classe ${v.klass}). O protocolo trouxe ${v.substitute} no período ${v.period}, da MESMA classe — isso NÃO substitui o que ela já usa, DOBRA o ativo. Inclua ${v.molecule} como passo e não prescreva um segundo ${v.klass}.`
       : v.kind === 'CHECK1_CLASS_IGNORED'
       ? `- A usuária declarou usar ${v.molecule} e ele NÃO aparece como passo. Inclua ${v.molecule} como um passo do protocolo (não só citado na instrução).`
+      : v.kind === 'CHECK3_BRAND_IN_INGREDIENT'
+      ? `- O passo "${v.step}" (${v.period}) tem MARCA/nome comercial no campo ingredient: "${v.ingredient}" (marca detectada: ${v.marca}). O campo ingredient é [tipo do produto] + [ativo + concentração] — NUNCA um produto específico. Reescreva esse ingredient com o ATIVO (ex.: "Gel de Limpeza com Ácido Salicílico 2%"). Se quiser sugerir produtos de mercado, use APENAS o campo product_suggestions.`
       : `- Dois ativos da classe ${v.klass} no período ${v.period} (${v.steps.join(', ')}). Mantenha só UM ativo dessa classe por período; se ambos forem necessários, alterne por dias (sufixo de dias no campo ingredient).`
   )
   return `O protocolo que você acabou de gerar tem problemas clínicos objetivos que precisam ser corrigidos:\n${lines.join('\n')}\n\nReescreva o protocolo COMPLETO no MESMO formato JSON estrito (mesmos campos), corrigindo apenas os pontos acima e mantendo todo o resto. Retorne apenas JSON válido.`
@@ -424,8 +446,8 @@ Schema obrigatório (respeite os nomes dos campos exatamente):
   "morning": [
     {
       "id": 1,
-      "name": "<REGRA UNIVERSAL: nome CURTO — máximo 5 palavras. Tipo do produto + benefício principal apenas. PROIBIDO absolutamente: concentrações numéricas (10%, 0,3%, FPS 50+), nomes químicos completos (L-Ácido Ascórbico, Ácido Mandélico), múltiplos ativos com '+' (Vitamina C + Vitamina E + Ácido Ferúlico). As especificações completas vão APENAS no campo ingredient — nunca no name. Exemplos CORRETOS: 'Gel de Limpeza Suave', 'Sérum Antioxidante de Vitamina C', 'Sérum de Niacinamida', 'Sérum de Retinol', 'Hidratante com Ceramidas', 'Protetor Solar', 'Sérum de Ácido Azelaico'. Exemplos ERRADOS: 'Sérum Antioxidante de Vitamina C 10% L-Ácido Ascórbico + Vitamina E + Ácido Ferúlico', 'Sérum de Niacinamida 5% + Zinco 1%', 'Protetor Solar FPS 50+ com Óxidos de Ferro'. PROIBIDO: nomes que não deixem claro o tipo do produto. PROIBIDO: usar apenas o nome do ativo sem o tipo.>",
-      "ingredient": "<REGRA UNIVERSAL: sempre [tipo do produto] + [ativo(s) principal(is) + concentração]. Esta regra se aplica a qualquer produto sem exceção. Lógica de formação: (1) identifique o tipo do produto — Gel de Limpeza, Sérum, Tônico, Loção, Creme, Hidratante, Gel-Creme, Óleo, Protetor Solar, Balm, Oclusivo; (2) adicione o ativo e concentração após 'com' ou 'de' — ex: 'Sérum de Retinol 0,3%', 'Hidratante com Ceramidas', 'Gel de Limpeza com Ácido Salicílico 2%', 'Protetor Solar FPS 50+ com Óxidos de Ferro', 'Oclusivo com Vaselina', 'Tônico com Ácido Glicólico 5%'; (3) para ativos não diários, adicione os dias no final entre parênteses — ex: 'Sérum de Ácido Mandélico 10% (Seg/Qua/Sex)'. PROIBIDO em qualquer circunstância: listar apenas o ativo sem o tipo do produto ('Ácido Mandélico 10%', 'Retinol 0,3%', 'Niacinamida 5%'). NUNCA use 'Filtro Solar' — sempre 'Protetor Solar'.>",
+      "name": "<REGRA UNIVERSAL: nome CURTO — máximo 5 palavras. Tipo do produto + benefício principal apenas. PROIBIDO absolutamente: concentrações numéricas (10%, 0,3%, FPS 50+), nomes químicos completos (L-Ácido Ascórbico, Ácido Mandélico), múltiplos ativos com '+' (Vitamina C + Vitamina E + Ácido Ferúlico). As especificações completas vão APENAS no campo ingredient — nunca no name. Exemplos CORRETOS: 'Gel de Limpeza Suave', 'Sérum Antioxidante de Vitamina C', 'Sérum de Niacinamida', 'Sérum de Retinol', 'Hidratante com Ceramidas', 'Protetor Solar', 'Sérum de Ácido Azelaico'. Exemplos ERRADOS: 'Sérum Antioxidante de Vitamina C 10% L-Ácido Ascórbico + Vitamina E + Ácido Ferúlico', 'Sérum de Niacinamida 5% + Zinco 1%', 'Protetor Solar FPS 50+ com Óxidos de Ferro'. PROIBIDO: nomes que não deixem claro o tipo do produto. PROIBIDO: usar apenas o nome do ativo sem o tipo. PROIBIDO: marca ou nome comercial de produto ('Effaclar', 'CeraVe', 'Principia') — marca vai APENAS em product_suggestions.>",
+      "ingredient": "<REGRA UNIVERSAL: sempre [tipo do produto] + [ativo(s) principal(is) + concentração]. Esta regra se aplica a qualquer produto sem exceção. Lógica de formação: (1) identifique o tipo do produto — Gel de Limpeza, Sérum, Tônico, Loção, Creme, Hidratante, Gel-Creme, Óleo, Protetor Solar, Balm, Oclusivo; (2) adicione o ativo e concentração após 'com' ou 'de' — ex: 'Sérum de Retinol 0,3%', 'Hidratante com Ceramidas', 'Gel de Limpeza com Ácido Salicílico 2%', 'Protetor Solar FPS 50+ com Óxidos de Ferro', 'Oclusivo com Vaselina', 'Tônico com Ácido Glicólico 5%'; (3) para ativos não diários, adicione os dias no final entre parênteses — ex: 'Sérum de Ácido Mandélico 10% (Seg/Qua/Sex)'. PROIBIDO em qualquer circunstância: listar apenas o ativo sem o tipo do produto ('Ácido Mandélico 10%', 'Retinol 0,3%', 'Niacinamida 5%'). PROIBIDO em qualquer circunstância: MARCA ou NOME COMERCIAL de produto — nem sozinho, nem junto do tipo. Exemplos ERRADOS e recusados: 'Gel de Limpeza La Roche-Posay Effaclar Gel', 'Sérum CeraVe com Niacinamida', 'Hidratante Creamy'. Este campo descreve o QUE o produto é e o QUE ele tem dentro, nunca QUAL produto comprar; marca e nome comercial vão APENAS no campo product_suggestions. NUNCA use 'Filtro Solar' — sempre 'Protetor Solar'.>",
       "instruction": "<2–3 frases: como aplicar + justificativa clínica com base nos achados da ficha>",
       "steps": ["<etapa de aplicação 1 — frase imperativa curta, só ação>", "<etapa de aplicação 2>", "<etapa de aplicação 3 se necessário>"],
       "color": "<hex da categoria conforme tabela acima>",

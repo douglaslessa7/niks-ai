@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Image, Modal, Pressable, TouchableOpacity,
-  useWindowDimensions, ActivityIndicator,
+  useWindowDimensions, ActivityIndicator, Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,9 +16,18 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { concernLabel } from '../../lib/concernLabels';
-import { saveProductForStep, normStepKey } from '../../lib/savedProducts';
+import { normStepKey } from '../../lib/savedProducts';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
 import { haptics } from '../../lib/haptics';
+import { getScoreTheme } from '../../lib/scoreTheme';
+import {
+  listarColecao, removerItens, entraNaRotina, motivoIncompativel, type ColecaoItem,
+} from '../../lib/colecao';
+import { fixarProdutoNoPasso } from '../../lib/rotinaFixados';
+import { getUserId } from '../../lib/currentUser';
+import { recomendarProdutos } from '../../lib/recomendarProdutos';
+import { invalidateCache } from '../../lib/cache';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
 // Reformada para a linguagem visual do app (home / protocolo / niks-chat): fundo
@@ -43,19 +52,51 @@ const PHOTO_BG = '#f4f4f4';      // fundo neutro claro da foto (sunken)
 
 const LOGO = require('../../assets/home/niks-logo.png');
 
-type Alt = { brand: string; name: string; sub: string; img: any; praLong?: string; targets?: string[] };
+type Alt = {
+  brand: string; name: string; sub: string; img: any; praLong?: string; targets?: string[];
+  // id do produto no catálogo — o detalhe da alternativa também tem o botão
+  // "Adicionar à minha rotina", e sem o id não haveria o que fixar.
+  productId?: string;
+  compatibilidade?: number | null;
+};
 type Item = {
   id: string; num: string; step: string; brand?: string; name?: string; img?: any;
   pra?: string; praLong?: string; targets?: string[]; alts?: Alt[];
-  empty?: boolean; note?: string; productId?: string; // id do produto principal (deep-link da home)
+  empty?: boolean; note?: string; emptyTitulo?: string; productId?: string; // id do produto principal (deep-link da home)
+  // Passo preenchido por um produto da MINHA COLEÇÃO (o que ela já tem em casa).
+  // Quando existe, o catálogo não entra nesse passo — nem como alternativa.
+  emCasa?: { colecaoId: string; compatibilidade: number | null };
+  /** Nota 0–100 do produto principal deste card. `null` = ainda não pontuado. */
+  compatibilidade?: number | null;
+  /** Este passo está com um produto FIXADO pela usuária (escolha dela, não da IA). */
+  fixado?: boolean;
+  /** Este card É o produto fixado do passo → o botão nasce em "Na sua rotina". */
+  jaNaRotina?: boolean;
 };
 
 // ── Formato do JSON salvo em recomendacoes_produtos.recomendacao ──────────────
-type RecProduto = { produto_id: string; principal?: boolean; copy?: string };
+type RecProduto = {
+  produto_id: string; principal?: boolean; copy?: string;
+  // Nota clínica 0–100, gravada pela `recomendar-produtos` (mesma régua da Coleção).
+  // Chega DEPOIS da recomendação (pontuação assíncrona) → pode não existir ainda.
+  compatibilidade?: number; veredito?: string;
+};
+type RecEmCasa = {
+  colecao_id: string; nome?: string | null; marca?: string | null;
+  image_path?: string | null; produto_id?: string | null;
+  compatibilidade?: number | null; veredito?: string | null; copy?: string | null;
+};
 type RecPasso = {
   categoria?: string; passo?: string; periodo?: string;
   ingrediente_alvo?: string; produtos?: RecProduto[];
   sem_produto?: boolean; motivo?: string;
+  // Estado vazio CLÍNICO (nenhum produto da categoria é seguro pra ela agora), com
+  // título próprio. Diferente da lacuna de catálogo — ver `titulo`/`motivo_clinico`.
+  motivo_clinico?: boolean; titulo?: string;
+  em_casa?: RecEmCasa | null;
+  // Passo com produto FIXADO pela usuária ("Adicionar à minha rotina"). O principal
+  // da lista é a escolha dela — a IA não reescolhe esse passo.
+  fixado?: boolean;
 };
 // Linha resolvida da tabela `produtos` (só os campos de exibição).
 type Prod = { id: string; marca: string; nome: string; imagem_url: string; concerns: string[] };
@@ -97,13 +138,45 @@ const targetsOf = (p: Prod): string[] =>
 // Constrói um Item (card) a partir de um passo do JSON + mapa de produtos.
 // `prefix`/`index` definem o id (Manhã/Noite) e a numeração por seção.
 // Retorna null quando o passo tem produto mas NENHUM id resolveu (produto removido).
-function buildItem(passo: RecPasso, prodMap: Map<string, Prod>, prefix: string, index: number): Item | null {
+function buildItem(
+  passo: RecPasso,
+  prodMap: Map<string, Prod>,
+  prefix: string,
+  index: number,
+  fotosEmCasa: Map<string, string>,
+): Item | null {
   const num = String(index + 1).padStart(2, '0');
   const step = (passo.passo || passo.categoria || '').trim();
+
+  // Passo que ELA já resolve com o que tem em casa — vem antes de tudo.
+  if (passo.em_casa?.colecao_id) {
+    const ec = passo.em_casa;
+    const uri = fotosEmCasa.get(ec.colecao_id) ?? null;
+    return {
+      id: `${prefix}${index}`, num, step,
+      brand: ec.marca ?? 'Você já tem',
+      name: ec.nome ?? 'Produto seu',
+      img: uri ? { uri } : undefined,
+      pra: (ec.copy || '').trim(),
+      praLong: (ec.copy || '').trim(),
+      // Mesmo campo do produto de catálogo: é a comparação lado a lado que a
+      // feature existe para permitir — mesma régua, mesma barra, mesmas cores.
+      compatibilidade: typeof ec.compatibilidade === 'number' ? ec.compatibilidade : null,
+      targets: [],
+      alts: [],
+      emCasa: {
+        colecaoId: ec.colecao_id,
+        compatibilidade: typeof ec.compatibilidade === 'number' ? ec.compatibilidade : null,
+      },
+    };
+  }
 
   if (passo.sem_produto) {
     return {
       id: `${prefix}${index}`, num, step, empty: true,
+      // Título vem do backend só no caso CLÍNICO; a lacuna de catálogo mantém o
+      // título de sempre. Copy num lugar só (a Edge Function), não dividida.
+      emptyTitulo: passo.motivo_clinico ? passo.titulo : undefined,
       note: passo.motivo || 'Ainda não temos um produto no catálogo para este passo.',
     };
   }
@@ -122,10 +195,15 @@ function buildItem(passo: RecPasso, prodMap: Map<string, Prod>, prefix: string, 
     brand: main.marca, name: main.nome, img: { uri: main.imagem_url },
     pra: (principal.x.copy || '').trim(),
     praLong: (principal.x.copy || '').trim(),
+    compatibilidade: typeof principal.x.compatibilidade === 'number' ? principal.x.compatibilidade : null,
     targets: targetsOf(main),
+    fixado: passo.fixado === true,
+    // O principal de um passo fixado É a escolha dela → botão já em "Na sua rotina".
+    jaNaRotina: passo.fixado === true,
     alts: others.map((r) => ({
       brand: r.p.marca, name: r.p.nome, sub: (r.x.copy || '').trim(),
-      img: { uri: r.p.imagem_url },
+      img: { uri: r.p.imagem_url }, productId: r.p.id,
+      compatibilidade: typeof r.x.compatibilidade === 'number' ? r.x.compatibilidade : null,
       praLong: (r.x.copy || '').trim(), targets: targetsOf(r.p),
     })),
   };
@@ -139,7 +217,10 @@ export default function RecomendacaoProdutos() {
   const s = (n: number) => n * S;
 
   const [detail, setDetail] = useState<Item | null>(null);
-  const [savedNow, setSavedNow] = useState(false);   // feedback do "Salvar na minha rotina"
+  const [savedNow, setSavedNow] = useState(false);   // feedback do "Adicionar à minha rotina"
+  // Espera entre o toque e a navegação para a Rotina (a recomendação está sendo
+  // reescrita). Sem isto o botão ficaria 1–3 s parado, sem dizer nada.
+  const [indoParaRotina, setIndoParaRotina] = useState(false);
   const [state, setState] = useState<LoadState>('loading');
   // Trava de uma tentativa de geração por montagem da tela (ver `load`).
   const triedGenerate = useRef(false);
@@ -154,12 +235,30 @@ export default function RecomendacaoProdutos() {
   // Rotina conhece o NOME do passo, não o produto_id.
   const productDetailStep = useAppStore((s) => s.productDetailStep);
   const setProductDetailStep = useAppStore((s) => s.setProductDetailStep);
+  // Item da Coleção que está sendo refotografado (ver `refazerFoto`).
+  const setColecaoRetakeId = useAppStore((s) => s.setColecaoRetakeId);
 
-  // Abas: "Recomendados" (recomendação salva) | "Escaneados" (histórico de scans).
-  const [tab, setTab] = useState<'recomendados' | 'escaneados'>('recomendados');
+  // Abas: "Recomendados" (recomendação salva) | "Minha Coleção" (o que ela tem em
+  // casa) | "Escaneados" (histórico de scans).
+  const [tab, setTab] = useState<'recomendados' | 'colecao' | 'escaneados'>('recomendados');
   const [scanState, setScanState] = useState<LoadState>('loading');
   const [scans, setScans] = useState<ScanItem[]>([]);
   const [scanDetail, setScanDetail] = useState<ScanItem | null>(null);
+
+  // ── Aba "Minha Coleção" ────────────────────────────────────────────────────
+  const [colecaoState, setColecaoState] = useState<LoadState>('loading');
+  const [colecao, setColecao] = useState<ColecaoItem[]>([]);
+  const [colecaoDetail, setColecaoDetail] = useState<ColecaoItem | null>(null);
+  // Modo de edição: ela seleciona um ou mais itens e toca em "Remover". Não há
+  // "marcar como acabou" nem edição de dados — só remover (decisão de produto).
+  const [editando, setEditando] = useState(false);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [emCasaCount, setEmCasaCount] = useState(0);
+  // Há produto recomendado ainda SEM nota de compatibilidade? A pontuação roda em
+  // background na Edge Function (a recomendação é salva e respondida antes), então
+  // a tela aparece na hora e as notas entram depois — ver o refetch mais abaixo.
+  const [notasPendentes, setNotasPendentes] = useState(false);
+  const { track } = useMixpanel();
 
   const [fontsLoaded] = useFonts({
     Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
@@ -266,26 +365,74 @@ export default function RecomendacaoProdutos() {
         (prods ?? []).forEach((p: any) => prodMap.set(p.id, p));
       }
 
+      // Fotos dos passos preenchidos pela Coleção. Duas origens: a foto que ELA
+      // tirou (bucket privado → URL assinada, nunca cacheada) e, no caminho do
+      // catálogo, a imagem pública do produto.
+      const fotosEmCasa = new Map<string, string>();
+      const emCasaPaths = new Map<string, string>();   // image_path → colecao_id
+      const emCasaProdutos = new Map<string, string>(); // produto_id  → colecao_id
+      for (const p of passos) {
+        const ec = p.em_casa;
+        if (!ec?.colecao_id) continue;
+        if (ec.image_path) emCasaPaths.set(ec.image_path, ec.colecao_id);
+        else if (ec.produto_id) emCasaProdutos.set(ec.produto_id, ec.colecao_id);
+      }
+      if (emCasaPaths.size) {
+        const { data: signed } = await supabase.storage
+          .from('product-scans')
+          .createSignedUrls([...emCasaPaths.keys()], 3600);
+        (signed ?? []).forEach((s: any) => {
+          const cid = s?.path ? emCasaPaths.get(s.path) : null;
+          if (cid && s?.signedUrl && !s.error) fotosEmCasa.set(cid, s.signedUrl);
+        });
+      }
+      if (emCasaProdutos.size) {
+        const { data: prods } = await supabase
+          .from('produtos')
+          .select('id, imagem_url')
+          .in('id', [...emCasaProdutos.keys()]);
+        (prods ?? []).forEach((p: any) => {
+          const cid = emCasaProdutos.get(p.id);
+          if (cid && p?.imagem_url) fotosEmCasa.set(cid, p.imagem_url);
+        });
+      }
+
       const amItems: Item[] = [];
       const pmItems: Item[] = [];
       for (const passo of passos) {
         const periodo = passo.periodo ?? '';
         if (periodo.includes('am')) {
-          const it = buildItem(passo, prodMap, 'am', amItems.length);
+          const it = buildItem(passo, prodMap, 'am', amItems.length, fotosEmCasa);
           if (it) amItems.push(it);
         }
         if (periodo.includes('pm')) {
-          const it = buildItem(passo, prodMap, 'pm', pmItems.length);
+          const it = buildItem(passo, prodMap, 'pm', pmItems.length, fotosEmCasa);
           if (it) pmItems.push(it);
         }
       }
 
       if (amItems.length === 0 && pmItems.length === 0) { setState('empty'); return; }
 
-      // Nº de passos (únicos) com produto recomendado — usado no rodapé.
+      // Nº de passos (únicos) resolvidos — do catálogo OU com o que ela já tem.
       const withProduct = passos.filter(
-        (p) => !p.sem_produto && (p.produtos ?? []).some((x) => prodMap.has(x.produto_id)),
+        (p) => !p.sem_produto && (
+          !!p.em_casa?.colecao_id || (p.produtos ?? []).some((x) => prodMap.has(x.produto_id))
+        ),
       ).length;
+      // Só conta como pendente o que a pontuação AINDA pode preencher: produto de
+      // catálogo sem nota. `em_casa` e `sem_produto` nunca entram nessa conta,
+      // senão a tela ficaria repescando para sempre.
+      setNotasPendentes(passos.some((p) => !p.em_casa && !p.sem_produto
+        && (p.produtos ?? []).some((x) => prodMap.has(x.produto_id) && typeof x.compatibilidade !== 'number')));
+
+      const comProdutoDela = passos.filter((p) => !!p.em_casa?.colecao_id).length;
+      setEmCasaCount(comProdutoDela);
+      // Métrica central da feature: quantos passos da rotina acabaram preenchidos
+      // com produto que ela já tinha em casa, em vez de indicação de compra.
+      track('colecao_rotina_carregada', {
+        passos_total: passos.length,
+        passos_com_produto_dela: comProdutoDela,
+      });
 
       setAm(amItems);
       setPm(pmItems);
@@ -294,7 +441,7 @@ export default function RecomendacaoProdutos() {
     } catch {
       setState('error');
     }
-  }, [fetchPassos, generateOnDemand]);
+  }, [fetchPassos, generateOnDemand, track]);
 
   useEffect(() => {
     let active = true;
@@ -302,6 +449,23 @@ export default function RecomendacaoProdutos() {
     (async () => { if (active) await load(); })();
     return () => { active = false; };
   }, [load]);
+
+  // Enquanto faltarem notas, refaz a busca a cada 5 s (no máximo ~30 s). É leitura
+  // de banco, não chamada de IA — a pontuação já está rodando do lado do servidor;
+  // aqui só se espera ela pousar. Para sozinho quando as notas chegam (o `load`
+  // zera `notasPendentes` → o efeito limpa) ou quando ela sai da aba.
+  // ⚠️ Teto de tentativas: se a pontuação falhar no servidor, a tela não pode ficar
+  // repescando para sempre — ela simplesmente segue sem barra, que é um estado válido.
+  useEffect(() => {
+    if (!notasPendentes || tab !== 'recomendados') return;
+    let tentativas = 0;
+    const id = setInterval(() => {
+      tentativas += 1;
+      if (tentativas > 6) { clearInterval(id); return; }
+      void load();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [notasPendentes, tab, load]);
 
   // Deep-link da home: quando os dados estão prontos e há um produto-alvo, abre o
   // detalhe dele (na aba Recomendados) e limpa o alvo.
@@ -372,34 +536,169 @@ export default function RecomendacaoProdutos() {
     if (tab === 'escaneados') loadScans();
   }, [tab, loadScans]);
 
+  // ── Minha Coleção ─────────────────────────────────────────────────────────
+  // Sem cache, pelo mesmo motivo da aba "Escaneados": as fotos são URLs assinadas
+  // que expiram em 1h. Recarrega a cada abertura da aba.
+  const loadColecao = useCallback(async () => {
+    setColecaoState('loading');
+    try {
+      const userId = await getUserId();
+      if (!userId) { setColecaoState('empty'); return; }
+      const itens = await listarColecao(userId);
+      setColecao(itens);
+      setColecaoState(itens.length === 0 ? 'empty' : 'ready');
+    } catch (e) {
+      console.warn('[produtos] Coleção falhou:', e);
+      setColecaoState('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'colecao') loadColecao();
+  }, [tab, loadColecao]);
+
+  // Sair do modo de edição sempre que a aba muda ou a lista recarrega — seleção
+  // pendurada em cima de uma lista nova removeria o item errado.
+  useEffect(() => { setEditando(false); setSelecionados(new Set()); }, [tab, colecaoState]);
+
+  const alternarSelecao = (id: string) => {
+    haptics.select();
+    setSelecionados((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  // Remover: confirma antes (é destrutivo e não tem desfazer) e só apaga os ids
+  // explicitamente selecionados. Depois recarrega a Coleção E a recomendação —
+  // um produto removido que ocupava um passo faz o passo voltar ao catálogo.
+  const removerSelecionados = () => {
+    const ids = [...selecionados];
+    if (ids.length === 0) return;
+    haptics.warning();
+    Alert.alert(
+      ids.length === 1 ? 'Remover produto?' : `Remover ${ids.length} produtos?`,
+      'Eles saem da sua coleção e dos passos da sua rotina que estavam usando eles. O histórico de scans continua em "Escaneados".',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const userId = await getUserId();
+              if (!userId) return;
+              await removerItens(userId, ids);
+              track('colecao_itens_removidos', { total: ids.length });
+              setEditando(false);
+              setSelecionados(new Set());
+              await loadColecao();
+              // O passo que usava o produto removido precisa voltar ao catálogo.
+              await recomendarProdutos({ userId, regenerate: true, preservarCatalogo: true });
+              triedGenerate.current = true; // a recomendação existe; não gerar de novo
+              await load();
+            } catch (e) {
+              console.warn('[produtos] remoção falhou:', e);
+              haptics.error();
+              Alert.alert('Não deu pra remover', 'Tente de novo em instantes.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // "Tirar nova foto" de um item não identificado: manda para a câmera de produto
+  // marcando QUAL item deve ser atualizado quando a análise voltar (o
+  // `product-result` fecha o ciclo chamando `identificarItem`). Sem isso, refazer
+  // a foto criaria um item novo e deixaria o antigo como lixo na Coleção.
+  const refazerFoto = (item: ColecaoItem) => {
+    haptics.action();
+    setColecaoDetail(null);
+    setColecaoRetakeId(item.id);
+    router.push('/(scan)/product-camera' as any);
+  };
+
   // Abre a página de detalhe de um produto ALTERNATIVO (mesmo layout, dados da alt).
   // Herda o período do passo pai (id am*/pm*) p/ o rótulo "Manhã/Noite · passo".
   const openAlt = (alt: Alt, parent: Item) => setDetail({
     id: parent.id + '-alt', num: parent.num, step: parent.step,
     brand: alt.brand, name: alt.name, img: alt.img,
+    // O id do produto é o que permite FIXAR a alternativa no passo — antes o
+    // detalhe da alternativa não tinha botão nenhum.
+    productId: alt.productId,
+    compatibilidade: alt.compatibilidade ?? null,
     pra: alt.sub, praLong: alt.praLong ?? alt.sub,
     targets: alt.targets ?? [], alts: [],
+    // Uma alternativa nunca é a escolha atual do passo (se fosse, seria o principal).
+    fixado: parent.fixado, jaNaRotina: false,
   });
 
-  // Reseta o feedback do botão sempre que abre/troca o detalhe.
-  useEffect(() => { setSavedNow(false); }, [detail]);
+  // Reseta o feedback do botão sempre que abre/troca o detalhe. O estado inicial
+  // vem do próprio JSON da recomendação (`jaNaRotina`), sem ida extra à rede: um
+  // passo `fixado` já diz que o principal dele é a escolha dela.
+  useEffect(() => { setSavedNow(detail?.jaNaRotina === true); }, [detail]);
 
-  // "Salvar na minha rotina": guarda a foto do produto p/ o passo (detail.step).
-  // A tela de Rotina (protocolo) lê isso e troca o ícone do passo pela foto.
-  const handleSaveToRoutine = async () => {
-    if (!detail) return;
-    const img: any = detail.img;
-    const imageUrl = img && typeof img === 'object' && 'uri' in img ? img.uri : null;
-    if (!imageUrl) return;
-    // O pulso de sucesso só vale se a escrita REALMENTE aconteceu — confirmar no
-    // tato antes do await faria o app dizer "salvo" para um salvamento que falhou.
+  // "Adicionar à minha rotina" — FIXA este produto do catálogo neste passo.
+  //
+  // ⚠️ NÃO é a Minha Coleção, e os dois botões não se misturam de propósito:
+  //   • aqui (produto RECOMENDADO, do catálogo)      → "Adicionar à minha rotina"
+  //     = "quero ESTE produto neste passo". Ela não necessariamente tem em casa.
+  //   • no resultado de um SCAN (câmera ou share)    → "Tenho esse produto em casa"
+  //     = entra na Coleção, com a foto dela e a compatibilidade medida.
+  // Afirmar que ela TEM um produto que ela só escolheu seria mentira — e a Coleção
+  // alimenta o chat ("o que eu faço agora?" responde com o que ela tem em mãos).
+  //
+  // ⚠️ A escolha dela GANHA da IA: `recomendar-produtos` resolve o passo na ordem
+  // fixado → Coleção → catálogo. Se depois aparecer um produto de casa compatível
+  // para o mesmo passo, este aqui PERMANECE.
+  const handleAdicionarNaRotina = async () => {
+    if (!detail?.productId || !detail.step) return;
     try {
-      await saveProductForStep(detail.step, { imageUrl, brand: detail.brand ?? null, name: detail.name ?? null });
+      const userId = await getUserId();
+      if (!userId) return;
+      await fixarProdutoNoPasso(userId, detail.step, detail.productId);
+      // O pulso de sucesso só vale se a escrita REALMENTE aconteceu — confirmar no
+      // tato antes do await faria o app dizer "salvo" para um salvamento que falhou.
       haptics.success();
       setSavedNow(true);
+      setIndoParaRotina(true);
+      track('rotina_produto_fixado', { origem: detail.id.endsWith('-alt') ? 'alternativa' : 'principal' });
+
+      // ⚠️ ESPERAR a recomendação ser reescrita ANTES de navegar. É ela que diz à
+      // Rotina qual produto ocupa o passo (`lib/rotinaProdutos`); navegar antes
+      // abriria a Rotina com o produto ANTIGO — e o `useFocusEffect` de lá já teria
+      // rodado, então nada corrigiria a tela. O botão fica em "Na sua rotina" com
+      // spinner durante a espera (e `disabled`, o que já barra o toque duplo).
+      // Só o produto DESTE passo muda: `preservarCatalogo` impede que a IA
+      // re-sorteie os recomendados dos outros passos por tabela.
+      await recomendarProdutos({ userId, regenerate: true, preservarCatalogo: true });
+
+      // Regra do projeto: escreveu no banco, invalide o cache. A Rotina lê
+      // `protocolo:${uid}` (stale-while-revalidate) — invalidar garante que ela
+      // não pinte a partir de uma cópia velha ao ganhar foco.
+      invalidateCache(`protocolo:${userId}`);
+
+      // A aba de Produtos continua montada atrás (é um `Tabs`) e o `load` dela só
+      // roda na montagem — sem isto, voltar para cá mostraria o passo sem o produto
+      // que ela acabou de escolher. Não bloqueia a navegação.
+      void load();
+
+      // Fecha o detalhe e leva para a Rotina, onde o passo já aparece com o produto.
+      // ⚠️ O push espera o modal terminar de fechar (~250 ms, o mesmo respiro
+      // documentado no ScanModal): empilhar navegação sobre um `<Modal>` nativo em
+      // dismiss é a receita de tela presa no iOS.
+      setDetail(null);
+      setTimeout(() => {
+        setIndoParaRotina(false);
+        router.push('/protocolo' as any);
+      }, 250);
     } catch (e) {
-      console.warn('[produtos] falha ao salvar na rotina:', e);
+      console.warn('[produtos] falha ao fixar o produto no passo:', e);
+      setIndoParaRotina(false);
       haptics.error();
+      Alert.alert('Não deu pra salvar', 'Tente de novo em instantes.');
     }
   };
 
@@ -539,7 +838,7 @@ export default function RecomendacaoProdutos() {
       <View style={{ flexDirection: 'row', gap: s(12), alignItems: 'flex-start', padding: s(16), borderRadius: s(14), backgroundColor: PHOTO_BG }}>
         <View style={{ marginTop: s(1) }}><IconHerb /></View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: f8, fontSize: s(15), color: INK, lineHeight: s(15) * 1.25 }}>Ainda sem um produto ideal</Text>
+          <Text style={{ fontFamily: f8, fontSize: s(15), color: INK, lineHeight: s(15) * 1.25 }}>{item.emptyTitulo || 'Ainda sem um produto ideal'}</Text>
           <Text style={{ fontFamily: f4, fontSize: s(12.5), lineHeight: s(12.5) * 1.5, color: INK_MUTE, marginTop: s(5) }}>{item.note}</Text>
         </View>
       </View>
@@ -587,6 +886,132 @@ export default function RecomendacaoProdutos() {
     );
   };
 
+  // ── Card da grade "Minha Coleção" ─────────────────────────────────────────
+  // Quadrado: foto + nome + BARRA HORIZONTAL de compatibilidade (0–100%), colorida
+  // pela FAIXA do score — `getScoreTheme`, a mesma régua do Niks score e da tela de
+  // resultado de produto (0–25 vermelho · 26–50 laranja · 51–75 amarelo · 76–100
+  // rosa). ⚠️ Não criar régua nova aqui.
+  //
+  // Três estados de card:
+  //  • normal          → barra com a %;
+  //  • incompatível    → faixa "Não recomendado pra sua pele" + motivo (continua
+  //                      visível na Coleção, mas fica fora da rotina);
+  //  • não identificado→ "Não identificado" + atalho para tirar nova foto.
+  const COL_GAP = s(12);
+  const COL_W = (width - s(32) - COL_GAP) / 2;
+
+  const renderColecaoCard = (item: ColecaoItem) => {
+    const naoIdentificado = item.status === 'nao_identificado';
+    const incompativel = !naoIdentificado && !entraNaRotina(item);
+    const compat = item.compatibilidade;
+    const theme = getScoreTheme(compat);
+    const selecionado = selecionados.has(item.id);
+
+    return (
+      <TouchableOpacity
+        key={item.id}
+        activeOpacity={0.9}
+        onPress={() => {
+          if (editando) { alternarSelecao(item.id); return; }
+          haptics.tap();
+          if (naoIdentificado) { setColecaoDetail(item); return; }
+          setColecaoDetail(item);
+        }}
+        style={{
+          ...appCard, width: COL_W, marginBottom: COL_GAP, padding: s(10),
+          borderColor: selecionado ? ROTINA_PINK : CARD_BORDER,
+          borderWidth: selecionado ? 2 : 1,
+        }}
+      >
+        {/* foto */}
+        <View style={{ height: COL_W * 0.78, borderRadius: s(12), backgroundColor: PHOTO_BG, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          {item.photoUrl
+            ? <ExpoImage source={{ uri: item.photoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+            : <IconHerb />}
+          {editando && (
+            <View style={{
+              position: 'absolute', top: s(6), left: s(6), width: s(22), height: s(22), borderRadius: s(11),
+              backgroundColor: selecionado ? ROTINA_PINK : 'rgba(255,255,255,0.92)',
+              borderWidth: 1.5, borderColor: selecionado ? ROTINA_PINK : CARD_BORDER,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              {selecionado && (
+                <Svg width={s(12)} height={s(12)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round"><Path d="M20 6L9 17l-5-5" /></Svg>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* marca + nome */}
+        {!!item.marca && (
+          <Text numberOfLines={1} style={{ fontFamily: f7, fontSize: s(9.5), letterSpacing: s(9.5) * 0.1, textTransform: 'uppercase', color: INK_MUTE, marginTop: s(9) }}>{item.marca}</Text>
+        )}
+        <Text numberOfLines={2} style={{ fontFamily: f8, fontSize: s(13), lineHeight: s(13) * 1.2, color: INK, marginTop: item.marca ? s(1) : s(9) }}>
+          {naoIdentificado ? 'Produto não identificado' : (item.nome || 'Produto')}
+        </Text>
+
+        {/* barra de compatibilidade / estados especiais */}
+        <View style={{ marginTop: s(9) }}>
+          {naoIdentificado ? (
+            <Text style={{ fontFamily: f6, fontSize: s(10.5), color: INK_MUTE, lineHeight: s(10.5) * 1.35 }}>
+              Não consegui ler esse. Toque para tirar outra foto.
+            </Text>
+          ) : incompativel ? (
+            <>
+              <Text style={{ fontFamily: f7, fontSize: s(10.5), color: VEREDITO.evitaria.fg, lineHeight: s(10.5) * 1.35 }}>
+                Não recomendado pra sua pele
+              </Text>
+              {/* O motivo vem da própria análise — sem ele o card só acusa, e ela
+                  não tem como entender por que o produto dela ficou de fora. */}
+              <Text numberOfLines={3} style={{ fontFamily: f4, fontSize: s(10), color: INK_MUTE, lineHeight: s(10) * 1.4, marginTop: s(3) }}>
+                {motivoIncompativel(item)}
+              </Text>
+            </>
+          ) : compat == null ? (
+            // Scan ANTIGO, anterior ao campo `compatibilidade` (ver a Edge Function
+            // `analisar-produto`). Sem número, o app não inventa um — diz o que sabe.
+            // O produto continua elegível para a rotina: quem decide isso é o veredito.
+            <Text style={{ fontFamily: f6, fontSize: s(10.5), color: INK_MUTE }}>Sem nota de compatibilidade</Text>
+          ) : (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: s(5) }}>
+                <Text style={{ fontFamily: f6, fontSize: s(9.5), letterSpacing: s(9.5) * 0.08, textTransform: 'uppercase', color: INK_MUTE }}>Compatibilidade</Text>
+                <Text style={{ fontFamily: f8, fontSize: s(12), color: theme.score }}>{compat}%</Text>
+              </View>
+              <View style={{ height: s(5), borderRadius: s(3), backgroundColor: '#F3F3F4', overflow: 'hidden' }}>
+                <View style={{ width: `${Math.max(0, Math.min(100, compat))}%`, height: '100%', borderRadius: s(3), backgroundColor: theme.score }} />
+              </View>
+            </>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Barra de compatibilidade do DETALHE — mesma régua e mesmas cores da aba Minha
+  // Coleção (`getScoreTheme`: 0–25 vermelho · 26–50 laranja · 51–75 amarelo ·
+  // 76–100 rosa). ⚠️ Não criar régua nova: os dois números (o do produto que ela
+  // tem em casa e o do recomendado) aparecem lado a lado e ela decide comparando.
+  // ⚠️ Sem nota → NÃO desenha nada. A pontuação é assíncrona (chega depois da
+  // recomendação) e scan antigo pode não ter o campo; um "0%" ou uma barra vazia
+  // seriam mentira. A tela refaz a busca sozinha quando as notas chegam.
+  const BarraCompatibilidade = ({ valor }: { valor: number }) => {
+    const theme = getScoreTheme(valor);
+    return (
+      <View style={{ marginTop: s(12) }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: s(6) }}>
+          <Text style={{ fontFamily: f6, fontSize: s(11), letterSpacing: s(11) * 0.08, textTransform: 'uppercase', color: INK_MUTE }}>
+            Compatibilidade com a sua pele
+          </Text>
+          <Text style={{ fontFamily: f8, fontSize: s(15), color: theme.score }}>{valor}%</Text>
+        </View>
+        <View style={{ height: s(6), borderRadius: s(3), backgroundColor: '#F3F3F4', overflow: 'hidden' }}>
+          <View style={{ width: `${Math.max(0, Math.min(100, valor))}%`, height: '100%', borderRadius: s(3), backgroundColor: theme.score }} />
+        </View>
+      </View>
+    );
+  };
+
   const SectionHeader = ({ icon, label }: { icon: React.ReactNode; label: string }) => (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8), marginHorizontal: s(16), marginTop: s(26), marginBottom: s(12) }}>
       {icon}
@@ -620,12 +1045,13 @@ export default function RecomendacaoProdutos() {
       </SafeAreaView>
 
       {/* Abas: Recomendados | Escaneados (lógica da tela de protocolo manhã/noite) */}
-      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: s(32), paddingTop: s(14), paddingBottom: s(8), backgroundColor: WHITE }}>
-        {(['recomendados', 'escaneados'] as const).map((id) => {
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: s(20), paddingTop: s(14), paddingBottom: s(8), backgroundColor: WHITE }}>
+        {(['recomendados', 'colecao', 'escaneados'] as const).map((id) => {
           const active = tab === id;
+          const label = id === 'recomendados' ? 'Recomendados' : id === 'colecao' ? 'Minha Coleção' : 'Escaneados';
           return (
             <TouchableOpacity key={id} onPress={() => { haptics.select(); setTab(id); }} activeOpacity={0.8} style={{ alignItems: 'center' }}>
-              <Text style={{ fontFamily: active ? f8 : f6, fontSize: s(15), color: active ? INK : INK_FAINT }}>{id === 'recomendados' ? 'Recomendados' : 'Escaneados'}</Text>
+              <Text style={{ fontFamily: active ? f8 : f6, fontSize: s(14), color: active ? INK : INK_FAINT }}>{label}</Text>
               <View style={{ height: s(2.5), width: s(24), borderRadius: s(2), marginTop: s(7), backgroundColor: active ? ROTINA_PINK : 'transparent' }} />
             </TouchableOpacity>
           );
@@ -712,6 +1138,94 @@ export default function RecomendacaoProdutos() {
       )}
       </>)}
 
+      {/* ═══ ABA MINHA COLEÇÃO ═══ */}
+      {tab === 'colecao' && (<>
+        {colecaoState === 'loading' && (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: s(120) }}>
+            <ActivityIndicator size="large" color={ROTINA_PINK} />
+          </View>
+        )}
+
+        {colecaoState === 'error' && (
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
+            <CenterCard
+              title="Não deu pra carregar agora"
+              body="Tivemos um problema ao buscar os seus produtos. Tente de novo em instantes."
+              action={
+                <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.tap(); loadColecao(); }} style={{ alignSelf: 'flex-start', marginTop: s(14), height: s(44), paddingHorizontal: s(20), borderRadius: s(100), backgroundColor: ROTINA_PINK, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: f7, fontSize: s(14), color: WHITE }}>Tentar de novo</Text>
+                </TouchableOpacity>
+              }
+            />
+          </ScrollView>
+        )}
+
+        {colecaoState === 'empty' && (
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
+            <CenterCard
+              title="Sua coleção está vazia"
+              body="Escaneie um produto que você tem em casa e responda “sim” quando eu perguntar se ele é seu. Eu passo a montar sua rotina com o que você já tem."
+            />
+          </ScrollView>
+        )}
+
+        {colecaoState === 'ready' && (
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
+            <View style={{ marginHorizontal: s(16), marginTop: s(18) }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: s(12) }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: f8, fontSize: s(24), lineHeight: s(24) * 1.15, letterSpacing: s(-0.5), color: INK }}>O que você tem em casa</Text>
+                  <Text style={{ fontFamily: f4, fontSize: s(14), lineHeight: s(14) * 1.5, color: INK_MUTE, marginTop: s(7) }}>
+                    {emCasaCount > 0
+                      ? `${emCasaCount === 1 ? '1 passo da sua rotina usa' : `${emCasaCount} passos da sua rotina usam`} um produto seu.`
+                      : 'Produtos seus, com o quanto cada um combina com a sua pele.'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    haptics.tap();
+                    setEditando((v) => !v);
+                    setSelecionados(new Set());
+                  }}
+                  style={{ paddingTop: s(4) }}
+                >
+                  <Text style={{ fontFamily: f7, fontSize: s(14), color: ROTINA_PINK }}>{editando ? 'Concluir' : 'Editar'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* grade de quadrados */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginHorizontal: s(16), marginTop: s(18) }}>
+              {colecao.map(renderColecaoCard)}
+            </View>
+          </ScrollView>
+        )}
+
+        {/* Barra de remoção — só no modo de edição e com algo selecionado. Fica
+            acima do botão "Escanear produto" para não brigar com ele. */}
+        {editando && selecionados.size > 0 && (
+          <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: s(170), alignItems: 'center' }}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={removerSelecionados}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: s(8), height: s(48),
+                paddingHorizontal: s(24), borderRadius: s(100), backgroundColor: '#D4183D',
+                shadowColor: '#D4183D', shadowOffset: { width: 0, height: s(6) }, shadowOpacity: 0.35, shadowRadius: s(12), elevation: 6,
+              }}
+            >
+              <Svg width={s(17)} height={s(17)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+              </Svg>
+              <Text style={{ fontFamily: f7, fontSize: s(15), color: WHITE }}>
+                Remover {selecionados.size > 1 ? `(${selecionados.size})` : ''}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </>)}
+
       {/* ═══ ABA ESCANEADOS ═══ */}
       {tab === 'escaneados' && (<>
         {scanState === 'loading' && (
@@ -776,6 +1290,7 @@ export default function RecomendacaoProdutos() {
               <View style={{ paddingTop: s(22), paddingHorizontal: s(20) }}>
                 <Text style={{ fontFamily: f7, fontSize: s(11), letterSpacing: s(11) * 0.14, textTransform: 'uppercase', color: INK_MUTE, marginBottom: s(4) }}>{detail.brand}</Text>
                 <Text style={{ fontFamily: f8, fontSize: s(24), lineHeight: s(24) * 1.15, letterSpacing: s(24) * -0.02, color: INK }}>{detail.name}</Text>
+                {typeof detail.compatibilidade === 'number' && <BarraCompatibilidade valor={detail.compatibilidade} />}
                 {renderChips(detail.targets, undefined)}
                 <Text style={{ fontFamily: f4, fontSize: s(14.5), lineHeight: s(14.5) * 1.6, color: INK_BODY, marginTop: s(18) }}>{detail.praLong}</Text>
                 {!!(detail.alts && detail.alts.length) && (
@@ -784,12 +1299,18 @@ export default function RecomendacaoProdutos() {
                     {detail.alts!.map((alt, i) => renderAlt(alt, i, detail, true))}
                   </View>
                 )}
-                <Pressable onPress={handleSaveToRoutine} disabled={savedNow} style={{ marginTop: s(24), height: s(52), borderRadius: s(16), backgroundColor: ROTINA_PINK, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: s(8), opacity: savedNow ? 0.9 : 1, shadowColor: ROTINA_PINK, shadowOffset: { width: 0, height: s(6) }, shadowOpacity: 0.35, shadowRadius: s(12), elevation: 6 }}>
-                  {savedNow && (
-                    <Svg width={s(18)} height={s(18)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><Path d="M20 6L9 17l-5-5" /></Svg>
-                  )}
-                  <Text style={{ fontFamily: f7, fontSize: s(16), color: WHITE }}>{savedNow ? 'Salvo na sua rotina' : 'Salvar na minha rotina'}</Text>
-                </Pressable>
+                {/* Só para produto do CATÁLOGO (tem produto_id) — inclui o detalhe
+                    de uma ALTERNATIVA. Passo já preenchido pelo que ela tem em casa
+                    não mostra botão: o produto dela já está na rotina e na Coleção. */}
+                {!!detail.productId && (
+                  <Pressable onPress={handleAdicionarNaRotina} disabled={savedNow} style={{ marginTop: s(24), height: s(52), borderRadius: s(16), backgroundColor: ROTINA_PINK, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: s(8), opacity: savedNow ? 0.9 : 1, shadowColor: ROTINA_PINK, shadowOffset: { width: 0, height: s(6) }, shadowOpacity: 0.35, shadowRadius: s(12), elevation: 6 }}>
+                    {savedNow && !indoParaRotina && (
+                      <Svg width={s(18)} height={s(18)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><Path d="M20 6L9 17l-5-5" /></Svg>
+                    )}
+                    {indoParaRotina && <ActivityIndicator color={WHITE} size="small" />}
+                    <Text style={{ fontFamily: f7, fontSize: s(16), color: WHITE }}>{savedNow ? 'Na sua rotina' : 'Adicionar à minha rotina'}</Text>
+                  </Pressable>
+                )}
               </View>
             </ScrollView>
           )}
@@ -811,6 +1332,60 @@ export default function RecomendacaoProdutos() {
               router.push('/(scan)/product-camera' as any);
             }}
           />
+        )}
+      </Modal>
+
+      {/* ── Detalhe de um item da MINHA COLEÇÃO ──────────────────────────────
+          Item identificado → a MESMA `ProductAnalysis` do resultado do scan e do
+          histórico (fonte única do layout; não duplicar). Item não identificado
+          não tem análise para mostrar: vira um cartão curto com o caminho de
+          recuperação (nova foto, inclusive do rótulo de ingredientes). */}
+      <Modal visible={!!colecaoDetail} animationType="slide" onRequestClose={() => setColecaoDetail(null)} transparent={false}>
+        {colecaoDetail && (
+          colecaoDetail.status === 'nao_identificado' || !colecaoDetail.resultado ? (
+            <View style={{ flex: 1, backgroundColor: WHITE, paddingTop: insets.top + s(20), paddingHorizontal: s(24) }}>
+              <Pressable
+                onPress={() => { haptics.tap(); setColecaoDetail(null); }}
+                style={{ alignSelf: 'flex-end', width: s(40), height: s(40), borderRadius: s(20), backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BORDER, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <IconClose size={17} />
+              </Pressable>
+
+              <View style={{ alignItems: 'center', marginTop: s(20) }}>
+                <View style={{ width: s(180), height: s(180), borderRadius: s(20), backgroundColor: PHOTO_BG, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                  {colecaoDetail.photoUrl
+                    ? <ExpoImage source={{ uri: colecaoDetail.photoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                    : <IconHerb />}
+                </View>
+              </View>
+
+              <Text style={{ fontFamily: f8, fontSize: s(24), lineHeight: s(24) * 1.2, color: INK, textAlign: 'center', marginTop: s(24) }}>
+                Não consegui identificar esse produto
+              </Text>
+              <Text style={{ fontFamily: f4, fontSize: s(14), lineHeight: s(14) * 1.55, color: INK_MUTE, textAlign: 'center', marginTop: s(10) }}>
+                Pode ser a luz, o reflexo da embalagem ou a marca pequena demais. Tire outra foto — se der, fotografe também o rótulo de ingredientes, que é o que me diz mais sobre a fórmula.
+              </Text>
+              <Text style={{ fontFamily: f6, fontSize: s(12.5), lineHeight: s(12.5) * 1.5, color: INK_FAINT, textAlign: 'center', marginTop: s(12) }}>
+                Enquanto ele não for identificado, não entra na sua rotina — não dá pra avaliar o que eu não consegui ler.
+              </Text>
+
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => refazerFoto(colecaoDetail)}
+                style={{ height: s(54), borderRadius: s(100), backgroundColor: ROTINA_PINK, alignItems: 'center', justifyContent: 'center', marginTop: s(28), shadowColor: ROTINA_PINK, shadowOffset: { width: 0, height: s(6) }, shadowOpacity: 0.35, shadowRadius: s(12), elevation: 6 }}
+              >
+                <Text style={{ fontFamily: f8, fontSize: s(16), color: WHITE }}>Tirar nova foto</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ProductAnalysis
+              result={colecaoDetail.resultado}
+              photoUri={colecaoDetail.photoUrl}
+              onClose={() => setColecaoDetail(null)}
+              onRescan={() => refazerFoto(colecaoDetail)}
+              rescanLabel="Tirar nova foto desse produto"
+            />
+          )
         )}
       </Modal>
     </View>

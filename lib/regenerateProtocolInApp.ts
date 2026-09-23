@@ -8,19 +8,24 @@ import { invalidateCache } from './cache';
 // no event loop, independente do ciclo de vida da tela: sobrevive à navegação do
 // loading-dentro-app para a skin-result. Marca no SUCESSO (nunca no início) → app morto
 // no meio apenas tenta de novo no próximo scan. Ordem de escrita: TABELA → STORE → CACHE.
+export type ResultadoRegeneracao = 'regenerado' | 'pulado' | 'falhou';
+
 export async function regenerateProtocolInApp(
   userId: string,
   scanResult: ScanResult,
   skinScanId: string | null,
-): Promise<void> {
-  if (useAppStore.getState().regenInFlight) return; // já rodando nesta sessão
+): Promise<ResultadoRegeneracao> {
+  // O retorno existe para o fluxo da Minha Coleção saber se a rotina JÁ foi
+  // refeita aqui (e, portanto, se a recomendação de produtos já foi refrescada de
+  // carona) ou se ele precisa refrescar só a recomendação. Ver `lib/colecaoFlow.ts`.
+  if (useAppStore.getState().regenInFlight) return 'pulado'; // já rodando nesta sessão
 
   const { data: urow } = await supabase
     .from('users')
     .select('inapp_protocol_regenerated_at, genero, pregnancy_status, skincare_routine_type, skincare_routine_description, allergy_type, allergy_description, tipo_pele, concerns, sun_exposure, hydration, sleep, birthday')
     .eq('id', userId)
     .maybeSingle();
-  if (urow?.inapp_protocol_regenerated_at) return; // já regenerou (entre sessões)
+  if (urow?.inapp_protocol_regenerated_at) return 'pulado'; // já regenerou (entre sessões)
 
   useAppStore.getState().setRegenInFlight(true);
   useAppStore.getState().setRoutineUpdatingNotice(true); // promessa → modal na skin-result
@@ -37,7 +42,7 @@ export async function regenerateProtocolInApp(
       // Sem a leitura ANTES não há como confirmar a regeneração depois. Aborta antes
       // de gerar: gerar sem poder marcar duplicaria o protocolo no próximo scan.
       console.error('[regenerateProtocolInApp] read-back ANTES falhou — nada gerado, retry no próximo scan:', beforeErr);
-      return;
+      return 'falhou';
     }
 
     const onboardingData = buildOnboardingDataFromUserRow(urow, scanResult);
@@ -54,7 +59,7 @@ export async function regenerateProtocolInApp(
         onFinally: () => resolve(),
       });
     });
-    if (!produced) return; // geração falhou → marcador NÃO gravado → retry no próximo scan
+    if (!produced) return 'falhou'; // geração falhou → marcador NÃO gravado → retry no próximo scan
 
     // Read-back: a linha mais recente tem que ser DIFERENTE da de antes. O insert em
     // generateAndSaveProtocol é fire-and-forget e engole erro (RLS/rede) — sem esta
@@ -65,11 +70,11 @@ export async function regenerateProtocolInApp(
       .order('updated_at', { ascending: false }).limit(1).maybeSingle();
     if (afterErr) {
       console.error('[regenerateProtocolInApp] read-back DEPOIS falhou — marcador NÃO gravado, retry no próximo scan:', afterErr);
-      return;
+      return 'falhou';
     }
     if (!after?.id || after.id === before?.id) {
       console.warn('[regenerateProtocolInApp] insert não confirmado (linha inalterada) — marcador NÃO gravado, retry no próximo scan');
-      return;
+      return 'falhou';
     }
 
     // (3) store DEPOIS da tabela → (4) cache → (5) marcador
@@ -83,8 +88,10 @@ export async function regenerateProtocolInApp(
       // É exatamente o modo de falha que criou os casos de 2+ protocolos: tem que ser ruidoso.
       console.error('[regenerateProtocolInApp] MARCADOR NÃO GRAVADO — o próximo scan vai regenerar de novo:', markErr);
     }
+    return 'regenerado';
   } catch (e) {
     console.warn('[regenerateProtocolInApp] falhou (retry no próximo scan):', e);
+    return 'falhou';
   } finally {
     useAppStore.getState().setRegenInFlight(false);
   }

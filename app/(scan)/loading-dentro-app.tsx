@@ -14,7 +14,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
-import { regenerateProtocolInApp } from '../../lib/regenerateProtocolInApp';
+import { finalizarPrimeiroFluxo } from '../../lib/colecaoFlow';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -227,10 +227,14 @@ export default function LoadingDentroApp() {
             // Novo scan = novo score, novas métricas, nova foto. A home lê de
             // cache, então precisa ser invalidada aqui ou mostraria o scan antigo.
             invalidateCache(`home:${user.id}`);
-            // Regeneração do protocolo no 1º scan in-app — BACKGROUND, não bloqueia a
-            // navegação. A função de módulo sobrevive à desmontagem desta tela; os guards
-            // internos (marcador + regenInFlight) garantem "uma única vez".
-            void regenerateProtocolInApp(user.id, data, scanRow?.id ?? null);
+            // Fecha o primeiro fluxo da MINHA COLEÇÃO — BACKGROUND, não bloqueia a
+            // navegação. A função de módulo sobrevive à desmontagem desta tela.
+            // ⚠️ Ela ENVOLVE a regeneração do protocolo do 1º scan in-app (que
+            // continua com os mesmos guards de "uma única vez"): primeiro analisa
+            // as fotos dos produtos que ela tirou — agora contra este scan novo —
+            // e só então refaz a rotina, que já enxerga a Coleção. Sem fila e sem
+            // fluxo pendente, o comportamento é idêntico ao de antes.
+            void finalizarPrimeiroFluxo(user.id, data, scanRow?.id ?? null);
           }
         } catch (e) {
           console.warn('Failed to save scan to DB:', e);

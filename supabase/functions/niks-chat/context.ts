@@ -17,6 +17,18 @@ export type UserContext = {
   history: Array<{ id: string; role: string; content: string; image_url: string | null; created_at: string }>
   memories: Array<Record<string, unknown>>
   pendingSuggestion: Record<string, unknown> | null
+  // Minha Coleção: os produtos que ela TEM EM CASA. Entra no context pack para a
+  // NIKS responder com o que ela tem em mãos ("apareceu uma espinha, o que eu
+  // faço?") em vez de mandar comprar alguma coisa.
+  colecao: Array<{
+    produto_nome: string | null
+    produto_marca: string | null
+    categoria: string | null
+    ativos_detectados: string[] | null
+    compatibilidade: number | null
+    veredito: string | null
+    status: string
+  }> | null
 }
 
 export function createSupabaseClient() {
@@ -111,6 +123,20 @@ async function getMemories(supabase: ReturnType<typeof createSupabaseClient>, us
   return data ?? []
 }
 
+async function getColecao(supabase: ReturnType<typeof createSupabaseClient>, userId: string) {
+  // Inclui os INCOMPATÍVEIS (a NIKS precisa saber que ela tem um produto que não
+  // serve, para explicar por que não vai mandar usar) e os NÃO IDENTIFICADOS
+  // ficam de fora: sem leitura do produto não há o que dizer sobre eles.
+  const { data } = await supabase
+    .from('colecao_produtos')
+    .select('produto_nome, produto_marca, categoria, ativos_detectados, compatibilidade, veredito, status')
+    .eq('user_id', userId)
+    .eq('status', 'identificado')
+    .order('compatibilidade', { ascending: false, nullsFirst: false })
+    .limit(40)
+  return data ?? []
+}
+
 async function getPendingSuggestion(supabase: ReturnType<typeof createSupabaseClient>, userId: string, conversationId: string) {
   // Escopada à conversa (uma pendente não vaza para outra) E com validade de 24h na
   // LEITURA. A regra 8 só expira no apply, que nunca roda para uma pendente fora de
@@ -145,6 +171,7 @@ export async function buildContext(
     getHistory(supabase, userId),
     getMemories(supabase, userId),
     getPendingSuggestion(supabase, userId, conversationId),
+    getColecao(supabase, userId),
   ]
 
   const results = await Promise.allSettled(promises)
@@ -161,5 +188,6 @@ export async function buildContext(
     history: (getValue(results[5]) ?? []) as UserContext['history'],
     memories: (getValue(results[6]) ?? []) as UserContext['memories'],
     pendingSuggestion: getValue(results[7]) as UserContext['pendingSuggestion'],
+    colecao: getValue(results[8]) as UserContext['colecao'],
   }
 }

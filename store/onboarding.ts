@@ -353,6 +353,31 @@ type AppStore = {
   setRegenInFlight: (v: boolean) => void
   routineUpdatingNotice: boolean
   setRoutineUpdatingNotice: (v: boolean) => void
+
+  // ── Minha Coleção ──────────────────────────────────────────────────────────
+  // Fila de fotos de produto do PRIMEIRO FLUXO: ela fotografa tudo em sequência,
+  // sem esperar análise, e a fila só é analisada depois que o scan de 6 fotos foi
+  // salvo (assim a compatibilidade nasce contra o scan novo — ver `lib/colecaoFlow.ts`).
+  // ⚠️ NUNCA persistir (fora do `partialize`): é base64 de foto, mesma regra do
+  // `skinCollagesBase64`. App morto no meio do fluxo → as fotos se perdem e ela
+  // adiciona os produtos depois pela aba Minha Coleção. Limite: MAX_PRODUTOS_PRIMEIRO_FLUXO.
+  colecaoQueue: { base64: string; mimeType: string }[]
+  setColecaoQueue: (fotos: { base64: string; mimeType: string }[]) => void
+  addColecaoFoto: (foto: { base64: string; mimeType: string }) => void
+  // Cache local de "esta conta já passou pelo primeiro fluxo". A VERDADE é
+  // `users.colecao_onboarding_at` (ver `lib/colecaoFlow.ts`); isto existe só para o
+  // pop-up não piscar enquanto o servidor não responde. Persistido — e zerado no
+  // logout (`clearColecaoFlags`), senão o "já fez" de uma conta vazaria para a
+  // próxima criada no mesmo aparelho (a lição do tutorial da home, Sessão 64).
+  colecaoOnboardingDone: boolean
+  setColecaoOnboardingDone: (v: boolean) => void
+  clearColecaoFlags: () => void
+  // Item NÃO IDENTIFICADO da Coleção que está sendo refotografado. Marcado ao sair
+  // da Coleção para a câmera de produto e consumido no `product-result`, que
+  // ATUALIZA esse item em vez de criar outro (senão cada tentativa deixaria um
+  // card morto na Coleção). Hand-off de tela, em memória — fora do `partialize`.
+  colecaoRetakeId: string | null
+  setColecaoRetakeId: (id: string | null) => void
   selectedScan: { result: ScanResult; imageUri: string } | null
   setSelectedScan: (scan: { result: ScanResult; imageUri: string } | null) => void
   selectedFoodResult: FoodReportResult | null
@@ -491,6 +516,15 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   routineUpdatingNotice: false,
   setRoutineUpdatingNotice: (v) => set({ routineUpdatingNotice: v }),
 
+  colecaoQueue: [],
+  setColecaoQueue: (fotos) => set({ colecaoQueue: fotos }),
+  addColecaoFoto: (foto) => set((s) => ({ colecaoQueue: [...s.colecaoQueue, foto] })),
+  colecaoOnboardingDone: false,
+  setColecaoOnboardingDone: (v) => set({ colecaoOnboardingDone: v }),
+  clearColecaoFlags: () => set({ colecaoOnboardingDone: false, colecaoQueue: [], colecaoRetakeId: null }),
+  colecaoRetakeId: null,
+  setColecaoRetakeId: (id) => set({ colecaoRetakeId: id }),
+
   setSelectedScan: (scan) => set({ selectedScan: scan }),
 
   setSelectedFoodResult: (result) => set({ selectedFoodResult: result }),
@@ -606,5 +640,9 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     homeTutorialSeen: s.homeTutorialSeen,
     appliedCoupon: s.appliedCoupon, // cupom aplicado antes do signup — precisa sobreviver até o cadastro
     pendingName: s.pendingName, // nome capturado antes do signup — sobrevive até o cadastro
+    // Primeiro fluxo da Minha Coleção: cache do "esta conta já passou". A verdade é
+    // `users.colecao_onboarding_at`; o logout zera este flag (`clearColecaoFlags`).
+    // ⚠️ `colecaoQueue` fica FORA — é base64 de foto (estoura o AsyncStorage).
+    colecaoOnboardingDone: s.colecaoOnboardingDone,
   }),
 }))

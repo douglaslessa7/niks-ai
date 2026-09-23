@@ -57,6 +57,53 @@ export function classifyStep(name: string, ingredient: string): { category: stri
   return { category: 'Cuidado', icon: 'sparkle' }
 }
 
+// ── MARCA / NOME COMERCIAL no campo `ingredient` ──────────────────────────────
+// `ingredient` descreve **tipo do produto + ativo + concentração** ("Gel de Limpeza
+// com Ácido Salicílico 2%"). Marca e nome comercial têm campo próprio no protocolo
+// (`product_suggestions`, que o app nem renderiza) e NÃO podem entrar aqui.
+//
+// ⚠️ Bug real, confirmado no banco: um `rotina_am[0]` com
+//   name       = "Gel de Limpeza Suave"
+//   ingredient = "Gel de Limpeza La Roche-Posay Effaclar Gel"
+// A tela da Rotina mostra os dois campos um sob o outro, então isso lê como texto
+// duplicado — e, pior, prescreve um produto específico onde deveria haver o ativo.
+//
+// ⚠️ É HEURÍSTICA, não garantia: pega os nomes desta lista, não "toda marca do
+// mundo". É de propósito — uma regra estrutural ("parece nome próprio") teria
+// falso-positivo em "Ácido Salicílico" e derrubaria protocolo bom. Ao ver uma marca
+// nova escapando nos logs (`CHECK3_BRAND_IN_INGREDIENT` / `ingredient-com-marca`),
+// acrescente aqui.
+// ⚠️ NÃO incluir palavra que também seja ATIVO ou tipo de produto — 'cica' (centella),
+// 'gel', 'sérum' e afins ficam de fora, senão a checagem recusa ingrediente legítimo.
+const MARCAS_COMERCIAIS = [
+  // catálogo do app
+  'creamy', 'principia', 'medicube', 'sallve',
+  // dermocosmético / farmácia (as que mais aparecem em PT-BR)
+  'la roche posay', 'roche posay', 'vichy', 'cerave', 'neutrogena', 'avene',
+  'bioderma', 'eucerin', 'isdin', 'cetaphil', 'uriage', 'adcos', 'dermage',
+  'skinceuticals', 'paula s choice', 'the ordinary', 'ada tina', 'darrow',
+  'theraskin', 'mantecorp', 'episol', 'nivea', 'garnier', 'loreal', 'l oreal',
+  'anasept', 'profuse', 'stiefel', 'galderma',
+  // linhas comerciais que vazam como se fossem ativo
+  'effaclar', 'anthelios', 'cicaplast', 'toleriane', 'hydraphase', 'normaderm',
+]
+
+/** Normalização agressiva para casar marca: sem acento, sem pontuação, 1 espaço. */
+const normMarca = (s: string) =>
+  (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+
+/**
+ * Devolve a marca/nome comercial encontrado no texto, ou `undefined`.
+ * Casa por PALAVRA INTEIRA (o haystack é envolto em espaços), então 'nivea' não
+ * casa dentro de outra palavra e marcas compostas funcionam naturalmente.
+ */
+export function marcaComercialEm(texto: string): string | undefined {
+  const hay = ` ${normMarca(texto)} `
+  if (hay.trim() === '') return undefined
+  return MARCAS_COMERCIAIS.find((m) => hay.includes(` ${m} `))
+}
+
 export type ActiveTarget = { kind: 'eye' | 'unknown' | 'known'; label?: string; codes?: string[]; molecule?: string }
 export function detectTargetActive(name: string, ingredient: string): ActiveTarget {
   const t = norm(`${name} ${ingredient}`)
@@ -135,6 +182,13 @@ export function validateProposal(raw: unknown):
   if (!step_name) return { ok: false, reason: 'missing-step_name' }
   const ingredient = typeof r.ingredient === 'string' ? r.ingredient.trim() : ''
   if (!ingredient) return { ok: false, reason: 'missing-ingredient' }
+  // `ingredient` é tipo + ativo, nunca um produto específico. Recusar (em vez de
+  // "limpar" a marca) é o contrato desta camada: o que está fora do contrato NÃO é
+  // gravado. E sanitizar não resolveria — tirar "La Roche-Posay" de "Gel de Limpeza
+  // La Roche-Posay Effaclar Gel" ainda deixaria "Effaclar Gel", que também é comercial.
+  // A recusa vira `PROTOCOL_REFUSED` no caller e a NIKS pode propor de novo, certo.
+  const marca = marcaComercialEm(ingredient)
+  if (marca) return { ok: false, reason: `ingredient-com-marca:${marca}` }
 
   let schedule_days: string[] | null = null
   if (r.schedule_days != null) {

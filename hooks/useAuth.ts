@@ -147,6 +147,11 @@ export function useAuth() {
     // ⚠️ Só os flags da HOME: `scanTutorialSeen` fica de fora de propósito — zerá-lo
     // faria quem sai e volta na MESMA conta rever o tutorial das 6 fotos.
     useAppStore.getState().clearHomeTutorialFlags()
+    // Mesmo motivo, para o primeiro fluxo da Minha Coleção: sem isto, a próxima
+    // conta criada neste aparelho herdaria o "já passou pelo fluxo" desta e nunca
+    // seria perguntada sobre os produtos que tem em casa. (Também descarta a fila
+    // de fotos, que é de uma sessão só.)
+    useAppStore.getState().clearColecaoFlags()
     await clearAllCache()
   }
 

@@ -125,6 +125,8 @@ Não sugira adicionar ativos desnecessários se o protocolo já cobre a necessid
 
 ---
 
+**\`<ProductsAtHome>\`** — os produtos que ela TEM EM CASA (a "coleção" dela), com os ativos que a análise leu, a compatibilidade com a pele dela e o veredito. **Quando ela pedir o que fazer agora — "apareceu uma espinha", "minha pele está ardendo", "posso usar o quê hoje?" —, responda primeiro com o que ela JÁ TEM.** Só indique comprar algo quando nada na coleção resolver, e diga por quê. Produto com veredito \`evitaria\` está na coleção mas NÃO deve ser recomendado: se ela perguntar dele, explique o motivo. Se o bloco disser que a coleção está vazia, ela não tem nada cadastrado — não invente que tem, nem se você mencionou algum produto antes na conversa. O estado vem SEMPRE deste bloco, nunca do histórico.
+
 **\`<RecentFoodScans>\`** — refeições escaneadas recentemente com score e impacto identificado. Cruce esses dados quando ela relatar uma condição aguda que pode ter relação com alimentação — açúcar, laticínio, inflamação. Faça isso com naturalidade, não como acusação.
 
 Use quando houver relação possível entre alimentação recente e pele, principalmente em:
@@ -818,6 +820,23 @@ ${rotina_pm.map(formatStep).join('\n')}
 </PendingProtocolSuggestion>`
   }
 
+  // Minha Coleção — o que ela TEM EM CASA. Bloco sempre presente (inclusive
+  // afirmando que está vazia): sem o estado explícito, a NIKS lia a própria fala
+  // anterior no histórico e inventava que ela tinha ou não tinha algo — o mesmo
+  // erro que o `<PendingProtocolSuggestion>` já teve de corrigir.
+  const colecaoItens = context.colecao ?? []
+  const colecaoBlock = colecaoItens.length > 0
+    ? `<ProductsAtHome>\n${colecaoItens.map((c) => {
+        const nome = [c.produto_marca, c.produto_nome].filter(Boolean).join(' ') || 'produto sem nome legível'
+        const ativos = Array.isArray(c.ativos_detectados) && c.ativos_detectados.length > 0
+          ? ` — ativos: ${c.ativos_detectados.join(', ')}`
+          : ''
+        const compat = typeof c.compatibilidade === 'number' ? ` — compatibilidade ${c.compatibilidade}%` : ''
+        const ver = c.veredito ? ` — veredito: ${c.veredito}` : ''
+        return `  ${nome}${c.categoria ? ` (${c.categoria})` : ''}${ativos}${compat}${ver}`
+      }).join('\n')}\n</ProductsAtHome>`
+    : `<ProductsAtHome>\n  Ela não tem nenhum produto cadastrado na coleção dela.\n</ProductsAtHome>`
+
   const memoryRows = context.memories
     .map(m => {
       const mem = m as Record<string, unknown>
@@ -841,6 +860,7 @@ ${rotina_pm.map(formatStep).join('\n')}
     latestScanBlock,
     scanHistoryBlock,
     currentProtocolBlock,
+    colecaoBlock,
     recentFoodBlock,
     pendingBlock,
     memoryBlock,

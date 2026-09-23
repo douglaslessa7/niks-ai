@@ -1,49 +1,33 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Produtos salvos na rotina — fonte de verdade COMPARTILHADA entre a tela de
-// Recomendação de Produtos (onde a usuária toca "Salvar na minha rotina") e a
-// tela de Rotina/Protocolo (onde a foto do produto salvo substitui o ícone do
-// passo). Guardado em AsyncStorage, indexado pelo NOME normalizado do passo —
-// que é o mesmo `name` do passo da rotina (protocolos.rotina_am/pm) tanto na
-// recomendação (campo `passo`) quanto no protocolo (Step.title).
+// Chave estável de um PASSO da rotina.
+//
+// ⚠️ O que este arquivo era: "produtos salvos na rotina" em AsyncStorage, gravado
+// pelo botão "Salvar na minha rotina" da tela de Produtos e lido pela Rotina para
+// trocar o ícone do passo pela foto do produto. **Aposentado pela Minha Coleção**,
+// que faz a mesma coisa do lado do servidor (sincroniza entre aparelhos, sabe a
+// compatibilidade e alimenta a própria montagem da rotina). Quem dá a foto de cada
+// passo hoje é `lib/rotinaProdutos.ts`; o botão virou "Tenho esse produto em casa".
+//
+// O que SOBROU aqui é só o `normStepKey`, que continua sendo a chave única de
+// casamento passo↔produto em três lugares (deep-link da Rotina para o detalhe do
+// produto, o mapa de fotos dos passos e a tela de Produtos). Ele fica neste
+// arquivo porque é onde os dois lados já o importavam — mover agora só criaria
+// churn de imports sem ganho.
+//
+// ⚠️ Os dados antigos em AsyncStorage (chave `saved_routine_products_v1`) NÃO são
+// migrados: eles guardavam só a foto de um produto do CATÁLOGO por passo, sem
+// produto_id nem compatibilidade — não dá para deduzir deles que ela "tem o
+// produto em casa". Ficam órfãos e param de ser lidos.
 // ─────────────────────────────────────────────────────────────────────────────
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type SavedProduct = {
-  imageUrl: string;      // URL da imagem do produto (catálogo `produtos.imagem_url`)
-  brand?: string | null;
-  name?: string | null;
-};
-
-const KEY = 'saved_routine_products_v1';
-
-// Chave estável de um passo: minúsculas, sem acento, espaços colapsados.
-// Precisa ser idêntica nos dois lados (salvar e ler) — por isso mora aqui.
+/**
+ * Chave estável de um passo: minúsculas, sem acento, espaços colapsados.
+ * Precisa ser idêntica em todos os consumidores — por isso mora num lugar só.
+ */
 export function normStepKey(name: string): string {
   return (name || '')
     .toLowerCase()
     .normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '') // remove acentos
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-export async function getSavedProducts(): Promise<Record<string, SavedProduct>> {
-  try {
-    const raw = await AsyncStorage.getItem(KEY);
-    if (!raw) return {};
-    const obj = JSON.parse(raw);
-    return obj && typeof obj === 'object' ? obj : {};
-  } catch {
-    return {};
-  }
-}
-
-// Salva (ou substitui) o produto escolhido para um passo da rotina.
-export async function saveProductForStep(stepName: string, product: SavedProduct): Promise<void> {
-  try {
-    const cur = await getSavedProducts();
-    cur[normStepKey(stepName)] = product;
-    await AsyncStorage.setItem(KEY, JSON.stringify(cur));
-  } catch {
-    // best-effort — nunca deve quebrar a UI
-  }
 }
