@@ -1,5 +1,5 @@
 import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,9 @@ import { useAppStore } from '../../store/onboarding';
 import NameCapture from '../../components/onboarding/NameCapture';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { isNativePresentationOpen, waitForNativePresentationToClose } from '../../lib/nativePresentation';
+import { useCoachMark, useCoachStageReady } from '../../lib/coachMarks';
+import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
+import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
 // ── Bottom navbar — réplica do design "Fixed bottom bar" (navbar-design/Navbar.dc.html) ──
 // Ícones line/stroke SVG idênticos ao design. Cores/estados do design:
@@ -107,6 +110,24 @@ function GlobalBottomBar() {
   const activeColor = isDark ? NAV_ACTIVE_DARK : NAV_ACTIVE;
   const inactiveColor = isDark ? NAV_INACTIVE_DARK : NAV_INACTIVE;
 
+  // ── Alvos do tutorial de primeiro acesso (coach marks) ────────────────────
+  // ⚠️ ARMADILHA DE NOME: a CHAVE do glyph não é o nome da tela.
+  //   glyph 'beauty' (rosto)  → /protocolo            → é a ROTINA
+  //   glyph 'rotina' (frasco) → /recomendacao-produtos → são os PRODUTOS
+  // O mapeamento foi trocado uma vez a pedido do usuário (ver "Tab Bar / Navbar"
+  // no README) e os nomes das chaves ficaram como estavam. Aqui usamos os nomes
+  // das TELAS, que é o que as frases do tutorial explicam.
+  // Os hooks são chamados um a um (e não dentro do `.map`) para a ordem dos hooks
+  // não depender do array.
+  const rotinaMark = useCoachMark('nav-rotina', 'circle');
+  const produtosMark = useCoachMark('nav-produtos', 'circle');
+  const chatMark = useCoachMark('nav-chat', 'circle');
+  const marks: Record<string, ReturnType<typeof useCoachMark> | undefined> = {
+    beauty: rotinaMark,
+    rotina: produtosMark,
+    niks: chatMark,
+  };
+
   return (
     // Barra flush na borda inferior, full-width. padding do design: 14 topo / 20 lados.
     // padding inferior = safe area (home indicator) com mínimo de 26 do design.
@@ -148,7 +169,10 @@ function GlobalBottomBar() {
             onPress={() => { haptics.tap(); router.push(it.route as any); }}
             style={styles.item}
           >
-            <View>
+            {/* A medida do coach mark sai DESTA View (a caixa do glifo, ~29×29),
+                não do TouchableOpacity — que é `flex: 1`, uma coluna inteira da
+                barra, e daria um "círculo" do tamanho de um quinto da tela. */}
+            <View ref={marks[it.key]?.ref} onLayout={marks[it.key]?.onLayout}>
               <NavGlyph
                 name={it.key}
                 color={active ? activeColor : inactiveColor}
@@ -285,6 +309,40 @@ export default function AppLayout() {
     return () => { cancelled = true; };
   }, [ready, needsName, pendingShare]);
 
+  // ── Tutorial de primeiro acesso da home (coach marks) ─────────────────────
+  // Só para usuária NOVA (armado no fim do onboarding — ver `notifications.tsx`)
+  // e uma vez na vida. As condições extras não são zelo: cada uma cobre um jeito
+  // conhecido de o tutorial aparecer na hora errada.
+  //   • `ready && !needsName` — depois dos guards de assinatura e de nome, senão
+  //     o overlay escureceria a captura de nome ou uma tela a caminho do paywall;
+  //   • `pathname === '/home'` — os alvos só existem na home (e a navbar muda de
+  //     aba sozinha se a usuária sair);
+  //   • `!pendingShare` — o "Compartilhar com o NIKS" empilha `(scan)` por cima
+  //     do (app); os dois disputando a tela deixariam o tutorial escondido atrás;
+  //   • `stageReady` — a home abre com SKELETON no cold start; destacar um card
+  //     ainda pulsando explicaria a coisa errada.
+  const homeTutorialPending = useAppStore((s) => s.homeTutorialPending);
+  const homeTutorialSeen = useAppStore((s) => s.homeTutorialSeen);
+  const finishHomeTutorial = useAppStore((s) => s.finishHomeTutorial);
+  // Concluir tranca nos DOIS lugares: o flag local corta o tutorial na hora (sem
+  // esperar a rede) e o servidor guarda o "esta CONTA já viu", que é o que
+  // sobrevive a logout, reinstalação e troca de aparelho. A escrita é
+  // fire-and-forget — ver `lib/homeTutorial.ts`.
+  const handleCoachFinish = useCallback(() => {
+    finishHomeTutorial();
+    void markHomeTutorialSeenOnServer();
+  }, [finishHomeTutorial]);
+  const coachStageReady = useCoachStageReady();
+  const pathname = usePathname();
+  const showCoachMarks =
+    ready &&
+    !needsName &&
+    !pendingShare &&
+    pathname === '/home' &&
+    homeTutorialPending &&
+    !homeTutorialSeen &&
+    coachStageReady;
+
   if (!ready) return null;
 
   // Nome vazio → renderiza a captura no lugar do app (mesma fonte da etapa do
@@ -310,6 +368,12 @@ export default function AppLayout() {
         <Tabs.Screen name="skin-result" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
+      {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
+          escurecer a tela inteira e iluminar os ícones da barra. Dentro da
+          `home.tsx` ele ficaria ABAIXO da navbar por mais zIndex que levasse
+          (zIndex só vale entre irmãos; a navbar é do layout, a home é filha do
+          <Tabs>). Ver "Feature: Tutorial de primeiro acesso" no README. */}
+      {showCoachMarks && <HomeCoachMarks onFinish={handleCoachFinish} />}
     </View>
   );
 }

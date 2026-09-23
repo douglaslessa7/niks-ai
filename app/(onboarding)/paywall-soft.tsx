@@ -8,7 +8,13 @@ import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
-import { armSuppressReapresentar, consumeSuppressReapresentar, consumeNextPlacement } from '../../lib/paywallFlow';
+import {
+  armSuppressReapresentar,
+  consumeSuppressReapresentar,
+  consumeNextPlacement,
+  nextPaywallPlacement,
+  subscribeDownsellRequest,
+} from '../../lib/paywallFlow';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 
 export default function PaywallSoft() {
@@ -54,8 +60,11 @@ export default function PaywallSoft() {
     } catch {
       // ignora erro — vai reapresentar o paywall
     }
-    // Não assinou — reapresenta o paywall (bloqueio total)
-    registerPlacement({ placement: 'paywall_onboarding' });
+    // Não assinou — reapresenta o paywall (bloqueio total). Na PRIMEIRA saída da
+    // sessão o que volta é o downsell (segunda chance, uma vez só); depois dela,
+    // o paywall normal. Quem decide é `nextPaywallPlacement`, para o fechamento
+    // no X e o cancelamento da folha da Apple dividirem o mesmo flag.
+    registerPlacement({ placement: nextPaywallPlacement() });
   };
 
   const { registerPlacement } = usePlacement({
@@ -94,6 +103,18 @@ export default function PaywallSoft() {
       }
     },
   });
+
+  // Cancelamento da folha de pagamento da Apple: quem detecta é o
+  // CustomPurchaseController (onPurchase → userCancelled), que já marcou o flag,
+  // armou a supressão e fechou o paywall. Aqui só registramos o downsell — é
+  // este registro, e não um `Superwall.shared.register` solto, que carrega os
+  // callbacks de fail closed acima (onSkip/onError → paywall_onboarding).
+  useEffect(() => {
+    if (__DEV__) return;
+    return subscribeDownsellRequest(() => {
+      registerPlacement({ placement: 'paywall_downsell' });
+    });
+  }, []);
 
   // Ao VOLTAR da tela de cupom, reapresenta o paywall certo: com desconto (cupom
   // válido) ou o normal (voltar/descartar). O primeiro foco é ignorado — o registro

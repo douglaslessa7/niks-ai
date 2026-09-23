@@ -108,6 +108,8 @@
           "disableAndroid": true
         }
       ],
+      "./plugins/withNiksActionExtension",
+      "./plugins/withFmtCxx17",
       [
         "expo-build-properties",
         {

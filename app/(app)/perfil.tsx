@@ -18,6 +18,7 @@ import {
   LogOut,
   Mail,
   Trash2,
+  Sparkles,
 } from 'lucide-react-native';
 import * as Notifications from 'expo-notifications';
 import { supabase } from '../../lib/supabase';
@@ -26,6 +27,7 @@ import { useAppStore } from '../../store/onboarding';
 import { requestPushPermission, savePushToken } from '../../lib/notifications';
 import { useCachedQuery } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import { clearHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
 // ── Color tokens (novo design system NIKS — home/protocolo/chat) ──────────────
 const INK        = '#121212';
@@ -132,6 +134,7 @@ export default function Perfil() {
   const [nome, setNome] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const setTabBarTheme = useAppStore((s) => s.setTabBarTheme);
+  const replayHomeTutorial = useAppStore((s) => s.replayHomeTutorial); // só usado no atalho de __DEV__
 
   const [fontsLoaded] = useFonts({
     Nunito_800ExtraBold,
@@ -453,6 +456,35 @@ export default function Perfil() {
               />
             </View>
           </View>
+
+          {/* ── Só em desenvolvimento ────────────────────────────────────────
+              O tutorial de primeiro acesso é uma-vez-só e fica gravado em disco
+              (store persistido), então testá-lo de novo exigiria reinstalar o
+              app — igual ao `scanTutorialSeen` e ao consentimento de IA. Este
+              atalho rearma e leva para a home. Some sozinho em qualquer build de
+              release: não há nada para reverter antes de subir. */}
+          {__DEV__ && (
+            <View style={{ marginBottom: 26 }}>
+              <SectionLabel fBold={fBold}>Desenvolvimento</SectionLabel>
+              <View style={CARD}>
+                <Row
+                  icon={<Sparkles size={19} color={CORAL_DEEP} strokeWidth={2} />}
+                  label="Rever tutorial da home"
+                  onPress={async () => {
+                    haptics.tap();
+                    // ⚠️ Limpar SÓ o flag local não basta: a home lê
+                    // `users.home_tutorial_seen_at` e trancaria tudo de novo na
+                    // primeira busca. Limpa a coluna (e o cache da home) ANTES de
+                    // navegar — por isso este é aguardado.
+                    await clearHomeTutorialSeenOnServer().catch(() => {});
+                    replayHomeTutorial();
+                    router.push('/home' as any); // mesma forma de trocar de aba que a navbar usa
+                  }}
+                  fSemi={fSemi}
+                />
+              </View>
+            </View>
+          )}
 
           {/* Sair + versão */}
           <View style={{ alignItems: 'center', gap: 14, paddingTop: 8, paddingBottom: 24 }}>

@@ -66,6 +66,28 @@ cd ~/Desktop/niks-ai && npx expo start --dev-client --tunnel
 
 > ⚠️ **Regra de versão:** A Apple rejeita o upload se `CFBundleShortVersionString` (campo `"version"` no `app.json` e no Xcode General → Version) não for **maior** que a última versão aprovada na App Store. Sempre incremente a versão antes de subir um novo build após uma aprovação (ex: 1.0.1 aprovado → próximo build deve ser 1.0.2+).
 
+**Para abrir o app no SIMULADOR apontando para o Metro** (o `xcrun simctl launch br.com.niksai.app` sozinho abre a tela do dev launcher, não o app):
+```bash
+xcrun simctl openurl booted "niks-ai://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+```
+
+### Forçar um flag de "uma vez só" no simulador (sem reinstalar)
+
+Vários comportamentos do app são **uma-vez-na-vida** e ficam gravados em `AsyncStorage`: `ai_consent_accepted`, `scanTutorialSeen`, `homeTutorialSeen`. O README repete em vários pontos que "testar de novo exige reinstalar o app" — **no simulador não exige**: dá para editar o valor direto no disco.
+
+```bash
+C=$(xcrun simctl get_app_container booted br.com.niksai.app data)
+M="$C/Library/Application Support/br.com.niksai.app/RCTAsyncLocalStorage_V1"
+cat "$M/manifest.json"     # chaves; valor "null" = mora em arquivo separado
+```
+⚠️ **Valor grande não fica no `manifest.json`** — ele aparece como `null` ali e o conteúdo vive num arquivo irmão cujo **nome é o md5 da chave** (`niks-app-store` → `8b8d26…`). É o caso do store persistido depois que o `protocolResult` entra nele; procurar só no manifest leva à conclusão errada de que a chave sumiu.
+
+⚠️ **Pare o app antes de editar** (`xcrun simctl terminate booted br.com.niksai.app`) — com ele rodando, a próxima gravação do store sobrescreve o que você acabou de mudar.
+
+⚠️ **Não há como automatizar TOQUES no simulador aqui:** `simctl` não tem comando de toque, o `osascript`/System Events depende da permissão de Acessibilidade do macOS (que vem negada) e o `idb-companion` saiu do Homebrew. Para validar um fluxo de UI, alguém toca e você captura com `xcrun simctl io booted screenshot` — de preferência num laço que só guarda o quadro quando o md5 muda, para não perder uma parada rápida.
+
+
+
 ---
 
 ## SPLASH SCREEN + ÍCONE + NOME DO APP + GOTCHAS NATIVOS (iOS/Android)
@@ -202,7 +224,7 @@ const { data, state, refresh } = useCachedQuery(
 
 **2. `persist` no store Zustand** (`store/onboarding.ts`). O store era 100% em memória, então o cache do protocolo **nunca funcionava** na prática — depois de qualquer restart ele caía direto no fallback do Supabase.
 
-> ⚠️ **O `partialize` é uma LISTA BRANCA deliberada — hoje `skinScore`, `protocolResult`, `scanTutorialSeen` e `appliedCoupon`.** Não adicionar campo sem entender o porquê de cada exclusão: `subscriptionVerified` **precisa** voltar a `false` no cold start (RevenueCat, decisão 16); `niksChatMode` **precisa** cair em `'empty'` no cold start; `*ImageBase64`/`*ImageUri`/`collagePhotos`/`homePhotoDraft` são base64 de foto (**estouram o AsyncStorage**) e hand-offs de vida curta entre telas. `scanTutorialSeen` está **dentro** justamente porque o tutorial de prep deve aparecer uma vez só e nunca mais (o oposto de `stickerSheetSeen`, que fica fora). `appliedCoupon` está **dentro** porque o cupom é aplicado ANTES do signup e precisa sobreviver até o cadastro para ligar ao `user_id` (ver "Sistema de cupons de influenciadora", seção 15). ⚠️ **Cuidado com a supressão de reapresentação do paywall (`lib/paywallFlow.ts`): essa NUNCA pode ser persistida** — é de uso único e em memória de propósito; persistir viraria brecha para escapar do paywall.
+> ⚠️ **O `partialize` é uma LISTA BRANCA deliberada — hoje `skinScore`, `protocolResult`, `scanTutorialSeen`, `appliedCoupon`, `pendingName`, `homeTutorialPending` e `homeTutorialSeen`.** Não adicionar campo sem entender o porquê de cada exclusão: `subscriptionVerified` **precisa** voltar a `false` no cold start (RevenueCat, decisão 16); `niksChatMode` **precisa** cair em `'empty'` no cold start; `*ImageBase64`/`*ImageUri`/`collagePhotos`/`homePhotoDraft` são base64 de foto (**estouram o AsyncStorage**) e hand-offs de vida curta entre telas. `scanTutorialSeen` está **dentro** justamente porque o tutorial de prep deve aparecer uma vez só e nunca mais (o oposto de `stickerSheetSeen`, que fica fora). `appliedCoupon` está **dentro** porque o cupom é aplicado ANTES do signup e precisa sobreviver até o cadastro para ligar ao `user_id` (ver "Sistema de cupons de influenciadora", seção 15). `homeTutorialPending`/`homeTutorialSeen` estão **dentro** porque o tutorial de primeiro acesso é armado no fim do onboarding (e o app pode morrer antes da home) — mas ⚠️ **eles são CACHE do aparelho, não a verdade**: a regra "uma vez por conta" mora em `users.home_tutorial_seen_at`, e o **logout zera os dois** (`clearHomeTutorialFlags`), senão o `seen` de uma conta vazava para a próxima criada no mesmo aparelho. Ver "Feature: Tutorial de primeiro acesso da home". ⚠️ **Cuidado com o estado de paywall de `lib/paywallFlow.ts` — supressão de reapresentação e flag do downsell: NUNCA persistir.** A supressão é de uso único e o downsell é "uma vez por SESSÃO", os dois em memória de propósito; persistir viraria brecha para escapar do paywall (e, no caso do downsell, um flag preso em ligado deixaria a usuária sem a segunda oferta para sempre).
 
 ### ⚠️ Regra de ouro: escreveu no banco, invalide o cache
 
@@ -438,6 +460,21 @@ const cerimFontReg   = fontsLoaded ? 'DMSerifDisplay-Regular'  : undefined; // t
 
 > ⚠️ **`tsconfig.json` — excluir `supabase/functions`:** O `tsconfig.json` do app deve conter `"exclude": ["supabase/functions"]`. As Edge Functions são Deno (não Node/RN) e causam erros de TypeScript se o compilador do app tentar incluí-las.
 
+### Migrations — como aplicar UMA sem arrastar as outras
+
+⚠️ **`supabase db push` aplica TODAS as migrations pendentes, não só a sua.** Confira antes: `supabase migration list` (local × remoto).
+
+> 🚧 **Estado em set/2026 — 3 migrations de agosto seguem PENDENTES no remoto, de propósito:** `20260817120000` (backfill de imagem de 15 produtos), `20260817220000` (padroniza país de origem Coreia) e `20260817230000` (backfill Medicube). São **alterações de DADOS** na tabela `produtos`. **Não aplicar via `db push` sem revisar o conteúdo** — um push distraído leva as três junto com a sua.
+
+Para aplicar só a sua (se a CLI reclamar que o projeto não está linkado: `supabase link --project-ref utpljvwmeyeqwrfulbfr` — a pasta `supabase/.temp/` é gerada pela CLI e **não** é versionada):
+```bash
+supabase migration list                                        # o que está pendente de verdade
+supabase db query --linked "select 1 from information_schema.columns where ..."   # confira o estado ANTES
+supabase db query --linked -f supabase/migrations/<sua>.sql    # aplica só esse arquivo
+supabase migration repair --status applied <timestamp>         # registra no histórico do remoto
+```
+O `repair` não é opcional: sem ele a migration continua marcada como pendente e o próximo `db push` de outra pessoa tenta aplicá-la de novo. (Com `add column if not exists` isso é inofensivo, mas nem toda migration é idempotente.)
+
 ### SQL Functions criadas
 
 **`delete_user()`** — necessária para o botão "Apagar minha conta" em `perfil.tsx`:
@@ -538,7 +575,8 @@ push_token text,                    -- token Expo Push Notifications (salvo na t
 foto_home_url text,                 -- foto escolhida pela usuária na galeria p/ a home (signed URL do bucket `scans`, 1 ano). PRECEDÊNCIA ABSOLUTA sobre skin_scans.foto_url — ver "Feature: Foto da home escolhida pela galeria"
 streak_days int4 DEFAULT 0,         -- dias consecutivos com AMBAS as rotinas (manhã + noite) concluídas
 last_protocol_completed_at timestamptz, -- última vez que o streak foi incrementado (evita duplo incremento no mesmo dia)
-inapp_protocol_regenerated_at timestamptz -- 1º scan in-app regenerou o protocolo (uma vez); null = ainda não. Gravado só no sucesso confirmado (nunca no claim) → app morto no meio tenta de novo no próximo scan
+inapp_protocol_regenerated_at timestamptz, -- 1º scan in-app regenerou o protocolo (uma vez); null = ainda não. Gravado só no sucesso confirmado (nunca no claim) → app morto no meio tenta de novo no próximo scan
+home_tutorial_seen_at timestamptz -- tutorial de primeiro acesso da home: null = esta CONTA nunca viu. É a VERDADE da regra "uma vez por conta" (os flags do store são cache do aparelho e morrem no logout). Lido de carona no fetchHome; escrito por lib/homeTutorial.ts. Migration 20260921120000
 ```
 > ⚠️ **`streak_days` / `last_protocol_completed_at` continuam sem ser atualizados pelo app** — a cerimônia re-portada (seção 6) marca conclusão de passo, mas o **progresso é guardado client-side em AsyncStorage** (`lib/routineProgress.ts`), **não** em `streak_days`. As colunas seguem dormentes no banco; reativar streak é trabalho futuro.
 
@@ -773,7 +811,7 @@ Botão "Começar" da tela 1 → navega para `nome.tsx` ("Como você quer ser cha
 | 21b | `promo-cupom.tsx` | `(onboarding)` | Tela de digitar cupom de influenciadora (só alcançável pelo botão do paywall). Valida via `validar-cupom`; válido → volta e registra `paywall_cupom` (plano com desconto); voltar → paywall normal. **Nenhuma navegação para dentro do app** — ver seção 15 |
 | 22 | `signup.tsx` | `(onboarding)` | Criação de conta (e-mail, Google ou Apple) → **`saveToSupabase` grava `users.nome` = `pendingName`** (nome capturado no início) → dispara geração do protocolo em background via `lib/generateProtocol.ts` (fire-and-forget) → **liga o cupom ao `user_id` via `attributeCouponIfAny`** → navega para `apresentacao` |
 | 23 | `apresentacao.tsx` | `(onboarding)` | **Telas 2–5 de apresentação** (glow up / expert / produtos / espelho) — carrossel `FlatList`, **sem** o link "Entrar". Última tela ("Vamos lá") → `notifications`. Slides = fonte única `components/onboarding/welcomeSlides.tsx` |
-| 24 | `notifications.tsx` | `(onboarding)` | Permissão de notificações push → navega para `/(app)/home`. A saudação usa `users.nome` (o nome já foi gravado no signup) |
+| 24 | `notifications.tsx` | `(onboarding)` | Permissão de notificações push → navega para `/(app)/home`. A saudação usa `users.nome` (o nome já foi gravado no signup). ⚠️ **`navigateToApp()` ARMA o tutorial de primeiro acesso da home** (`armHomeTutorial()`) — é a única rota de usuária NOVA até a home, e é isso que impede o tutorial de aparecer para quem só atualizou o app ou logou numa conta existente. Ver "Feature: Tutorial de primeiro acesso da home" |
 
 > ⚠️ **A etapa de nome saiu daqui (era o passo 23) e foi para o INÍCIO do fluxo (passo 0, logo após o welcome).** Ver "Ponto de entrada — Welcome". `nome.tsx` agora roda `NameCapture` em `mode="store"` (sem sessão, só guarda `pendingName`); antes gravava direto em `users.nome`. Quem grava no Supabase agora é o `signup` (`saveToSupabase`).
 
@@ -796,7 +834,7 @@ Botão "Começar" da tela 1 → navega para `nome.tsx` ("Como você quer ser cha
 
 Exporta `useAppStore` (não `useOnboardingStore`).
 
-> ⚠️ **O store é PARCIALMENTE persistido** (`persist` + `createJSONStorage(AsyncStorage)`, nome `niks-app-store`). **Só `skinScore`, `protocolResult`, `scanTutorialSeen` e `appliedCoupon` sobrevivem a fechar o app** — todo o resto continua sendo memória pura e volta ao valor inicial no cold start. Isso é uma **lista branca deliberada** (`partialize`), não um esquecimento: ver "CACHE DE DADOS" para o porquê de cada exclusão. Ao adicionar campo novo ao store, o default é **não persistir**.
+> ⚠️ **O store é PARCIALMENTE persistido** (`persist` + `createJSONStorage(AsyncStorage)`, nome `niks-app-store`). **Só `skinScore`, `protocolResult`, `scanTutorialSeen`, `appliedCoupon`, `pendingName`, `homeTutorialPending` e `homeTutorialSeen` sobrevivem a fechar o app** — todo o resto continua sendo memória pura e volta ao valor inicial no cold start. Isso é uma **lista branca deliberada** (`partialize`), não um esquecimento: ver "CACHE DE DADOS" para o porquê de cada exclusão. Ao adicionar campo novo ao store, o default é **não persistir**.
 >
 > **`appliedCoupon: { codigo, rcAppUserId } | null`** — cupom de influenciadora aplicado no paywall. É persistido de propósito (exceção à regra acima): a aplicação acontece ANTES do signup, e o valor precisa sobreviver até o cadastro para ligar o cupom ao `user_id` real (ver "Sistema de cupons de influenciadora" na seção 15). Limpo por `attributeCouponIfAny` quando a atribuição é feita.
 >
@@ -1203,7 +1241,7 @@ O scan facial é iniciado de dois lugares distintos e segue fluxos diferentes:
 1. `useFaceScan().startFaceScan()` chama `setScanSource('app')` e então: se `scanTutorialSeen` for `false`, navega para **`scan-prep-app`** (o tutorial, versão do app; o onboarding usa `scan-prep`); se já visto, vai **direto para `camera-multi`**
 2. **A câmera de PELE são DUAS telas** (mesmo padrão de `scan-prep`/`loading`): `camera-multi.tsx` (app, **6 fotos**) navega **sempre** para `loading-dentro-app` — rota chumbada, não lê `scanSource`; `camera.tsx` (onboarding, **1 foto**) lê `scanSource` e navega `'onboarding'` → `loading`. ⚠️ O ramo `'app'` que ainda existe em `camera.tsx` é **código morto** — o app não passa mais por essa tela.
 
-> **Duas telas de preparação de scan — não consolidar:** `scan-prep.tsx` é a versão do **onboarding** (design antigo: tokens `DEEP/CORAL #FB7B6B`, Playfair itálico, barra de progresso `TOTAL=13`) — **não mexer** nela; segue com uma tela única de dicas → `router.push('/(scan)/camera')` (1 foto). `scan-prep-app.tsx` é a versão **dentro do app** (design novo: Nunito, fundo branco, rosa `#FF9D9D`) e desde a Sessão 47 é um **tutorial em CARROSSEL de 4 passos** (`FlatList` paginado + bolinhas de progresso; copy: luz natural / mesmo lugar-e-horário / sem acessórios / rosto limpo-e-cabelo-preso), com uma foto por slide em `assets/scan-tutorial/`. O último slide vai para `router.push('/(scan)/camera-multi')` (6 fotos), **não** `camera`. ⚠️ **É mostrado UMA vez só na vida:** o flag `scanTutorialSeen` (persistido no store) é gravado ao concluir o tutorial, e a partir daí o `useFaceScan` pula esta tela e leva o botão "Escanear" **direto à `camera-multi`**. **Testar de novo exige reinstalar o app** (o flag é permanente, igual ao consentimento de IA). ⚠️ **O consentimento de IA saiu daqui** e passou a viver na própria tela de câmera (ver seção 14). As duas telas foram duplicadas de propósito para o app ganhar a identidade nova sem tocar no onboarding.
+> **Duas telas de preparação de scan — não consolidar:** `scan-prep.tsx` é a versão do **onboarding** (design antigo: tokens `DEEP/CORAL #FB7B6B`, Playfair itálico, barra de progresso `TOTAL=13`) — **não mexer** nela; segue com uma tela única de dicas → `router.push('/(scan)/camera')` (1 foto). `scan-prep-app.tsx` é a versão **dentro do app** (design novo: Nunito, fundo branco, rosa `#FF9D9D`) e desde a Sessão 47 é um **tutorial em CARROSSEL de 4 passos** (`FlatList` paginado + bolinhas de progresso; copy: luz natural / mesmo lugar-e-horário / sem acessórios / rosto limpo-e-cabelo-preso), com uma foto por slide em `assets/scan-tutorial/`. O último slide vai para `router.push('/(scan)/camera-multi')` (6 fotos), **não** `camera`. ⚠️ **É mostrado UMA vez só na vida:** o flag `scanTutorialSeen` (persistido no store) é gravado ao concluir o tutorial, e a partir daí o `useFaceScan` pula esta tela e leva o botão "Escanear" **direto à `camera-multi`**. **Testar de novo exige reinstalar o app** — ou editar o flag direto no simulador (ver "Forçar um flag de 'uma vez só' no simulador"). ⚠️ **`scanTutorialSeen` é do APARELHO e VAZA entre contas: o logout NÃO o zera** — quem faz logout e cria outra conta no mesmo aparelho não vê o tutorial das 6 fotos. É **decisão consciente** (Sessão 64): zerá-lo no logout faria quem sai e volta na MESMA conta rever o tutorial. Se um dia virar problema, a correção é a mesma do tutorial da home — marcador por conta no banco, não flag de aparelho. ⚠️ **O consentimento de IA saiu daqui** e passou a viver na própria tela de câmera (ver seção 14). As duas telas foram duplicadas de propósito para o app ganhar a identidade nova sem tocar no onboarding.
 
 > 🔒 **O botão de galeria da câmera de PELE só existe em `__DEV__` (`camera.tsx` e `camera-multi.tsx`).** Em produção a análise de pele exige foto tirada na hora — sem galeria, a usuária não sobe uma imagem qualquer da internet. O botão fica envolto em `{__DEV__ && (...)}`, então some sozinho em qualquer build de release (TestFlight/App Store); **não há nada para reverter antes de subir build**. Ele é mantido em dev porque no **simulador é o único jeito de fornecer uma foto** — sem câmera real, o botão branco de captura fica `disabled`. Em `camera-multi` o **toque** preenche o passo atual e o **toque longo** replica a mesma foto nos 6 slots (para testar as colagens sem 6 idas à galeria); ambos passam pelo mesmo `downscale` do caminho de produção. ⚠️ **Não "consertar" isso como se fosse um bug de UI sumida.** As câmeras de **produto** (`product-camera.tsx`) e **comida** (`food-camera.tsx`) mantêm a galeria em produção de propósito — escolher da galeria faz sentido para rótulo e refeição.
 
@@ -1328,15 +1366,18 @@ O controller implementado:
 const superwallPurchaseController = {
   onPurchase: async ({ productId }) => {
     // Procura o package em TODAS as offerings, não só na atual (offerings.current).
-    // O produto de cupom (br.com.niksai.app.anual.promo10) vive numa offering que
-    // NÃO é a default (promo10); limitar a busca a offerings.current faria a compra
-    // dele falhar em silêncio (Superwall acha que falhou, RC não é notificado → loop).
+    // Os produtos de cupom (…anual.promo10, offering `promo10`) e de downsell
+    // (…anual.99, offering `downsell`) vivem em offerings que NÃO são a default;
+    // limitar a busca a offerings.current faria a compra deles falhar em silêncio
+    // (Superwall acha que falhou, RC não é notificado → loop de paywall).
     const allPackages = Object.values(offerings.all).flatMap(o => o.availablePackages);
     const pkg = allPackages.find(p => p.product.identifier === productId);
     // Se não achar em NENHUMA offering, console.error com a lista de offerings/produtos
     // (falha real de config no RevenueCat) — nunca falha às cegas.
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     // Retorna 'purchased' se o entitlement 'premium' ficou ativo
+    // catch: error.userCancelled → dispara o DOWNSELL (ver subseção abaixo) e
+    // retorna 'cancelled'. É aqui que a desistência na folha da Apple é detectada.
   },
   onPurchaseRestore: async () => {
     const customerInfo = await Purchases.restorePurchases();
@@ -1390,6 +1431,38 @@ Cada influenciadora tem um cupom próprio (o primeiro é `MAISENA10`). Quem digi
 > ⚠️ **Como testar o paywall/cupom (não é trivial):** você precisa de um Apple ID **sem assinatura ativa** — senão o app corretamente detecta a assinatura e pula o paywall. **TestFlight não usa a "Conta de Sandbox" dos Ajustes** (essa é só pra build de dev do Xcode). O jeito confiável: `npx expo run:ios --device --configuration Release` (**Release obrigatório** — em Debug o `__DEV__` pula o paywall direto pro signup) + um **Sandbox Tester novo** que nunca comprou. 🐛 **Sintoma comum que NÃO é bug:** "cliquei no cupom e caí no signup em vez do paywall de desconto" = a conta já é assinante (o único caminho pro signup em produção está dentro de `if (isSubscribed)`; não-assinante volta pro paywall, nunca signup). Assinaturas de sandbox persistem e renovam sozinhas — qualquer compra de teste anterior deixa o entitlement ativo.
 
 **Consulta de desempenho:** `select * from cupom_desempenho` no SQL editor do Supabase — aplicações, conversões e taxa por cupom.
+
+#### Downsell — segunda chance, UMA vez por sessão
+
+Quem sai do paywall **sem assinar** ganha uma oferta mais barata (anual R$99,90) antes de voltar ao paywall normal. **Dois gatilhos, um único flag em memória** (`lib/paywallFlow.ts`): (a) **fechar o paywall no X** — o `onDismiss` do `paywall-soft` já reapresentava o paywall (fail closed), e agora o placement dessa reapresentação sai de `nextPaywallPlacement()`: `paywall_downsell` na 1ª saída da sessão, `paywall_onboarding` daí em diante; (b) **cancelar a folha de pagamento da Apple** — detectado no `onPurchase` do CustomPurchaseController (`error.userCancelled`).
+
+> ⚠️ **Por que o cancelamento na Apple é detectado em CÓDIGO e não pelo placement `transaction_abandon` do Superwall:** esse placement exige o plano **Scale (US$199/mês)** e estamos no **Startup**. Não é desconhecimento da feature — é preço. Se um dia o plano subir, o caminho (b) pode ser aposentado em favor dele.
+
+**A ordem no caminho (b) é obrigatória:** marca o flag → `armSuppressReapresentar()` → `Superwall.shared.dismiss()` → `requestDownsell()`. Sem a supressão (a MESMA do botão de cupom), o `onDismiss` do paywall que acabamos de fechar reapresentaria o `paywall_onboarding` **por cima** do downsell.
+
+> ⚠️ **A ponte `requestDownsell`/`subscribeDownsellRequest` não é indireção gratuita — não "simplifique" chamando `Superwall.shared.register` do controller.** O `superwallPurchaseController` é um objeto de **módulo** em `app/_layout.tsx` e não tem acesso ao `registerPlacement` do `usePlacement` — e é esse hook que carrega os callbacks de **fail closed**. Registrado por fora, o `paywall_downsell` ficaria sem `onSkip`/`onError`, e um placement não configurado (ou um erro do SDK) deixaria a usuária **sem paywall nenhum**. Então o controller **pede** e a `paywall-soft` **registra**. Sem inscrito (tela desmontada), o pedido é descartado — o guard de `(app)/_layout.tsx` segue sendo a rede de segurança.
+
+**Regras de borda (todas intencionais):** downsell **já mostrado** na sessão → cancelar de novo não faz nada, ela continua no paywall; **cancelar DENTRO do próprio downsell** → nada (o flag já está marcado); fechar o downsell no X, ou `onSkip`/`onError` dele → **`paywall_onboarding`**. O flag é **por sessão, em memória** — ver o aviso do `partialize` em "CACHE DE DADOS": nada de estado de paywall em disco.
+
+> O downsell vale para **qualquer** paywall que rode no `paywall_onboarding` — hoje há um **A/B entre "Paywall OG" e "Teste Anual 129,90"**, e os dois caem no mesmo downsell.
+
+**Configuração FORA do repositório (não é dedutível do código — se a compra falhar, é aqui que se olha):**
+
+| Camada | Estado |
+|---|---|
+| App Store Connect | `br.com.niksai.app.anual.99` — R$99,90/ano, grupo de assinatura **"NIKS AI Pro"**, **aprovado** |
+| RevenueCat | produto importado, anexado ao entitlement **`premium`** (o que o app checa) e posto na offering **`downsell`** (**não** é a default — ver o `onPurchase` acima) |
+| Superwall | produto cadastrado · paywall **"Downsell Anual 99"** (duplicado do "Paywall OG", só com o produto `.99` e **sem** o botão "Tenho Cupom") · campanha **"Downsell"**, placement **`paywall_downsell`**, audiência All Users / unsubscribed users, paywall a 100% |
+
+> ⚠️ **REGRA GERAL que esta feature confirmou:** todo produto vendido num paywall do Superwall precisa existir **no RevenueCat**, estar **no entitlement** e **em alguma offering**. Faltando qualquer uma das três, a compra falha **em silêncio** e vira loop de paywall — o Superwall entende "falhou", a Apple pode ter cobrado.
+
+> ⚠️ **Os preços no TEXTO do paywall de downsell ("R$ 8,33/mês", o preço riscado) são texto fixo, não variável do produto.** Mudar o preço no App Store Connect **não** atualiza o paywall — tem de editar o texto no editor do Superwall, senão a tela passa a mentir o preço.
+
+> ℹ️ **"Entitlement" quer dizer duas coisas diferentes aqui, e elas não precisam ter o mesmo nome:** o que o app checa é o **do RevenueCat**, `premium` (`ENTITLEMENT_ID` em `lib/revenuecat.ts`) — é a ele que o produto `.99` está anexado; o **`pro` é o entitlement do Superwall**, conceito separado, do lado de lá. Não "alinhe" os dois achando que é divergência.
+
+**Pendências:**
+- **Teste real no iPhone dos dois caminhos** (fechar no X e cancelar na Apple) — build **Release** + **Sandbox Tester novo**, ver o aviso "Como testar o paywall/cupom" acima. Validada até agora só a máquina de estado do flag.
+- **App Store Connect:** o produto `br.com.niksai.app.anual.149` ("NIKS Anual 149,90") está com **preço de R$99,90 no Brasil** — nome ou preço errado. **Não** está no RevenueCat nem em uso por nenhum paywall; resolver antes de algum dia usá-lo.
 
 **`paywall-detailed.tsx` — removido do projeto:**
 Era o paywall customizado (planos mensal/anual, trial de 3 dias, integração RevenueCat direta) do fluxo anterior ao Superwall. Arquivo deletado — não existe mais no projeto.
@@ -1626,7 +1699,7 @@ niks-ai/
 │   │   ├── nome.tsx               ✅ "Como você quer ser chamada?" → salva users.nome → navega para notifications
 │   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase → navega para /(app)/home
 │   ├── (app)/
-│   │   ├── _layout.tsx            ✅ Navbar do Figma (GlobalBottomBar): sparkles/lupa/logo-NIKS/chat/perfil, 80px, ícones nas posições exatas — sem FAB
+│   │   ├── _layout.tsx            ✅ Navbar do Figma (GlobalBottomBar): sparkles/lupa/logo-NIKS/chat/perfil, 80px, ícones nas posições exatas — sem FAB. Também mede os 3 ícones para o tutorial de primeiro acesso e é onde o overlay `HomeCoachMarks` é montado (irmão da navbar, DEPOIS dela)
 │   │   ├── home.tsx               ✅ Réplica do Figma "Novo design": Niks score, foto, métricas 2×3, card de skincare, Para você, botão Escanear. Score/foto/6 métricas + card de skincare (rotina real) + **"Para você" (2 primeiros produtos recomendados, deep-link pro detalhe)** = **dados reais**
 │   │   ├── recomendacao-produtos.tsx ✅ Recomendação por passo, **ligada aos dados reais** (`recomendacoes_produtos`→`produtos`, chips via `lib/concernLabels`, `expo-image`); abas Recomendados/Escaneados; deep-link da home abre detalhe. Ver "Tela Recomendação de Produtos"
 │   │   ├── skin-result.tsx        ✅ resultado da análise facial no app principal (métricas reais, parallax hero)
@@ -1694,6 +1767,9 @@ niks-ai/
 ├── lib/routineProgress.ts         ✅ progresso da rotina em AsyncStorage. getRoutinePeriodForNow/periodLabel/getCompletedSteps/markStepCompleted (ver seção 6). ⚠️ Era compartilhado com o card de skincare da home, que **saiu** (virou "Dica do dia") — hoje o único consumidor é a **cerimônia** (`protocolo.tsx`), e só de `markStepCompleted`. Os outros exports estão sem chamador; o módulo foi mantido de propósito
 ├── lib/dicas/catalogo.ts          ✅ **CONTEÚDO APROVADO — consumir, não editar.** 26 dicas (`CATALOGO_DICAS`, tipo `Dica`). ⚠️ A ORDEM DO ARRAY É A FILA e foi curada à mão (receitas intercaladas) — não reordenar/filtrar/personalizar; não indexar pelo campo `ordem` (use a posição). ⚠️ O campo `fonte` NUNCA é renderizado. Ver "Feature: Dica do dia"
 ├── lib/dicas/dicaDoDia.ts         ✅ mecânica da fila (`getDicaDoDia`, `dicaAt`) em AsyncStorage — avança **uma casa a cada 24h** desde a última dica vista (chave `dica_do_dia:shown_at`, ms; **não** à meia-noite); fila **individual do aparelho**, índice **só cresce** (módulo do catálogo aplicado só na exibição). Consumido pela home. Ver "Feature: Dica do dia"
+├── lib/homeTutorial.ts            ✅ o lado da CONTA do tutorial de primeiro acesso: `markHomeTutorialSeenOnServer()` (fire-and-forget ao concluir) e `clearHomeTutorialSeenOnServer()` (só para o atalho de __DEV__). A LEITURA não está aqui — pega carona no `fetchHome` da home. Ver "Feature: Tutorial de primeiro acesso da home"
+├── lib/coachMarks.ts              ✅ registro das POSIÇÕES dos alvos do tutorial de primeiro acesso (`useCoachMark`, `requestCoachPrepare`/`requestCoachMeasure`, `setCoachStageReady`). Memória de módulo — medida é dado efêmero, não vai pro Zustand. Alimentado pela `home.tsx` e pela navbar do `(app)/_layout.tsx`; consumido pelo overlay. Ver "Feature: Tutorial de primeiro acesso da home"
+├── components/coach/HomeCoachMarks.tsx ✅ o overlay do tutorial (véu escuro + recorte por máscara SVG + frase). ⚠️ **Renderizado no `(app)/_layout.tsx`, irmão da navbar e DEPOIS dela** — dentro da `home.tsx` ficaria abaixo da navbar e os passos dos ícones seriam impossíveis
 ├── lib/scoreTheme.ts              ✅ tema de cor por faixa de score 0–100 (`getScoreTheme`, `ScoreTheme`, `THEME_*`) — COMPARTILHADO por **3 consumidores**: home (sparkle/número/traço/gradiente/anel), navbar (logo central) e **`components/product/ProductAnalysis`** (número/anel/gradiente + títulos, ícones e chips dos cards). ⚠️ Na home/navbar a entrada é o **`skin_score`**; na análise de produto é a **`compatibilidade`** do produto — o resolvedor é o mesmo, só a métrica muda. Mexer aqui afeta as três telas. Ver "Tela Home → Lógica de cor por faixa de score"
 ├── lib/savedProducts.ts           ✅ produto salvo por passo da rotina em AsyncStorage (`normStepKey`, `saveProductForStep`) — o "Salvar na minha rotina" grava; a Rotina (`protocolo.tsx`) lê e mostra a foto no lugar do ícone do passo. Client-side, não sincroniza entre devices
 ├── modules/niks-camera-mirror/    ✅ **módulo NATIVO (iOS)** — segunda prévia borrada da MESMA sessão de câmera, para o fundo ao vivo das células vazias da colagem. Exige build nativo. Ver "Feature: Compartilhar Niks score → O fundo borrado ao vivo"
@@ -1805,6 +1881,16 @@ Aplicados automaticamente pelo `postinstall` (`"postinstall": "patch-package"`, 
 | `@virex-tech+paywallo-sdk+2.9.0.patch` | SDK do paywall |
 | `@expo+cli+55.0.21.patch` | troca `debug(\`startSession: ${pairRecord}\`)` por `debug('startSession: %o', pairRecord)` no `LockdowndClient` (instalação no device). Cosmético, sem efeito no build |
 
+### `plugins/withFmtCxx17.js` — o pod `fmt` compilado em C++17
+
+**Mesma família do patch do Hermes: um bug que só existe porque o RN vem do fonte.** O pod `fmt` 11.0.2 (o que o RN 0.83.4 fixa) **não compila com o clang do Xcode 26 em C++20** — ~25 erros iguais a `call to consteval function 'fmt::basic_format_string<…>' is not a constant expression`, todos em `format-inl.h`. Enquanto o React Native vinha como binário pronto, o `fmt` também vinha pronto e não era compilado aqui; ao ligar `buildReactNativeFromSource: true` (Sessão 61) ele passou a ser compilado e **o build de desenvolvimento parou de subir** (descoberto na Sessão 62, ao buildar o simulador para a Action Extension).
+
+**A correção:** o próprio `fmt` desliga o `consteval` abaixo de C++20 (`base.h`: `#elif FMT_CPLUSPLUS < 201709L → #define FMT_USE_CONSTEVAL 0`). O plugin injeta um `post_install` no `ios/Podfile` que põe `CLANG_CXX_LANGUAGE_STANDARD = c++17` **só no target `fmt`**. Não muda ABI — o `FMT_CONSTEVAL` só afeta a checagem em tempo de compilação do `FMT_STRING`, não a assinatura do que sai do `format.cc`; os outros pods continuam em C++20.
+
+> ⚠️ **Dois caminhos que NÃO funcionam** (os dois testados, não deduzidos): `-DFMT_USE_CONSTEVAL=0` é inútil porque o `base.h` **redefine** essa macro incondicionalmente logo depois; e mexer no `Pods/Target Support Files/fmt/*.xcconfig` é inútil porque o `react_native_post_install` grava o `CLANG_CXX_LANGUAGE_STANDARD` direto nos build settings do target, e build setting ganha de xcconfig. Por isso o hook roda **depois** dele e escreve no target.
+>
+> ⚠️ **Ao subir o React Native:** confira se o `fmt` passou de 11.0.2 (o upstream corrigiu no 11.1). Se passou, **apague o plugin** e tire a linha do `app.json` — mesmo teste do patch do Hermes, não o mantenha por inércia.
+
 ### `react-native+0.83.4.patch` — `#include <thread>` no `HermesExecutorFactory.cpp`
 
 **Uma linha, e ela é obrigatória para o Archive passar.**
@@ -1904,6 +1990,8 @@ Depois, `launchctl list | grep -i coresimulator` não deve ter nenhum código ne
 7. **"Para você"** (Nunito Bold 20px) + **2 cards dos primeiros produtos recomendados** (imagem real via `expo-image`, `TouchableOpacity` → deep-link pro detalhe; ver dados reais acima). Renderiza só quando há recomendação salva.
 8. **Botão "Escanear"** — pílula **`#FF9D9D`** (rosa da Rotina, chapado + glow rosa; era o gradiente vermelho `#FF6661→#C02225`) + ícone `ScanFace` + texto branco. `onPress` → `startFaceScan()` do `useFaceScan` → vai **direto** para `scan-prep-app` (**único acesso ao scan de rosto** no app; não passa mais pelo `ScanModal`, que saiu do fluxo). **Fixo (`position: 'absolute'`), fora do `ScrollView`**, ancorado em `bottom: 108` (= 80px da navbar do `_layout.tsx` + respiro; era 92, afastado a pedido do usuário) → fica **sempre visível logo acima do menu inferior**, não rola com o conteúdo. Botão: `height 48`, `width 134`. Container com `pointerEvents="box-none"` (só o botão captura toque). O `paddingBottom` do `contentContainerStyle` é `186` para que o último item ("Para você") role totalmente sem ficar escondido atrás do botão + navbar.
 
+> 🎓 **A home é o palco do tutorial de primeiro acesso.** Ela registra dois alvos (o botão "Escanear" e o card de métricas) em `lib/coachMarks`, avisa quando os dados chegaram (`setCoachStageReady` — o tutorial não pode começar com a tela em skeleton) e **rola para o topo** quando o overlay pede. ⚠️ As `<View>` extras em volta do botão Escanear e no card existem para a medida sair da caixa certa — não removê-las. Ver "Feature: Tutorial de primeiro acesso da home".
+
 **Assets** (todos em `assets/home/`, capturados/compostos direto do Figma): `niks-logo.png`, `score-underline.png`, `product-1.png`, `product-2.png`, e os ícones da navbar `nav-*.png`. (`profile-photo.png` continua no repo mas **não é mais usado** — a foto agora vem do scan real.) **Fontes:** `useFonts` com Nunito/Exo2/Lato dos pacotes `@expo-google-fonts` (ver Sistema de Fontes).
 
 **Pendências (próximos passos desta tela):**
@@ -1956,6 +2044,107 @@ Uma dica a cada 24h, numa **fila numerada**. A **ordem** da fila é a mesma para
 **Card** (em `home.tsx`): reaproveita a casca do antigo card de skincare — colapsado por padrão, expande no toque com o mesmo `LayoutAnimation` e o mesmo chevron. Ver o item 6 da estrutura da home.
 
 **Anatomia fixa do card expandido** (a usuária sempre sabe onde procurar cada coisa): **INGREDIENTES** (bullets rosa) + **PREPARO** (lista **numerada** — 1, 2, 3 — porque receita se segue com a mão na massa e a pessoa precisa reencontrar onde parou) + **POR QUE FAZER** (o `corpo`). As duas primeiras só existem nas receitas; **"Por que fazer" aparece em TODAS as dicas** e sempre com o título — numa dica sem receita, o expandido é só essa seção.
+
+### Feature: Tutorial de primeiro acesso da home (coach marks)
+
+Na primeira vez que a usuária entra no app, a tela escurece, um **buraco iluminado** recorta um elemento e uma frase grande e branca explica para que ele serve. Referência dada pelo usuário: o app **Vivid**. São **5 paradas**, nesta ordem:
+
+| # | Alvo | Formato do recorte | Frase |
+|---|---|---|---|
+| 1 | Botão "Escanear" (home) | pílula | "Escaneie seu rosto para acompanhar a evolução da sua pele" |
+| 2 | Card de métricas (home) | retângulo arredondado | "Toque nas suas métricas para compartilhar seu Niks score" |
+| 3 | Ícone da **Rotina** (navbar) | círculo | "Aqui fica a sua rotina de skincare personalizada" |
+| 4 | Ícone de **Produtos** (navbar) | círculo | "Veja os produtos recomendados pra sua pele e escaneie os que você já tem" |
+| 5 | Ícone do **Chat** (navbar) | círculo | "Tire suas dúvidas com a NIKS, sua expert de pele" |
+
+Avança tocando em **qualquer lugar**; na última parada o toque fecha. **Não existe botão de pular** (decisão do usuário). Identidade do novo design: Nunito, texto branco, aro e bolinha ativa em rosa `#FF9D9D`.
+
+**Peças:**
+- **`components/coach/HomeCoachMarks.tsx`** — o overlay (véu + recorte + frase + bolinhas de progresso + "Toque para continuar").
+- **`lib/coachMarks.ts`** — registro das POSIÇÕES dos alvos, em memória de módulo (mesmo padrão de `lib/nativePresentation.ts`/`lib/shareResume.ts`). Os alvos vivem em **dois arquivos diferentes** (home e navbar) e precisam chegar ao overlay; medida é dado efêmero, não estado de app — por isso não vai para o Zustand. Expõe o hook **`useCoachMark(key, shape)`**, que devolve `{ ref, onLayout }` para pregar no elemento.
+- **Store (persistido):** `homeTutorialPending` + `homeTutorialSeen` (ver abaixo).
+
+> ⚠️ **O overlay é renderizado no `(app)/_layout.tsx`, irmão da `GlobalBottomBar` e DEPOIS dela — nunca dentro da `home.tsx`.** No React Native `zIndex` só vale **entre irmãos do mesmo pai**: a navbar mora no layout (pai) e a home é filha do `<Tabs>`, então um overlay dentro da home fica **abaixo da navbar** por mais zIndex que leve — e os passos 3–5 seriam impossíveis. É a mesma lição da decisão 18 (o FAB que precisava ficar acima da navbar).
+
+> ⚠️ **O toque NÃO chega ao elemento destacado, de propósito.** O `Pressable` raiz cobre a tela inteira, buraco incluído — o recorte é só um desenho (`pointerEvents: 'none'` no SVG). Um toque que também abrisse a câmera tiraria a usuária do tutorial logo no passo 1.
+
+#### Quem vê: a regra é UMA VEZ POR CONTA (servidor manda, aparelho é cache)
+
+**A regra de negócio é "uma única vez por conta, nunca mais, em nenhuma situação".** Ela é sustentada por **duas camadas**, e as duas são necessárias:
+
+**1. A verdade — `users.home_tutorial_seen_at`** (timestamptz, null = nunca viu). Migration `20260921120000_add_home_tutorial_seen_at_users.sql`. É o que sobrevive a **logout, reinstalação e troca de aparelho**. Escrita/limpeza em **`lib/homeTutorial.ts`**.
+> ⚠️ **A leitura pega CARONA no `fetchHome` da home**, que já consultava a tabela `users` por causa da `foto_home_url` — por isso a regra "uma vez por conta" **não custa nenhuma ida à rede a mais** e já entra no cache por usuária.
+
+**2. O cache local — `homeTutorialPending` + `homeTutorialSeen`** (store persistido). São do **APARELHO**, não da conta; existem para o tutorial não piscar enquanto a resposta do servidor não chega, e para decidir *quando* ele deve nascer:
+- **`homeTutorialPending`** — **armado em `(onboarding)/notifications.tsx`**, dentro de `navigateToApp()`. É a **única** rota até a home que uma usuária nova percorre; as outras (`login`, `paywall-soft` de reengajamento, `index` com sessão) são de conta já existente e não armam.
+- **`homeTutorialSeen`** — trava imediata, gravada ao concluir a última parada. `finishHomeTutorial` desarma e tranca; o `_layout` dispara **junto** o `markHomeTutorialSeenOnServer()` (fire-and-forget).
+
+> ⚠️ **Por que o flag local sozinho NÃO bastava** (era o furo real): ele morre no logout e não existe em aparelho novo. Uma conta que **já viu** voltava a ver o tutorial ao **refazer o onboarding** — entrar por "Começar" em vez de "Entrar", restaurar a compra no paywall e logar com Google/Apple de uma conta existente. O `signup.tsx` **não distingue conta nova de conta existente** (`signInWithGoogle`/`signInWithApple` logam as duas e seguem para `apresentacao` → `notifications`), então o `pending` é armado do mesmo jeito. Quem barra hoje é o servidor.
+
+> ⚠️ **ORDEM OBRIGATÓRIA — aplicar o servidor ANTES de liberar o palco.** Na home, o "já viu" do servidor e o `setCoachStageReady(true)` acontecem **dentro do MESMO `useEffect`**, nesta ordem. Não é estilo: no caso acima o `pending` está armado, e se o palco fosse liberado antes de o flag chegar, o tutorial **apareceria por um instante** antes de sumir. Um efeito só tira a ordem da mão da ordem de declaração dos hooks — e mesmo que o React não agrupasse as duas atualizações, o gate nunca fica verdadeiro em nenhum render intermediário.
+
+> ⚠️ **`homeTutorialSeenAt === undefined` significa "ainda não sei"** (payload de uma versão do cache anterior à coluna) e **segura o tutorial**: é melhor não mostrar para quem talvez já tenha visto do que mostrar duas vezes. Conta nova nunca cai nesse caso — o cache dela nasce junto com este código.
+
+> ⚠️ **O logout zera os flags do tutorial da home** (`clearHomeTutorialFlags`, chamado em `clearLocalData` de `hooks/useAuth.ts`). O `persist.clearStorage()` limpa o **disco**, não a memória, e o `reset()` não toca nesses campos — sem essa linha o `seen: true` da conta anterior sobrevivia na sessão do app e a **próxima conta criada no mesmo aparelho nunca via o tutorial** (e ainda herdava o `seen: true` no disco dela). ⚠️ **`scanTutorialSeen` fica de fora de propósito**: ele é do aparelho mesmo, e zerá-lo faria quem sai e volta na MESMA conta rever o tutorial das 6 fotos.
+
+⚠️ **App morto no meio do tutorial → ele volta na próxima entrada na home** (o `pending` ainda está armado, o `seen` ainda não, e o servidor ainda está null). É o comportamento desejado: quem não viu até o fim não viu.
+
+⚠️ **Offline:** se a escrita no servidor falhar, o flag local ainda impede a repetição **naquele aparelho**; em outro aparelho ela poderia ver uma vez a mais. É o limite conhecido da abordagem.
+
+**Matriz de comportamento — é o contrato da regra.** Mexeu em logout, no `signup`, no `fetchHome` ou nos flags? Confira os 6 casos:
+
+| Situação | Aparece? | Quem garante |
+|---|---|---|
+| Conta nova; app fechado antes de o tutorial abrir | **Sim**, na próxima entrada | `pending` persistido |
+| Viu → logout → login na MESMA conta, mesmo aparelho | Não | `pending=false` **+** servidor diz "já viu" |
+| Viu → apaga o app → reinstala → entra na mesma conta | Não, **por qualquer caminho** | servidor (o local foi embora com o app) |
+| Viu → entra na mesma conta em OUTRO aparelho | Não, **por qualquer caminho** | servidor |
+| Conta existente **refaz o onboarding** (paywall → signup Google/Apple) | Não, e **sem piscar** | servidor + a ordem dentro do efeito |
+| Logout de conta que viu → cria conta **NOVA** no mesmo aparelho | **Sim** | `clearHomeTutorialFlags` no logout |
+
+> Conta **anterior a esta feature** (coluna null) que refaça o onboarding **vê o tutorial uma vez** — e isso está certo: ela nunca viu.
+
+#### Quando começa (cada condição cobre um jeito conhecido de dar errado)
+
+Gate em `(app)/_layout.tsx`: `ready && !needsName && !pendingShare && pathname === '/home' && homeTutorialPending && !homeTutorialSeen && coachStageReady`.
+
+- **`ready && !needsName`** — depois dos guards de assinatura e de nome, senão o véu escureceria a captura de nome ou uma tela a caminho do paywall.
+- **`!pendingShare`** — o "Compartilhar com o NIKS" empilha `(scan)` por cima do `(app)`; os dois disputando a tela deixariam o tutorial escondido atrás. Se um share chegar **durante** o tutorial, o overlay desmonta sem marcar `seen` → o tutorial volta depois (ver acima).
+- **`coachStageReady`** — a home avisa (`setCoachStageReady`) quando os **dados chegam**. Ela abre com **skeleton** no cold start; destacar um card ainda pulsando explicaria a coisa errada.
+
+#### Medir antes de desenhar — dois canais, nesta ordem
+
+`requestCoachPrepare()` → **a home rola para o topo** (`scrollTo({ y: 0, animated: false })`; a home rola e o card de métricas pode estar fora da viewport) → 60ms → `requestCoachMeasure()` → todos os alvos refazem `measureInWindow` → 200ms → o overlay começa. Enquanto isso **não renderiza nada**: um véu com o buraco no lugar errado, mesmo por 200ms, é pior que 200ms de nada.
+
+> ⚠️ **Dois canais, e não um, de propósito:** com um só, a ordem de execução dependeria da ordem dos listeners (ou seja, da ordem dos hooks) e a home poderia **medir antes de ter rolado**.
+
+> ⚠️ **A medida sai de uma `<View>` de HOST que abraça só a caixa desenhada — nunca do `TouchableOpacity`.** Os itens da navbar são `flex: 1` (uma coluna inteira da barra) e o `scanWrap` da home é full-width: medir o touchable daria um "círculo" do tamanho de um quinto da tela e uma pílula do tamanho da tela. Por isso o botão Escanear ganhou uma View extra em volta e a navbar mede a View do glifo (~29×29).
+
+> ⚠️ **ARMADILHA DE NOME na navbar:** a chave do glyph **não** é o nome da tela — `beauty` (rosto) → `/protocolo` = **Rotina**; `rotina` (frasco) → `/recomendacao-produtos` = **Produtos**. O mapeamento foi trocado uma vez (ver "Tab Bar / Navbar") e as chaves ficaram como estavam. As chaves do tutorial (`nav-rotina`, `nav-produtos`) seguem o nome das **telas**, que é o que as frases explicam.
+
+#### Detalhes de desenho
+
+- **O buraco é feito por MÁSCARA SVG** (`<Mask>`: branco = véu, preto = buraco), não por um path `evenodd`. Motivo: assim o recorte é um `<Rect>` e suas coordenadas viram **props animáveis** (`Animated.createAnimatedComponent(Rect)`, `useNativeDriver: false` — decisão 22); o `d` de um path é string e não interpola.
+- **Raio por formato:** pílula → `h/2`; retângulo → o raio real do card (16) + o respiro; círculo → quadrado centrado no glifo. A inflação (10pt nos retangulares, 15 no círculo) é o que dá o "respiro" em volta do elemento.
+- **A frase vai para o lado do buraco com MAIS espaço livre** (`spaceAbove > spaceBelow`, descontadas as safe areas) — e não por "metade de cima / metade de baixo": numa tela curta o lado geometricamente natural pode simplesmente não caber e o texto estouraria a safe area. É isso que garante que a frase **nunca cubra** o que ela explica.
+- **"Reduzir movimento" do iOS** (`useReducedMotion` do Reanimated): o buraco troca de posição **sem animação** e o texto entra **sem deslize** — só o fade, que não é movimento. A primeira parada nunca é animada (o buraco nasce no lugar, não voa do canto).
+- **Haptics:** `haptics.tap()` a cada avanço, `haptics.success()` ao concluir.
+- ⚠️ **Sem scan, o passo 2 é PULADO sozinho.** O card de métricas só é tocável quando existe scan (`disabled={skinScore == null}`) e a frase prometeria algo que não acontece. A home **não registra** o alvo `metrics` nesse caso e o overlay monta a lista só com os passos que têm alvo. A usuária vinda do onboarding sempre tem scan — isto é rede de segurança para qualquer outro caminho.
+- ⚠️ **A lista de passos CONGELA no início** (depois de uma carência de 500ms esperando todos os alvos). Sem congelar, um re-layout que apagasse um alvo no meio trocaria a frase debaixo do dedo da usuária; sem a carência, uma medida lenta faria o tutorial pular uma parada **em silêncio**.
+
+#### Estado de validação (set/2026)
+
+**✅ Provado no simulador**, percorrendo as 5 paradas com toques reais:
+- o recorte **aparece** (o `<Mask>` do react-native-svg funciona no Fabric) e o aro rosa acompanha;
+- o buraco cai no alvo certo nos 5 casos, **incluindo os 3 ícones da navbar** (círculo centrado no glifo, com o badge do chat dentro do recorte);
+- **nenhum toque vaza para o elemento destacado**: a captura gravava todo quadro visualmente distinto e a sequência foi `parada 1 → 2 → 3 → 4 → 5 → home` — nunca apareceu câmera de scan, tela de compartilhar, Rotina, Produtos ou Chat, mesmo com os toques dados **em cima** deles;
+- o gate do skeleton segura o tutorial enquanto a home carrega.
+
+**🔍 Ainda sem teste:** iPhone físico; os **haptics** (simulador não vibra); e o caminho de **"Reduzir movimento"** ligado.
+
+#### Como testar de novo sem reinstalar o app
+
+Perfil → seção **"Desenvolvimento"** → **"Rever tutorial da home"**: **`clearHomeTutorialSeenOnServer()` (aguardado)** + `replayHomeTutorial()` (rearma `pending`, limpa `seen`) → home. ⚠️ **Limpar só o flag local não funciona** — a home leria `home_tutorial_seen_at` do servidor e trancaria tudo de novo na primeira busca; por isso o atalho apaga a coluna **e invalida o cache `home:${uid}` antes de navegar**. A seção é `{__DEV__ && …}`: **some sozinha em qualquer build de release, não há nada para reverter antes de subir**. Sem isso, testar exigiria reinstalar o app — mesma dor do `scanTutorialSeen` e do consentimento de IA.
 
 ### Tela Recomendação de Produtos (`app/(app)/recomendacao-produtos.tsx`)
 **REFORMULADA para a identidade do "Novo design" do app** (cards brancos com a borda-assinatura `#E3E3E6` + sombra suave, fundo branco, Nunito — mesma linguagem de `home`/`protocolo`/`niks-chat`). **Deixou de ser a réplica estática do Figma node 1:273** (grid de cards + chips de filtro + botão "Escanear produto" flutuante — tudo isso foi removido). O layout agora é uma **lista de recomendação de produtos por passo da rotina**. Aberta pelo **ícone de produto (frasco)** da navbar (era a lupa — ver "Tab Bar / Navbar"). `S = width/393`; **não renderiza a navbar** (global no `_layout.tsx`).
@@ -2017,9 +2206,35 @@ A usuária, navegando no Mercado Livre, Safari ou site de marca, toca em **Compa
 > ```bash
 > sed -i '' 's/MARKETING_VERSION = <versão antiga>;/MARKETING_VERSION = <versão nova>;/g' ios/NIKSAI.xcodeproj/project.pbxproj
 > ```
-> (o `CURRENT_PROJECT_VERSION` da extensão já acompanha o `buildNumber`). Conferir no binário: `plutil -extract CFBundleShortVersionString raw <NIKS.app>/PlugIns/NIKSShare.appex/Info.plist`.
+> (o `CURRENT_PROJECT_VERSION` da extensão já acompanha o `buildNumber`). Conferir no binário: `plutil -extract CFBundleShortVersionString raw <NIKS.app>/PlugIns/NIKSShare.appex/Info.plist`. ⚠️ **Vale para as DUAS extensões** — o `sed` acima pega as duas de uma vez, mas confira: em set/2026 o app saiu `1.0.54` com a `NIKSShare` ainda em `1.0.48` (a `NIKSAction`, recém-criada pelo plugin, nasceu certa). A Apple recusa o upload quando divergem.
 >
 > ⚠️ Depois do prebuild, a extensão foi ajustada à mão para `TARGETED_DEVICE_FAMILY = "1"` (o plugin cria `"1,2"`; o app é só iPhone). Prebuild não-clean **não recria** o target (pula se existir), então o ajuste persiste.
+
+#### Action Extension "Escanear no NIKS" — a linha DE BAIXO do share sheet
+
+O share sheet do iOS tem **duas linhas**: em cima os apps (Share Extension, `com.apple.share-services`) e embaixo as ações (Action Extension, `com.apple.ui-services`), ao lado de "Pesquisar no Google". O NIKS aparece nas duas. **Não há lógica nova no app**: a Action grava a **mesma chave** (`niks-aiShareKey`) no **mesmo App Group** e abre a **mesma URL** (`niks-ai://dataUrl=…`) que a Share — o módulo nativo do pacote deriva a chave da própria URL, então `useShareIntent` → `ShareIntentBridge` → `pendingShare` → `(app)/_layout` → `share-product-loading` funciona sem uma linha de JS a mais. ⚠️ **Consequência aceita:** o app **não distingue** share de action (o Mixpanel continua com `origem: share_url | share_image`).
+
+**Por que um plugin nosso (`plugins/withNiksActionExtension.js`):** o `expo-share-intent` cria **só** uma Share Extension — o `NSExtensionPointIdentifier` é hardcoded em `com.apple.share-services` (`plugin/build/ios/writeIosShareExtensionFiles.js`), nenhum parâmetro muda isso e o plugin é um `createRunOncePlugin` com lista fixa de mods, sem hook para um segundo target. O plugin é registrado no `app.json` **depois** de `expo-share-intent` (ele copia o `ShareExtensionPreprocessor.js` que a Share gerou) e roda a cada `prebuild`, com **guard por nome** — é assim que o target sobrevive à regeneração de `ios/`. O Swift **não é copiado para o repo**: o plugin lê o template do próprio pacote (`node_modules/expo-share-intent/plugin/build/ios/ShareExtensionViewController.swift`) e aplica as mesmas substituições (`<SCHEME>`, `<GROUPIDENTIFIER>`, `<HIDEVIEW>=true`), então atualizar o pacote atualiza as duas extensões juntas.
+
+**Configuração:** target/pasta `NIKSAction` · bundle `br.com.niksai.app.action-extension` · `CFBundleDisplayName = "Escanear no NIKS"` (encurtado — a linha de baixo trunca título longo) · **mesmas** `NSExtensionActivationRule` e mesmo `NSExtensionJavaScriptPreprocessingFile` da Share · **`NSExtensionMainStoryboard = MainInterface`** (o mesmo storyboard da Share, copiado pelo plugin) · ícone template em `assets/action-extension/AppIcon.appiconset/` (os 8 PNGs são **gerados**, não desenhados à mão — `node assets/action-extension/gerar-icone.js` lê `assets/icon-niks.png`; flor ocupando 82% do quadro).
+
+> 🎨 **O alpha NÃO é o branco puro e simples — o topo dobra (`PICO = 0.62`).** Na inversão reta (`alpha = brilho`) a parte mais clara do logo vira a mais opaca do ícone: o **miolo**, que na marca é o branco mais puro, saía como a **mancha mais preta**, e no share sheet o NIKS lia como um borrão cinza (alpha médio **112/255** ≈ `#8F8F8F`) ao lado de ícones nativos de traço fino. Hoje, acima de `PICO` o alpha volta a cair até zero: o miolo abre em branco como no logo, e **abaixo de `PICO` nada muda** — as pétalas saem pixel a pixel iguais às da versão anterior. Depois: alpha médio **77**, nenhum pixel em preto cheio. ⚠️ **O mapa é aplicado por pixel da origem, ANTES da média de área** (com a inversão reta tanto fazia, porque função linear comuta com média; com o dobrão no topo, não — borraria o miolo), e o clamp vem **antes** do mapa (o degradê da flor chega a 148, abaixo do fundo 157, e sem clampar entraria negativo e o dobrão leria como "quase o pico").
+>
+> ⚠️ **Variantes recusadas — não refaça o teste.** Além das do cabeçalho do script (binarizada, binarizada com a estrela vazada, contorno da silhueta, contorno dos quatro círculos, flores redesenhadas em geometria limpa), na rodada do `PICO` foi gerada e vista lado a lado em 87px uma versão que **também escurecia as pétalas para preto chapado** (`alpha^0.6`, alpha médio 153) — o usuário comparou as duas e **escolheu a mais clara**, a que só abre o miolo. O pedido original era literalmente "o contorno/silhueta pode continuar como está, é só o preenchimento interno que precisa clarear".
+
+> ⚠️ **STORYBOARD, NUNCA `NSExtensionPrincipalClass`.** A primeira versão usava principal class e **sem storyboard**, com a justificativa de que o storyboard do pacote apontaria para a classe dele. **As duas coisas estavam erradas** e custaram um ciclo inteiro de teste: (a) todo o trabalho da `ShareViewController` começa em `viewDidLoad` (→ `handleViewLoad`, porque `hideView = true`), e **sem storyboard principal o host nunca carrega a view** — a extensão sobe, recebe a requisição e encerra sem fazer nada; (b) o `MainInterface.storyboard` do pacote usa `customClass="ShareViewController" customModuleProvider="target"`, que resolve a classe no módulo do target **atual**, então serve na `NIKSAction` sem uma alteração sequer. O plugin **aborta com erro** se não achar o storyboard em `ios/NIKSShare/`.
+>
+> 🔍 **Como o sintoma se parece** (útil se acontecer de novo em outro target): no share sheet a animação do botão roda e o app não abre. Nos logs do simulador (`xcrun simctl spawn booted log show --last 30m --predicate 'process == "NIKSAction"'`): o processo **sobe** (`Successfully spawned NIKSAction` + `beginning extension request`), mas não sai **nenhum** `NSLog` da `ShareViewController` — nem os de erro, que existem em todos os caminhos de falha. Os dois confirmadores: o `group.br.com.niksai.app.plist` do App Group **continua vazio** (a extensão nem chegou a gravar) e não há `pid N requests to open URL with scheme niks-ai` vindo do PID da extensão (compare com o da Share, que aparece). Silêncio total = o view controller nunca começou; `canOpenURL KO` no log = aí sim seria a responder chain.
+
+> ⚠️ **Duas armadilhas do pacote `xcode` que custaram caro** (as duas estão comentadas no plugin):
+> 1. **`addBuildPhase` casa arquivos pelo `path`.** Com nomes soltos, `PrivacyInfo.xcprivacy`, `ShareViewController.swift` e `ShareExtensionPreprocessor.js` da Action **reaproveitavam o `PBXBuildFile` da Share** — o mesmo build file ia parar em duas Resources phases e o `pod install` quebrava com `[Xcodeproj] Consistency issue: no parent for object 'PrivacyInfo.xcprivacy': ResourcesBuildPhase, ResourcesBuildPhase`. Por isso os arquivos entram como `NIKSAction/<arquivo>`.
+> 2. **`addPbxGroup(files, name, undefined)` grava a string literal `path = undefined`** no pbxproj, e o Xcode falha com *"The file couldn't be opened because there is no such file"*. O grupo é criado com path e a chave é **removida depois** (`delete group.path`), já que os filhos já carregam o prefixo.
+>
+> ℹ️ `addTarget(..., 'app_extension', ...)` cria uma "Copy Files" nova no app a cada chamada — o projeto fica com **duas**, uma embarcando os dois `.appex` e outra vazia. É cosmético, mas confira no Archive que **os dois** `.appex` entram.
+
+**Passo manual a mais no Apple Developer:** criar o App ID `br.com.niksai.app.action-extension` com a capability **App Groups** marcando `group.br.com.niksai.app` (o mesmo grupo — **não** criar grupo novo). No Xcode, o target `NIKSAction` precisa de Team `FZRSWCG9BR` e App Groups em Signing & Capabilities. Sem isso o Archive falha em "provisioning profile doesn't include App Groups".
+
+> ✅ **Validado no simulador (set/2026):** `prebuild` duas vezes sem duplicar nada (3 targets, App Group uma vez só nos entitlements), `pod install` limpo, build assinado passando, e o `pluginkit -mAvv` do simulador listando **as duas** extensões (`br.com.niksai.app.share-extension` e `br.com.niksai.app.action-extension`) com `group.br.com.niksai.app` nos três binários. **Teste de toque ponta a ponta:** Safari → Compartilhar → linha de baixo → "Escanear no NIKS" → **o app abriu e a análise rodou**, e a Share (linha de cima) continuou funcionando. ⚠️ **Falta tudo no iPhone** — ícone, truncamento do título e o Archive com os dois `.appex`.
 
 **Como o conteúdo chega na tela — UM único ponto de consumo, depois do guard:**
 1. `app/+native-intent.tsx` → link `dataUrl=` não é rota: no **cold start** vai para `/` (o `index` decide sessão → home); com o **app aberto** retorna `null` (fica onde está).
@@ -2050,7 +2265,7 @@ A usuária, navegando no Mercado Livre, Safari ou site de marca, toca em **Compa
 
 **Lógica compartilhada — `hooks/useProductAnalysis.ts`:** extraída da `product-loading.tsx` (que ficou só com o visual). Token de sessão (`lib/sessionToken.ts`), `clientScanId` estável, **guard `useRef` contra execução dupla** (a versão antiga não tinha), flag de desmontagem (antes o `router.replace` rodava mesmo depois de sair da tela), % realista, aviso de alta demanda + countdown, 2 retries + `retry()`, Mixpanel `product_scan_completed/failed` com `origem`. ⚠️ **Não copiar essa lógica numa tela nova — usar o hook.**
 
-**Passos manuais (Apple Developer / Xcode):** criar o App Group `group.br.com.niksai.app`; habilitar App Groups no App ID `br.com.niksai.app`; criar o App ID `br.com.niksai.app.share-extension` com o mesmo grupo; no Xcode, conferir Signing & Capabilities dos dois targets (`NIKS`: App Groups + In-App Purchase + Sign in with Apple; `NIKSShare`: Team `FZRSWCG9BR`, App Groups); Archive e conferir que o `.appex` sai assinado.
+**Passos manuais (Apple Developer / Xcode):** criar o App Group `group.br.com.niksai.app`; habilitar App Groups no App ID `br.com.niksai.app`; criar o App ID `br.com.niksai.app.share-extension` com o mesmo grupo; criar o App ID `br.com.niksai.app.action-extension` com o mesmo grupo; no Xcode, conferir Signing & Capabilities dos **três** targets (`NIKS`: App Groups + In-App Purchase + Sign in with Apple; `NIKSShare` e `NIKSAction`: Team `FZRSWCG9BR`, App Groups); Archive e conferir que os **dois** `.appex` saem assinados.
 
 **Mercado Livre: estado da integração (set/2026).** Scraping da página → redireciona para `/gz/account-verification` (anti-robô). API pública sem token → `/items` 403 `PolicyAgent`, `/products` 401, `/sites/MLB/search` 403. O OAuth do ML **só documenta `authorization_code` e `refresh_token`** (não há `client_credentials`), e o token dura 6 h. Caminho avaliado: cadastrar um app do NIKS no DevCenter do ML, autorizar UMA vez com a conta do NIKS (não da usuária) e manter o `refresh_token` rotativo no servidor (só o último vale → precisa de tabela, não de secret estático). **Plano atual — WebView invisível (`components/share/HiddenPageImageReader.tsx`).** Sempre que a `extrair-imagem-produto` **não acha a foto** (`status: 'sem_imagem'`, qualquer motivo — anti-robô do Mercado Livre, página montada por JavaScript como a Shopee, metatag ausente), a `share-product-loading` monta um `react-native-webview` **13.16.0** (versão do SDK 55, Fabric via codegen) de 1×1 pt, `opacity: 0`, `incognito`, com **user agent do Safari do iPhone**, e lê a foto com `lib/pageImageScript.ts` — ⚠️ **MANTER EM SINCRONIA** com o `preprocessorInjectJS` do `app.json` (mesmo trecho JSON-LD → og:image → Amazon; os dois estão marcados). Reinjeta o script a cada 1,5 s após o load; **timeout 12 s** (a frase segue "Buscando o produto…"). ⚠️ **12 e não 25:** as páginas que funcionam entregam a foto em ~2 s, e a Shopee às vezes bloqueia **sem redirecionar** (fica na URL do produto servindo página vazia), caso em que o corte por URL de verificação não tem o que reconhecer e só o timeout encerra. **Padrões de verificação** (corte de 6 s): `/account-verification` (ML), `/verify/traffic` (Shopee), `/captcha`, `/cdn-cgi/challenge-platform` — ao adicionar loja nova, veja no log `[share-webview] navegou …` para onde ela manda. ⚠️ `originWhitelist` inclui **`about:*`**: fora da whitelist o `react-native-webview` tenta ABRIR a URL no sistema, e páginas com iframe de anúncio (`about:srcdoc`, Shopee) enchiam o log de "Unable to open URL"; quem decide o que carrega é o `onShouldStartLoadWithRequest` (só http/https). ⚠️ **A tela de verificação NÃO encerra na hora** (no Safari a do Mercado Livre passa sozinha via JS em ~2 s e vira o produto), mas também não segura os 25 s: se continuar numa URL de verificação depois de **6 s** (`VERIFICATION_GRACE_MS`), encerra com `verificacao`. Foi a Shopee que motivou o corte — ela redireciona para `/verify/traffic/error` e fica lá; sem isso a usuária esperava os 25 s inteiros para receber "não conseguimos pegar a foto". Os outros desfechos continuam no timeout: `sem_imagem` (página carregou sem foto) e `timeout` (nem carregou). Nunca navega para fora de http(s) (universal link/`meli://` bloqueados). ⚠️ **Única exceção: `motivo: 'pagina_indisponivel'` (4xx) NÃO aciona a WebView** — link quebrado é link quebrado, e abrir a página só faria a usuária esperar 25 s à toa. Sucesso → baixa a foto no app e segue a análise (`fonte: 'webview'`); falha → "Não conseguimos pegar a foto desse link…" (Mixpanel `product_share_no_image { motivo: 'webview_<motivo>' }`). Logs `[share-webview]` no Metro.
 > **✅ VALIDADO no simulador (set/2026):** compartilhando o link de catálogo do app do ML (via Lembretes → texto com link), o backend respondeu `pagina_bloqueada` e a WebView **achou a foto do produto em 2,6 s** (`[share-webview] página carregou em 2611ms` → `imagem ok https://http2.mlstatic.com/D_NQ_NP_…-OO.png em 2615ms`), sem cair na tela de verificação. A imagem conferida é a do produto certo (Principia Gel de Limpeza). ⚠️ Falta validar **no iPhone**, com IP de operadora e o app do ML de verdade.
@@ -2326,6 +2541,7 @@ Réplica do design **"Fixed bottom bar"** (`navbar-design/Navbar.dc.html`). **Su
 > ⚠️ **`niks-logo.png` teve o fundo removido:** o asset vinha com fundo `#F9F9F9` opaco (some sobre branco, mas aparecia como um quadrado visível sobre o gradiente rosa — ex.: hero do `niks-chat`). O fundo foi tornado transparente reconstruindo o canal alpha (desfazendo a composição do bloom sobre `#F9F9F9`), sobrando só as esferas vermelhas com bordas suaves. A aparência sobre fundo branco é preservada; usado em `home`/`recomendacao-produtos`/`niks-chat` e, **tintado `#FF9D9D`**, no ícone central da navbar (nos dois modos).
   - Quem seta dark: **só** `protocolo.tsx` (período Noite) via `useFocusEffect` resetando para light no blur (`niks-chat.tsx` perdeu o modo noturno e chama sempre `light`). (o `isDark` do `ScanModal` era controlado aqui também, mas o modal saiu do fluxo.)
 - Visibilidade: `{tabBarVisible && <GlobalBottomBar />}`. Telas ocultas do `<Tabs>` (`href: null`): `set-name`, `skin-result`.
+- **Alvos do tutorial de primeiro acesso:** os ícones de Rotina, Produtos e Chat registram a posição da **View do glifo** (~29×29) em `lib/coachMarks` — não a do `TouchableOpacity`, que é `flex: 1` (uma coluna inteira). ⚠️ Lembre da armadilha de nome: glyph `beauty` = tela **Rotina**, glyph `rotina` = tela **Produtos**. Ver "Feature: Tutorial de primeiro acesso da home".
 
 ### Tela de Perfil (`app/(app)/perfil.tsx`)
 
@@ -2734,6 +2950,14 @@ Um grid 2×2 feito com `flexWrap: 'wrap'` + `gap`, dando às células largura fi
 Descoberto no grid da colagem (`app/(share)/share-capture.tsx`).
 
 ---
+
+*Sessão 65 — Setembro 2026 — **Downsell: segunda chance (anual R$99,90) para quem sai do paywall sem assinar.** Dois gatilhos dividindo **um único flag em memória** (`lib/paywallFlow.ts`): fechar o paywall **no X** (o `onDismiss` já reapresentava — agora o placement vem de `nextPaywallPlacement()`, downsell na 1ª saída da sessão e `paywall_onboarding` depois) e **cancelar a folha de pagamento da Apple**. **(1) O cancelamento é detectado em código** (`onPurchase` → `error.userCancelled`) **porque o placement `transaction_abandon` do Superwall exige o plano Scale (US$199/mês) e estamos no Startup** — é preço, não desconhecimento. **(2) Ordem obrigatória** no caminho do cancelamento: marca o flag → `armSuppressReapresentar()` (a MESMA supressão do botão de cupom) → `dismiss()` → pede o downsell; sem a supressão, o `onDismiss` do paywall recém-fechado reapresentaria o `paywall_onboarding` **por cima** do downsell. **(3) A ponte `requestDownsell`/`subscribeDownsellRequest` não é indireção gratuita:** o controller é objeto de **módulo** e não tem o `registerPlacement` do `usePlacement` — registrar por `Superwall.shared.register` de lá deixaria o `paywall_downsell` **sem os callbacks de fail closed**, e um placement mal configurado deixaria a usuária sem paywall nenhum. **(4) Bordas intencionais:** cancelar DENTRO do downsell não faz nada; fechar/`onSkip`/`onError` do downsell → `paywall_onboarding`. **(5) Dashboards (fora do repo):** produto `br.com.niksai.app.anual.99` aprovado no ASC (grupo "NIKS AI Pro"), no RevenueCat dentro da offering **`downsell`** (não-default — o `onPurchase` já varria `offerings.all` por causa do cupom, então a compra funciona), e paywall "Downsell Anual 99" na campanha "Downsell". ⚠️ **Os preços no texto do paywall são TEXTO FIXO** — mudar o preço na Apple exige editar o texto no Superwall. ℹ️ O produto está no entitlement **`premium`** do RevenueCat (o que o app checa); o **`pro` é o entitlement do Superwall**, conceito separado — nomes diferentes de propósito, não é divergência. **Validada só a máquina de estado do flag; falta o teste no iPhone** (Release + Sandbox Tester novo) dos dois caminhos. Ver "Guard de assinatura → Downsell".*
+
+*Sessão 64 — Setembro 2026 — **O tutorial da home virou UMA VEZ POR CONTA (era uma vez por aparelho).** Auditoria de 6 cenários no código encontrou dois furos na regra de negócio. **(1) Conta que já viu, vendo de novo:** os flags viviam só no store persistido, que morre no logout e não existe em aparelho novo — então quem **refazia o onboarding** (entrar por "Começar" em vez de "Entrar", restaurar a compra no paywall e logar com Google/Apple de uma conta existente) via o tutorial outra vez. O `signup.tsx` não distingue conta nova de existente, então o `pending` era armado do mesmo jeito. **Correção:** nova coluna **`users.home_tutorial_seen_at`** (migration `20260921120000`, **já aplicada em produção**) como verdade da regra; os flags locais viraram cache dela. A leitura **pega carona no `fetchHome`** (que já consultava `users` pela `foto_home_url`) → **zero ida à rede a mais**. **(2) Conta NOVA não vendo:** o `persist.clearStorage()` do logout limpa o disco, **não a memória**, e o `reset()` não tocava nesses campos — o `seen: true` da conta anterior sobrevivia na sessão e bloqueava a conta nova criada em seguida, ainda regravando o `seen` herdado no disco dela. **Correção:** `clearHomeTutorialFlags()` no `clearLocalData`. ⚠️ **`scanTutorialSeen` ficou de fora de propósito** (zerá-lo faria quem sai e volta na mesma conta rever o tutorial das 6 fotos) — ele tem o mesmo vazamento e segue assim, por decisão. **(3) A ordem virou regra:** aplicar o "já viu" do servidor e liberar o palco acontecem **no mesmo `useEffect`**, nessa ordem, senão o tutorial apareceria por um instante para quem já viu; e `homeTutorialSeenAt === undefined` (cache de versão anterior à coluna) **segura** o tutorial em vez de liberá-lo. **(4)** O atalho de `__DEV__` do Perfil passou a **limpar a coluna e invalidar o cache da home antes de navegar** — sem isso ele funcionaria uma vez só. ⚠️ **As 3 migrations de agosto (backfills de `produtos`) continuam PENDENTES no remoto** — não foram aplicadas junto, de propósito. Ver "Feature: Tutorial de primeiro acesso da home → Quem vê".*
+
+*Sessão 63 — Setembro 2026 — **Tutorial de primeiro acesso da home (coach marks, estilo Vivid).** Véu escuro + buraco iluminado no elemento + frase grande e branca, em 5 paradas (Escanear → card de métricas → Rotina → Produtos → Chat na navbar); avança com toque em qualquer lugar, sem botão de pular. **(1) O overlay mora no `(app)/_layout.tsx`, irmão da navbar e DEPOIS dela** — dentro da `home.tsx` ele ficaria **abaixo** da navbar por mais zIndex que levasse (zIndex só vale entre irmãos; a home é filha do `<Tabs>`), e os 3 passos dos ícones seriam impossíveis. **(2) O toque NÃO chega ao elemento destacado**, de propósito: o `Pressable` raiz cobre a tela inteira e o recorte é só desenho. **(3) "Quem vê" precisou de DOIS flags persistidos, não um:** `homeTutorialSeen` sozinho (default `false`) faria o tutorial aparecer para **toda usuária que atualizasse o app**. Por isso existe o `homeTutorialPending`, **armado em `(onboarding)/notifications.tsx`** — a única rota de usuária nova até a home; quem loga numa conta existente, inclusive em aparelho novo, nunca passa por lá. **(4) Novo `lib/coachMarks.ts`** (registro de posições em memória de módulo, padrão do `nativePresentation`/`shareResume`) com **dois canais de medição em ordem**: `prepare` (a home rola para o topo — ela rola, e o card de métricas pode estar fora da viewport) e só então `measure`; um canal só faria a ordem depender da ordem dos hooks. **(5) Armadilhas resolvidas:** a medida sai de uma View de host que abraça só a caixa desenhada (medir o `TouchableOpacity` da navbar daria um círculo do tamanho de um quinto da tela); o buraco é **máscara SVG** e não path `evenodd`, porque só assim as coordenadas viram props animáveis (decisão 22); a frase escolhe o lado do buraco com **mais espaço livre** (e não "metade de cima/de baixo", que estoura a safe area em tela curta); a lista de passos **congela** após uma carência de 500ms, senão uma medida lenta pularia uma parada em silêncio; e **sem scan o passo do card de métricas é pulado sozinho** (o card está `disabled` e a frase seria mentira). **(6) Respeita "Reduzir movimento"** (sem deslocamento do buraco nem slide do texto) e dá haptic a cada avanço. **(7) Testar de novo sem reinstalar:** Perfil → "Desenvolvimento" → "Rever tutorial da home", `{__DEV__ && …}`. ✅ **Validado no simulador ainda nesta sessão** — as duas apostas de risco deram certo: o `<Mask>` do react-native-svg **funciona no Fabric** (o recorte aparece de verdade, não é só tela escura) e o `measureInWindow` põe o buraco no alvo certo nas 5 paradas. Ver "Estado de validação" na seção da feature para o que segue sem teste.*
+
+*Sessão 62 — Setembro 2026 — **Action Extension "Escanear no NIKS" (a linha de BAIXO do share sheet) + o build de desenvolvimento consertado.** **(1)** Target novo `NIKSAction` (`com.apple.ui-services`, bundle `br.com.niksai.app.action-extension`) criado por um **config plugin nosso** (`plugins/withNiksActionExtension.js`), porque o `expo-share-intent` só cria Share Extension — o extension point é hardcoded e não há hook para um segundo target. **Zero lógica nova no app:** grava a mesma chave no mesmo App Group e abre a mesma URL que a Share. **(2)** Três armadilhas caras, todas documentadas: o `addBuildPhase` do pacote `xcode` casa arquivos **pelo nome** (a Action reaproveitava os `PBXBuildFile` da Share → `pod install` quebrava com *Consistency issue*); `addPbxGroup(..., undefined)` grava a string literal `path = undefined` no pbxproj; e — a que custou um ciclo inteiro de teste — **`NSExtensionPrincipalClass` sem storyboard não funciona**: o `viewDidLoad` nunca dispara, a extensão sobe e encerra sem fazer nada. Trocado por `NSExtensionMainStoryboard`. A minha justificativa para evitar o storyboard ("ele aponta para a classe do pacote") estava **errada**: ele usa `customModuleProvider="target"`. **(3)** Diagnóstico feito **pelos logs do simulador, não por chute** — processo sobe mas não emite `NSLog` nenhum + App Group vazio + nenhum `requests to open URL` do PID da extensão = o view controller nunca começou. **(4)** **O build de desenvolvimento estava quebrado desde a Sessão 61**: com o RN do fonte, o pod `fmt` 11.0.2 não compila no clang do Xcode 26. Consertado por **`plugins/withFmtCxx17.js`** (`post_install` que põe C++17 só no target `fmt`). **(5)** Versões de app e extensões realinhadas em `1.0.54` (a `NIKSShare` tinha ficado em `1.0.48` — a Apple recusa o upload quando divergem). **Validado no simulador ponta a ponta** (linha de baixo abre o app e a análise roda; a Share continua funcionando); ⚠️ **nada testado em iPhone**. Ver "Action Extension" e "O pod `fmt` compilado em C++17".*
 
 *Sessão 61 — Setembro 2026 — **O Archive voltou a passar: React Native compilado do fonte + patch no Hermes + um crash do Xcode disfarçado de erro de ícone.** Três falhas de build encadeadas, cada uma escondendo a seguinte. **(1)** O dev client não linkava (`Undefined symbols: _OBJC_CLASS_$_RCTPackagerConnection`): o React Native do SDK 55 vem como **binário pronto compilado em Release**, sem nada que viva dentro de `#if RCT_DEV` — e o `expo-dev-launcher` depende justamente dessa classe. Liguei **`buildReactNativeFromSource: true`**. ⚠️ Avaliada e **descartada** a alternativa "tirar o dev-client do Release": ele **já não está no Release** (só no Debug) — o erro sempre foi no build de desenvolvimento. **(2)** Com o RN compilando do fonte, apareceu um bug do próprio RN 0.83.4: `HermesExecutorFactory.cpp` usa `std::thread` dentro de `#ifndef NDEBUG` **sem nunca incluir `<thread>`** — só compila em Debug, onde os headers do inspetor do Hermes trazem o `<thread>` de carona. Corrigido por **`patches/react-native+0.83.4.patch`** (uma linha). O `-DNDEBUG` que deveria neutralizar o bloco chegou em **1 de 255 targets** do Archive. **(3)** Antes disso, o Archive falhava em "Compile asset catalogs" **sem mensagem nenhuma** — e **não era o ícone** (verificado: 1024×1024, RGB, sem alpha; o `actool` à mão sai com exit 0). O `ibtoold` morria de **SIGSEGV numa thread do CoreSimulator**; resolvido reiniciando o serviço do Simulador. **Também nesta sessão:** merge da `newdesign` (trabalho local de colagem/animação + "Compartilhar com o NIKS"), com os dois conflitos resolvidos por **união** e as sessões renumeradas (havia duas "58"); e quatro afirmações **falsas** deste README corrigidas — a pasta nativa (é `ios/NIKSAI/`, nunca virou `ios/NIKS/`), o `PRODUCT_NAME` (hoje é `NIKS`), o gotcha dos `extraPods` (perde-se em **qualquer** prebuild) e o caminho do ícone (o prebuild o sobrescreve a partir do `app.json`). Ver "React Native compilado do fonte", "Patches de `node_modules`" e "Quando o build falha e o log não diz o motivo".*
 

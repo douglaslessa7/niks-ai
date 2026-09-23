@@ -251,6 +251,36 @@ type AppStore = {
   // Persistido (ver partialize): depois de visto, o botão "Escanear" vai direto à câmera.
   scanTutorialSeen: boolean
   setScanTutorialSeen: (v: boolean) => void
+
+  // ── Tutorial de primeiro acesso da HOME (coach marks) ───────────────────────
+  // Dois campos, ambos persistidos, porque a pergunta "quem vê?" não é "já viu?":
+  // é "ENTROU AGORA pelo onboarding?". Um flag só (`seen`, default false) faria o
+  // tutorial aparecer para TODA usuária que atualizasse o app — exatamente o que
+  // não pode acontecer.
+  //   • `homeTutorialPending` — ARMADO no fim do onboarding (`notifications.tsx`,
+  //     o único caminho de usuária nova até a home). Quem faz login numa conta
+  //     existente, em qualquer aparelho, nunca passa por lá → nunca arma.
+  //   • `homeTutorialSeen` — trava permanente, gravada ao concluir a última parada.
+  // Persistidos porque o app pode morrer entre o onboarding e a home (armado) e
+  // porque "uma vez na vida" tem de sobreviver a fechar o app (visto).
+  // ⚠️ Os dois são do APARELHO, não da conta. A verdade de "esta CONTA já viu" mora
+  // em `users.home_tutorial_seen_at` (ver `lib/homeTutorial.ts`): estes flags são um
+  // CACHE local dela, para o tutorial não piscar enquanto a resposta do servidor não
+  // chega. Quem manda é o servidor.
+  homeTutorialPending: boolean
+  armHomeTutorial: () => void
+  homeTutorialSeen: boolean
+  finishHomeTutorial: () => void
+  /** Aplica no cache local o "já viu" que veio do servidor. Não escreve no banco. */
+  markHomeTutorialSeen: () => void
+  /**
+   * Zera SÓ os flags do tutorial da home — usado no logout (`clearLocalData`).
+   * ⚠️ Não mexe no `scanTutorialSeen` de propósito: aquele é do aparelho mesmo, e
+   * zerá-lo faria quem sai e volta na MESMA conta rever o tutorial das 6 fotos.
+   */
+  clearHomeTutorialFlags: () => void
+  /** Só em __DEV__: rearma o tutorial para poder testar sem reinstalar o app. */
+  replayHomeTutorial: () => void
   onboarding: OnboardingData
   setOnboardingField: <K extends keyof OnboardingData>(key: K, value: OnboardingData[K]) => void
   scanSource: 'onboarding' | 'app'
@@ -375,6 +405,20 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   setPendingName: (name) => set({ pendingName: name }),
   scanTutorialSeen: false,
   setScanTutorialSeen: (v) => set({ scanTutorialSeen: v }),
+
+  homeTutorialPending: false,
+  homeTutorialSeen: false,
+  armHomeTutorial: () => set({ homeTutorialPending: true }),
+  // Desarma E tranca: `pending` sozinho reabriria o tutorial no próximo cold start
+  // se a gravação de `seen` falhasse; `seen` sozinho não distinguiria usuária nova.
+  finishHomeTutorial: () => set({ homeTutorialPending: false, homeTutorialSeen: true }),
+  markHomeTutorialSeen: () => set({ homeTutorialSeen: true }),
+  // ⚠️ Chamado no LOGOUT. Sem isto, o `seen: true` da conta anterior continuava em
+  // memória (o `persist.clearStorage()` limpa o disco, não o estado) e a PRÓXIMA
+  // conta criada no mesmo aparelho nunca via o tutorial — e ainda regravava o
+  // `seen: true` herdado no disco dela.
+  clearHomeTutorialFlags: () => set({ homeTutorialPending: false, homeTutorialSeen: false }),
+  replayHomeTutorial: () => set({ homeTutorialPending: true, homeTutorialSeen: false }),
   onboarding: initialOnboarding,
   scanSource: 'onboarding',
   scanResult: null,
@@ -555,6 +599,11 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     skinScore: s.skinScore,       // tema de cor da home e da navbar, na hora
     protocolResult: s.protocolResult, // a Rotina abre instantânea, sem rede
     scanTutorialSeen: s.scanTutorialSeen, // tutorial de prep é uma-vez-só, para sempre
+    // Tutorial da home: `pending` é armado no fim do onboarding e pode ter de
+    // sobreviver ao app morrer antes da home; `seen` é a trava de "uma vez na
+    // vida". Ver o comentário dos dois campos lá em cima.
+    homeTutorialPending: s.homeTutorialPending,
+    homeTutorialSeen: s.homeTutorialSeen,
     appliedCoupon: s.appliedCoupon, // cupom aplicado antes do signup — precisa sobreviver até o cadastro
     pendingName: s.pendingName, // nome capturado antes do signup — sobrevive até o cadastro
   }),

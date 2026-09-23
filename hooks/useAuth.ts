@@ -140,6 +140,13 @@ export function useAuth() {
     resetUserId()
     useAppStore.persist.clearStorage()
     useAppStore.getState().reset()
+    // ⚠️ `persist.clearStorage()` limpa o DISCO, não o estado em memória — e o
+    // `reset()` não toca nos flags do tutorial. Sem esta linha, o `homeTutorialSeen`
+    // da conta anterior sobrevivia nesta sessão do app e a PRÓXIMA conta criada
+    // aqui nunca veria o tutorial da home (e ainda herdava o `seen: true` no disco).
+    // ⚠️ Só os flags da HOME: `scanTutorialSeen` fica de fora de propósito — zerá-lo
+    // faria quem sai e volta na MESMA conta rever o tutorial das 6 fotos.
+    useAppStore.getState().clearHomeTutorialFlags()
     await clearAllCache()
   }
 
