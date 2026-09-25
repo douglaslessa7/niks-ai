@@ -12,6 +12,12 @@ The ONLY changes allowed: reduce the visibility of acne, pimples, and active bre
 
 This must look like the exact same photo taken on a better skin day. The person must be completely recognizable and identical.`
 
+// Validade da URL assinada. O bucket `skin-previews` é PRIVADO: a imagem é um
+// rosto gerado por IA e não pode ficar acessível sem autenticação.
+// 2h cobre com folga a sessão de onboarding (a tela cai no fallback em 45s).
+// A URL vive só em memória no app — se o app morrer, ela se perde de qualquer jeito.
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -121,12 +127,25 @@ serve(async (req) => {
       )
     }
 
-    const { data: urlData } = supabase.storage
+    // ⚠️ ERA getPublicUrl() com o bucket PÚBLICO — qualquer pessoa com a URL abria
+    // um rosto gerado por IA, sem autenticação, e o nome era previsível
+    // (preview_{timestamp}.jpg). Agora: bucket privado + URL assinada.
+    // A chave da resposta continua `preview_url` DE PROPÓSITO — é o que permite
+    // trocar isto sem build nova do app (loading.tsx só lê data.preview_url).
+    const { data: signed, error: signError } = await supabase.storage
       .from('skin-previews')
-      .getPublicUrl(fileName)
+      .createSignedUrl(fileName, SIGNED_URL_TTL_SECONDS)
+
+    if (signError || !signed?.signedUrl) {
+      console.error('Signed URL error:', signError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to sign preview image' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     return new Response(
-      JSON.stringify({ preview_url: urlData.publicUrl }),
+      JSON.stringify({ preview_url: signed.signedUrl }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 

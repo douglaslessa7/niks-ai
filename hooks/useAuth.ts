@@ -162,7 +162,21 @@ export function useAuth() {
   }
 
   const deleteAccount = async () => {
-    await supabase.rpc('delete_user')
+    // Era `supabase.rpc('delete_user')`, que apagava as tabelas (cascata de
+    // auth.users) mas deixava as FOTOS DE ROSTO para trás nos buckets do Storage.
+    // A Edge Function remove os arquivos pela API de Storage (.remove apaga os
+    // bytes, não só o registro) ANTES de apagar o usuário.
+    // ⚠️ A RPC `delete_user` continua viva no banco de propósito: as builds
+    // antigas em produção ainda a chamam. Não remover até a base ter migrado.
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Sessão expirada. Entre novamente para apagar a conta.')
+
+    const { error } = await supabase.functions.invoke('delete-account')
+    // Se a limpeza dos arquivos falhou, a conta NÃO foi apagada. Propagar o erro
+    // é essencial: sem isso seguíamos para o signOut e a pessoa saía achando que
+    // tinha apagado tudo, quando nada foi apagado.
+    if (error) throw error
+
     try { await GoogleSignin.signOut() } catch {}
     await supabase.auth.signOut()
     await clearLocalData()

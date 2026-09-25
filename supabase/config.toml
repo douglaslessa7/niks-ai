@@ -24,3 +24,16 @@ entrypoint = "./functions/validar-cupom/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/atribuir-cupom/index.ts"
+
+[functions.cleanup-skin-previews]
+enabled = true
+# pg_cron não tem sessão de usuário — a trava é o header x-cleanup-secret.
+verify_jwt = false
+entrypoint = "./functions/cleanup-skin-previews/index.ts"
+
+[functions.delete-account]
+enabled = true
+# O app manda a sessão real da usuária; a função ainda revalida o JWT por conta
+# própria (_shared/jwt.ts), então são duas camadas.
+verify_jwt = true
+entrypoint = "./functions/delete-account/index.ts"

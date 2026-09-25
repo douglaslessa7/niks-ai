@@ -228,8 +228,19 @@ export default function Perfil() {
           text: 'Apagar conta',
           style: 'destructive',
           onPress: async () => {
-            await deleteAccount();
-            router.replace('/');
+            // Sem try/catch, uma falha na exclusão deixava a pessoa na tela sem
+            // nenhuma mensagem — e o router.replace rodava como se tivesse dado
+            // certo. Agora a conta só é considerada apagada se não houve erro.
+            try {
+              await deleteAccount();
+              router.replace('/');
+            } catch (e) {
+              console.warn('[perfil] Falha ao apagar conta:', e);
+              Alert.alert(
+                'Não foi possível apagar',
+                'Sua conta NÃO foi apagada. Verifique sua conexão e tente novamente.'
+              );
+            }
           },
         },
       ]

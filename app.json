@@ -3,7 +3,7 @@
     "name": "NIKS",
     "newArchEnabled": true,
     "slug": "niks-ai",
-    "version": "1.0.54",
+    "version": "1.0.55",
     "orientation": "portrait",
     "icon": "./assets/icon-niks.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
-      "buildNumber": "2",
+      "buildNumber": "1",
       "icon": "./assets/icon-niks.png",
       "supportsTablet": false,
       "bundleIdentifier": "br.com.niksai.app",
@@ -38,18 +38,16 @@
       "package": "br.com.niksai.app",
       "versionCode": 1,
       "blockedPermissions": [
-        "android.permission.SYSTEM_ALERT_WINDOW"
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO"
       ],
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.RECORD_AUDIO",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -57,7 +55,12 @@
     },
     "plugins": [
       "expo-router",
-      "expo-camera",
+      [
+        "expo-camera",
+        {
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-image-picker",
         {
@@ -78,7 +81,13 @@
         }
       ],
       "expo-apple-authentication",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": false,
+          "recordAudioAndroid": false
+        }
+      ],
       "expo-video",
       "expo-image",
       "expo-sharing",
@@ -87,7 +96,8 @@
         {
           "photosPermission": "O NIKS AI precisa acessar suas fotos.",
           "savePhotosPermission": "Permita salvar sua colagem NIKS na galeria de fotos.",
-          "isAccessMediaLocationEnabled": false
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": []
         }
       ],
       "expo-localization",
