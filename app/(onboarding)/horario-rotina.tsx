@@ -69,7 +69,6 @@ export default function HorarioRotina() {
       <ObWheel
         labels={items}
         initialIndex={items.indexOf(ref.current)}
-        touched
         showBand={false}
         onChange={(i) => { ref.current = items[i]; force((n) => n + 1); }}
       />

@@ -1,96 +1,32 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
-import { useRouter, Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useWindowDimensions } from 'react-native';
+import { useEffect } from 'react';
+import { View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { useMixpanel } from '../lib/mixpanel/MixpanelProvider';
-import { Screen1 } from '../components/onboarding/welcomeSlides';
-import { useAppStore } from '../store/onboarding';
-import { OB_STEPS, obStep } from '../components/onboarding/kit';
 
-const CORAL = '#FF9D9D';
-const WHITE = '#FFFFFF';
-
-// Ponto de entrada: SÓ a tela de boas-vindas ("Bem-vinda ao NIKS"). Deixou de ser o
-// carrossel de 5 slides — os slides 2–5 foram para `(onboarding)/apresentacao.tsx`,
-// mostrados DEPOIS da criação de conta. O link "Já tem conta? Entrar" fica só aqui.
-// "Começar" → tela de nome ("Como você quer ser chamada?"), que agora vem antes das
-// perguntas. Os slides vivem em `components/onboarding/welcomeSlides.tsx` (fonte única).
-export default function Welcome() {
+// Ponto de entrada — SÓ decide o destino da abertura, sem UI própria (a splash de
+// abertura, `components/SplashOverlay.tsx`, fica por cima enquanto isso):
+//   • com sessão → `/(app)/home` (o guard de assinatura/nome do `(app)/_layout` decide o resto);
+//   • sem sessão → `/(onboarding)/nome` — a TELA 2 é a primeira tela do app.
+//
+// ⚠️ O welcome antigo ("Bem-vinda ao NIKS" com vídeo) SAIU (set/2026). O link
+// "Já tem conta? Entrar" mora agora na tela de nome — é o único caminho de login
+// de quem já tem conta. Os slides 2–5 seguem no carrossel pós-cadastro
+// (`(onboarding)/apresentacao.tsx`), intocados.
+//
+// Quem avisa a splash que o destino está pronto é o próprio destino:
+// `(onboarding)/_layout` (nome), `(app)/_layout` (home/captura de nome) ou `paywall-soft`.
+export default function Index() {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
-  const { track } = useMixpanel();
-  const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  // Aliases — fallback undefined evita flash de layout enquanto carrega
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'INITIAL_SESSION') {
-        if (session) {
-          // Usuária logada — delega verificação de assinatura para (app)/_layout.tsx
-          // (evita race condition: loginRevenueCat pode não ter completado ainda)
-          router.replace('/(app)/home');
-        } else {
-          setChecking(false);
-          // Destino da abertura = welcome: a splash pode revelar.
-          useAppStore.getState().markSplashDestinationReady();
-        }
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event !== 'INITIAL_SESSION') return;
+      // Usuária logada — delega a verificação de assinatura para (app)/_layout.tsx
+      // (evita race condition: loginRevenueCat pode não ter completado ainda).
+      router.replace(session ? '/(app)/home' : '/(onboarding)/nome');
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  const goToName = () => {
-    track('onboarding_step_completed', obStep(OB_STEPS.welcome, 'Tela Inicial'));
-    router.replace('/(onboarding)/nome');
-  };
-
-  const goToLogin = () => router.push('/(onboarding)/login');
-
-  return (
-    <>
-      <Stack.Screen options={{ contentStyle: { backgroundColor: WHITE } }} />
-      <StatusBar style="dark" />
-      {checking ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={CORAL} />
-        </View>
-      ) : (
-        <Screen1
-          w={width}
-          h={height}
-          topInset={insets.top}
-          bottomInset={insets.bottom}
-          fXBold={fXBold}
-          fBold={fBold}
-          fSemi={fSemi}
-          fReg={fReg}
-          isActive
-          onNext={goToName}
-          onLogin={goToLogin}
-        />
-      )}
-    </>
-  );
+  return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
 }

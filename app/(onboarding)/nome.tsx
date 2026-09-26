@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
@@ -9,8 +9,11 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 2 do onboarding novo — campo de texto (modelo 1d). Logo após o welcome e
-// ANTES do signup/paywall: ainda não há sessão, então o nome só vai para o store
+// Tela 2 do onboarding novo — campo de texto (modelo 1d). É a PRIMEIRA tela do app
+// para quem não tem sessão (o welcome antigo saiu: depois da splash, `app/index.tsx`
+// cai direto aqui). Por isso NÃO tem voltar, e carrega o link "Já tem conta?
+// Entrar" — o único caminho de login de quem já tem conta. Vem ANTES do
+// signup/paywall: ainda não há sessão, então o nome só vai para o store
 // (`pendingName`, persistido); quem grava em `users.nome` é o signup
 // (`saveToSupabase`). A captura de nome DENTRO do app (guard do `(app)/_layout`,
 // usuária legada sem nome) continua em `components/onboarding/NameCapture.tsx`.
@@ -72,12 +75,22 @@ export default function Nome() {
             />
           </View>
           <ObPillButton onPress={handleContinue} disabled={!trimmed} style={{ marginTop: 130 }} />
+          {/* Mesma copy e hierarquia do link do welcome antigo (cinza + "Entrar" em
+              ink semibold), na tipografia do design novo. */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 18 }}>
+            <Text style={{ fontSize: 15, color: OB.sub }}>Já tem conta? </Text>
+            <TouchableOpacity
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
+              onPress={() => { haptics.tap(); router.push('/(onboarding)/login'); }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '600', color: OB.ink }}>Entrar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
 
-      {/* O welcome abre o nome com `replace`: sem histórico, voltar = reabrir o welcome
-          (antes disparava `GO_BACK was not handled`). */}
-      <ObHeader step={STEP} onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
+      {/* Primeira tela do app: sem voltar (só a barra de progresso). */}
+      <ObHeader step={STEP} />
     </ObScreen>
   );
 }

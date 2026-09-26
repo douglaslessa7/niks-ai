@@ -5,9 +5,10 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { haptics } from '../../lib/haptics';
 
 // ─── FONTE ÚNICA das telas de apresentação ("welcome") ──────────────────────────
-// Slide 1 é renderizado sozinho em `app/index.tsx` (com link "Já tem conta? Entrar").
 // Slides 2–5 vivem no carrossel `app/(onboarding)/apresentacao.tsx`, mostrado DEPOIS
-// da criação de conta — lá NÃO se passa `onLogin`, então o link some. Não duplicar
+// da criação de conta — lá NÃO se passa `onLogin`, então o link some. O slide 1
+// (welcome "Bem-vinda ao NIKS", em `app/index.tsx`) SAIU em set/2026: depois da
+// splash o app abre direto na tela de nome, que carrega o link "Já tem conta? Entrar". Não duplicar
 // estes componentes: já se queimou antes (ver `NameCapture`/`ProductAnalysis`).
 
 // ─── Design tokens ("Novo design app NIKS") ───────────────────
@@ -176,82 +177,6 @@ export interface ScreenProps {
   onLogin?: () => void;   // ausente → sem link "Já tem conta? Entrar"
   isActive?: boolean;
   activeDot?: number;     // ausente → sem bolinhas de progresso
-}
-
-// ─── Screen 1 — Welcome ───────────────────────────────────────
-
-export function Screen1({ w, h, topInset, bottomInset, fXBold, fBold, fSemi, fReg, onNext, onLogin, isActive, activeDot }: ScreenProps) {
-  return (
-    <View style={{ width: w, height: h, backgroundColor: WHITE }}>
-      <View style={{ flex: 1, paddingTop: topInset + 8 }}>
-        <VideoClip source={require('../../assets/welcome-1.mp4')} poster={require('../../assets/welcome-1-poster.jpg')} isActive={!!isActive} />
-      </View>
-
-      {/* text block */}
-      <View style={{ paddingHorizontal: 32, paddingTop: 24, alignItems: 'center' }}>
-        {/* "Bem-vinda ao" line */}
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <Text style={{
-            fontFamily: fBold,
-            fontSize: 30,
-            fontWeight: '700',
-            color: CORAL,
-            letterSpacing: -0.5,
-          }}>
-            Bem-vinda{' '}
-          </Text>
-          <Text style={{
-            fontFamily: fReg,
-            fontSize: 22,
-            fontWeight: '400',
-            color: INK,
-          }}>
-            ao
-          </Text>
-        </View>
-        {/* NIKS */}
-        <Text style={{
-          fontFamily: fXBold,
-          fontSize: 64,
-          fontWeight: '800',
-          color: INK,
-          letterSpacing: -2.5,
-          lineHeight: 68,
-          marginTop: 8,
-        }}>
-          NIKS
-        </Text>
-        {/* subtitle */}
-        <Text style={{
-          fontFamily: fReg,
-          fontSize: 16,
-          lineHeight: 23,
-          color: INK_SOFT,
-          letterSpacing: -0.1,
-          textAlign: 'center',
-          marginTop: 12,
-          maxWidth: 330,
-        }}>
-          Feito para entender a sua pele{'\n'}melhor que ninguém.
-        </Text>
-      </View>
-
-      {/* footer */}
-      <View style={{
-        paddingHorizontal: 24,
-        paddingBottom: Math.max(18, bottomInset),
-        marginTop: 22,
-      }}>
-        {activeDot !== undefined && (
-          <View style={{ marginBottom: 18 }}>
-            <ProgressDots active={activeDot} />
-          </View>
-        )}
-        <PrimaryButton label="Começar" onPress={onNext} font={fSemi} />
-        {onLogin && <FooterLink onLogin={onLogin} font={fReg} />}
-      </View>
-    </View>
-  );
 }
 
 // ─── Screen 2 — Glow Up ───────────────────────────────────────

@@ -41,7 +41,10 @@ export const OB = {
 // Numeração ÚNICA do onboarding novo (Mixpanel `step_number`), na ordem nova.
 // A transição "Prazer, <nome>!" não conta como passo (não tem pergunta).
 export const OB_STEPS = {
-  welcome: 1, nome: 2, idade: 3, gravidez: 4, incomoda: 5, prepScan: 6, camera: 7,
+  // 1 era o welcome antigo — SAIU (set/2026); o app abre direto no nome. A
+  // numeração segue a das telas do design (e a calibração da barra), por isso o
+  // funil do Mixpanel começa no passo 2.
+  nome: 2, idade: 3, gravidez: 4, incomoda: 5, prepScan: 6, camera: 7,
   potencial: 8, tipoPele: 9, sol: 10, hidratacaoSono: 11, rotinaAtual: 12,
   horarioRotina: 13, avisoLembretes: 14, pedidoNotificacao: 15, alergias: 16,
   alergiaDetalhe: 17, objetivo: 18, comSemNiks: 19, loading: 20, relatorio: 21,
@@ -256,7 +259,7 @@ export function ObPillButton({
 // O gesto é de um ScrollView transparente com snap por linha; cada item é um Text
 // absoluto cuja posição, escala e opacidade são INTERPOLADAS do scroll (native
 // driver) — por isso as linhas mudam de tamanho continuamente enquanto rodam,
-// sem pular. Antes do primeiro giro (`touched=false`) a faixa mostra "Selecione".
+// sem pular. Abre JÁ no item inicial (sem estado "Selecione": a usuária só rola até o dela).
 export const WHEEL_H = 302;       // 26+40+56+58+56+40+26
 const WHEEL_STEP = 57;            // distância entre o centro da faixa e o da linha vizinha
 const ROW_OFFSETS = [151, 138, 105, 57, 0, -57, -105, -138, -151]; // d = +4 … −4
@@ -275,20 +278,16 @@ export function ObWheelBand() {
 }
 
 export function ObWheel({
-  labels, initialIndex, onChange, onFirstInteraction, touched, showBand = true,
+  labels, initialIndex, onChange, showBand = true,
 }: {
   labels: string[];
   initialIndex: number;
   onChange: (index: number) => void;
-  onFirstInteraction?: () => void;
-  touched: boolean;
   showBand?: boolean;
 }) {
   const start = Math.max(0, Math.min(labels.length - 1, initialIndex));
   const scrollY = useRef(new Animated.Value(start * WHEEL_STEP)).current;
   const lastIndex = useRef(start);
-  const touchedRef = useRef(touched);
-  touchedRef.current = touched;
 
   const indexAt = (y: number) => Math.max(0, Math.min(labels.length - 1, Math.round(y / WHEEL_STEP)));
 
@@ -300,10 +299,8 @@ export function ObWheel({
         const i = indexAt(e.nativeEvent.contentOffset.y);
         if (i !== lastIndex.current) {
           lastIndex.current = i;
-          if (touchedRef.current) {
-            haptics.select();
-            onChange(i);
-          }
+          haptics.select();
+          onChange(i);
         }
       },
     },
@@ -334,17 +331,10 @@ export function ObWheel({
           return (
             <Animated.View key={label} style={[rowStyle, { transform: [{ translateY }, { scale }] }]}>
               <Animated.Text style={[numStyle, { color: OB.wheel, opacity: gray }]}>{label}</Animated.Text>
-              {touched && (
-                <Animated.Text style={[numStyle, { position: 'absolute', color: OB.ink, opacity: ink }]}>{label}</Animated.Text>
-              )}
+              <Animated.Text style={[numStyle, { position: 'absolute', color: OB.ink, opacity: ink }]}>{label}</Animated.Text>
             </Animated.View>
           );
         })}
-        {!touched && (
-          <View style={{ position: 'absolute', left: 0, right: 0, top: WHEEL_H / 2 - 29, height: 58, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: OB.sub }}>Selecione</Text>
-          </View>
-        )}
       </View>
 
       {/* Gesto. ⚠️ Sem `overflow: 'hidden'` no pai (decisão 24 do README: no Fabric
@@ -358,7 +348,6 @@ export function ObWheel({
         decelerationRate="fast"
         scrollEventThrottle={16}
         onScroll={onScroll}
-        onScrollBeginDrag={() => { if (!touchedRef.current) onFirstInteraction?.(); }}
         onScrollEndDrag={settle}
         onMomentumScrollEnd={settle}
       />

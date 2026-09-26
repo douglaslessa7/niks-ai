@@ -15,12 +15,13 @@ import {
 // ex.: "27"), exatamente como a roda de idades antiga fazia: `saveToSupabase` e a
 // `loading` leem esse campo como número < 120 → `idade`. Só a pergunta mudou.
 //
-// Estado inicial (nota do design): faixa com "Selecione" e SEM botão; depois do
-// primeiro giro aparecem o ano, a idade calculada e o botão.
+// Abre JÁ em 2002, com a idade e o botão visíveis (decisão do produto — sem o
+// estado "Selecione" da nota do design): a usuária só rola até o ano dela. Quem não
+// rolar e tocar em Continuar grava a idade de 2002, como a roda antiga gravava 24.
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 51 }, (_, i) => THIS_YEAR - 60 + i); // 10–60 anos, como antes
 const YEAR_LABELS = YEARS.map(String);
-const INITIAL_YEAR = THIS_YEAR - 24;                                     // mesma idade padrão de antes
+const INITIAL_YEAR = 2002;                                               // ano em que o seletor abre
 
 const STEP = OB_STEPS.idade;
 const STEP_NAME = 'Idade';
@@ -31,7 +32,6 @@ export default function Birthday() {
   const { setOnboardingField } = useAppStore();
   const name = useObName();
   const { y, buttonBottom } = useObFrame();
-  const [touched, setTouched] = useState(false);
   const [year, setYear] = useState(INITIAL_YEAR);
   const yearRef = useRef(INITIAL_YEAR);
 
@@ -64,20 +64,16 @@ export default function Birthday() {
         <ObWheel
           labels={YEAR_LABELS}
           initialIndex={YEARS.indexOf(INITIAL_YEAR)}
-          touched={touched}
-          onFirstInteraction={() => setTouched(true)}
           onChange={(i) => handleChange(YEARS[i])}
         />
       </View>
 
-      {touched && (
-        <Text style={{ position: 'absolute', left: 0, right: 0, top: y(612), textAlign: 'center', fontSize: 15, color: OB.sub }}>
-          {ageFromYear(year)} anos
-        </Text>
-      )}
+      <Text style={{ position: 'absolute', left: 0, right: 0, top: y(612), textAlign: 'center', fontSize: 15, color: OB.sub }}>
+        {ageFromYear(year)} anos
+      </Text>
 
       <ObHeader step={STEP} onBack={() => router.back()} />
-      {touched && <ObPillButton onPress={handleContinue} bottom={buttonBottom} />}
+      <ObPillButton onPress={handleContinue} bottom={buttonBottom} />
     </ObScreen>
   );
 }
