@@ -265,6 +265,13 @@ export default function AppLayout() {
     });
   }, []);
 
+  // Guard liberou (home OU captura de nome): destino da abertura pronto → a splash
+  // pode revelar. (Não-assinante vai para o paywall-soft, que avisa ao montar.)
+  const markSplashDestinationReady = useAppStore((st) => st.markSplashDestinationReady);
+  useEffect(() => {
+    if (ready) markSplashDestinationReady();
+  }, [ready]);
+
   // "Compartilhar com o NIKS": ÚNICO ponto que abre a análise de um produto
   // compartilhado. Só roda com `ready` (sessão + assinatura já verificadas pelo
   // guard acima) e sem captura de nome pendente — então o share nunca pula o
@@ -334,7 +341,11 @@ export default function AppLayout() {
   }, [finishHomeTutorial]);
   const coachStageReady = useCoachStageReady();
   const pathname = usePathname();
+  // O tutorial só começa depois que a splash de abertura terminou o fade — senão
+  // ele mediria/desenharia por baixo da logo.
+  const splashDone = useAppStore((s) => s.splashDone);
   const showCoachMarks =
+    splashDone &&
     ready &&
     !needsName &&
     !pendingShare &&

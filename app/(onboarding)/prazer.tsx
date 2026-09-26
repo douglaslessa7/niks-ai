@@ -1,13 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { View, Text, Animated, Easing } from 'react-native';
-import { useRouter } from 'expo-router';
-import {
-  OB, ObScreen, NIKS_LOGO, useObFrame, useObName,
-} from '../../components/onboarding/kit';
+import { Stack, useRouter } from 'expo-router';
+import { OB, ObScreen, useObFrame, useObName } from '../../components/onboarding/kit';
+
+// PNG EXATO do design (`niks-logo-FF5EA8.png`, 196×199 — é o "04 - Cores do Niks
+// score (chapada)/niks-logo-rosa-FF5EA8.png" dos logos oficiais), não o bloom tintado.
+const LOGO_PINK = require('../../assets/onboarding/niks-logo-FF5EA8.png');
 
 // Transição "Prazer, <nome>!" entre a tela 2 (nome) e a 3 (idade) — modelo 1e.
 // Sem botão: a logo entra com escala 0,8 → 1, o texto logo depois, e a tela
 // avança sozinha em 1,6 s. `replace` para o voltar da idade cair direto no nome.
+// Entra SEM a animação de push do Stack (`animation: 'none'`): o deslize lateral
+// comia ~350 ms dos 1,6 s e a logo começava a crescer ainda fora da tela.
 const HOLD_MS = 1600;
 
 export default function Prazer() {
@@ -28,11 +32,12 @@ export default function Prazer() {
 
   return (
     <ObScreen>
+      <Stack.Screen options={{ animation: 'none', gestureEnabled: false }} />
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(340), alignItems: 'center', gap: 24 }}>
         <Animated.Image
-          source={NIKS_LOGO}
+          source={LOGO_PINK}
           style={{
-            width: 72, height: 73, tintColor: OB.pink,
+            width: 72, height: 73,
             opacity: logo,
             transform: [{ scale: logo.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
           }}

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEP_TOTAL } from '../../components/onboarding/kit';
+import { useAppStore } from '../../store/onboarding';
 
 export default function OnboardingLayout() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export default function OnboardingLayout() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (__DEV__) {
         setIsInOnboarding(true);
+        useAppStore.getState().markSplashDestinationReady();
         return;
       }
 
@@ -37,6 +39,8 @@ export default function OnboardingLayout() {
         }
       }
       setIsInOnboarding(true);
+      // Abertura direto numa tela do onboarding (deep link): destino pronto.
+      useAppStore.getState().markSplashDestinationReady();
     });
   }, []);
 

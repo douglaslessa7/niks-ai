@@ -1,187 +1,118 @@
-import { useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Sun, Sparkles, User, Glasses, Smile } from 'lucide-react-native';
-import Svg, { Path } from 'react-native-svg';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
-import { useAppStore } from '../../store/onboarding';
-import { OB_STEPS, obStep } from '../../components/onboarding/kit';
+import { useAIConsent } from '../../hooks/useAIConsent';
+import {
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObPillButton,
+  useObFrame, obStep, useOnMount,
+} from '../../components/onboarding/kit';
+import { ConsentSheet } from '../../components/onboarding/ConsentSheet';
 
-// Tokens "Novo design app NIKS" (mesma identidade da home/chat/welcome)
-const DEEP = '#121212';
-const DEEP_SOFT = '#515151';
-const DEEP_HAIR = 'rgba(18,18,18,0.10)';
-const CORAL = '#FF9D9D';
-const CORAL_DEEP = '#F2808E';
-const CREAM = '#FFFFFF';
+// Tela 6 do onboarding novo — preparação do scan (modelo 8a do design): título
+// centralizado sem eyebrow, os 5 cuidados num card branco com divisórias #F0EDEB e
+// ícone branco em círculo #FF5EA8, botão "Abrir câmera".
+//
+// Consentimento de IA (modelo 8b): ao tocar em "Abrir câmera", quem ainda não
+// aceitou vê a folha "Antes de continuar" POR CIMA desta tela. Aceitar grava
+// `ai_consent_accepted` e abre a câmera; "Cancelar" fecha a folha e fica aqui.
+// ⚠️ A câmera continua com o `useScanConsentGate` (trava única do README, seção
+// 14) — aqui só antecipamos o pedido; quem já aceitou não vê nada em lugar nenhum.
+//
+// Só o onboarding passa por esta tela (o app usa `scan-prep-app`).
+const STEP = OB_STEPS.prepScan;
+const STEP_NAME = 'Análise com IA';
 
-const STEP = 13;
-const TOTAL = 13;
+const ICON_PROPS = { fill: 'none', stroke: '#FFFFFF', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 
-const TIPS = [
-  { Icon: Sun, label: 'Local com boa iluminação' },
-  { Icon: Sparkles, label: 'Rosto limpo, sem maquiagem' },
-  { Icon: User, label: 'Cabelo preso' },
-  { Icon: Glasses, label: 'Sem óculos' },
-  { Icon: Smile, label: 'Expressão neutra na foto' },
+const TIPS: { label: string; icon: React.ReactNode }[] = [
+  {
+    label: 'Local com boa iluminação',
+    icon: (<>
+      <Circle cx={12} cy={12} r={4} {...ICON_PROPS} />
+      <Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" {...ICON_PROPS} />
+    </>),
+  },
+  {
+    label: 'Rosto limpo, sem maquiagem',
+    icon: (<>
+      <Path d="M11 3l1.8 4.9L17.7 9.7l-4.9 1.8L11 16.4l-1.8-4.9L4.3 9.7l4.9-1.8z" {...ICON_PROPS} />
+      <Path d="M18.5 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" {...ICON_PROPS} />
+    </>),
+  },
+  {
+    label: 'Cabelo preso',
+    icon: (<>
+      <Circle cx={12} cy={8} r={4} {...ICON_PROPS} />
+      <Path d="M4.5 20.5c0-3.9 3.4-6.3 7.5-6.3s7.5 2.4 7.5 6.3" {...ICON_PROPS} />
+    </>),
+  },
+  {
+    label: 'Sem óculos',
+    icon: (<>
+      <Circle cx={6.5} cy={14.5} r={3.5} {...ICON_PROPS} />
+      <Circle cx={17.5} cy={14.5} r={3.5} {...ICON_PROPS} />
+      <Path d="M10 14.5c1.3-1 2.7-1 4 0M3 14.5L4.8 8M21 14.5L19.2 8" {...ICON_PROPS} />
+    </>),
+  },
+  {
+    label: 'Expressão neutra na foto',
+    icon: (<>
+      <Circle cx={12} cy={12} r={9} {...ICON_PROPS} />
+      <Path d="M8.5 14.2c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2" {...ICON_PROPS} />
+      <Path d="M9 9.5h.01M15 9.5h.01" {...ICON_PROPS} strokeWidth={2.6} />
+    </>),
+  },
 ];
 
 export default function ScanPrep() {
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
   const router = useRouter();
   const { track } = useMixpanel();
-  const { scanSource } = useAppStore();
+  const { y, buttonBottom } = useObFrame();
+  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
 
-  useEffect(() => {
-    track('onboarding_step_viewed', obStep(OB_STEPS.prepScan, 'Análise com IA'));
-  }, []);
+  useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
-  const handleOpenCamera = () => {
-    haptics.action();
-    track('onboarding_step_completed', obStep(OB_STEPS.prepScan, 'Análise com IA'));
+  const openCamera = () => {
+    track('onboarding_step_completed', obStep(STEP, STEP_NAME));
     router.push('/(scan)/camera' as any);
   };
 
   return (
-    <>
-      <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+    <ObScreen variant="blush">
+      <View style={{ position: 'absolute', left: 0, right: 0, top: y(112) }}>
+        <ObTitle>Agora vamos analisar sua pele por foto.</ObTitle>
+      </View>
+      <ObSubtitle style={{ position: 'absolute', left: 0, right: 0, top: y(189) }}>
+        Para uma análise mais precisa, se certifique:
+      </ObSubtitle>
 
-          {/* QHeader */}
-          <View style={{
-            paddingVertical: 6, paddingHorizontal: 24,
-            flexDirection: 'row', alignItems: 'center', gap: 14,
+      <View style={{
+        position: 'absolute', left: 17, right: 17, top: y(236), borderRadius: 20, backgroundColor: '#FFFFFF',
+        shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 12,
+      }}>
+        {TIPS.map((tip, i) => (
+          <View key={tip.label} style={{
+            height: 64, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18,
+            borderBottomWidth: i < TIPS.length - 1 ? 1 : 0, borderBottomColor: OB.divider,
           }}>
-            <TouchableOpacity
-              onPress={() => {
-                haptics.tap();
-                router.back();
-              }}
-              activeOpacity={0.7}
-              style={{
-                flexShrink: 0, width: 40, height: 40, borderRadius: 100,
-                backgroundColor: 'rgba(255,255,255,0.6)',
-                borderWidth: 0.5, borderColor: DEEP_HAIR,
-                alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <ChevronLeft size={18} color={DEEP} />
-            </TouchableOpacity>
-            {scanSource !== 'app' && (
-              <View style={{
-                flex: 1, height: 4, borderRadius: 100,
-                backgroundColor: 'rgba(18,18,18,0.06)', overflow: 'hidden',
-              }}>
-                <View style={{
-                  position: 'absolute', top: 0, left: 0, bottom: 0,
-                  width: `${(STEP / TOTAL) * 100}%`,
-                  backgroundColor: CORAL, borderRadius: 100,
-                }} />
-              </View>
-            )}
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
+              <Svg width={22} height={22} viewBox="0 0 24 24">{tip.icon}</Svg>
+            </View>
+            <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '500', color: OB.ink }}>{tip.label}</Text>
           </View>
+        ))}
+      </View>
 
-          {/* Title block */}
-          <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
-            <Text style={{
-              fontFamily: fSemi, fontSize: 10.5, fontWeight: '700', color: CORAL_DEEP,
-              letterSpacing: 2.6, textTransform: 'uppercase', marginBottom: 14,
-            }}>
-              análise da pele
-            </Text>
-            <Text style={{
-              fontFamily: fXBold, fontSize: 28, fontWeight: '800', color: DEEP,
-              letterSpacing: -0.85, lineHeight: 31.36,
-            }}>
-              {'Agora vamos analisar a sua '}
-              <Text style={{
-                fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
-              }}>
-                pele
-              </Text>
-              {' por foto.'}
-            </Text>
-            <Text style={{
-              fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
-              color: DEEP_SOFT, letterSpacing: -0.1,
-            }}>
-              Para uma análise mais precisa, se certifique:
-            </Text>
-          </View>
+      <ObHeader step={STEP} onBack={() => router.back()} />
+      <ObPillButton
+        label="Abrir câmera"
+        bottom={buttonBottom}
+        onPress={() => { haptics.action(); requestConsent(openCamera); }}
+      />
 
-          {/* Tips list */}
-          <View style={{ flex: 1, paddingHorizontal: 28, paddingTop: 24, gap: 18 }}>
-            {TIPS.map(({ Icon, label }, i) => (
-              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                <View style={{
-                  flexShrink: 0,
-                  width: 46, height: 46, borderRadius: 100,
-                  backgroundColor: CORAL,
-                  alignItems: 'center', justifyContent: 'center',
-                  shadowColor: CORAL,
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.55,
-                  shadowRadius: 18,
-                  elevation: 4,
-                }}>
-                  <Icon size={22} color="#FFFFFF" strokeWidth={2} />
-                </View>
-                <Text style={{
-                  fontFamily: fSemi, fontSize: 16.5, fontWeight: '600', color: DEEP,
-                  letterSpacing: -0.2, lineHeight: 21.45,
-                  flex: 1,
-                }}>
-                  {label}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* PrimaryButton */}
-          <View style={{ paddingHorizontal: 24, paddingTop: 14, paddingBottom: 18 }}>
-            <TouchableOpacity
-              onPress={handleOpenCamera}
-              activeOpacity={0.85}
-              style={{
-                height: 60, borderRadius: 100, backgroundColor: CORAL,
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-                shadowColor: CORAL,
-                shadowOffset: { width: 0, height: 14 },
-                shadowOpacity: 0.55,
-                shadowRadius: 22, elevation: 8,
-              }}
-            >
-              <Text style={{
-                fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
-              }}>
-                Abrir câmera
-              </Text>
-              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            </TouchableOpacity>
-          </View>
-
-        </View>
-      </SafeAreaView>
-    </>
+      <ConsentSheet visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
+    </ObScreen>
   );
 }

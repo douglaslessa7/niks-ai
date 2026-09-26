@@ -132,6 +132,11 @@ export default function PaywallSoft() {
     }, [])
   );
 
+  // Destino da abertura = paywall (não-assinante): a splash pode revelar.
+  useEffect(() => {
+    useAppStore.getState().markSplashDestinationReady();
+  }, []);
+
   useEffect(() => {
     if (__DEV__) {
       // Atalho de dev: pula o paywall. Mas NÃO pode mandar todo mundo pro signup —

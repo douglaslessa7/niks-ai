@@ -18,6 +18,13 @@ import { MixpanelProvider, useMixpanel } from '../lib/mixpanel/MixpanelProvider'
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
 import { ShareIntentProvider } from 'expo-share-intent';
 import { ShareIntentBridge } from '../components/share/ShareIntentBridge';
+import * as SplashScreen from 'expo-splash-screen';
+import SplashOverlay from '../components/SplashOverlay';
+
+// Segura a splash NATIVA até a cópia JS (SplashOverlay) desenhar o 1º quadro —
+// é ela quem esconde a nativa, sem fade (as duas são idênticas). Precisa rodar no
+// carregamento do módulo, antes do 1º render.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 import {
   armSuppressReapresentar,
   canShowDownsell,
@@ -273,11 +280,14 @@ export default function RootLayout() {
   // Segura a árvore inteira até o ATT estar resolvido — o PaywalloProvider não
   // pode montar antes disso. Todos os hooks acima já rodaram, então este early
   // return não altera a ordem de hooks entre renders.
-  if (!attResolved) return null;
+  // ⚠️ A SplashOverlay é SEMPRE o último filho do fragmento — antes e depois do
+  // ATT resolver — para NÃO remontar (o mínimo de 1 s e o fade são dela).
+  if (!attResolved) return <>{null}<SplashOverlay /></>;
 
   return (
-    // ShareIntentProvider por fora de tudo (exigência do expo-share-intent).
-    // `scheme` explícito: o app tem vários CFBundleURLSchemes (Google Sign-In etc.).
+    <>
+    {/* ShareIntentProvider por fora de tudo (exigência do expo-share-intent).
+        `scheme` explícito: o app tem vários CFBundleURLSchemes (Google Sign-In etc.). */}
     <ShareIntentProvider options={{ scheme: 'niks-ai', disabled: Platform.OS !== 'ios' }}>
     <PaywalloProvider config={PAYWALLO_CONFIG}>
       <MixpanelProvider>
@@ -300,5 +310,7 @@ export default function RootLayout() {
       </MixpanelProvider>
     </PaywalloProvider>
     </ShareIntentProvider>
+    <SplashOverlay />
+    </>
   );
 }

@@ -8,7 +8,7 @@
     "icon": "./assets/icon-niks.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-niks.png",
+      "image": "./assets/onboarding/splash-logo-FF5EA8.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
@@ -131,7 +131,17 @@
             ]
           }
         }
-      ]
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/onboarding/splash-logo-FF5EA8.png",
+          "imageWidth": 134,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
+      "./plugins/withSplashLogoFix"
     ],
     "fonts": [
       "./assets/fonts/PlayfairDisplay-Regular.ttf",

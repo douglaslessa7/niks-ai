@@ -258,6 +258,15 @@ type AppStore = {
   // `saveToSupabase` o grava em `users.push_token`.
   pendingPushToken: string | null
   setPendingPushToken: (token: string | null) => void
+  // Splash de abertura (`components/SplashOverlay.tsx`). EM MEMÓRIA de propósito
+  // (fora do partialize): valem para UMA abertura a frio.
+  //   • `splashDestinationReady` — a tela de destino (welcome, paywall ou home já
+  //     liberada pelo guard do (app)) avisa que pode ser revelada.
+  //   • `splashDone` — a splash terminou o fade; libera o tutorial da home.
+  splashDestinationReady: boolean
+  markSplashDestinationReady: () => void
+  splashDone: boolean
+  setSplashDone: (v: boolean) => void
   // Tutorial de preparação do scan (scan-prep-app) — mostrado UMA vez só na vida.
   // Persistido (ver partialize): depois de visto, o botão "Escanear" vai direto à câmera.
   scanTutorialSeen: boolean
@@ -419,6 +428,10 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   setPendingName: (name) => set({ pendingName: name }),
   pendingPushToken: null,
   setPendingPushToken: (token) => set({ pendingPushToken: token }),
+  splashDestinationReady: false,
+  markSplashDestinationReady: () => set({ splashDestinationReady: true }),
+  splashDone: false,
+  setSplashDone: (v) => set({ splashDone: v }),
   scanTutorialSeen: false,
   setScanTutorialSeen: (v) => set({ scanTutorialSeen: v }),
 

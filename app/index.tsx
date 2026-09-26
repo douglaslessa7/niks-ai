@@ -14,6 +14,8 @@ import { useWindowDimensions } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 import { Screen1 } from '../components/onboarding/welcomeSlides';
+import { useAppStore } from '../store/onboarding';
+import { OB_STEPS, obStep } from '../components/onboarding/kit';
 
 const CORAL = '#FF9D9D';
 const WHITE = '#FFFFFF';
@@ -51,6 +53,8 @@ export default function Welcome() {
           router.replace('/(app)/home');
         } else {
           setChecking(false);
+          // Destino da abertura = welcome: a splash pode revelar.
+          useAppStore.getState().markSplashDestinationReady();
         }
       }
     });
@@ -58,7 +62,7 @@ export default function Welcome() {
   }, []);
 
   const goToName = () => {
-    track('onboarding_step_completed', { step_number: 1, step_name: 'Tela Inicial', step_total: 23 });
+    track('onboarding_step_completed', obStep(OB_STEPS.welcome, 'Tela Inicial'));
     router.replace('/(onboarding)/nome');
   };
 

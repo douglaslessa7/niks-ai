@@ -75,7 +75,9 @@ export default function Nome() {
         </View>
       </KeyboardAvoidingView>
 
-      <ObHeader step={STEP} onBack={() => router.back()} />
+      {/* O welcome abre o nome com `replace`: sem histórico, voltar = reabrir o welcome
+          (antes disparava `GO_BACK was not handled`). */}
+      <ObHeader step={STEP} onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
     </ObScreen>
   );
 }

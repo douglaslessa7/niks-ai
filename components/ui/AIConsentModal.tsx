@@ -12,6 +12,17 @@ import { useEffect, useRef } from 'react';
 import { ShieldCheck } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 
+// FONTE ÚNICA do texto legal do consentimento de IA — usada também pela folha do
+// onboarding novo (`components/onboarding/ConsentSheet.tsx`, modelo 8b). Mudou aqui,
+// muda nas duas.
+export const CONSENT_BODY =
+  'Para gerar sua análise, o NIKS AI processa a foto capturada, seu perfil de pele e ' +
+  'preocupações do onboarding por meio de um serviço de inteligência artificial — o Google Gemini. ' +
+  'Os dados são usados exclusivamente para produzir o resultado e não são retidos ou utilizados para outros fins.';
+export const CONSENT_AUTH_PREFIX = 'Ao continuar, você autoriza esse processamento conforme nossa ';
+export const PRIVACY_URL =
+  'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
+
 interface AIConsentModalProps {
   visible: boolean;
   onAccept: () => void;
@@ -62,23 +73,16 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
         <Text style={styles.title}>Antes de continuar</Text>
 
         {/* Parágrafo principal */}
-        <Text style={styles.body}>
-          Para gerar sua análise, o NIKS AI processa a foto capturada, seu perfil de pele e
-          preocupações do onboarding por meio de um serviço de inteligência artificial — o Google Gemini. Os dados são
-          usados exclusivamente para produzir o resultado e não são retidos ou utilizados para outros
-          fins.
-        </Text>
+        <Text style={styles.body}>{CONSENT_BODY}</Text>
 
         {/* Parágrafo secundário com link inline */}
         <Text style={styles.body}>
-          {'Ao continuar, você autoriza esse processamento conforme nossa '}
+          {CONSENT_AUTH_PREFIX}
           <Text
             style={styles.link}
             onPress={() => {
               haptics.tap();
-              Linking.openURL(
-                'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'
-              );
+              Linking.openURL(PRIVACY_URL);
             }}
           >
             Política de Privacidade
