@@ -789,6 +789,8 @@ Cada screen exibe um vídeo animado (mockup do app) na área superior via `expo-
 
 Botão "Começar" da tela 1 → navega para `nome.tsx` ("Como você quer ser chamada?"), que então navega para `birthday.tsx`. Botão da última tela de `apresentacao.tsx` ("Vamos lá") → navega para `notifications.tsx`.
 
+> 🚧 **ONBOARDING NOVO em implantação (set/2026, design "NIKS Onboarding Modelos" do Claude Design, padrão "réplica do Flo": SF Pro/fonte do sistema, rosa `#FF5EA8`, opções `#F0F0F0`).** Átomos em **`components/onboarding/kit.tsx`** (fonte única: `ObScreen`, `ObHeader` voltar+barra, `ObTitle`/`ObSubtitle`, `ObOptionCard` normal/selecionado com frase revelada, `ObPillButton` 172×48, `ObYearWheel`, contadores `OB_STEPS`/`OB_STEP_TOTAL=23` do Mixpanel e barra `(passo−1)/19`) e respostas compartilhadas em **`components/onboarding/answers.ts`** (opções + frases da tela 5, chips do loading, frase do compromisso). **Etapa 1 feita:** `sun-exposure` (tela 10), `concerns` (5), `birthday` (3, agora pergunta o ANO e continua gravando a IDADE em `birthday`), `nome` (2, design próprio — o `NameCapture` ficou só para o guard do `(app)`), nova transição `prazer` ("Prazer, <nome>!", avança em 1,6 s), `goal-validation` (8, gráfico "Seu potencial"), `(scan)/loading` (18, só o visual) e a nova `compromisso` (21, segurar a logo → paywall). ⚠️ **A ORDEM das telas ainda é a antiga** (a reordenação é a Etapa 2); só entraram `nome → prazer → birthday` e `plan-preview → compromisso → paywall-soft`. Os valores gravados pelas telas NÃO mudaram (ex.: `sun_exposure` segue "Menos de 1 hora por dia"), só os rótulos exibidos.
+
 ### Telas ativas — em ordem
 
 | # | Arquivo | Pasta | Descrição |

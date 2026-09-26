@@ -1,233 +1,86 @@
-import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState } from 'react';
+import { View, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
-import Svg, { Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { haptics } from '../../lib/haptics';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import {
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObOptionCard, ObPillButton,
+  useObFrame, useObName, withName, obStep, useOnMount,
+} from '../../components/onboarding/kit';
+import { CONCERN_OPTIONS } from '../../components/onboarding/answers';
 
-const DEEP = '#121212';
-const DEEP_SOFT = '#515151';
-const DEEP_WHISPER = '#818181';
-const DEEP_HAIR = 'rgba(18,18,18,0.10)';
-const CORAL = '#FF9D9D';
-const CORAL_DEEP = '#F2808E';
-const CREAM = '#FFFFFF';
+// Tela 5 do onboarding novo — múltipla escolha com frase revelada (modelo 3j).
+// Opções e frases vivem em `components/onboarding/answers.ts` (o loading e o
+// compromisso também as leem).
 
-const STEP = 3;
-const TOTAL = 13;
 const MAX_SELECT = 3;
-
-const CONCERNS = [
-  'Acne/espinhas', 'Manchas', 'Cravos', 'Oleosidade',
-  'Rugas', 'Poros dilatados', 'Olheiras', 'Ressecamento',
-  'Textura irregular', 'Outro',
-];
+const STEP = OB_STEPS.incomoda;
+const STEP_NAME = 'Preocupações de Pele';
 
 export default function Concerns() {
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
-
-  const [selected, setSelected] = useState<string[]>([]);
-  const { setOnboardingField } = useAppStore();
-  const { track } = useMixpanel();
   const router = useRouter();
+  const { track } = useMixpanel();
+  const { setOnboardingField } = useAppStore();
+  const name = useObName();
+  const { y, buttonBottom } = useObFrame();
+  const [selected, setSelected] = useState<string[]>([]);
 
-  useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 2, step_name: 'Preocupações de Pele', step_total: 23 });
-  }, []);
+  useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
-  const toggle = (item: string) => {
-    setSelected((prev) => {
-      if (prev.includes(item)) {
-        const next = prev.filter((i) => i !== item);
-        setOnboardingField('concerns', next);
-        return next;
-      }
-      if (prev.length >= MAX_SELECT) return prev;
-      const next = [...prev, item];
-      setOnboardingField('concerns', next);
-      return next;
-    });
+  const toggle = (label: string) => {
+    if (!selected.includes(label) && selected.length >= MAX_SELECT) return;
     haptics.select();
+    const next = selected.includes(label) ? selected.filter((c) => c !== label) : [...selected, label];
+    setSelected(next);
+    setOnboardingField('concerns', next);
   };
 
   const handleContinue = () => {
     haptics.action();
-    track('onboarding_step_completed', { step_number: 2, step_name: 'Preocupações de Pele', step_total: 23 });
+    track('onboarding_step_completed', obStep(STEP, STEP_NAME));
     router.push('/(onboarding)/goal-validation');
   };
 
+  const full = selected.length >= MAX_SELECT;
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
-      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-
-        {/* QHeader */}
-        <View style={{
-          paddingVertical: 6, paddingHorizontal: 24,
-          flexDirection: 'row', alignItems: 'center', gap: 14,
-        }}>
-          <TouchableOpacity
-            onPress={() => {
-              haptics.tap();
-              router.back();
-            }}
-            activeOpacity={0.7}
-            style={{
-              flexShrink: 0, width: 40, height: 40, borderRadius: 100,
-              backgroundColor: 'rgba(255,255,255,0.6)',
-              borderWidth: 0.5, borderColor: DEEP_HAIR,
-              alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <ChevronLeft size={18} color={DEEP} />
-          </TouchableOpacity>
-          <View style={{
-            flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
-          }}>
-            <View style={{
-              position: 'absolute', top: 0, left: 0, bottom: 0,
-              width: `${(STEP / TOTAL) * 100}%`,
-              backgroundColor: CORAL, borderRadius: 100,
-            }} />
-          </View>
+    <ObScreen>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: y(112), paddingBottom: 150 }}
+      >
+        <ObTitle>{withName(name, 'o que mais te incomoda na sua pele hoje?')}</ObTitle>
+        <ObSubtitle style={{ marginTop: 11 }}>Escolha até 3.</ObSubtitle>
+        <View style={{ marginTop: 17, marginHorizontal: 17, gap: 8 }}>
+          {CONCERN_OPTIONS.map((opt) => {
+            const isSel = selected.includes(opt.label);
+            return (
+              <ObOptionCard
+                key={opt.label}
+                label={opt.label}
+                reveal={opt.reveal}
+                selected={isSel}
+                disabled={!isSel && full}
+                onPress={() => toggle(opt.label)}
+              />
+            );
+          })}
         </View>
+      </ScrollView>
 
-        {/* Title block with counter */}
-        <View style={{ paddingHorizontal: 28, paddingTop: 18 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <Text style={{
-              fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
-              letterSpacing: 2.4, textTransform: 'uppercase',
-            }}>
-              sua pele
-            </Text>
-            {selected.length > 0 && (
-              <Text style={{
-                fontFamily: fXBold, fontWeight: '800',
-                fontSize: 15, color: CORAL_DEEP, letterSpacing: -0.3,
-              }}>
-                <Text style={{ color: CORAL_DEEP }}>{selected.length}</Text>
-                <Text style={{ color: DEEP_WHISPER, fontFamily: fReg }}>
-                  {` selecionada${selected.length === 1 ? '' : 's'}`}
-                </Text>
-              </Text>
-            )}
-          </View>
-          <Text style={{
-            fontFamily: fXBold, fontSize: 27, fontWeight: '800', color: DEEP,
-            letterSpacing: -0.75, lineHeight: 30.24,
-          }}>
-            {'O que mais te '}
-            <Text style={{
-              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -0.9,
-            }}>
-              incomoda
-            </Text>
-            {' na sua pele hoje?'}
-          </Text>
-          <Text style={{
-            fontFamily: fReg, marginTop: 10, fontSize: 13.5, lineHeight: 19.6,
-            color: DEEP_SOFT, letterSpacing: -0.05,
-          }}>
-            Selecione até 3. Vamos priorizar isso no seu protocolo.
-          </Text>
-        </View>
+      {/* Véu branco na base (150 pt, branco cheio a partir de 45%) — a lista some
+          por baixo do botão em vez de ser cortada seco. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,0)', '#FFFFFF']}
+        locations={[0, 0.45]}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 150 }}
+      />
 
-        {/* 2-column pill grid */}
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-            {CONCERNS.map((concern) => {
-              const isSelected = selected.includes(concern);
-              const isDisabled = !isSelected && selected.length >= MAX_SELECT;
-              return (
-                <TouchableOpacity
-                  key={concern}
-                  activeOpacity={0.8}
-                  onPress={() => toggle(concern)}
-                  style={{
-                    width: '48%',
-                    height: 56,
-                    borderRadius: 100,
-                    backgroundColor: '#FFFFFF',
-                    borderWidth: isSelected ? 1.5 : 0.5,
-                    borderColor: isSelected ? CORAL : DEEP_HAIR,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingHorizontal: 14,
-                    opacity: isDisabled ? 0.45 : 1,
-                    shadowColor: isSelected ? CORAL : '#2B2724',
-                    shadowOffset: { width: 0, height: isSelected ? 6 : 2 },
-                    shadowOpacity: isSelected ? 0.22 : 0.04,
-                    shadowRadius: isSelected ? 22 : 14,
-                    elevation: isSelected ? 4 : 1,
-                  }}
-                >
-                  <Text style={{
-                    fontFamily: fReg, fontSize: 15, fontWeight: '500', color: DEEP,
-                    letterSpacing: -0.2, lineHeight: 16.5, textAlign: 'center',
-                  }}>
-                    {concern}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        {/* PrimaryButton */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 14, paddingBottom: 18 }}>
-          <TouchableOpacity
-            onPress={handleContinue}
-            disabled={selected.length === 0}
-            activeOpacity={0.85}
-            style={{
-              height: 60, borderRadius: 100,
-              backgroundColor: selected.length > 0 ? CORAL : 'rgba(18,18,18,0.12)',
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-              shadowColor: selected.length > 0 ? CORAL : 'transparent',
-              shadowOffset: { width: 0, height: 14 },
-              shadowOpacity: selected.length > 0 ? 0.55 : 0,
-              shadowRadius: 15, elevation: selected.length > 0 ? 8 : 0,
-            }}
-          >
-            <Text style={{
-              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
-              color: selected.length > 0 ? '#FFFFFF' : 'rgba(18,18,18,0.42)',
-            }}>
-              Continuar
-            </Text>
-            {selected.length > 0 && (
-              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            )}
-          </TouchableOpacity>
-        </View>
-
-      </View>
-    </SafeAreaView>
+      <ObHeader step={STEP} onBack={() => router.back()} backdrop={OB.bg} />
+      <ObPillButton onPress={handleContinue} disabled={selected.length === 0} bottom={buttonBottom} />
+    </ObScreen>
   );
 }

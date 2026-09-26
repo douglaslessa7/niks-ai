@@ -59,4 +59,15 @@ export const haptics = {
 
   /** Falha: erro de rede, login recusado, análise que não deu certo. */
   error: () => fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)),
+
+  /**
+   * Pulso de "continue segurando" (tela de compromisso do onboarding). O `stage`
+   * sobe enquanto o dedo segura — 0 leve, 1 médio, 2 forte — e é o gesto que dá a
+   * sensação de algo carregando. Não usar em toque comum.
+   */
+  holdPulse: (stage: 0 | 1 | 2) => fire(() => Haptics.impactAsync(
+    stage === 0 ? Haptics.ImpactFeedbackStyle.Light
+      : stage === 1 ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Heavy,
+  )),
 };

@@ -12,37 +12,28 @@ import { supabase } from '../../lib/supabase';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
-import { useAppStore } from '../../store/onboarding';
 
 const DEEP = '#121212';
 const DEEP_SOFT = '#515151';
 const CORAL = '#FF9D9D';
 const CORAL_DEEP = '#F2808E';
 
-// FONTE ÚNICA da captura de nome ("Como você quer ser chamada?"). Usada por:
-//   1. `app/(onboarding)/nome.tsx` — etapa INICIAL do onboarding, ANTES do signup
-//      (mode="store"): ainda não há sessão, então só guarda o nome no store
-//      (`pendingName`); quem grava no Supabase é o signup, via `saveToSupabase`.
-//   2. `app/(app)/_layout.tsx` — quando a usuária entra com sessão + assinatura
-//      mas `users.nome` vazio (mode="session", default); renderiza no lugar do app
-//      (após salvar, só libera a renderização, sem navegar). Antes disso era um
-//      router.replace que criava um loop com o guard do (onboarding)/_layout.
+// Captura de nome DENTRO do app ("Como você quer ser chamada?"): usada pelo
+// `app/(app)/_layout.tsx` quando a usuária entra com sessão + assinatura mas
+// `users.nome` vazio; renderiza no lugar do app (após salvar, só libera a
+// renderização, sem navegar).
+//
+// ⚠️ A etapa de nome do ONBOARDING (antes do signup, sem sessão) NÃO usa mais
+// este componente: ganhou o design novo em `app/(onboarding)/nome.tsx` e guarda
+// o nome só no store (`pendingName`). Por isso o antigo `mode="store"` saiu daqui.
 //
 // O que fazer após o save é responsabilidade de quem monta (prop `onSaved`) —
-// o componente nunca navega sozinho. Visual e lógica de save vivem só aqui:
-// duplicar já se queimou antes (ver `components/product/ProductAnalysis.tsx`).
-//
-// `mode`:
-//   'session' (default) — grava direto em `users.nome` (upsert à prova de RLS),
-//                         invalida cache e liga o cupom; exige sessão ativa.
-//   'store'             — não toca no Supabase (não há sessão); só devolve o nome
-//                         em `onSaved(name)` para o chamador guardar no store.
+// o componente nunca navega sozinho. Grava direto em `users.nome` (upsert à
+// prova de RLS), invalida cache e liga o cupom; exige sessão ativa.
 export default function NameCapture({
   onSaved,
-  mode = 'session',
 }: {
   onSaved: (name?: string) => void;
-  mode?: 'session' | 'store';
 }) {
   const [fontsLoaded] = useFonts({
     Nunito_800ExtraBold,
@@ -54,15 +45,11 @@ export default function NameCapture({
   const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
   const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
   const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
-  const pendingName = useAppStore((s) => s.pendingName);
-  const [nome, setNome] = useState(mode === 'store' ? (pendingName ?? '') : '');
+  const [nome, setNome] = useState('');
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    // Modo store: etapa inicial do onboarding, sem sessão. Nada a buscar no
-    // Supabase — o campo já foi pré-preenchido com o `pendingName` do store.
-    if (mode === 'store') return;
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -76,19 +63,12 @@ export default function NameCapture({
         (user.user_metadata?.name as string | undefined) ?? '';
       if (existing) setNome(existing.split(' ')[0]);
     })();
-  }, [mode]);
+  }, []);
 
   const handleContinue = async () => {
     haptics.action();
     const trimmed = nome.trim();
     if (!trimmed) return;
-
-    // Modo store (pré-signup): sem sessão, sem Supabase. Só devolve o nome para o
-    // chamador guardar no store; a gravação em `users.nome` acontece no cadastro.
-    if (mode === 'store') {
-      onSaved(trimmed);
-      return;
-    }
 
     setLoading(true);
     try {

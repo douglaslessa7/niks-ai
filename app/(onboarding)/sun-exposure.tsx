@@ -1,217 +1,76 @@
-import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState } from 'react';
+import { View, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Check } from 'lucide-react-native';
-import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import {
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObOptionCard, ObPillButton,
+  useObFrame, useObName, withName, obStep, useOnMount,
+} from '../../components/onboarding/kit';
 
-const DEEP = '#121212';
-const DEEP_SOFT = '#515151';
-const DEEP_HAIR = 'rgba(18,18,18,0.10)';
-const CORAL = '#FF9D9D';
-const CORAL_DEEP = '#F2808E';
-const CREAM = '#FFFFFF';
-
-const STEP = 7;
-const TOTAL = 13;
-
-const exposureOptions = [
-  { label: 'Quase nenhum', sub: 'Fico a maior parte do tempo em ambiente fechado' },
-  { label: 'Menos de 1 hora por dia' },
-  { label: 'Entre 1 a 3 horas por dia' },
-  { label: 'Mais de 3 horas por dia' },
+// Tela 10 do onboarding novo — escolha única (modelo 3i do design).
+//
+// `value` é o texto que continua indo para `onboarding.sun_exposure` (e dali para
+// a `analyze-skin` e para `users.sun_exposure`): são os rótulos ANTIGOS da tela,
+// mantidos de propósito para a IA e o banco não verem nada mudar. O design só
+// trocou o que aparece para a usuária.
+// Só "Entre 1 e 3 horas" tem frase revelada no design — as outras não têm.
+const OPTIONS: { label: string; value: string; reveal?: string }[] = [
+  { label: 'Quase nenhum', value: 'Quase nenhum' },
+  { label: 'Menos de 1 hora', value: 'Menos de 1 hora por dia' },
+  { label: 'Entre 1 e 3 horas', value: 'Entre 1 a 3 horas por dia', reveal: 'Vamos incluir a reaplicação do protetor no meio do dia.' },
+  { label: 'Mais de 3 horas', value: 'Mais de 3 horas por dia' },
 ];
 
+const STEP = OB_STEPS.sol;
+const STEP_NAME = 'Exposição Solar';
+
 export default function SunExposure() {
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
-
-  const [selected, setSelected] = useState<string | null>(null);
-  const { setOnboardingField } = useAppStore();
-  const { track } = useMixpanel();
   const router = useRouter();
+  const { track } = useMixpanel();
+  const { setOnboardingField } = useAppStore();
+  const name = useObName();
+  const { y, buttonBottom } = useObFrame();
+  const [selected, setSelected] = useState<string | null>(null);
 
-  useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 7, step_name: 'Exposição Solar', step_total: 23 });
-  }, []);
+  useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
-  const handleSelect = (option: string) => {
-    setSelected(option);
-    setOnboardingField('sun_exposure', option);
+  const handleSelect = (opt: typeof OPTIONS[number]) => {
     haptics.select();
+    setSelected(opt.value);
+    setOnboardingField('sun_exposure', opt.value);
   };
 
   const handleContinue = () => {
     haptics.action();
-    track('onboarding_step_completed', { step_number: 7, step_name: 'Exposição Solar', step_total: 23 });
+    track('onboarding_step_completed', obStep(STEP, STEP_NAME));
     router.push('/(onboarding)/hydration-sleep');
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
-      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-
-        {/* QHeader */}
-        <View style={{
-          paddingVertical: 6, paddingHorizontal: 24,
-          flexDirection: 'row', alignItems: 'center', gap: 14,
-        }}>
-          <TouchableOpacity
-            onPress={() => {
-              haptics.tap();
-              router.back();
-            }}
-            activeOpacity={0.7}
-            style={{
-              flexShrink: 0, width: 40, height: 40, borderRadius: 100,
-              backgroundColor: 'rgba(255,255,255,0.6)',
-              borderWidth: 0.5, borderColor: DEEP_HAIR,
-              alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <ChevronLeft size={18} color={DEEP} />
-          </TouchableOpacity>
-          <View style={{
-            flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
-          }}>
-            <View style={{
-              position: 'absolute', top: 0, left: 0, bottom: 0,
-              width: `${(STEP / TOTAL) * 100}%`,
-              backgroundColor: CORAL, borderRadius: 100,
-            }} />
-          </View>
+    <ObScreen>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: y(112), paddingBottom: buttonBottom + 48 + 24 }}
+      >
+        <ObTitle>{withName(name, 'quanto tempo você passa exposta ao sol por dia?')}</ObTitle>
+        <ObSubtitle style={{ marginTop: 11 }}>Isso define a proteção solar da sua rotina.</ObSubtitle>
+        <View style={{ marginTop: 23, marginHorizontal: 17, gap: 8 }}>
+          {OPTIONS.map((opt) => (
+            <ObOptionCard
+              key={opt.value}
+              label={opt.label}
+              reveal={opt.reveal}
+              selected={selected === opt.value}
+              onPress={() => handleSelect(opt)}
+            />
+          ))}
         </View>
+      </ScrollView>
 
-        {/* QTitleBlock */}
-        <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
-          <Text style={{
-            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
-            letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
-          }}>
-            rotina
-          </Text>
-          <Text style={{
-            fontFamily: fXBold, fontSize: 25, fontWeight: '800', color: DEEP,
-            letterSpacing: -0.85, lineHeight: 27.5,
-          }}>
-            {'Quanto tempo você passa\nexposta ao '}
-            <Text style={{
-              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
-            }}>
-              sol
-            </Text>
-            {' por dia?'}
-          </Text>
-          <Text style={{
-            fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
-            color: DEEP_SOFT, letterSpacing: -0.1,
-          }}>
-            O sol é um dos fatores que mais acelera o envelhecimento e as manchas. Saber o quanto você se expõe muda tudo no seu skincare.
-          </Text>
-        </View>
-
-        {/* Options */}
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 22, paddingBottom: 8, gap: 10 }}
-          showsVerticalScrollIndicator={false}
-        >
-          {exposureOptions.map((opt) => {
-            const isSelected = selected === opt.label;
-            return (
-              <TouchableOpacity
-                key={opt.label}
-                activeOpacity={0.8}
-                onPress={() => handleSelect(opt.label)}
-                style={{
-                  minHeight: 68, borderRadius: 100, backgroundColor: '#FFFFFF',
-                  borderWidth: isSelected ? 1.5 : 0.5,
-                  borderColor: isSelected ? CORAL : DEEP_HAIR,
-                  paddingLeft: 26, paddingRight: 22,
-                  flexDirection: 'row', alignItems: 'center',
-                  shadowColor: isSelected ? CORAL : '#2B2724',
-                  shadowOffset: { width: 0, height: isSelected ? 6 : 2 },
-                  shadowOpacity: isSelected ? 0.18 : 0.04,
-                  shadowRadius: isSelected ? 22 : 14,
-                  elevation: isSelected ? 4 : 1,
-                }}
-              >
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{
-                    fontFamily: fReg, fontSize: 17, fontWeight: '500', color: DEEP,
-                    letterSpacing: -0.2, lineHeight: 19.55,
-                  }}>
-                    {opt.label}
-                  </Text>
-                  {opt.sub && (
-                    <Text style={{ fontFamily: fReg, fontSize: 12.5, color: DEEP_SOFT, letterSpacing: -0.05, lineHeight: 16.88 }}>
-                      {opt.sub}
-                    </Text>
-                  )}
-                </View>
-                {isSelected && (
-                  <View style={{
-                    width: 24, height: 24, borderRadius: 100,
-                    backgroundColor: CORAL, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <Check size={13} color="#fff" strokeWidth={2.8} />
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* PrimaryButton */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 18 }}>
-          <TouchableOpacity
-            onPress={handleContinue}
-            disabled={!selected}
-            activeOpacity={0.85}
-            style={{
-              height: 60, borderRadius: 100,
-              backgroundColor: selected ? CORAL : 'rgba(18,18,18,0.12)',
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-              shadowColor: selected ? CORAL : 'transparent',
-              shadowOffset: { width: 0, height: 14 },
-              shadowOpacity: selected ? 0.55 : 0,
-              shadowRadius: 15, elevation: selected ? 8 : 0,
-            }}
-          >
-            <Text style={{
-              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
-              color: selected ? '#FFFFFF' : 'rgba(18,18,18,0.42)',
-            }}>
-              Continuar
-            </Text>
-            {selected && (
-              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            )}
-          </TouchableOpacity>
-        </View>
-
-      </View>
-    </SafeAreaView>
+      <ObHeader step={STEP} onBack={() => router.back()} backdrop={OB.bg} />
+      <ObPillButton onPress={handleContinue} disabled={!selected} bottom={buttonBottom} />
+    </ObScreen>
   );
 }

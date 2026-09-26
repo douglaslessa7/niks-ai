@@ -1,52 +1,43 @@
 import { useEffect, useState, useRef } from 'react';
 import { View, Text, Animated, TouchableOpacity } from 'react-native';
-import { useFonts } from 'expo-font';
-import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Svg, {
-  Path, Line, Circle, Defs,
-  LinearGradient as SvgLinearGradient, Stop,
-} from 'react-native-svg';
+import Svg, { Path, Line, Circle } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
+import {
+  OB, OB_STEPS, ObScreen, ObCheck, useObFrame, useObName, obStep,
+} from '../../components/onboarding/kit';
+import { answerChips } from '../../components/onboarding/answers';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-// Tela de carregamento da ANÁLISE DE PELE do ONBOARDING (scan de 1 foto).
-// Usa o MESMO design da tela de carregamento de dentro do app (`loading-dentro-app.tsx`):
-// círculo grande + porcentagem no centro, anel rosa, halo pulsante e frase rotativa.
-// A LÓGICA e a COPY continuam as do onboarding: chama `analyze-skin`, salva o scan,
-// e navega para o resultado do onboarding (`/(scan)/results`).
-
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const PINK = '#FF9D9D';           // rosa padrão do app
-const PINK_SOFT = '#FFC9C9';      // parada clara do gradiente do arco
-const CREAM = '#FFFFFF';
+// Tela de carregamento da ANÁLISE DE PELE do ONBOARDING (scan de 1 foto) —
+// tela 18 do onboarding novo (modelo 1g do design): no topo, as respostas dela
+// acendem uma a uma enquanto a porcentagem sobe; título "Criando uma rotina só
+// sua, <nome>"; anel de 112 pt; frase embaixo que troca a cada etapa. Sem voltar,
+// sem barra.
+//
+// ⚠️ Só a CAMADA VISUAL mudou. A lógica é a de sempre: chama `analyze-skin` (é
+// aqui, e não na câmera, porque ela usa tipo de pele / sol / sono), dispara a
+// preview antes/depois, salva o scan, retries, aviso de alta demanda, estado de
+// erro, e navega para o resultado do onboarding (`/(scan)/results`).
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
-// Frases que rodam abaixo do círculo conforme a análise da pele avança (copy do onboarding).
-const PHASES = [
-  'Mapeando os pontos do seu rosto',
-  'Identificando seu tipo de pele',
-  'Avaliando oleosidade da pele',
-  'Identificando manchas e pigmentação',
-  'Avaliando textura e poros da pele',
-  'Detectando necessidades da pele',
-  'Montando seu protocolo personalizado',
-];
+// Frase de baixo: troca a cada 25% (texto do design).
+const PHASES = ['Analisando sua pele…', 'Cruzando com suas respostas…', 'Escolhendo os ativos certos…', 'Montando sua rotina…'];
 
-const RING_SIZE = 250;
+const RING = 112;
 const RING_STROKE = 8;
-const RING_R = (RING_SIZE - RING_STROKE) / 2;
-const RING_C = 2 * Math.PI * RING_R;
-const WHITE_D = RING_SIZE - 30;   // disco branco central (dentro do anel)
+const RING_R = 52;
+const RING_C = 326.7; // 2π·52
+
+const STEP = OB_STEPS.loading;
+const STEP_NAME = 'Analisando Pele';
 
 export default function Loading() {
   const router = useRouter();
@@ -63,35 +54,28 @@ export default function Loading() {
   const retryCount = useRef(0);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const demandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const haloAnim = useRef(new Animated.Value(1)).current;
   const ringProgressAnim = useRef(new Animated.Value(0)).current;
-  const phraseFadeAnim = useRef(new Animated.Value(1)).current;
+  const name = useObName();
+  const { y } = useObFrame();
+  // Congeladas no mount: são as respostas que ela deu, não mudam durante o loading.
+  const chips = useRef(answerChips(onboarding)).current;
+  // Cada chip acende com fade de 400 ms quando a % passa do seu limiar (i × 15%).
+  const chipAnims = useRef(chips.map(() => new Animated.Value(0.25))).current;
 
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-  });
-  const fExtra = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-
-  const phraseIdx = Math.min(PHASES.length - 1, Math.floor(percentage / (100 / PHASES.length)));
+  const phraseIdx = Math.min(PHASES.length - 1, Math.floor(percentage / 25));
   const currentPhrase = PHASES[phraseIdx];
   const ringOffsetAnim = ringProgressAnim.interpolate({
     inputRange: [0, 100],
     outputRange: [RING_C, 0],
   });
 
-  // Halo pulsante suave atrás do círculo (respiro).
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(haloAnim, { toValue: 1.1, duration: 1400, useNativeDriver: true }),
-        Animated.timing(haloAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
+    chips.forEach((_, i) => {
+      if (percentage >= i * 15) {
+        Animated.timing(chipAnims[i], { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      }
+    });
+  }, [percentage]);
 
   // Anima o arco de progresso a cada mudança de porcentagem.
   useEffect(() => {
@@ -102,14 +86,8 @@ export default function Loading() {
     }).start();
   }, [percentage]);
 
-  // Fade da frase quando muda de fase.
   useEffect(() => {
-    phraseFadeAnim.setValue(0);
-    Animated.timing(phraseFadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-  }, [phraseIdx]);
-
-  useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 15, step_name: 'Analisando Pele', step_total: 23 });
+    track('onboarding_step_viewed', obStep(STEP, STEP_NAME));
     retryCount.current = 0;
 
     // Gera a preview "antes/depois" — com timeout por tentativa e até 3 tentativas.
@@ -253,7 +231,7 @@ export default function Loading() {
         }
 
         setTimeout(() => {
-          track('onboarding_step_completed', { step_number: 15, step_name: 'Analisando Pele', step_total: 23 });
+          track('onboarding_step_completed', obStep(STEP, STEP_NAME));
           if (scanSource === 'app') {
             router.replace('/(app)/skin-result' as any);
           } else {
@@ -315,224 +293,136 @@ export default function Loading() {
   }, [showDemandNotice]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: CREAM }}>
-      {/* Véu de fundo — leve gradiente rosa no topo, dissolvendo no branco (identidade NIKS) */}
-      <LinearGradient
-        colors={['#FFF1F2', '#FFF8F8', '#FFFFFF']}
-        locations={[0, 0.4, 1]}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-      />
-
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-
-          {!showError ? (
-            <>
-              {/* Aviso de alta demanda */}
-              {showDemandNotice && (
-                <View style={{
-                  marginHorizontal: 24, marginTop: 12,
-                  backgroundColor: PINK,
-                  borderRadius: 16, padding: 13,
-                  flexDirection: 'row', alignItems: 'flex-start', gap: 9,
-                }}>
-                  <View style={{ marginTop: 1, flexShrink: 0 }}>
-                    <Svg width={16} height={16} viewBox="0 0 16 16">
-                      <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
-                      <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
-                      <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
-                      <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
-                    </Svg>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: fBold, fontSize: 13, color: '#FFFFFF', marginBottom: 3 }}>
-                      Estamos com alta demanda agora
-                    </Text>
-                    {countdownPaused ? (
-                      <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                        Por favor, aguarde só mais um pouco.
-                      </Text>
-                    ) : (
-                      <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                        A rotina de skincare perfeita para sua pele está sendo finalizada. Por favor, aguarde só mais{' '}
-                        <Text style={{ fontFamily: fBold }}>{countdown}s</Text>.
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              )}
-
-              {/* Círculo central com a porcentagem */}
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <View style={{
-                  width: RING_SIZE + 44, height: RING_SIZE + 44,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {/* Anel decorativo externo (hairline rosa) */}
-                  <View style={{
-                    position: 'absolute',
-                    width: RING_SIZE + 44, height: RING_SIZE + 44,
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,157,157,0.18)',
-                  }} />
-
-                  {/* Halo pulsante suave */}
-                  <Animated.View style={{
-                    position: 'absolute',
-                    width: RING_SIZE, height: RING_SIZE,
-                    borderRadius: 999,
-                    backgroundColor: 'rgba(255,157,157,0.10)',
-                    transform: [{ scale: haloAnim }],
-                  }} />
-
-                  {/* Disco branco central (card flutuante) */}
-                  <View style={{
-                    position: 'absolute',
-                    width: WHITE_D, height: WHITE_D,
-                    borderRadius: 999,
-                    backgroundColor: '#FFFFFF',
-                    shadowColor: PINK,
-                    shadowOffset: { width: 0, height: 12 },
-                    shadowOpacity: 0.28,
-                    shadowRadius: 28,
-                    elevation: 10,
-                  }} />
-
-                  {/* Anel de progresso */}
-                  <Svg
-                    width={RING_SIZE}
-                    height={RING_SIZE}
-                    style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
-                  >
-                    <Defs>
-                      <SvgLinearGradient id="ldRing" x1="0" y1="0" x2="1" y2="1">
-                        <Stop offset="0%" stopColor={PINK_SOFT} />
-                        <Stop offset="100%" stopColor={PINK} />
-                      </SvgLinearGradient>
-                    </Defs>
-                    {/* Trilho de fundo */}
-                    <Circle
-                      cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
-                      stroke="rgba(29,58,68,0.06)" strokeWidth={RING_STROKE} fill="none"
-                    />
-                    {/* Arco preenchido */}
-                    <AnimatedCircle
-                      cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
-                      stroke="url(#ldRing)" strokeWidth={RING_STROKE} fill="none"
-                      strokeLinecap="round"
-                      strokeDasharray={RING_C}
-                      strokeDashoffset={ringOffsetAnim}
-                    />
-                  </Svg>
-
-                  {/* Número da porcentagem — espaçador invisível à esquerda (mesma largura do "%")
-                      centraliza o NÚMERO na horizontal; o translateY compensa a folga do
-                      descender da Nunito (números não usam), centralizando na vertical */}
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-end', transform: [{ translateY: 12 }] }}>
-                    <Text style={{
-                      fontFamily: fBold, fontSize: 28, color: DEEP,
-                      letterSpacing: -1, marginBottom: 16, marginRight: 2, opacity: 0,
-                    }}>
-                      %
-                    </Text>
-                    <Text style={{
-                      fontFamily: fExtra, fontSize: 86, color: DEEP,
-                      letterSpacing: -3, lineHeight: 92,
-                    }}>
-                      {percentage}
-                    </Text>
-                    <Text style={{
-                      fontFamily: fBold, fontSize: 28, color: DEEP,
-                      letterSpacing: -1, marginBottom: 16, marginLeft: 2,
-                    }}>
-                      %
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Legenda rotativa (fase atual) */}
-                <Animated.View style={{ opacity: phraseFadeAnim, marginTop: 44, paddingHorizontal: 24 }}>
-                  <Text style={{
-                    fontFamily: fSemi, fontSize: 17, color: DEEP_SOFT,
-                    letterSpacing: -0.2, textAlign: 'center',
-                  }}>
-                    {currentPhrase}
-                  </Text>
-                </Animated.View>
-
-                {/* Subtexto fixo tranquilizador */}
-                <Text style={{
-                  fontFamily: fSemi, fontSize: 13.5, color: 'rgba(29,58,68,0.38)',
-                  letterSpacing: -0.1, textAlign: 'center', marginTop: 10, paddingHorizontal: 32,
-                }}>
-                  Isso leva só alguns segundos. Não feche o app.
-                </Text>
-              </View>
-            </>
-          ) : (
-            /* Estado de erro */
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
-              <View style={{
-                width: '100%',
-                backgroundColor: PINK,
-                borderRadius: 16, padding: 13,
-                flexDirection: 'row', alignItems: 'flex-start', gap: 9,
-                marginBottom: 20,
+    <ObScreen>
+      {!showError ? (
+        <>
+          {/* Respostas dela, acendendo uma a uma */}
+          <View style={{
+            position: 'absolute', left: 30, right: 30, top: y(140),
+            flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10,
+          }}>
+            {chips.map((label, i) => (
+              <Animated.View key={label} style={{
+                height: 38, paddingLeft: 10, paddingRight: 16, borderRadius: 19, backgroundColor: OB.option,
+                flexDirection: 'row', alignItems: 'center', gap: 8, opacity: chipAnims[i],
               }}>
-                <Svg width={16} height={16} viewBox="0 0 16 16" style={{ marginTop: 1, flexShrink: 0 }}>
-                  <Path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="white" strokeWidth={1.4} strokeLinejoin="round" fill="none" />
-                  <Line x1={8} y1={6.5} x2={8} y2={10} stroke="white" strokeWidth={1.4} strokeLinecap="round" />
-                  <Circle cx={8} cy={11.8} r={0.75} fill="white" />
-                </Svg>
+                <ObCheck size={18} />
+                <Text style={{ fontSize: 15, fontWeight: '500', color: OB.ink }}>{label}</Text>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Text style={{
+            position: 'absolute', left: 17, right: 17, top: y(420), textAlign: 'center',
+            fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink,
+          }}>
+            {name ? `Criando uma rotina só sua, ${name}` : 'Criando uma rotina só sua'}
+          </Text>
+
+          {/* Anel de 112 pt */}
+          <View style={{ position: 'absolute', top: y(590), alignSelf: 'center', width: RING, height: RING, alignItems: 'center', justifyContent: 'center' }}>
+            <Svg width={RING} height={RING} viewBox="0 0 112 112" style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
+              <Circle cx={56} cy={56} r={RING_R} fill="none" stroke={OB.track} strokeWidth={RING_STROKE} />
+              <AnimatedCircle
+                cx={56} cy={56} r={RING_R} fill="none" stroke={OB.pink} strokeWidth={RING_STROKE}
+                strokeLinecap="round" strokeDasharray={RING_C} strokeDashoffset={ringOffsetAnim}
+              />
+            </Svg>
+            <Text style={{ fontSize: 28, color: OB.ink, fontVariant: ['tabular-nums'] }}>
+              {percentage}<Text style={{ fontWeight: '700' }}>%</Text>
+            </Text>
+          </View>
+
+          <Text style={{
+            position: 'absolute', left: 17, right: 17, top: y(728), textAlign: 'center',
+            fontSize: 17, lineHeight: 23, color: OB.ink,
+          }}>
+            {currentPhrase}
+          </Text>
+
+          {/* Aviso de alta demanda (sem modelo no design: mantido, nos tokens novos) */}
+          {showDemandNotice && (
+            <SafeAreaView edges={['top']} style={{ position: 'absolute', left: 0, right: 0, top: 0 }}>
+              <View style={{
+                marginHorizontal: 17, marginTop: 8,
+                backgroundColor: OB.pink,
+                borderRadius: 12, padding: 13,
+                flexDirection: 'row', alignItems: 'flex-start', gap: 9,
+              }}>
+                <View style={{ marginTop: 1, flexShrink: 0 }}>
+                  <Svg width={16} height={16} viewBox="0 0 16 16">
+                    <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
+                    <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
+                    <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
+                    <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
+                  </Svg>
+                </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: fBold, fontSize: 13, color: '#FFFFFF', marginBottom: 3 }}>
-                    Não conseguimos analisar sua pele
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
+                    Estamos com alta demanda agora
                   </Text>
-                  <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                    Estamos com alta demanda no momento. Tente novamente em instantes.
-                  </Text>
+                  {countdownPaused ? (
+                    <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF', lineHeight: 18 }}>
+                      Por favor, aguarde só mais um pouco.
+                    </Text>
+                  ) : (
+                    <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF', lineHeight: 18 }}>
+                      A rotina de skincare perfeita para sua pele está sendo finalizada. Por favor, aguarde só mais{' '}
+                      <Text style={{ fontWeight: '700' }}>{countdown}s</Text>.
+                    </Text>
+                  )}
                 </View>
               </View>
-
-              <Svg width={72} height={72} viewBox="0 0 72 72" style={{ marginBottom: 12 }}>
-                <Circle cx={36} cy={36} r={33} stroke={PINK} strokeWidth={3} fill="none" />
-                <Circle cx={24} cy={30} r={4} fill={PINK} />
-                <Circle cx={48} cy={30} r={4} fill={PINK} />
-                <Path d="M24 50 C28 44 44 44 48 50" stroke={PINK} strokeWidth={3} strokeLinecap="round" fill="none" />
-              </Svg>
-
-              <Text style={{ fontFamily: fBold, fontSize: 18, color: DEEP, textAlign: 'center', lineHeight: 24, marginBottom: 8 }}>
-                Algo deu errado por aqui...
-              </Text>
-              <Text style={{ fontFamily: fSemi, fontSize: 14, color: DEEP_SOFT, textAlign: 'center', marginBottom: 32 }}>
-                Tire uma nova foto para tentar novamente
-              </Text>
-
-              <TouchableOpacity
-                onPress={() => { haptics.tap(); router.back(); }}
-                style={{
-                  width: '100%',
-                  backgroundColor: PINK,
-                  borderRadius: 100,
-                  height: 60,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  shadowColor: PINK,
-                  shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.45,
-                  shadowRadius: 16, elevation: 8,
-                }}
-              >
-                <Text style={{ fontFamily: fBold, fontSize: 17, color: '#FFFFFF' }}>
-                  Tentar novamente
-                </Text>
-              </TouchableOpacity>
-            </View>
+            </SafeAreaView>
           )}
+        </>
+      ) : (
+        /* Estado de erro (sem modelo no design: mantido, nos tokens novos) */
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 17 }}>
+            <View style={{
+              width: '100%',
+              backgroundColor: OB.pink,
+              borderRadius: 12, padding: 13,
+              flexDirection: 'row', alignItems: 'flex-start', gap: 9,
+              marginBottom: 20,
+            }}>
+              <Svg width={16} height={16} viewBox="0 0 16 16" style={{ marginTop: 1, flexShrink: 0 }}>
+                <Path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="white" strokeWidth={1.4} strokeLinejoin="round" fill="none" />
+                <Line x1={8} y1={6.5} x2={8} y2={10} stroke="white" strokeWidth={1.4} strokeLinecap="round" />
+                <Circle cx={8} cy={11.8} r={0.75} fill="white" />
+              </Svg>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
+                  Não conseguimos analisar sua pele
+                </Text>
+                <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF', lineHeight: 18 }}>
+                  Estamos com alta demanda no momento. Tente novamente em instantes.
+                </Text>
+              </View>
+            </View>
 
-        </View>
-      </SafeAreaView>
-    </View>
+            <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink, textAlign: 'center', marginBottom: 11 }}>
+              Algo deu errado por aqui...
+            </Text>
+            <Text style={{ fontSize: 17, lineHeight: 23, color: OB.sub, textAlign: 'center', marginBottom: 32 }}>
+              Tire uma nova foto para tentar novamente
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => { haptics.tap(); router.back(); }}
+              activeOpacity={0.85}
+              style={{
+                width: 172, height: 48, borderRadius: 24, backgroundColor: OB.pink,
+                alignItems: 'center', justifyContent: 'center',
+                shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 8,
+              }}
+            >
+              <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>Tentar novamente</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      )}
+    </ObScreen>
   );
 }

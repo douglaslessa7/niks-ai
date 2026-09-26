@@ -472,7 +472,8 @@ export default function PlanPreview() {
             onPress={() => {
               haptics.action();
               track('onboarding_step_completed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 });
-              router.push('/(onboarding)/paywall-soft' as any);
+              // Tela 21 do onboarding novo (compromisso) fica entre a rotina pronta e o paywall.
+              router.push('/(onboarding)/compromisso' as any);
             }}
             activeOpacity={0.85}
             style={{
