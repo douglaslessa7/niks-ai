@@ -52,7 +52,12 @@ function collectViolations(proto: any, type: unknown, desc: unknown, vlog: VLog,
   const allAct = [...amAct, ...pmAct]
 
   // Checagem 1 — molécula declarada presente como passo (só prescribed/complement).
-  if ((type === 'prescribed' || type === 'complement') && desc) {
+  // ⚠️ Só roda com descrição DE VERDADE. O onboarding novo não pergunta mais quais
+  // produtos ela usa (`skincare_routine_description` vai vazio/null): sem texto não
+  // há ativo declarado a conferir, e esta checagem NÃO pode disparar retentativa —
+  // senão a correção empurraria a IA a inventar um "ativo em uso".
+  const hasDesc = typeof desc === 'string' && desc.trim().length > 0
+  if ((type === 'prescribed' || type === 'complement') && hasDesc) {
     const recognized = recognizeDeclaredActives(String(desc))
     if (logInstr && recognized.length > 1) vlog('DECLARED_MULTIPLE_ACTIVES', { actives: recognized })
     if (recognized.length === 0) {
@@ -405,6 +410,8 @@ Os dados de \`onboardingData\` devem personalizar ativamente o protocolo. Não i
 - \`'unsure'\` → criar protocolo do zero; se \`skincare_routine_description\` existir, usá-la apenas para evitar sobreposição de ativos, não para construir em torno dos produtos existentes
 - \`'complement'\` → ler \`skincare_routine_description\` com atenção; os ativos e produtos que a usuária já usa DEVEM aparecer como PASSOS do protocolo, no período em que ela os usa, com nome próprio. Citar o produto apenas na \`instruction\`, no \`introduction_warnings\` ou no prognóstico NÃO cumpre essa regra — se não é um passo, para ela o produto sumiu da rotina. Os ativos novos que você acrescentar existem para completar o que falta, nunca para substituir o que já funciona; mencionar no \`introduction_warnings\` onde cada produto existente se encaixa na rotina
 - \`'prescribed'\` → MÁXIMA PRIORIDADE: os produtos descritos em \`skincare_routine_description\` foram prescritos por dermatologista. Cada um DEVE aparecer como PASSO do protocolo, com nome próprio, no período correto — citar na \`instruction\` ou no prognóstico não cumpre a regra. O protocolo é construído em torno deles; nunca contradizer, substituir ou omitir uma prescrição médica; mencionar no \`introduction_warnings\` que os produtos prescritos foram mantidos como base e que os novos ativos foram escolhidos para complementar sem conflito
+
+⚠️ **\`skincare_routine_description\` VAZIO ou ausente** (o app atual não pergunta mais quais produtos ela usa — é o caso normal agora): NÃO existe ativo declarado. Nunca invente ou presuma um ativo/produto "que ela já usa" e nunca crie um passo atribuído à rotina dela. Para \`'complement'\` e \`'prescribed'\`, monte o protocolo como em \`'unsure'\` (do zero, escolhendo pela análise da pele) e, no \`introduction_warnings\`, oriente a manter os produtos que ela já usa — e, se \`'prescribed'\`, os prescritos pelo dermatologista — conferindo com o profissional antes de somar ativos da mesma família. As regras abaixo sobre ativos declarados só valem quando há texto.
 
 **\`skincare_routine_description\`**: texto livre descrito pelo usuário. Ler com atenção para identificar ativos em uso, frequências e produtos específicos. REGRA DE FAMÍLIA DE ATIVOS: cada ativo identificado entra como passo do protocolo, e nenhum outro ativo da MESMA FAMÍLIA pode ser acrescentado. As famílias são: retinoides (retinol, retinaldeído, tretinoína, adapaleno, HPR, hidroxipinacolona), AHAs (glicólico, lático, mandélico, PHA), BHA (salicílico, LHA), vitamina C e derivados (L-AA, SAP, MAP, ascorbil glucosídeo), niacinamida, ácido azelaico. Exemplos: ela usa adapaleno → o adapaleno é um passo do PM e nenhum retinol, retinaldeído ou tretinoína entra no protocolo; ela usa vitamina C de manhã → a vitamina C dela é um passo do AM e nenhum outro derivado de vitamina C é acrescentado. Prescrever um segundo ativo da mesma família não é alternar — é dobrar o mesmo ativo, com risco real de irritação. Para frequências declaradas ("retinol 3x por semana"), respeitar o que ela já faz no campo \`ingredient\` com o padrão de dias.
 

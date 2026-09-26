@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAppStore, ScanResult } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
+import { OB_STEPS, obStep } from '../../components/onboarding/kit';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -207,7 +208,7 @@ export default function Results() {
   const triggerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 });
+    track('onboarding_step_viewed', obStep(OB_STEPS.relatorio, 'Resultado do Scan'));
   }, []);
 
   useEffect(() => {
@@ -253,7 +254,7 @@ export default function Results() {
 
   const handleContinue = () => {
     haptics.action();
-    track('onboarding_step_completed', { step_number: 17, step_name: 'Resultado do Scan', step_total: 23 });
+    track('onboarding_step_completed', obStep(OB_STEPS.relatorio, 'Resultado do Scan'));
     router.push('/(onboarding)/plan-preview');
   };
 

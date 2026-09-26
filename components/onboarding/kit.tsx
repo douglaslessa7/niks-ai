@@ -11,7 +11,7 @@
 //
 // Tipografia: SF Pro = fonte do sistema no iOS, por isso nenhum `fontFamily`.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Animated,
   NativeSyntheticEvent, NativeScrollEvent, StyleProp, ViewStyle, TextStyle,
@@ -46,8 +46,10 @@ export const OB_STEPS = {
   horarioRotina: 13, avisoLembretes: 14, pedidoNotificacao: 15, alergias: 16,
   alergiaDetalhe: 17, objetivo: 18, comSemNiks: 19, loading: 20, relatorio: 21,
   rotinaPronta: 22, compromisso: 23,
+  // Depois do paywall e do cadastro: carrossel de apresentação (última antes da home).
+  apresentacao: 24,
 } as const;
-export const OB_STEP_TOTAL = 23;
+export const OB_STEP_TOTAL = 24;
 
 // Barra de progresso: `(passo − 1) / 19`. O 19 foi calibrado para bater com as
 // larguras do design (nome 5%, idade 10%, "o que te incomoda" 22%, sol 48%).
@@ -244,39 +246,51 @@ export function ObPillButton({
   );
 }
 
-// ── Seletor de ano (roda) ────────────────────────────────────────────────────
-// Réplica do seletor do design: 7 linhas visíveis com alturas 26/40/56/58/56/40/26,
-// tamanhos 20/26/30/36/30/26/20, opacidades .15/.35/.6/1/.6/.35/.15, números em
-// #6E6468 e o central em #121212, sobre a faixa #F0F0F0 de 58 pt.
+// ── Seletor em roda ──────────────────────────────────────────────────────────
+// Réplica do seletor do design (tela 3): 7 linhas visíveis com alturas
+// 26/40/56/58/56/40/26, tamanhos 20/26/30/36/30/26/20, opacidades
+// .15/.35/.6/1/.6/.35/.15, números em #6E6468 e o central em #121212, sobre a
+// faixa #F0F0F0 de 58 pt. Usado no ano de nascimento (tela 3) e nos horários da
+// rotina (tela 13, duas rodas lado a lado sobre UMA faixa — `showBand={false}`).
 //
-// O gesto é de um ScrollView transparente com snap por linha; cada ano é um Text
+// O gesto é de um ScrollView transparente com snap por linha; cada item é um Text
 // absoluto cuja posição, escala e opacidade são INTERPOLADAS do scroll (native
 // driver) — por isso as linhas mudam de tamanho continuamente enquanto rodam,
-// sem pular. Antes do primeiro giro a faixa mostra "Selecione" (nota do design).
-const WHEEL_H = 302;              // 26+40+56+58+56+40+26
+// sem pular. Antes do primeiro giro (`touched=false`) a faixa mostra "Selecione".
+export const WHEEL_H = 302;       // 26+40+56+58+56+40+26
 const WHEEL_STEP = 57;            // distância entre o centro da faixa e o da linha vizinha
 const ROW_OFFSETS = [151, 138, 105, 57, 0, -57, -105, -138, -151]; // d = +4 … −4
 const ROW_SCALES = [0.44, 20 / 36, 26 / 36, 30 / 36, 1, 30 / 36, 26 / 36, 20 / 36, 0.44];
 const ROW_GRAY = [0, 0.15, 0.35, 0.6, 0, 0.6, 0.35, 0.15, 0];
 const ROW_INK = [0, 0, 0, 0, 1, 0, 0, 0, 0];
 
-export function ObYearWheel({
-  years, initialYear, onChange, onFirstInteraction, touched,
+/** Faixa de seleção do seletor (#F0F0F0, 58 pt, raio 12). */
+export function ObWheelBand() {
+  return (
+    <View pointerEvents="none" style={{
+      position: 'absolute', left: 17, right: 17, top: WHEEL_H / 2 - 29, height: 58,
+      borderRadius: 12, backgroundColor: OB.option,
+    }} />
+  );
+}
+
+export function ObWheel({
+  labels, initialIndex, onChange, onFirstInteraction, touched, showBand = true,
 }: {
-  years: number[];
-  initialYear: number;
-  onChange: (year: number) => void;
-  onFirstInteraction: () => void;
+  labels: string[];
+  initialIndex: number;
+  onChange: (index: number) => void;
+  onFirstInteraction?: () => void;
   touched: boolean;
+  showBand?: boolean;
 }) {
-  const initialIndex = Math.max(0, years.indexOf(initialYear));
-  const scrollY = useRef(new Animated.Value(initialIndex * WHEEL_STEP)).current;
-  const scrollRef = useRef<ScrollView>(null);
-  const lastIndex = useRef(initialIndex);
+  const start = Math.max(0, Math.min(labels.length - 1, initialIndex));
+  const scrollY = useRef(new Animated.Value(start * WHEEL_STEP)).current;
+  const lastIndex = useRef(start);
   const touchedRef = useRef(touched);
   touchedRef.current = touched;
 
-  const indexAt = (y: number) => Math.max(0, Math.min(years.length - 1, Math.round(y / WHEEL_STEP)));
+  const indexAt = (y: number) => Math.max(0, Math.min(labels.length - 1, Math.round(y / WHEEL_STEP)));
 
   const onScroll = useMemo(() => Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -288,30 +302,25 @@ export function ObYearWheel({
           lastIndex.current = i;
           if (touchedRef.current) {
             haptics.select();
-            onChange(years[i]);
+            onChange(i);
           }
         }
       },
     },
-  ), [years]);
+  ), [labels]);
 
   const settle = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = indexAt(e.nativeEvent.contentOffset.y);
     lastIndex.current = i;
-    onChange(years[i]);
+    onChange(i);
   };
 
   return (
     <View style={{ height: WHEEL_H }}>
-      {/* Faixa de seleção (fica ATRÁS dos números) */}
-      <View style={{
-        position: 'absolute', left: 17, right: 17, top: WHEEL_H / 2 - 29, height: 58,
-        borderRadius: 12, backgroundColor: OB.option,
-      }} />
+      {showBand && <ObWheelBand />}
 
-      {/* Números */}
       <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-        {years.map((year, k) => {
+        {labels.map((label, k) => {
           const inputRange = ROW_OFFSETS.map((_, j) => (k - 4 + j) * WHEEL_STEP);
           const translateY = scrollY.interpolate({ inputRange, outputRange: ROW_OFFSETS, extrapolate: 'clamp' });
           const scale = scrollY.interpolate({ inputRange, outputRange: ROW_SCALES, extrapolate: 'clamp' });
@@ -323,10 +332,10 @@ export function ObYearWheel({
           };
           const numStyle: TextStyle = { fontSize: 36, fontWeight: '700', fontVariant: ['tabular-nums'] };
           return (
-            <Animated.View key={year} style={[rowStyle, { transform: [{ translateY }, { scale }] }]}>
-              <Animated.Text style={[numStyle, { color: OB.wheel, opacity: gray }]}>{year}</Animated.Text>
+            <Animated.View key={label} style={[rowStyle, { transform: [{ translateY }, { scale }] }]}>
+              <Animated.Text style={[numStyle, { color: OB.wheel, opacity: gray }]}>{label}</Animated.Text>
               {touched && (
-                <Animated.Text style={[numStyle, { position: 'absolute', color: OB.ink, opacity: ink }]}>{year}</Animated.Text>
+                <Animated.Text style={[numStyle, { position: 'absolute', color: OB.ink, opacity: ink }]}>{label}</Animated.Text>
               )}
             </Animated.View>
           );
@@ -341,20 +350,69 @@ export function ObYearWheel({
       {/* Gesto. ⚠️ Sem `overflow: 'hidden'` no pai (decisão 24 do README: no Fabric
           isso bloqueia o toque do ScrollView). */}
       <Animated.ScrollView
-        ref={scrollRef as any}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-        contentOffset={{ x: 0, y: initialIndex * WHEEL_STEP }}
-        contentContainerStyle={{ height: (years.length - 1) * WHEEL_STEP + WHEEL_H }}
+        contentOffset={{ x: 0, y: start * WHEEL_STEP }}
+        contentContainerStyle={{ height: (labels.length - 1) * WHEEL_STEP + WHEEL_H }}
         showsVerticalScrollIndicator={false}
         snapToInterval={WHEEL_STEP}
         decelerationRate="fast"
         scrollEventThrottle={16}
         onScroll={onScroll}
-        onScrollBeginDrag={() => { if (!touchedRef.current) onFirstInteraction(); }}
+        onScrollBeginDrag={() => { if (!touchedRef.current) onFirstInteraction?.(); }}
         onScrollEndDrag={settle}
         onMomentumScrollEnd={settle}
       />
     </View>
+  );
+}
+
+// ── Tela de escolha única (modelo 3i) ────────────────────────────────────────
+// Estrutura das perguntas de escolha única: título a 112 pt, subtítulo 11 pt
+// abaixo, opções 23 pt abaixo (gap 8), botão pílula fixo. A tela chamadora
+// decide o que gravar (`onSelect`) e para onde ir (`onContinue`).
+export type ObChoice<V extends string> = { label: string; value: V; reveal?: string };
+
+export function ObChoiceScreen<V extends string>({
+  step, title, subtitle, options, initial = null, onSelect, onContinue, onBack,
+}: {
+  step: number;
+  title: string;
+  subtitle?: string;
+  options: ObChoice<V>[];
+  initial?: V | null;
+  onSelect: (value: V) => void;
+  onContinue: (value: V) => void;
+  onBack: () => void;
+}) {
+  const { y, buttonBottom } = useObFrame();
+  const [selected, setSelected] = useState<V | null>(initial);
+  return (
+    <ObScreen>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: y(112), paddingBottom: buttonBottom + 48 + 24 }}
+      >
+        <ObTitle>{title}</ObTitle>
+        {!!subtitle && <ObSubtitle style={{ marginTop: 11 }}>{subtitle}</ObSubtitle>}
+        <View style={{ marginTop: subtitle ? 23 : 34, marginHorizontal: 17, gap: 8 }}>
+          {options.map((opt) => (
+            <ObOptionCard
+              key={opt.value}
+              label={opt.label}
+              reveal={opt.reveal}
+              selected={selected === opt.value}
+              onPress={() => { haptics.select(); setSelected(opt.value); onSelect(opt.value); }}
+            />
+          ))}
+        </View>
+      </ScrollView>
+      <ObHeader step={step} onBack={onBack} backdrop={OB.bg} />
+      <ObPillButton
+        disabled={!selected}
+        bottom={buttonBottom}
+        onPress={() => { if (!selected) return; haptics.action(); onContinue(selected); }}
+      />
+    </ObScreen>
   );
 }
 

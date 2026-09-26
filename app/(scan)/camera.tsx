@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import { X, Image as ImageIcon } from 'lucide-react-native';
 import Svg, { Ellipse } from 'react-native-svg';
@@ -12,6 +12,7 @@ import * as Device from 'expo-device';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
 import { haptics } from '../../lib/haptics';
+import { OB_STEPS, obStep } from '../../components/onboarding/kit';
 
 export default function Camera() {
   const router = useRouter();
@@ -21,21 +22,28 @@ export default function Camera() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
   const { track } = useMixpanel();
+  // `retake=1`: veio do erro do LOADING (tela 18) para tirar outra foto. No
+  // onboarding novo a câmera (tela 7) vem ANTES das perguntas de tipo de pele/sol/
+  // sono e a `analyze-skin` só roda no loading — então a 1ª foto segue para a
+  // tela 8, e a foto refeita volta direto para o loading.
+  const { retake } = useLocalSearchParams<{ retake?: string }>();
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 14, step_name: 'Scan - Câmera', step_total: 23 });
+    track('onboarding_step_viewed', obStep(OB_STEPS.camera, 'Scan - Câmera'));
   }, []);
 
   // Verdadeiro apenas no simulador (sem câmera real)
   const isSimulator = !Device.isDevice;
 
   const navigateToLoading = (base64: string, uri: string) => {
-    track('onboarding_step_completed', { step_number: 14, step_name: 'Scan - Câmera', step_total: 23 });
+    track('onboarding_step_completed', obStep(OB_STEPS.camera, 'Scan - Câmera'));
     setSkinImage(base64, uri);
     if (scanSource === 'app') {
       router.push('/(scan)/loading-dentro-app' as any);
+    } else if (retake === '1') {
+      router.replace('/(scan)/loading' as any);
     } else {
-      router.push('/(scan)/loading' as any);
+      router.push('/(onboarding)/goal-validation' as any);
     }
   };
 

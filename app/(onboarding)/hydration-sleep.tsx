@@ -1,254 +1,86 @@
-import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState } from 'react';
+import { View, Text, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
-import Svg, { Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { haptics } from '../../lib/haptics';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import {
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObOptionCard, ObPillButton,
+  useObFrame, obStep, useOnMount,
+} from '../../components/onboarding/kit';
 
-const DEEP = '#121212';
-const DEEP_SOFT = '#515151';
-const DEEP_HAIR = 'rgba(18,18,18,0.10)';
-const CORAL = '#FF9D9D';
-const CORAL_DEEP = '#F2808E';
-const CREAM = '#FFFFFF';
+// Tela 11 do onboarding novo — hidratação e sono. São DUAS perguntas de escolha
+// única na mesma tela (o design não tem modelo próprio para ela): cada grupo usa o
+// card de opção do padrão 3i. Os valores gravados são os de antes ('1–2L', '7'…);
+// o sono ganhou " horas" só no rótulo.
+const WATER = ['Menos de 1L', '1–2L', '2–3L', '3L+'];
+const SLEEP = ['4–5', '6', '7', '8', '9+'];
 
-const STEP = 8;
-const TOTAL = 13;
+const STEP = OB_STEPS.hidratacaoSono;
+const STEP_NAME = 'Hidratação e Sono';
 
-const waterOptions = ['Menos de 1L', '1–2L', '2–3L', '3L+'];
-const sleepOptions = ['4–5', '6', '7', '8', '9+'];
-
-function Chip({ label, selected, onPress, font }: { label: string; selected: boolean; onPress: () => void; font?: string }) {
+function GroupLabel({ children }: { children: string }) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={{
-        flexShrink: 0,
-        height: 44,
-        paddingHorizontal: 18,
-        borderRadius: 100,
-        backgroundColor: '#FFFFFF',
-        borderWidth: selected ? 1.5 : 0.5,
-        borderColor: selected ? CORAL : DEEP_HAIR,
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: selected ? CORAL : '#2B2724',
-        shadowOffset: { width: 0, height: selected ? 6 : 1 },
-        shadowOpacity: selected ? 0.22 : 0.04,
-        shadowRadius: selected ? 22 : 14,
-        elevation: selected ? 4 : 1,
-      }}
-    >
-      <Text style={{
-        fontFamily: font, fontSize: 15, fontWeight: '500', color: DEEP, letterSpacing: -0.2,
-      }}>
-        {label}
-      </Text>
-    </TouchableOpacity>
+    <Text style={{ marginTop: 23, marginBottom: 8, marginHorizontal: 17, fontSize: 15, fontWeight: '600', color: OB.sub }}>
+      {children}
+    </Text>
   );
 }
 
 export default function HydrationSleep() {
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
-
+  const router = useRouter();
+  const { track } = useMixpanel();
+  const setOnboardingField = useAppStore((s) => s.setOnboardingField);
+  const { y, buttonBottom } = useObFrame();
   const [water, setWater] = useState<string | null>(null);
   const [sleep, setSleep] = useState<string | null>(null);
-  const { setOnboardingField } = useAppStore();
-  const { track } = useMixpanel();
-  const router = useRouter();
 
-  useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 8, step_name: 'Hidratação e Sono', step_total: 23 });
-  }, []);
+  useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
   const handleContinue = () => {
     haptics.action();
-    track('onboarding_step_completed', { step_number: 8, step_name: 'Hidratação e Sono', step_total: 23 });
+    track('onboarding_step_completed', obStep(STEP, STEP_NAME));
     router.push('/(onboarding)/skincare-routine');
   };
 
-  const isReady = !!water && !!sleep;
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
-      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+    <ObScreen>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: y(112), paddingBottom: 150 }}>
+        <ObTitle>Como está sua hidratação e sono?</ObTitle>
+        <ObSubtitle style={{ marginTop: 11 }}>
+          Sua pele se regenera enquanto você dorme e se hidrata por dentro. Esses dois fatores afetam mais a pele do que qualquer produto.
+        </ObSubtitle>
 
-        {/* QHeader */}
-        <View style={{
-          paddingVertical: 6, paddingHorizontal: 24,
-          flexDirection: 'row', alignItems: 'center', gap: 14,
-        }}>
-          <TouchableOpacity
-            onPress={() => {
-              haptics.tap();
-              router.back();
-            }}
-            activeOpacity={0.7}
-            style={{
-              flexShrink: 0, width: 40, height: 40, borderRadius: 100,
-              backgroundColor: 'rgba(255,255,255,0.6)',
-              borderWidth: 0.5, borderColor: DEEP_HAIR,
-              alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <ChevronLeft size={18} color={DEEP} />
-          </TouchableOpacity>
-          <View style={{
-            flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
-          }}>
-            <View style={{
-              position: 'absolute', top: 0, left: 0, bottom: 0,
-              width: `${(STEP / TOTAL) * 100}%`,
-              backgroundColor: CORAL, borderRadius: 100,
-            }} />
-          </View>
+        <GroupLabel>Litros de água por dia</GroupLabel>
+        <View style={{ marginHorizontal: 17, gap: 8 }}>
+          {WATER.map((opt) => (
+            <ObOptionCard
+              key={opt} label={opt} selected={water === opt}
+              onPress={() => { haptics.select(); setWater(opt); setOnboardingField('hydration', opt); }}
+            />
+          ))}
         </View>
 
-        {/* QTitleBlock */}
-        <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
-          <Text style={{
-            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
-            letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
-          }}>
-            seu estilo de vida
-          </Text>
-          <Text style={{
-            fontFamily: fXBold, fontSize: 26, fontWeight: '800', color: DEEP,
-            letterSpacing: -0.85, lineHeight: 28.6,
-          }}>
-            {'Como está sua hidratação\ne '}
-            <Text style={{
-              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
-            }}>
-              sono
-            </Text>
-            {'?'}
-          </Text>
-          <Text style={{
-            fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75,
-            color: DEEP_SOFT, letterSpacing: -0.1,
-          }}>
-            Sua pele se regenera enquanto você dorme e se hidrata por dentro. Esses dois fatores afetam mais a pele do que qualquer produto.
-          </Text>
+        <GroupLabel>Horas de sono por noite</GroupLabel>
+        <View style={{ marginHorizontal: 17, gap: 8 }}>
+          {SLEEP.map((opt) => (
+            <ObOptionCard
+              key={opt} label={`${opt} horas`} selected={sleep === opt}
+              onPress={() => { haptics.select(); setSleep(opt); setOnboardingField('sleep', opt); }}
+            />
+          ))}
         </View>
+      </ScrollView>
 
-        {/* Chip groups */}
-        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 28, gap: 24 }}>
-
-          {/* Water group */}
-          <View>
-            <Text style={{
-              fontFamily: fBold, fontSize: 14, fontWeight: '600', color: DEEP,
-              letterSpacing: -0.2, marginBottom: 12,
-            }}>
-              Litros de água por dia
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginHorizontal: -24 }}
-              contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 4, gap: 8, flexDirection: 'row' }}
-            >
-              {waterOptions.map((opt) => (
-                <Chip
-                  key={opt}
-                  label={opt}
-                  font={fReg}
-                  selected={water === opt}
-                  onPress={() => {
-                    setWater(opt);
-                    setOnboardingField('hydration', opt);
-                    haptics.select();
-                  }}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Sleep group */}
-          <View>
-            <Text style={{
-              fontFamily: fBold, fontSize: 14, fontWeight: '600', color: DEEP,
-              letterSpacing: -0.2, marginBottom: 12,
-            }}>
-              Horas de sono por noite
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginHorizontal: -24 }}
-              contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 4, gap: 8, flexDirection: 'row' }}
-            >
-              {sleepOptions.map((opt) => (
-                <Chip
-                  key={opt}
-                  label={opt}
-                  font={fReg}
-                  selected={sleep === opt}
-                  onPress={() => {
-                    setSleep(opt);
-                    setOnboardingField('sleep', opt);
-                    haptics.select();
-                  }}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-        </View>
-
-        {/* PrimaryButton */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 18 }}>
-          <TouchableOpacity
-            onPress={handleContinue}
-            disabled={!isReady}
-            activeOpacity={0.85}
-            style={{
-              height: 60, borderRadius: 100,
-              backgroundColor: isReady ? CORAL : 'rgba(18,18,18,0.12)',
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-              shadowColor: isReady ? CORAL : 'transparent',
-              shadowOffset: { width: 0, height: 14 },
-              shadowOpacity: isReady ? 0.55 : 0,
-              shadowRadius: 15, elevation: isReady ? 8 : 0,
-            }}
-          >
-            <Text style={{
-              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2,
-              color: isReady ? '#FFFFFF' : 'rgba(18,18,18,0.42)',
-            }}>
-              Continuar
-            </Text>
-            {isReady && (
-              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            )}
-          </TouchableOpacity>
-        </View>
-
-      </View>
-    </SafeAreaView>
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,255,255,0)', '#FFFFFF']}
+        locations={[0, 0.45]}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 150 }}
+      />
+      <ObHeader step={STEP} onBack={() => router.back()} backdrop={OB.bg} />
+      <ObPillButton onPress={handleContinue} disabled={!water || !sleep} bottom={buttonBottom} />
+    </ObScreen>
   );
 }

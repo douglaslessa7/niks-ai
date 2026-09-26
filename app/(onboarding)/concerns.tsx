@@ -40,7 +40,7 @@ export default function Concerns() {
   const handleContinue = () => {
     haptics.action();
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/goal-validation');
+    router.push('/(scan)/scan-prep' as any);
   };
 
   const full = selected.length >= MAX_SELECT;

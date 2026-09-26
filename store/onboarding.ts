@@ -201,8 +201,14 @@ export type OnboardingData = {
   goal_desire?: string | null
   skincare_routine_type?: 'zero' | 'complement' | 'prescribed' | 'unsure' | null
   skincare_routine_description?: string | null
-  allergy_type?: 'none' | 'sensitive' | 'reaction' | null
+  allergy_type?: 'none' | 'sensitive' | 'reaction' | 'no_history' | null
   allergy_description?: string | null
+  // Tela 13 do onboarding novo: horários da rotina ('HH:MM') + fuso IANA do aparelho.
+  // Gravados em `users.rotina_*` no `saveToSupabase`. O agendamento das notificações
+  // do servidor ainda NÃO os lê (pg_cron segue em 7h/21h fixos).
+  rotina_manha_horario?: string | null
+  rotina_noite_horario?: string | null
+  rotina_fuso?: string | null
 }
 
 // Conteúdo recebido pelo share sheet (feature "Compartilhar com o NIKS").
@@ -247,6 +253,11 @@ type AppStore = {
   // `users.nome`. Mesmo ciclo de vida do `appliedCoupon`.
   pendingName: string | null
   setPendingName: (name: string | null) => void
+  // Expo Push Token pedido na tela 13b do onboarding — ANTES do cadastro, sem sessão.
+  // Persistido (ver partialize, mesmo ciclo do `pendingName`) até o signup, onde o
+  // `saveToSupabase` o grava em `users.push_token`.
+  pendingPushToken: string | null
+  setPendingPushToken: (token: string | null) => void
   // Tutorial de preparação do scan (scan-prep-app) — mostrado UMA vez só na vida.
   // Persistido (ver partialize): depois de visto, o botão "Escanear" vai direto à câmera.
   scanTutorialSeen: boolean
@@ -382,6 +393,9 @@ const initialOnboarding: OnboardingData = {
   skincare_routine_description: null,
   allergy_type: null,
   allergy_description: null,
+  rotina_manha_horario: null,
+  rotina_noite_horario: null,
+  rotina_fuso: null,
 }
 
 export const useAppStore = create<AppStore>()(persist((set, get) => ({
@@ -403,6 +417,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   setAppliedCoupon: (c) => set({ appliedCoupon: c }),
   pendingName: null,
   setPendingName: (name) => set({ pendingName: name }),
+  pendingPushToken: null,
+  setPendingPushToken: (token) => set({ pendingPushToken: token }),
   scanTutorialSeen: false,
   setScanTutorialSeen: (v) => set({ scanTutorialSeen: v }),
 
@@ -503,7 +519,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   setSkinPreviewUrl: (url) => set({ skinPreviewUrl: url }),
 
   saveToSupabase: async (userId: string) => {
-    const { onboarding, scanResult, scanImageUri, skinImageBase64, pendingName } = get()
+    const { onboarding, scanResult, scanImageUri, skinImageBase64, pendingName, pendingPushToken } = get()
 
     let idade: number | null = null
     if (onboarding.birthday) {
@@ -541,6 +557,12 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
         hydration: onboarding.hydration,
         sleep: onboarding.sleep,
         birthday: onboarding.birthday,
+        rotina_manha_horario: onboarding.rotina_manha_horario ?? null,
+        rotina_noite_horario: onboarding.rotina_noite_horario ?? null,
+        rotina_fuso: onboarding.rotina_fuso ?? null,
+        // Token pedido antes do cadastro (tela 13b). Só entra quando existe — sem
+        // ele, não apagamos um token que a conta já tinha.
+        ...(pendingPushToken ? { push_token: pendingPushToken } : {}),
       })
 
     if (userError) throw userError
@@ -606,5 +628,6 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     homeTutorialSeen: s.homeTutorialSeen,
     appliedCoupon: s.appliedCoupon, // cupom aplicado antes do signup — precisa sobreviver até o cadastro
     pendingName: s.pendingName, // nome capturado antes do signup — sobrevive até o cadastro
+    pendingPushToken: s.pendingPushToken, // push token pedido antes do signup (tela 13b) — sobrevive até o cadastro
   }),
 }))

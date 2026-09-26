@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { OB_STEP_TOTAL } from '../../components/onboarding/kit';
 
 export default function OnboardingLayout() {
   const router = useRouter();
@@ -43,7 +44,7 @@ export default function OnboardingLayout() {
     if (!isReady || !isInOnboarding || hasTrackedStart.current) return;
     hasTrackedStart.current = true;
     timeEvent('onboarding_completed');
-    track('onboarding_started', { onboarding_version: '1.0', total_steps: 23 });
+    track('onboarding_started', { onboarding_version: '1.0', total_steps: OB_STEP_TOTAL });
     registerSuperProperties({ onboarding_version: '1.0' });
   }, [isReady, isInOnboarding]);
 

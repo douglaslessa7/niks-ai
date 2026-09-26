@@ -5,7 +5,7 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObPillButton, ObYearWheel,
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObPillButton, ObWheel,
   useObFrame, useObName, withName, obStep, useOnMount, ageFromYear,
 } from '../../components/onboarding/kit';
 
@@ -19,6 +19,7 @@ import {
 // primeiro giro aparecem o ano, a idade calculada e o botão.
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 51 }, (_, i) => THIS_YEAR - 60 + i); // 10–60 anos, como antes
+const YEAR_LABELS = YEARS.map(String);
 const INITIAL_YEAR = THIS_YEAR - 24;                                     // mesma idade padrão de antes
 
 const STEP = OB_STEPS.idade;
@@ -46,7 +47,7 @@ export default function Birthday() {
     haptics.action();
     setOnboardingField('birthday', String(ageFromYear(yearRef.current)));
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/gender');
+    router.push('/(onboarding)/pregnancy');
   };
 
   return (
@@ -60,12 +61,12 @@ export default function Birthday() {
 
       {/* Roda: topo a 274 pt no design (faixa central a 396 pt) */}
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(274) }}>
-        <ObYearWheel
-          years={YEARS}
-          initialYear={INITIAL_YEAR}
+        <ObWheel
+          labels={YEAR_LABELS}
+          initialIndex={YEARS.indexOf(INITIAL_YEAR)}
           touched={touched}
           onFirstInteraction={() => setTouched(true)}
-          onChange={handleChange}
+          onChange={(i) => handleChange(YEARS[i])}
         />
       </View>
 

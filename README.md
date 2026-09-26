@@ -228,7 +228,7 @@ const { data, state, refresh } = useCachedQuery(
 
 **2. `persist` no store Zustand** (`store/onboarding.ts`). O store era 100% em memória, então o cache do protocolo **nunca funcionava** na prática — depois de qualquer restart ele caía direto no fallback do Supabase.
 
-> ⚠️ **O `partialize` é uma LISTA BRANCA deliberada — hoje `skinScore`, `protocolResult`, `scanTutorialSeen`, `appliedCoupon`, `pendingName`, `homeTutorialPending` e `homeTutorialSeen`.** Não adicionar campo sem entender o porquê de cada exclusão: `subscriptionVerified` **precisa** voltar a `false` no cold start (RevenueCat, decisão 16); `niksChatMode` **precisa** cair em `'empty'` no cold start; `*ImageBase64`/`*ImageUri`/`collagePhotos`/`homePhotoDraft` são base64 de foto (**estouram o AsyncStorage**) e hand-offs de vida curta entre telas. `scanTutorialSeen` está **dentro** justamente porque o tutorial de prep deve aparecer uma vez só e nunca mais (o oposto de `stickerSheetSeen`, que fica fora). `appliedCoupon` está **dentro** porque o cupom é aplicado ANTES do signup e precisa sobreviver até o cadastro para ligar ao `user_id` (ver "Sistema de cupons de influenciadora", seção 15). `homeTutorialPending`/`homeTutorialSeen` estão **dentro** porque o tutorial de primeiro acesso é armado no fim do onboarding (e o app pode morrer antes da home) — mas ⚠️ **eles são CACHE do aparelho, não a verdade**: a regra "uma vez por conta" mora em `users.home_tutorial_seen_at`, e o **logout zera os dois** (`clearHomeTutorialFlags`), senão o `seen` de uma conta vazava para a próxima criada no mesmo aparelho. Ver "Feature: Tutorial de primeiro acesso da home". ⚠️ **Cuidado com o estado de paywall de `lib/paywallFlow.ts` — supressão de reapresentação e flag do downsell: NUNCA persistir.** A supressão é de uso único e o downsell é "uma vez por SESSÃO", os dois em memória de propósito; persistir viraria brecha para escapar do paywall (e, no caso do downsell, um flag preso em ligado deixaria a usuária sem a segunda oferta para sempre).
+> ⚠️ **O `partialize` é uma LISTA BRANCA deliberada — hoje `skinScore`, `protocolResult`, `scanTutorialSeen`, `appliedCoupon`, `pendingName`, `pendingPushToken`, `homeTutorialPending` e `homeTutorialSeen`.** (`pendingPushToken` pelo mesmo motivo do `pendingName`: o push token é pedido ANTES do signup, tela 13b, e só vai para `users.push_token` no `saveToSupabase`.) Não adicionar campo sem entender o porquê de cada exclusão: `subscriptionVerified` **precisa** voltar a `false` no cold start (RevenueCat, decisão 16); `niksChatMode` **precisa** cair em `'empty'` no cold start; `*ImageBase64`/`*ImageUri`/`collagePhotos`/`homePhotoDraft` são base64 de foto (**estouram o AsyncStorage**) e hand-offs de vida curta entre telas. `scanTutorialSeen` está **dentro** justamente porque o tutorial de prep deve aparecer uma vez só e nunca mais (o oposto de `stickerSheetSeen`, que fica fora). `appliedCoupon` está **dentro** porque o cupom é aplicado ANTES do signup e precisa sobreviver até o cadastro para ligar ao `user_id` (ver "Sistema de cupons de influenciadora", seção 15). `homeTutorialPending`/`homeTutorialSeen` estão **dentro** porque o tutorial de primeiro acesso é armado no fim do onboarding (e o app pode morrer antes da home) — mas ⚠️ **eles são CACHE do aparelho, não a verdade**: a regra "uma vez por conta" mora em `users.home_tutorial_seen_at`, e o **logout zera os dois** (`clearHomeTutorialFlags`), senão o `seen` de uma conta vazava para a próxima criada no mesmo aparelho. Ver "Feature: Tutorial de primeiro acesso da home". ⚠️ **Cuidado com o estado de paywall de `lib/paywallFlow.ts` — supressão de reapresentação e flag do downsell: NUNCA persistir.** A supressão é de uso único e o downsell é "uma vez por SESSÃO", os dois em memória de propósito; persistir viraria brecha para escapar do paywall (e, no caso do downsell, um flag preso em ligado deixaria a usuária sem a segunda oferta para sempre).
 
 ### ⚠️ Regra de ouro: escreveu no banco, invalide o cache
 
@@ -575,7 +575,10 @@ skincare_routine_type text,         -- 'zero' | 'complement' | 'prescribed' | 'u
 skincare_routine_description text,  -- texto livre (só coletado para complement/prescribed)
 allergy_type text,                  -- 'none' | 'sensitive' | 'reaction' | 'no_history'
 allergy_description text,           -- texto livre (só coletado para reaction)
-push_token text,                    -- token Expo Push Notifications (salvo na tela notifications.tsx)
+push_token text,                    -- token Expo Push Notifications (pedido na tela 13b ANTES do cadastro, guardado em `pendingPushToken` e gravado pelo saveToSupabase; o Perfil também regrava)
+rotina_manha_horario time,          -- tela 13 do onboarding (ex. 07:00). Migration 20260926120000. pg_cron ainda NÃO usa
+rotina_noite_horario time,          -- tela 13 (ex. 21:00)
+rotina_fuso text,                   -- fuso IANA do aparelho na tela 13 (ex. America/Sao_Paulo)
 foto_home_url text,                 -- foto escolhida pela usuária na galeria p/ a home (signed URL do bucket `scans`, 1 ano). PRECEDÊNCIA ABSOLUTA sobre skin_scans.foto_url — ver "Feature: Foto da home escolhida pela galeria"
 streak_days int4 DEFAULT 0,         -- dias consecutivos com AMBAS as rotinas (manhã + noite) concluídas
 last_protocol_completed_at timestamptz, -- última vez que o streak foi incrementado (evita duplo incremento no mesmo dia)
@@ -789,37 +792,44 @@ Cada screen exibe um vídeo animado (mockup do app) na área superior via `expo-
 
 Botão "Começar" da tela 1 → navega para `nome.tsx` ("Como você quer ser chamada?"), que então navega para `birthday.tsx`. Botão da última tela de `apresentacao.tsx` ("Vamos lá") → navega para `notifications.tsx`.
 
-> 🚧 **ONBOARDING NOVO em implantação (set/2026, design "NIKS Onboarding Modelos" do Claude Design, padrão "réplica do Flo": SF Pro/fonte do sistema, rosa `#FF5EA8`, opções `#F0F0F0`).** Átomos em **`components/onboarding/kit.tsx`** (fonte única: `ObScreen`, `ObHeader` voltar+barra, `ObTitle`/`ObSubtitle`, `ObOptionCard` normal/selecionado com frase revelada, `ObPillButton` 172×48, `ObYearWheel`, contadores `OB_STEPS`/`OB_STEP_TOTAL=23` do Mixpanel e barra `(passo−1)/19`) e respostas compartilhadas em **`components/onboarding/answers.ts`** (opções + frases da tela 5, chips do loading, frase do compromisso). **Etapa 1 feita:** `sun-exposure` (tela 10), `concerns` (5), `birthday` (3, agora pergunta o ANO e continua gravando a IDADE em `birthday`), `nome` (2, design próprio — o `NameCapture` ficou só para o guard do `(app)`), nova transição `prazer` ("Prazer, <nome>!", avança em 1,6 s), `goal-validation` (8, gráfico "Seu potencial"), `(scan)/loading` (18, só o visual) e a nova `compromisso` (21, segurar a logo → paywall). ⚠️ **A ORDEM das telas ainda é a antiga** (a reordenação é a Etapa 2); só entraram `nome → prazer → birthday` e `plan-preview → compromisso → paywall-soft`. Os valores gravados pelas telas NÃO mudaram (ex.: `sun_exposure` segue "Menos de 1 hora por dia"), só os rótulos exibidos.
+> ✅ **ONBOARDING NOVO (set/2026, design "NIKS Onboarding Modelos" do Claude Design, padrão aprovado "réplica do Flo": SF Pro = fonte do sistema, rosa `#FF5EA8`, opções `#F0F0F0`, opção escolhida inteira em rosa com texto branco).** Átomos em **`components/onboarding/kit.tsx`** — FONTE ÚNICA, não duplicar nas telas: `ObScreen` (branco/rosado), `ObHeader` (voltar 13×22 + barra 267×3), `ObTitle`/`ObSubtitle`, `ObOptionCard` (normal/selecionado + frase revelada), `ObPillButton` (172×48, 40% quando desabilitado), `ObWheel`/`ObWheelBand` (seletor da tela 3, reusado na 13), `ObChoiceScreen` (tela inteira de escolha única), `useObFrame().y()` (converte o Y do frame de 852 pt do design: `insets.top + y − 54`), contadores `OB_STEPS`/`OB_STEP_TOTAL = 24` do Mixpanel e barra `(passo − 1)/19` (calibrada nas larguras do design). Respostas compartilhadas em **`components/onboarding/answers.ts`** (opções + frases reveladas da tela 5, chips do loading, frase personalizada do compromisso). ⚠️ **Os valores gravados no store NÃO mudaram** — só os rótulos exibidos (ex.: a tela 10 mostra "Menos de 1 hora" e grava "Menos de 1 hora por dia"; a tela 3 pergunta o ANO e grava a IDADE em `birthday`).
+>
+> **Saíram do fluxo (arquivos apagados):** `gender.tsx` (a gravidez aparece para todas; `genero` vai `null` — nenhuma lógica dependia dele), `skincare-routine-detail.tsx` (`skincare_routine_description` vai `null`; o `generate-protocol` ganhou a regra "descrição vazia = nenhum ativo declarado" no prompt e a checagem 1 só roda com texto não vazio — **deploy da função pendente**) e `notifications.tsx` (a permissão passou para ANTES do cadastro, telas 13a/13b).
+>
+> **Telas sem modelo no design:** `scan-prep`, `camera`, `results`, `plan-preview` e o welcome continuam com o visual anterior; `hydration-sleep` (duas perguntas numa tela), `horario-rotina` (13) e `allergies-detail` (15) foram montadas com os átomos do kit.
 
 ### Telas ativas — em ordem
 
 | # | Arquivo | Pasta | Descrição |
 |---|---|---|---|
-| 0 | `nome.tsx` | `(onboarding)` | "Como você quer ser chamada?" — **etapa inicial, logo após o welcome e ANTES das perguntas/paywall.** Sem sessão → salva o nome só no store (`pendingName`, via NameCapture `mode="store"`) e navega para `birthday`. O nome vai pro Supabase depois, no `signup` |
-| 1 | `birthday.tsx` | `(onboarding)` | "Quantos anos você tem?" — scroll picker de data |
-| 2 | `gender.tsx` | `(onboarding)` | "Qual seu gênero?" |
-| 3 | `pregnancy.tsx` | `(onboarding)` | "Alguns ativos precisam ser evitados em certas situações" — **condicional: só aparece se gênero = Feminino** |
-| 4 | `concerns.tsx` | `(onboarding)` | "O que mais te incomoda na sua pele hoje?" — multi-seleção, máx 3. **Substituiu `goal.tsx` neste ponto do fluxo (Sessão 54); `goal.tsx` foi deletada** |
-| 5 | `goal-validation.tsx` | `(onboarding)` | "Você tem tudo para conseguir o que quer" — tela informativa com gráfico animado de evolução (sem interação, só botão Continuar) |
-| 6 | `skin-type.tsx` | `(onboarding)` | "Como você descreveria sua pele?" — tipo de pele |
-| 7 | `sun-exposure.tsx` | `(onboarding)` | Quanto tempo a usuária passa exposta ao sol por dia |
-| 8 | `hydration-sleep.tsx` | `(onboarding)` | Hidratação diária + horas de sono |
-| 9 | `skincare-routine.tsx` | `(onboarding)` | "Como está sua rotina de skincare hoje?" — 4 opções |
-| 10 | `skincare-routine-detail.tsx` | `(onboarding)` | "Quais produtos você já usa?" / "Quais produtos foram prescritos?" — **condicional: só para `complement` ou `prescribed`** |
-| 11 | `allergies.tsx` | `(onboarding)` | Alergias/sensibilidades a ativos |
-| 12 | `allergies-detail.tsx` | `(onboarding)` | "Qual ativo ou produto causou reação?" — **condicional: só para `reaction`** |
-| 13 | `goal-desire.tsx` | `(onboarding)` | "Qual é o seu verdadeiro objetivo?" — 6 opções emocionais; salva em `onboarding.goal_desire` no Zustand |
-| 14 | `social-proof.tsx` | `(onboarding)` | "Com o NIKS, você vai conseguir 3x mais rápido" → navega direto para `scan-prep` (onboarding) ou `skin-result` (scan do app) |
-| 15 | `scan-prep.tsx` | `(scan)` | Preparação para o scan facial |
-| 16 | `camera.tsx` | `(scan)` | Câmera — captura da foto |
-| 17 | `loading.tsx` | `(scan)` | Loading da análise de pele (chama `analyze-skin`) |
-| 18 | `results.tsx` | `(scan)` | "Relatório de Pele" — resultado completo do scan |
-| 19 | `plan-preview.tsx` | `(onboarding)` | "Sua rotina de skincare está pronta" → navega para `paywall-soft` |
-| 20 | `paywall-soft.tsx` | `(onboarding)` | Gateway para o Superwall (sem UI própria) — em `__DEV__` pula o paywall **respeitando a sessão** (com sessão → `home`; sem sessão → `signup`); após assinatura confirmada → `signup` (nova usuária) ou `home` (usuária existente). **Botão "TENHO CUPOM" do paywall → custom action `showPromoRedeem` → tela `promo-cupom` (ver "Sistema de cupons" na seção 15)** |
-| 21b | `promo-cupom.tsx` | `(onboarding)` | Tela de digitar cupom de influenciadora (só alcançável pelo botão do paywall). Valida via `validar-cupom`; válido → volta e registra `paywall_cupom` (plano com desconto); voltar → paywall normal. **Nenhuma navegação para dentro do app** — ver seção 15 |
-| 22 | `signup.tsx` | `(onboarding)` | Criação de conta (e-mail, Google ou Apple) → **`saveToSupabase` grava `users.nome` = `pendingName`** (nome capturado no início) → dispara geração do protocolo em background via `lib/generateProtocol.ts` (fire-and-forget) → **liga o cupom ao `user_id` via `attributeCouponIfAny`** → navega para `apresentacao` |
-| 23 | `apresentacao.tsx` | `(onboarding)` | **Telas 2–5 de apresentação** (glow up / expert / produtos / espelho) — carrossel `FlatList`, **sem** o link "Entrar". Última tela ("Vamos lá") → `notifications`. Slides = fonte única `components/onboarding/welcomeSlides.tsx` |
-| 24 | `notifications.tsx` | `(onboarding)` | Permissão de notificações push → navega para `/(app)/home`. A saudação usa `users.nome` (o nome já foi gravado no signup). ⚠️ **`navigateToApp()` ARMA o tutorial de primeiro acesso da home** (`armHomeTutorial()`) — é a única rota de usuária NOVA até a home, e é isso que impede o tutorial de aparecer para quem só atualizou o app ou logou numa conta existente. Ver "Feature: Tutorial de primeiro acesso da home" |
+| 1 | `index.tsx` | `app/` | Welcome ("Bem-vinda ao NIKS") → "Começar" |
+| 2 | `nome.tsx` | `(onboarding)` | "Como você quer ser chamada?" — sem sessão: grava só `pendingName` (persistido); o `saveToSupabase` do signup leva para `users.nome`. A captura DENTRO do app (guard do `(app)/_layout`) segue no `NameCapture` |
+| — | `prazer.tsx` | `(onboarding)` | Transição "Prazer, <nome>!" (sem botão, 1,6 s, `replace` para a idade) |
+| 3 | `birthday.tsx` | `(onboarding)` | "<nome>, em que ano você nasceu?" — seletor de ano; grava a idade |
+| 4 | `pregnancy.tsx` | `(onboarding)` | Gravidez/amamentação — **para todas** |
+| 5 | `concerns.tsx` | `(onboarding)` | "O que mais te incomoda" — até 3, com frase revelada |
+| 6 | `scan-prep.tsx` | `(scan)` | Preparação do scan |
+| 7 | `camera.tsx` | `(scan)` | Foto (1). Onboarding → **tela 8** (não mais o loading). Com `?retake=1` (vindo do erro do loading) → volta direto ao loading |
+| 8 | `goal-validation.tsx` | `(onboarding)` | "Seu potencial" — gráfico animado (modelo 6a) |
+| 9 | `skin-type.tsx` | `(onboarding)` | Tipo de pele |
+| 10 | `sun-exposure.tsx` | `(onboarding)` | Sol |
+| 11 | `hydration-sleep.tsx` | `(onboarding)` | Hidratação + sono |
+| 12 | `skincare-routine.tsx` | `(onboarding)` | Rotina atual (4 opções; sem tela de detalhe) |
+| 13 | `horario-rotina.tsx` | `(onboarding)` | Horários de manhã/noite + fuso do aparelho → `onboarding.rotina_*` → `users.rotina_manha_horario`/`rotina_noite_horario`/`rotina_fuso` no signup (migration `20260926120000`). ⚠️ O pg_cron ainda NÃO usa esses horários |
+| 13a | `aviso-lembretes.tsx` | `(onboarding)` | "Sua próxima rotina é hoje às 21h" (hora = noite da tela 13) |
+| 13b | `permitir-notificacoes.tsx` | `(onboarding)` | Pede a permissão nativa no mount (fundo `#D1D1D1` + "Toque aqui!"); token → `pendingPushToken` (persistido) → `users.push_token` no `saveToSupabase`. `replace` para as alergias |
+| 14 | `allergies.tsx` | `(onboarding)` | Alergias |
+| 15 | `allergies-detail.tsx` | `(onboarding)` | Condicional (`reaction`) |
+| 16 | `goal-desire.tsx` | `(onboarding)` | Objetivo |
+| 17 | `social-proof.tsx` | `(onboarding)` | Com × Sem NIKS — barras 3x (modelo 6b) → loading |
+| 18 | `loading.tsx` | `(scan)` | Chama `analyze-skin` (fica aqui porque usa tipo de pele/sol/sono, respondidos depois da foto). Erro → câmera em modo retake |
+| 19 | `results.tsx` | `(scan)` | Relatório |
+| 20 | `plan-preview.tsx` | `(onboarding)` | Rotina pronta → compromisso |
+| 21 | `compromisso.tsx` | `(onboarding)` | Segurar a logo 2 s → "Bem-vinda ao NIKS!" → paywall |
+| 22 | `paywall-soft.tsx` | `(onboarding)` | Superwall (sem mudança) → `signup` → `apresentacao` |
+| 21b | `promo-cupom.tsx` | `(onboarding)` | Cupom de influenciadora (só pelo botão do paywall) |
+| — | `signup.tsx` | `(onboarding)` | Cadastro → `saveToSupabase` (nome, respostas, horários, push token) → protocolo em background → cupom → `apresentacao` |
+| 24 | `apresentacao.tsx` | `(onboarding)` | Carrossel pós-cadastro; o último "Vamos lá" **arma o tutorial da home** (`armHomeTutorial()`, antes na `notifications`) e vai para `/(app)/home` |
 
 > ⚠️ **A etapa de nome saiu daqui (era o passo 23) e foi para o INÍCIO do fluxo (passo 0, logo após o welcome).** Ver "Ponto de entrada — Welcome". `nome.tsx` agora roda `NameCapture` em `mode="store"` (sem sessão, só guarda `pendingName`); antes gravava direto em `users.nome`. Quem grava no Supabase agora é o `signup` (`saveToSupabase`).
 
@@ -1512,9 +1522,9 @@ lib/mixpanel/
 |---|---|---|
 | `app_opened` | `app/_layout.tsx` — `AppShell` mount | — |
 | `Screen Viewed` | automático via `useScreenTracking` | `screen_name`, `pathname` |
-| `onboarding_started` | `(onboarding)/_layout.tsx` | `onboarding_version`, `total_steps: 23` |
-| `onboarding_step_viewed` | mount de cada tela do onboarding (steps 2–23) | `step_number`, `step_name`, `step_total: 23` |
-| `onboarding_step_completed` | botão "Continuar" de cada tela | `step_number`, `step_name`, `step_total: 23` |
+| `onboarding_started` | `(onboarding)/_layout.tsx` | `onboarding_version`, `total_steps: 24` (`OB_STEP_TOTAL`) |
+| `onboarding_step_viewed` | mount de cada tela do onboarding — numeração ÚNICA em `OB_STEPS` (`components/onboarding/kit.tsx`), helper `obStep(step, nome)` | `step_number`, `step_name`, `step_total: 24` |
+| `onboarding_step_completed` | botão "Continuar" de cada tela | `step_number`, `step_name`, `step_total: 24` |
 | `onboarding_completed` | ⚠️ **não disparado atualmente** — estava em `paywall-detailed.tsx` (deletado); mover para `paywall-soft.tsx` se necessário | `$duration` (calculado pelo SDK via `timeEvent`) |
 | `paywall_viewed` | `paywall-soft.tsx` mount | `screen: 'soft'` |
 | `plan_selected` | ⚠️ **não disparado atualmente** — estava em `paywall-detailed.tsx` (deletado) | `plan: 'mensal' \| 'anual'` |
@@ -1630,6 +1640,12 @@ O `<View style={{ overflow: 'hidden' }}>` com `width: '100%'` é obrigatório �
 
 Welcome (index.tsx — 5 telas swipeáveis)
   → [botão "Começar"] Onboarding (23 telas) — setOnboardingField() em cada tela
+    nome → prazer → birthday → pregnancy → concerns → scan-prep → camera → goal-validation
+    → skin-type → sun-exposure → hydration-sleep → skincare-routine → horario-rotina
+    → aviso-lembretes → permitir-notificacoes → allergies → allergies-detail* → goal-desire
+    → social-proof → loading (analyze-skin) → results → plan-preview → compromisso
+    → paywall-soft → signup → apresentacao → /(app)/home
+    (bloco abaixo = ordem ANTIGA, histórico)
     birthday → gender → pregnancy* → concerns → goal-validation → skin-type
     → sun-exposure → hydration-sleep
     → skincare-routine → skincare-routine-detail* (se complement/prescribed)
@@ -1687,15 +1703,13 @@ niks-ai/
 │   ├── (onboarding)/
 │   │   ├── _layout.tsx            ✅
 │   │   ├── birthday.tsx           ✅
-│   │   ├── gender.tsx             ✅ navega para pregnancy (Feminino) ou concerns (outros)
-│   │   ├── pregnancy.tsx          ✅ condicional — só para gênero Feminino; entre gender e concerns
+│   │   ├── pregnancy.tsx          ✅ para todas (a tela de gênero saiu) — entre birthday e concerns
 │   │   ├── concerns.tsx           ✅ "O que mais te incomoda na sua pele hoje?" — substituiu goal.tsx neste ponto (Sessão 54); goal.tsx deletada
 │   │   ├── goal-validation.tsx    ✅ tela informativa — gráfico de potencial (sem interação, só Continuar)
 │   │   ├── skin-type.tsx          ✅
 │   │   ├── sun-exposure.tsx       ✅
 │   │   ├── hydration-sleep.tsx    ✅ → navega para skincare-routine
 │   │   ├── skincare-routine.tsx   ✅ "Como está sua rotina de skincare hoje?" — 4 opções
-│   │   ├── skincare-routine-detail.tsx ✅ condicional — descrição dos produtos usados/prescritos
 │   │   ├── allergies.tsx          ✅ alergias/sensibilidades — navega para goal-desire
 │   │   ├── allergies-detail.tsx   ✅ condicional — ativo/produto que causou reação — navega para goal-desire
 │   │   ├── goal-desire.tsx        ✅ "Qual é o seu verdadeiro objetivo?" — 6 opções emocionais — navega para social-proof
@@ -1705,7 +1719,8 @@ niks-ai/
 │   │   ├── signup.tsx             ✅ criação de conta (e-mail/Google/Apple) → dispara generateProtocol em bg → navega para nome
 │   │   ├── login.tsx              ✅ fluxo dois passos (e-mail/senha + Google/Apple)
 │   │   ├── nome.tsx               ✅ "Como você quer ser chamada?" → salva users.nome → navega para notifications
-│   │   └── notifications.tsx      ✅ pede permissão + salva push_token no Supabase → navega para /(app)/home
+│   │   ├── horario-rotina.tsx / aviso-lembretes.tsx / permitir-notificacoes.tsx ✅ telas 13/13a/13b (ver tabela do fluxo)
+│   │   └── prazer.tsx / compromisso.tsx ✅ transição após o nome e compromisso antes do paywall
 │   ├── (app)/
 │   │   ├── _layout.tsx            ✅ Navbar do Figma (GlobalBottomBar): sparkles/lupa/logo-NIKS/chat/perfil, 80px, ícones nas posições exatas — sem FAB. Também mede os 3 ícones para o tutorial de primeiro acesso e é onde o overlay `HomeCoachMarks` é montado (irmão da navbar, DEPOIS dela)
 │   │   ├── home.tsx               ✅ Réplica do Figma "Novo design": Niks score, foto, métricas 2×3, card de skincare, Para você, botão Escanear. Score/foto/6 métricas + card de skincare (rotina real) + **"Para você" (2 primeiros produtos recomendados, deep-link pro detalhe)** = **dados reais**
@@ -2084,7 +2099,7 @@ Avança tocando em **qualquer lugar**; na última parada o toque fecha. **Não e
 > ⚠️ **A leitura pega CARONA no `fetchHome` da home**, que já consultava a tabela `users` por causa da `foto_home_url` — por isso a regra "uma vez por conta" **não custa nenhuma ida à rede a mais** e já entra no cache por usuária.
 
 **2. O cache local — `homeTutorialPending` + `homeTutorialSeen`** (store persistido). São do **APARELHO**, não da conta; existem para o tutorial não piscar enquanto a resposta do servidor não chega, e para decidir *quando* ele deve nascer:
-- **`homeTutorialPending`** — **armado em `(onboarding)/notifications.tsx`**, dentro de `navigateToApp()`. É a **única** rota até a home que uma usuária nova percorre; as outras (`login`, `paywall-soft` de reengajamento, `index` com sessão) são de conta já existente e não armam.
+- **`homeTutorialPending`** — **armado no último "Vamos lá" de `(onboarding)/apresentacao.tsx`** (até set/2026 era na `notifications.tsx`, que saiu do fluxo). É a **única** rota até a home que uma usuária nova percorre; as outras (`login`, `paywall-soft` de reengajamento, `index` com sessão) são de conta já existente e não armam.
 - **`homeTutorialSeen`** — trava imediata, gravada ao concluir a última parada. `finishHomeTutorial` desarma e tranca; o `_layout` dispara **junto** o `markHomeTutorialSeenOnServer()` (fire-and-forget).
 
 > ⚠️ **Por que o flag local sozinho NÃO bastava** (era o furo real): ele morre no logout e não existe em aparelho novo. Uma conta que **já viu** voltava a ver o tutorial ao **refazer o onboarding** — entrar por "Começar" em vez de "Entrar", restaurar a compra no paywall e logar com Google/Apple de uma conta existente. O `signup.tsx` **não distingue conta nova de conta existente** (`signInWithGoogle`/`signInWithApple` logam as duas e seguem para `apresentacao` → `notifications`), então o `pending` é armado do mesmo jeito. Quem barra hoje é o servidor.
@@ -2958,6 +2973,8 @@ Um grid 2×2 feito com `flexWrap: 'wrap'` + `gap`, dando às células largura fi
 Descoberto no grid da colagem (`app/(share)/share-capture.tsx`).
 
 ---
+
+*Sessão 66 — Setembro 2026 — **Onboarding novo ("NIKS Onboarding Modelos", réplica do Flo) — etapas 1 e 2.** Kit único em `components/onboarding/kit.tsx` + respostas em `answers.ts`; todas as telas de pergunta no padrão aprovado; nova ordem (câmera logo após "o que te incomoda", mas a `analyze-skin` continua no loading porque usa tipo de pele/sol/sono). **Saíram:** gênero (gravidez para todas, `genero` null), "produtos que usa" (`skincare_routine_description` null) e a `notifications` pós-cadastro. **Entraram:** transição "Prazer", horário da rotina (13, colunas `users.rotina_manha_horario`/`rotina_noite_horario`/`rotina_fuso`, migration `20260926120000` aplicada SOZINHA via `db query -f` + `migration repair` — as 3 de agosto seguem pendentes), aviso de lembretes (13a), pedido nativo ANTES do cadastro (13b → `pendingPushToken` persistido → `users.push_token` no `saveToSupabase`) e compromisso (21). `armHomeTutorial()` mudou para o último "Vamos lá" da `apresentacao` (matriz de 6 casos inalterada: continua sendo o único caminho de usuária nova até a home, e o servidor segue barrando conta que já viu). `generate-protocol`: prompt com regra de descrição vazia + checagem 1 só com texto não vazio — **deploy pendente**. Contadores: `OB_STEPS`/`OB_STEP_TOTAL = 24`. Ver "FLUXO DE ONBOARDING".*
 
 *Sessão 65 — Setembro 2026 — **Downsell: segunda chance (anual R$99,90) para quem sai do paywall sem assinar.** Dois gatilhos dividindo **um único flag em memória** (`lib/paywallFlow.ts`): fechar o paywall **no X** (o `onDismiss` já reapresentava — agora o placement vem de `nextPaywallPlacement()`, downsell na 1ª saída da sessão e `paywall_onboarding` depois) e **cancelar a folha de pagamento da Apple**. **(1) O cancelamento é detectado em código** (`onPurchase` → `error.userCancelled`) **porque o placement `transaction_abandon` do Superwall exige o plano Scale (US$199/mês) e estamos no Startup** — é preço, não desconhecimento. **(2) Ordem obrigatória** no caminho do cancelamento: marca o flag → `armSuppressReapresentar()` (a MESMA supressão do botão de cupom) → `dismiss()` → pede o downsell; sem a supressão, o `onDismiss` do paywall recém-fechado reapresentaria o `paywall_onboarding` **por cima** do downsell. **(3) A ponte `requestDownsell`/`subscribeDownsellRequest` não é indireção gratuita:** o controller é objeto de **módulo** e não tem o `registerPlacement` do `usePlacement` — registrar por `Superwall.shared.register` de lá deixaria o `paywall_downsell` **sem os callbacks de fail closed**, e um placement mal configurado deixaria a usuária sem paywall nenhum. **(4) Bordas intencionais:** cancelar DENTRO do downsell não faz nada; fechar/`onSkip`/`onError` do downsell → `paywall_onboarding`. **(5) Dashboards (fora do repo):** produto `br.com.niksai.app.anual.99` aprovado no ASC (grupo "NIKS AI Pro"), no RevenueCat dentro da offering **`downsell`** (não-default — o `onPurchase` já varria `offerings.all` por causa do cupom, então a compra funciona), e paywall "Downsell Anual 99" na campanha "Downsell". ⚠️ **Os preços no texto do paywall são TEXTO FIXO** — mudar o preço na Apple exige editar o texto no Superwall. ℹ️ O produto está no entitlement **`premium`** do RevenueCat (o que o app checa); o **`pro` é o entitlement do Superwall**, conceito separado — nomes diferentes de propósito, não é divergência. **Validada só a máquina de estado do flag; falta o teste no iPhone** (Release + Sandbox Tester novo) dos dois caminhos. Ver "Guard de assinatura → Downsell".*
 

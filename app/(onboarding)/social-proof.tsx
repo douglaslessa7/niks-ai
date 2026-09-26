@@ -1,247 +1,119 @@
-import { useEffect } from 'react';
-import { View, Text, TouchableOpacity, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { haptics } from '../../lib/haptics';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
-import Svg, { Path } from 'react-native-svg';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
+import {
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObPillButton, NIKS_LOGO,
+  useObFrame, obStep, useOnMount,
+} from '../../components/onboarding/kit';
 
-const DEEP = '#121212';
-const DEEP_SOFT = '#515151';
-const DEEP_WHISPER = '#818181';
-const DEEP_HAIR = 'rgba(18,18,18,0.10)';
-const CORAL = '#FF9D9D';
-const CORAL_DEEP = '#F2808E';
-const CREAM = '#FFFFFF';
+// Tela 17 do onboarding novo — Com × Sem NIKS (Gráfico B "3x mais rápido",
+// modelo 6b do design). Tela de valor: só o voltar, fundo rosado.
+//
+// Animação (roda UMA vez; mesma conta do `tickG` do design): as duas barras
+// crescem juntas de baixo para cima. "Sem o NIKS" para em 25% da altura aos
+// 500 ms (ease-out) e o "22% eficácia" aparece com fade. "Com o NIKS" vai até 100%
+// e termina aos 1,1 s com um leve quique (passa ~4% e volta). O "3x" aparece quando
+// a barra passa da metade e conta de 1,0x a 3x entre 0,4 e 1,1 s.
+//
+// Depois daqui vem o LOADING (tela 18) — é lá que a `analyze-skin` roda, porque
+// ela usa tipo de pele / sol / sono, respondidos depois da foto.
+const STEP = OB_STEPS.comSemNiks;
+const STEP_NAME = 'Com x Sem NIKS';
+const TOTAL_MS = 1200;
 
-const STEP = 12;
-const TOTAL = 13;
-const CHART_H = 220;
-const WITHOUT_H = Math.round(CHART_H * 0.22); // 48
+const clamp = (x: number) => Math.max(0, Math.min(1, x));
+const easeOut = (x: number) => 1 - Math.pow(1 - x, 3);
+const back = (x: number) => { const c1 = 1.6, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
 
 export default function SocialProof() {
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
-
-  const { track } = useMixpanel();
   const router = useRouter();
+  const { track } = useMixpanel();
   const { scanSource, setScanSource } = useAppStore();
+  const { y, buttonBottom } = useObFrame();
+  const [t, setT] = useState(0);
+  const raf = useRef<number | null>(null);
+
+  useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 10, step_name: 'Social Proof', step_total: 23 });
+    const t0 = Date.now();
+    const loop = () => {
+      const now = Date.now() - t0;
+      setT(Math.min(now, TOTAL_MS));
+      if (now < TOTAL_MS) raf.current = requestAnimationFrame(loop);
+    };
+    raf.current = requestAnimationFrame(loop);
+    return () => { if (raf.current != null) cancelAnimationFrame(raf.current); };
   }, []);
 
+  const h0 = 50 * easeOut(clamp(t / 500));
+  const num0 = clamp((t - 350) / 250);
+  const h1 = Math.max(0, 200 * back(clamp(t / 1100)));
+  const txt = clamp((h1 - 100) / 40);
+  const v = 1 + 2 * easeOut(clamp((t - 400) / 700));
+  const count = v >= 2.995 ? '3x' : `${v.toFixed(1).replace('.', ',')}x`;
+
+  const handleContinue = () => {
+    haptics.action();
+    track('onboarding_step_completed', obStep(STEP, STEP_NAME));
+    // Ramo herdado da antiga "Avalie-nos": só o onboarding passa por aqui hoje.
+    if (scanSource === 'app') {
+      setScanSource('onboarding');
+      router.replace('/(app)/skin-result' as any);
+    } else {
+      router.push('/(scan)/loading' as any);
+    }
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: CREAM }}>
-      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
+    <ObScreen variant="blush">
+      <View style={{
+        position: 'absolute', left: 17, right: 17, top: y(100), height: 330, borderRadius: 20,
+        backgroundColor: '#FFFFFF',
+        shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 12,
+      }}>
+        {/* Sem o NIKS */}
+        <View style={{ position: 'absolute', left: 56, width: 110, bottom: 68, alignItems: 'center', gap: 10 }}>
+          <View style={{ alignItems: 'center', gap: 2, opacity: num0 }}>
+            <Text style={{ fontSize: 20, lineHeight: 24, fontWeight: '700', color: OB.ink }}>22%</Text>
+            <Text style={{ fontSize: 13, lineHeight: 16, color: OB.sub }}>eficácia</Text>
+          </View>
+          <View style={{ width: 110, height: h0, borderRadius: 14, backgroundColor: OB.track }} />
+        </View>
 
-        {/* QHeader */}
-        <View style={{
-          paddingVertical: 6, paddingHorizontal: 24,
-          flexDirection: 'row', alignItems: 'center', gap: 14,
-        }}>
-          <TouchableOpacity
-            onPress={() => {
-              haptics.tap();
-              router.back();
-            }}
-            activeOpacity={0.7}
-            style={{
-              flexShrink: 0, width: 40, height: 40, borderRadius: 100,
-              backgroundColor: 'rgba(255,255,255,0.6)',
-              borderWidth: 0.5, borderColor: DEEP_HAIR,
-              alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <ChevronLeft size={18} color={DEEP} />
-          </TouchableOpacity>
-          <View style={{
-            flex: 1, height: 4, borderRadius: 100,
-            backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
-          }}>
-            <View style={{
-              position: 'absolute', top: 0, left: 0, bottom: 0,
-              width: `${(STEP / TOTAL) * 100}%`,
-              backgroundColor: CORAL, borderRadius: 100,
-            }} />
+        {/* Com o NIKS */}
+        <View style={{ position: 'absolute', right: 56, width: 110, bottom: 68, alignItems: 'center' }}>
+          <View style={{ width: 110, height: h1, borderRadius: 14, overflow: 'hidden' }}>
+            <LinearGradient colors={['#FFC4DA', OB.pink]} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+            <View style={{ position: 'absolute', left: 0, right: 0, top: 22, alignItems: 'center', gap: 2, opacity: txt }}>
+              <Text style={{ fontSize: 40, lineHeight: 44, fontWeight: '700', color: '#FFFFFF', fontVariant: ['tabular-nums'] }}>{count}</Text>
+              <Text style={{ fontSize: 13, lineHeight: 16, color: '#FFFFFF' }}>mais resultado</Text>
+            </View>
           </View>
         </View>
 
-        {/* QTitleBlock */}
-        <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
-          <Text style={{
-            fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP,
-            letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14,
-          }}>
-            seu potencial
-          </Text>
-          <Text style={{
-            fontFamily: fXBold, fontSize: 26, fontWeight: '800', color: DEEP,
-            letterSpacing: -0.85, lineHeight: 28.6,
-          }}>
-            {'Com o NIKS, você vai conseguir 3x '}
-            <Text style={{
-              fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1,
-            }}>
-              mais rápido
-            </Text>
-            {'.'}
-          </Text>
+        <Text style={{ position: 'absolute', left: 56, width: 110, bottom: 36, textAlign: 'center', fontSize: 11, fontWeight: '600', letterSpacing: 1, color: OB.sub }}>
+          SEM O NIKS
+        </Text>
+        <View style={{ position: 'absolute', right: 46, width: 130, bottom: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+          <Image source={NIKS_LOGO} style={{ width: 13, height: 13, tintColor: OB.pink }} />
+          <Text style={{ fontSize: 11, fontWeight: '600', letterSpacing: 1, color: OB.ink }}>COM O NIKS</Text>
         </View>
-
-        {/* Comparison card */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 26, flex: 1 }}>
-          <View style={{
-            backgroundColor: '#FFFFFF',
-            borderRadius: 28,
-            borderWidth: 0.5, borderColor: DEEP_HAIR,
-            padding: 22,
-            shadowColor: '#2B2724',
-            shadowOffset: { width: 0, height: 10 },
-            shadowOpacity: 0.10,
-            shadowRadius: 36,
-            elevation: 4,
-          }}>
-            {/* Column headers */}
-            <View style={{ flexDirection: 'row', gap: 14, marginBottom: 16 }}>
-              <Text style={{
-                flex: 1, fontFamily: fXBold, fontSize: 10.5, fontWeight: '700', color: DEEP_WHISPER,
-                letterSpacing: 2.4, textTransform: 'uppercase', textAlign: 'center',
-              }}>
-                sem o NIKS
-              </Text>
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                {/* Logo NIKS (sparkle) tintada no rosa padrão — substitui a orb do design antigo */}
-                <Image
-                  source={require('../../assets/home/niks-logo.png')}
-                  resizeMode="contain"
-                  style={{ width: 14, height: 14, tintColor: CORAL }}
-                />
-                <Text style={{
-                  fontFamily: fXBold, fontSize: 10.5, fontWeight: '700', color: DEEP,
-                  letterSpacing: 2.4, textTransform: 'uppercase',
-                }}>
-                  com o NIKS
-                </Text>
-              </View>
-            </View>
-
-            {/* Bars */}
-            <View style={{ flexDirection: 'row', gap: 14, height: CHART_H, alignItems: 'flex-end' }}>
-              {/* Without bar — short stump */}
-              <View style={{
-                flex: 1, height: WITHOUT_H, borderRadius: 18,
-                backgroundColor: 'rgba(18,18,18,0.06)',
-                borderWidth: 0.5, borderColor: DEEP_HAIR,
-                alignItems: 'center', justifyContent: 'center',
-                paddingHorizontal: 8, paddingVertical: 6,
-              }}>
-                <Text style={{
-                  fontFamily: fXBold, fontSize: 22, fontWeight: '700', color: DEEP,
-                  letterSpacing: -0.6, lineHeight: 28,
-                }}>
-                  22%
-                </Text>
-                <Text style={{
-                  fontFamily: fReg, marginTop: 4, fontSize: 11, color: DEEP_SOFT, letterSpacing: -0.05,
-                }}>
-                  Eficácia
-                </Text>
-              </View>
-
-              {/* With NIKS bar — full height coral */}
-              <View style={{
-                flex: 1, height: CHART_H, borderRadius: 18,
-                backgroundColor: CORAL,
-                shadowColor: CORAL,
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.45,
-                shadowRadius: 26,
-                elevation: 6,
-                alignItems: 'center', justifyContent: 'center',
-                paddingHorizontal: 8,
-              }}>
-                <Text style={{
-                  fontFamily: fXBold, fontWeight: '800',
-                  fontSize: 64, color: '#FFFFFF',
-                  letterSpacing: -1.5, lineHeight: 78,
-                }}>
-                  3x
-                </Text>
-                <Text style={{
-                  fontFamily: fReg, marginTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.78)',
-                  letterSpacing: -0.05, fontWeight: '500',
-                }}>
-                  Mais resultado
-                </Text>
-              </View>
-            </View>
-
-            {/* Caption */}
-            <Text style={{
-              fontFamily: fReg, marginTop: 20, fontSize: 13, lineHeight: 19.5,
-              color: DEEP_SOFT, letterSpacing: -0.05, textAlign: 'center',
-              paddingHorizontal: 6,
-            }}>
-              O NIKS conhece a sua pele melhor que ninguém e monta o skincare exato que você precisa para atingir seu objetivo, sem erros.
-            </Text>
-          </View>
-        </View>
-
-        {/* PrimaryButton */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 14, paddingBottom: 18 }}>
-          <TouchableOpacity
-            onPress={() => {
-              haptics.action();
-              track('onboarding_step_completed', { step_number: 10, step_name: 'Social Proof', step_total: 23 });
-              // Tela "Avalie-nos" removida do onboarding (política da Apple: nada de
-              // pedir avaliação antes do usuário usar o app). Roteamento herdado dela.
-              if (scanSource === 'app') {
-                setScanSource('onboarding');
-                router.replace('/(app)/skin-result' as any);
-              } else {
-                router.push('/(scan)/scan-prep' as any);
-              }
-            }}
-            activeOpacity={0.85}
-            style={{
-              height: 60, borderRadius: 100, backgroundColor: CORAL,
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-              shadowColor: CORAL,
-              shadowOffset: { width: 0, height: 14 },
-              shadowOpacity: 0.55,
-              shadowRadius: 15, elevation: 8,
-            }}
-          >
-            <Text style={{
-              fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF',
-            }}>
-              Continuar
-            </Text>
-            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-              <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </Svg>
-          </TouchableOpacity>
-        </View>
-
       </View>
-    </SafeAreaView>
+
+      <View style={{ position: 'absolute', left: 0, right: 0, top: y(462) }}>
+        <ObTitle>Com o NIKS, você chega lá 3x mais rápido.</ObTitle>
+      </View>
+      <ObSubtitle style={{ position: 'absolute', left: 30, right: 30, top: y(580), marginHorizontal: 0, lineHeight: 24 }}>
+        O NIKS monta o skincare exato para o seu objetivo, sem tentativa e erro.
+      </ObSubtitle>
+
+      <ObHeader onBack={() => router.back()} />
+      <ObPillButton onPress={handleContinue} bottom={buttonBottom} />
+    </ObScreen>
   );
 }

@@ -3,10 +3,22 @@ import { usePathname } from 'expo-router';
 import { useMixpanel } from './MixpanelProvider';
 
 const SCREEN_NAMES: Record<string, string> = {
-  // Onboarding flow (steps 1–23)
+  // Onboarding flow (numeração do funil em components/onboarding/kit.tsx → OB_STEPS)
   '/': 'Tela Inicial',
   '/concerns': 'Preocupações de Pele',
-  '/gender': 'Gênero',
+  '/nome': 'Nome',
+  '/prazer': 'Prazer (transição)',
+  '/pregnancy': 'Gravidez',
+  '/goal-validation': 'Seu Potencial',
+  '/skincare-routine': 'Rotina Atual',
+  '/horario-rotina': 'Horário da Rotina',
+  '/aviso-lembretes': 'Aviso de Lembretes',
+  '/permitir-notificacoes': 'Pedido de Notificação',
+  '/allergies': 'Alergias',
+  '/allergies-detail': 'Detalhe da Alergia',
+  '/goal-desire': 'Desejo Real',
+  '/compromisso': 'Compromisso',
+  '/apresentacao': 'Apresentação',
   '/birthday': 'Data de Nascimento',
   '/skin-type': 'Tipo de Pele',
   '/frequency': 'Frequência de Skincare',
@@ -28,7 +40,6 @@ const SCREEN_NAMES: Record<string, string> = {
   '/plan-preview': 'Protocolo Pronto',
   '/signup': 'Criar Conta',
   '/paywall-detailed': 'Paywall',
-  '/notifications': 'Notificações',
   '/login': 'Login',
   // App principal
   '/home': 'Home',

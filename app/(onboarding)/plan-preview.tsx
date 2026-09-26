@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle as SvgCircle } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { OB_STEPS, obStep } from '../../components/onboarding/kit';
 import { haptics } from '../../lib/haptics';
 
 // Tokens "Novo design app NIKS" (mesma identidade da home/chat/welcome)
@@ -143,7 +144,7 @@ export default function PlanPreview() {
   const arrowTop = cardPhotoH / 2 - 18;
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 });
+    track('onboarding_step_viewed', obStep(OB_STEPS.rotinaPronta, 'Protocolo Pronto'));
   }, []);
 
   return (
@@ -471,7 +472,7 @@ export default function PlanPreview() {
           <TouchableOpacity
             onPress={() => {
               haptics.action();
-              track('onboarding_step_completed', { step_number: 21, step_name: 'Protocolo Pronto', step_total: 23 });
+              track('onboarding_step_completed', obStep(OB_STEPS.rotinaPronta, 'Protocolo Pronto'));
               // Tela 21 do onboarding novo (compromisso) fica entre a rotina pronta e o paywall.
               router.push('/(onboarding)/compromisso' as any);
             }}

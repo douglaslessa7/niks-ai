@@ -14,6 +14,7 @@ import {
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
+import { OB_STEPS, obStep } from '../../components/onboarding/kit';
 
 // Tokens "Novo design app NIKS" (mesma identidade da home/chat/welcome)
 const DEEP = '#121212';
@@ -50,12 +51,12 @@ export default function ScanPrep() {
   const { scanSource } = useAppStore();
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 13, step_name: 'Análise com IA', step_total: 23 });
+    track('onboarding_step_viewed', obStep(OB_STEPS.prepScan, 'Análise com IA'));
   }, []);
 
   const handleOpenCamera = () => {
     haptics.action();
-    track('onboarding_step_completed', { step_number: 13, step_name: 'Análise com IA', step_total: 23 });
+    track('onboarding_step_completed', obStep(OB_STEPS.prepScan, 'Análise com IA'));
     router.push('/(scan)/camera' as any);
   };
 

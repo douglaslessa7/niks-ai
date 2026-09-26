@@ -410,7 +410,10 @@ export default function Loading() {
             </Text>
 
             <TouchableOpacity
-              onPress={() => { haptics.tap(); router.back(); }}
+              // Tirar outra foto: no fluxo novo a câmera não fica logo atrás do loading
+              // (entre elas há as telas 8–17), então abrimos a câmera em modo retake,
+              // que devolve direto para cá.
+              onPress={() => { haptics.tap(); router.replace('/(scan)/camera?retake=1' as any); }}
               activeOpacity={0.85}
               style={{
                 width: 172, height: 48, borderRadius: 24, backgroundColor: OB.pink,
