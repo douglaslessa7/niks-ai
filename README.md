@@ -1379,11 +1379,13 @@ O guard em `(app)/_layout.tsx` usa `Promise.race` com **timeout de 8s**: se `get
 > ```
 > `refreshConfiguration()` **não existe** no wrapper JS — o equivalente disponível é `Superwall.shared.preloadAllPaywalls()`.
 
-**`CustomPurchaseControllerProvider` — obrigatório para integração Superwall + RevenueCat:**
+**`CustomPurchaseControllerProvider` — ⚠️ INATIVO (descoberto em set/2026, Sessão 73):**
 
-O `CustomPurchaseControllerProvider` (também exportado de `expo-superwall`) envolve o conteúdo logo abaixo do `SuperwallProvider` em `app/_layout.tsx`. Ele intercepta eventos de compra/restauração do Superwall e os delega para o RevenueCat SDK.
+> **Quem compra hoje é o PRÓPRIO Superwall, direto pela StoreKit — em produção inclusive.** O `onPurchase`/`onPurchaseRestore` abaixo **nunca são chamados**. Causa: o `SuperwallProvider` do `expo-superwall` 1.0.9 decide se há controller próprio com `useContext` do `CustomPurchaseControllerProvider` — o que só funciona se este estiver **ACIMA** dele na árvore. Em `app/_layout.tsx` ele está **abaixo**, então o contexto vem `null` e o SDK faz `configure(apiKey, { ...options, manualPurchaseManagement: false })` — **sobrescreve** o `manualPurchaseManagement: true` que passamos nas options. Consequências: a busca em `offerings.all`, a checagem do entitlement `premium` e o bloco `userCancelled` nunca rodaram. As compras funcionam assim mesmo porque o RevenueCat vê a transação da StoreKit por conta própria e o `handleAfterPaywall` ainda faz `restorePurchases()` de fallback — a antiga afirmação de que "sem o controller o paywall entra em loop" **não se confirmou**.
+>
+> 🚧 **Pendência futura — inverter os providers** (`<CustomPurchaseControllerProvider>` por fora do `<SuperwallProvider>`; o `CustomPurchaseControllerProvider` escuta a ponte nativa de eventos e funciona fora dele). **Não foi feito de propósito:** troca o caminho de compra que está funcionando em produção. Antes de ligar, testar em **Release + Sandbox Tester novo**: compra normal (`paywall_onboarding`), compra com cupom (`promo10`), compra no downsell (`.99`) e restore. O downsell não dispara em dobro depois da inversão — o `userCancelled` e o `transactionAbandon` dividem o flag `canShowDownsell`.
 
-**⚠️ Sem este provider, o Superwall processa compras via StoreKit diretamente** — o RevenueCat não é notificado. Quando `getCustomerInfo()` é chamado em seguida, retorna "não assinante" e o paywall reaparece em loop infinito.
+O controller (código mantido para quando a inversão for feita):
 
 O controller implementado:
 ```typescript
@@ -1400,8 +1402,9 @@ const superwallPurchaseController = {
     // (falha real de config no RevenueCat) — nunca falha às cegas.
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     // Retorna 'purchased' se o entitlement 'premium' ficou ativo
-    // catch: error.userCancelled → dispara o DOWNSELL (ver subseção abaixo) e
-    // retorna 'cancelled'. É aqui que a desistência na folha da Apple é detectada.
+    // catch: error.userCancelled → dispararia o DOWNSELL e retorna 'cancelled'.
+    // ⚠️ Hoje NÃO roda (controller inativo) — o cancelamento é detectado pelo
+    // evento transactionAbandon em paywall-soft.tsx (ver "Downsell").
   },
   onPurchaseRestore: async () => {
     const customerInfo = await Purchases.restorePurchases();
@@ -1444,7 +1447,7 @@ Cada influenciadora tem um cupom próprio (o primeiro é `MAISENA10`). Quem digi
 
 **3. Reapresentar o paywall certo ao voltar.** `paywall-soft` tem um `useFocusEffect` que **ignora o primeiro foco** (o registro inicial continua no `useEffect` original, intocado) e, ao REGANHAR o foco vindo da tela de cupom, registra `consumeNextPlacement() ?? 'paywall_onboarding'`.
 
-**4. `onPurchase` busca em TODAS as offerings.** O produto de cupom vive numa offering que não é a default. O controller (código acima) procura o package em `offerings.all`, não em `offerings.current` — senão a compra do produto de cupom falharia em silêncio (loop de paywall pós-pagamento). Se o produto não existe em nenhuma offering, loga o cenário completo em vez de falhar às cegas.
+**4. `onPurchase` busca em TODAS as offerings.** O produto de cupom vive numa offering que não é a default. O controller (código acima) procura o package em `offerings.all`, não em `offerings.current` — senão a compra do produto de cupom falharia em silêncio (loop de paywall pós-pagamento). Se o produto não existe em nenhuma offering, loga o cenário completo em vez de falhar às cegas. ⚠️ **Só passa a valer depois da inversão dos providers** — hoje o controller está inativo e o Superwall compra o produto do paywall direto pela StoreKit, sem consultar offering nenhuma.
 
 **5. Atribuição (`user_id` + `converteu`).** Os dois lados marcam a conversão, de forma idempotente (o contador só sobe no `false→true` do trigger):
 - **`revenuecat-webhook`** — caminho principal e confiável (sobrevive ao app fechar entre a compra e o signup). Marca `converteu` por `product_id` (o produto de cupom tem id próprio). Ver a linha do webhook na tabela de Edge Functions.
@@ -1452,19 +1455,21 @@ Cada influenciadora tem um cupom próprio (o primeiro é `MAISENA10`). Quem digi
 
 > ⚠️ **Segurança — esta tela não pode virar rota de fuga do paywall.** O guard de assinatura de `(app)/_layout.tsx` **não foi alterado** (continua fail closed). A tela de cupom vive só em `(onboarding)` e **não tem nenhuma navegação para dentro do app** — as únicas saídas são paywall com desconto (válido) ou paywall normal (voltar). A supressão é de uso único e em memória. Quem não assinou não entra no app por nenhum caminho.
 
-> ⚠️ **Como testar o paywall/cupom (não é trivial):** você precisa de um Apple ID **sem assinatura ativa** — senão o app corretamente detecta a assinatura e pula o paywall. **TestFlight não usa a "Conta de Sandbox" dos Ajustes** (essa é só pra build de dev do Xcode). O jeito confiável: `npx expo run:ios --device --configuration Release` (**Release obrigatório** — em Debug o `__DEV__` pula o paywall direto pro signup) + um **Sandbox Tester novo** que nunca comprou. 🐛 **Sintoma comum que NÃO é bug:** "cliquei no cupom e caí no signup em vez do paywall de desconto" = a conta já é assinante (o único caminho pro signup em produção está dentro de `if (isSubscribed)`; não-assinante volta pro paywall, nunca signup). Assinaturas de sandbox persistem e renovam sozinhas — qualquer compra de teste anterior deixa o entitlement ativo.
+> ⚠️ **Como testar o paywall/cupom (não é trivial):** você precisa de um Apple ID **sem assinatura ativa** — senão o app corretamente detecta a assinatura e pula o paywall. **TestFlight não usa a "Conta de Sandbox" dos Ajustes** (essa é só pra build de dev do Xcode). O jeito confiável: `npx expo run:ios --device --configuration Release` (**Release obrigatório** — em Debug o `__DEV__` pula o paywall direto pro signup) + um **Sandbox Tester novo** que nunca comprou. **Atalho para cair no paywall sem refazer o onboarding** (app aberto, deslogado ou sem assinatura): `xcrun simctl openurl booted "niks-ai://paywall-soft"` — o fluxo de cancelamento/downsell dá para testar assim no **simulador** em Release. O build Release local exige o `ENTRY_FILE` no `ios/.xcode.env.local` (ver "QUANDO O BUILD FALHA"). 🐛 **Sintoma comum que NÃO é bug:** "cliquei no cupom e caí no signup em vez do paywall de desconto" = a conta já é assinante (o único caminho pro signup em produção está dentro de `if (isSubscribed)`; não-assinante volta pro paywall, nunca signup). Assinaturas de sandbox persistem e renovam sozinhas — qualquer compra de teste anterior deixa o entitlement ativo.
 
 **Consulta de desempenho:** `select * from cupom_desempenho` no SQL editor do Supabase — aplicações, conversões e taxa por cupom.
 
 #### Downsell — segunda chance, UMA vez por sessão
 
-Quem sai do paywall **sem assinar** ganha uma oferta mais barata (anual R$99,90) antes de voltar ao paywall normal. **Dois gatilhos, um único flag em memória** (`lib/paywallFlow.ts`): (a) **fechar o paywall no X** — o `onDismiss` do `paywall-soft` já reapresentava o paywall (fail closed), e agora o placement dessa reapresentação sai de `nextPaywallPlacement()`: `paywall_downsell` na 1ª saída da sessão, `paywall_onboarding` daí em diante; (b) **cancelar a folha de pagamento da Apple** — detectado no `onPurchase` do CustomPurchaseController (`error.userCancelled`).
+Quem sai do paywall **sem assinar** ganha uma oferta mais barata (anual R$99,90) antes de voltar ao paywall normal. **Dois gatilhos, um único flag em memória** (`lib/paywallFlow.ts`): (a) **fechar o paywall no X** — o `onDismiss` do `paywall-soft` já reapresentava o paywall (fail closed), e agora o placement dessa reapresentação sai de `nextPaywallPlacement()`: `paywall_downsell` na 1ª saída da sessão, `paywall_onboarding` daí em diante; (b) **cancelar a folha de pagamento da Apple** — detectado pelo **evento `transactionAbandon`** do delegate do Superwall, tratado no `onSuperwallEvent` do `useSuperwallEvents` de `(onboarding)/paywall-soft.tsx`.
 
-> ⚠️ **Por que o cancelamento na Apple é detectado em CÓDIGO e não pelo placement `transaction_abandon` do Superwall:** esse placement exige o plano **Scale (US$199/mês)** e estamos no **Startup**. Não é desconhecimento da feature — é preço. Se um dia o plano subir, o caminho (b) pode ser aposentado em favor dele.
+> ⚠️ **Por que o EVENTO e não o `userCancelled` do controller:** o `CustomPurchaseController` está inativo (ver "`CustomPurchaseControllerProvider` — INATIVO"), então o `onPurchase` nunca vê o cancelamento — a 1ª versão do downsell dependia dele e o caminho (b) **nunca funcionou** até a Sessão 73. O evento chega mesmo com o Superwall comprando sozinho: o `expo-superwall` instala o delegate em todo `configure`, e o SuperwallKit emite `transactionAbandon` (`TransactionManager.trackCancelled`) repassando **todo** evento rastreado ao delegate, sem filtro. O bloco `userCancelled` continua no código (comentado como inativo) para quando os providers forem invertidos; os dois dividem o flag, então não disparam em dobro.
+>
+> ⚠️ **Evento ≠ placement.** O que exige o plano **Scale (US$199/mês)** é o **placement** `transaction_abandon` (abrir um paywall por campanha no dashboard). O **evento** no delegate é gratuito e é o que usamos.
 
 **A ordem no caminho (b) é obrigatória:** marca o flag → `armSuppressReapresentar()` → `Superwall.shared.dismiss()` → `requestDownsell()`. Sem a supressão (a MESMA do botão de cupom), o `onDismiss` do paywall que acabamos de fechar reapresentaria o `paywall_onboarding` **por cima** do downsell.
 
-> ⚠️ **A ponte `requestDownsell`/`subscribeDownsellRequest` não é indireção gratuita — não "simplifique" chamando `Superwall.shared.register` do controller.** O `superwallPurchaseController` é um objeto de **módulo** em `app/_layout.tsx` e não tem acesso ao `registerPlacement` do `usePlacement` — e é esse hook que carrega os callbacks de **fail closed**. Registrado por fora, o `paywall_downsell` ficaria sem `onSkip`/`onError`, e um placement não configurado (ou um erro do SDK) deixaria a usuária **sem paywall nenhum**. Então o controller **pede** e a `paywall-soft` **registra**. Sem inscrito (tela desmontada), o pedido é descartado — o guard de `(app)/_layout.tsx` segue sendo a rede de segurança.
+> ⚠️ **Registrar o downsell SEMPRE pelo `registerPlacement` do `usePlacement` da `paywall-soft`, nunca por `Superwall.shared.register` solto** — é esse hook que carrega os callbacks de **fail closed**. Registrado por fora, o `paywall_downsell` ficaria sem `onSkip`/`onError`, e um placement não configurado (ou um erro do SDK) deixaria a usuária **sem paywall nenhum**. A ponte `requestDownsell`/`subscribeDownsellRequest` existe para o controller (objeto de **módulo** em `app/_layout.tsx`, sem acesso ao hook) poder pedir o downsell; o handler do `transactionAbandon` vive na própria `paywall-soft` e usa a mesma ponte, para os dois caminhos passarem pelo mesmo registro. Sem inscrito (tela desmontada), o pedido é descartado — o guard de `(app)/_layout.tsx` segue sendo a rede de segurança.
 
 **Regras de borda (todas intencionais):** downsell **já mostrado** na sessão → cancelar de novo não faz nada, ela continua no paywall; **cancelar DENTRO do próprio downsell** → nada (o flag já está marcado); fechar o downsell no X, ou `onSkip`/`onError` dele → **`paywall_onboarding`**. O flag é **por sessão, em memória** — ver o aviso do `partialize` em "CACHE DE DADOS": nada de estado de paywall em disco.
 
@@ -1475,17 +1480,18 @@ Quem sai do paywall **sem assinar** ganha uma oferta mais barata (anual R$99,90)
 | Camada | Estado |
 |---|---|
 | App Store Connect | `br.com.niksai.app.anual.99` — R$99,90/ano, grupo de assinatura **"NIKS AI Pro"**, **aprovado** |
-| RevenueCat | produto importado, anexado ao entitlement **`premium`** (o que o app checa) e posto na offering **`downsell`** (**não** é a default — ver o `onPurchase` acima) |
+| RevenueCat | produto importado, anexado ao entitlement **`premium`** (o que o app checa — é isso que faz o guard reconhecer a compra) e posto na offering **`downsell`** (**não** é a default; só importa depois da inversão dos providers — ver o `onPurchase` acima) |
 | Superwall | produto cadastrado · paywall **"Downsell Anual 99"** (duplicado do "Paywall OG", só com o produto `.99` e **sem** o botão "Tenho Cupom") · campanha **"Downsell"**, placement **`paywall_downsell`**, audiência All Users / unsubscribed users, paywall a 100% |
 
-> ⚠️ **REGRA GERAL que esta feature confirmou:** todo produto vendido num paywall do Superwall precisa existir **no RevenueCat**, estar **no entitlement** e **em alguma offering**. Faltando qualquer uma das três, a compra falha **em silêncio** e vira loop de paywall — o Superwall entende "falhou", a Apple pode ter cobrado.
+> ⚠️ **REGRA GERAL que esta feature confirmou:** todo produto vendido num paywall do Superwall precisa existir **no RevenueCat**, estar **no entitlement** e **em alguma offering**. Faltando qualquer uma das três, a compra falha **em silêncio** e vira loop de paywall — o Superwall entende "falhou", a Apple pode ter cobrado. (Com o controller inativo de hoje, o que já é indispensável é o **entitlement**: sem ele o guard não reconhece a compra. A offering passa a ser indispensável com a inversão dos providers — manter as três de qualquer forma.)
 
 > ⚠️ **Os preços no TEXTO do paywall de downsell ("R$ 8,33/mês", o preço riscado) são texto fixo, não variável do produto.** Mudar o preço no App Store Connect **não** atualiza o paywall — tem de editar o texto no editor do Superwall, senão a tela passa a mentir o preço.
 
 > ℹ️ **"Entitlement" quer dizer duas coisas diferentes aqui, e elas não precisam ter o mesmo nome:** o que o app checa é o **do RevenueCat**, `premium` (`ENTITLEMENT_ID` em `lib/revenuecat.ts`) — é a ele que o produto `.99` está anexado; o **`pro` é o entitlement do Superwall**, conceito separado, do lado de lá. Não "alinhe" os dois achando que é divergência.
 
 **Pendências:**
-- **Teste real no iPhone dos dois caminhos** (fechar no X e cancelar na Apple) — build **Release** + **Sandbox Tester novo**, ver o aviso "Como testar o paywall/cupom" acima. Validada até agora só a máquina de estado do flag.
+- ✅ **Cancelar na Apple validado no simulador em Release (Sessão 73):** o cancelamento no `paywall_onboarding` abre o downsell, e cancelar DENTRO do downsell não faz nada (sem loop). **Falta:** o mesmo no iPhone, o caminho (a) (fechar no X) e uma **compra concluída** do `.99` dentro do downsell — build **Release** + **Sandbox Tester novo**, ver o aviso "Como testar o paywall/cupom" acima.
+- **Inverter os providers** para ativar o `CustomPurchaseController` — ver o callout "INATIVO" em "Guard de assinatura".
 - **App Store Connect:** o produto `br.com.niksai.app.anual.149` ("NIKS Anual 149,90") está com **preço de R$99,90 no Brasil** — nome ou preço errado. **Não** está no RevenueCat nem em uso por nenhum paywall; resolver antes de algum dia usá-lo.
 
 **`paywall-detailed.tsx` — removido do projeto:**
@@ -1989,6 +1995,20 @@ Depois, `launchctl list | grep -i coresimulator` não deve ter nenhum código ne
 
 > ⚠️ **É intermitente, não determinístico** — é uma corrida na inicialização do `ibtoold` contra um serviço de simulador em estado ruim. Pode passar numa segunda tentativa sem nada ter sido feito, e pode voltar depois. Não conclua que "o que você mexeu antes resolveu".
 
+### Caso real: Release falha com "The resource `…/node_modules/expo-router/entry` was not found"
+
+**Sintoma:** `npx expo run:ios --configuration Release` compila o nativo e falha no fim com *"Error loading assets JSON from Metro … The resource `…/node_modules/expo-router/entry` was not found"*. O Debug passa, e `npx expo export:embed --platform ios --dev false` isolado **também passa** — não é o `metro.config.js`, nem o `main` do `package.json`, nem o watchman.
+
+**Causa:** o erro não vem do bundle do React Native, e sim da fase do **`expo-updates`** que gera o `app.manifest` (`createManifestForBuildAsync`), que roda num target **dos Pods** e **só em Release** (em Debug ela fica em `only-fingerprint`, sem Metro). Ali o `ENTRY_FILE` chega vazio, e o fallback `resolveRelativeEntryPoint` do `@expo/config` 55.0.21 **corta o `.js`** (`convertEntryPointToRelative(…, extname = '.js')`) — o Metro recebe `node_modules/expo-router/entry` sem extensão e não acha. Versões no momento: `expo@55.0.11`, `expo-updates@55.0.19`, `@expo/config@55.0.21`.
+
+**Contorno em uso (local, fora do código):** `ios/.xcode.env.local` tem
+```bash
+export ENTRY_FILE=node_modules/expo-router/entry.js
+```
+⚠️ **Relativo e COM `.js`** — um caminho absoluto passa pela mesma conversão e perde a extensão de novo. O `with-node.sh` do `expo-updates` e a fase de bundle do app leem esse arquivo. Numa máquina nova (ou se o `.xcode.env.local` for apagado), o Release volta a quebrar.
+
+🚧 **Correção de raiz pendente:** alinhar as versões do SDK (`npx expo install --check` para ver, `--fix` para aplicar) e conferir se o descompasso `expo-updates` × `@expo/config` some. Se sumir, apagar a linha do `ENTRY_FILE`.
+
 ---
 
 ## DESIGN SYSTEM — HOME SCREEN (Sessão 22)
@@ -2235,7 +2255,7 @@ A usuária, navegando no Mercado Livre, Safari ou site de marca, toca em **Compa
 > ```bash
 > sed -i '' 's/MARKETING_VERSION = <versão antiga>;/MARKETING_VERSION = <versão nova>;/g' ios/NIKSAI.xcodeproj/project.pbxproj
 > ```
-> (o `CURRENT_PROJECT_VERSION` da extensão já acompanha o `buildNumber`). Conferir no binário: `plutil -extract CFBundleShortVersionString raw <NIKS.app>/PlugIns/NIKSShare.appex/Info.plist`. ⚠️ **Vale para as DUAS extensões** — o `sed` acima pega as duas de uma vez, mas confira: em set/2026 o app saiu `1.0.54` com a `NIKSShare` ainda em `1.0.48` (a `NIKSAction`, recém-criada pelo plugin, nasceu certa). A Apple recusa o upload quando divergem.
+> (o `CURRENT_PROJECT_VERSION` da extensão **deveria** acompanhar o `buildNumber` — ⚠️ mas em set/2026, Sessão 73, o build avisou *"The CFBundleVersion of an app extension ('2') must match that of its containing parent app ('1')"* nas duas extensões: **confira também o build number** antes de um Archive, não só a versão). Conferir no binário: `plutil -extract CFBundleShortVersionString raw <NIKS.app>/PlugIns/NIKSShare.appex/Info.plist`. ⚠️ **Vale para as DUAS extensões** — o `sed` acima pega as duas de uma vez, mas confira: em set/2026 o app saiu `1.0.54` com a `NIKSShare` ainda em `1.0.48` (a `NIKSAction`, recém-criada pelo plugin, nasceu certa). A Apple recusa o upload quando divergem.
 >
 > ⚠️ Depois do prebuild, a extensão foi ajustada à mão para `TARGETED_DEVICE_FAMILY = "1"` (o plugin cria `"1,2"`; o app é só iPhone). Prebuild não-clean **não recria** o target (pula se existir), então o ajuste persiste.
 
@@ -2979,6 +2999,8 @@ Um grid 2×2 feito com `flexWrap: 'wrap'` + `gap`, dando às células largura fi
 Descoberto no grid da colagem (`app/(share)/share-capture.tsx`).
 
 ---
+
+*Sessão 73 — Setembro 2026 — **Downsell no cancelamento da Apple passou a funcionar + descoberta de que o `CustomPurchaseController` nunca esteve ativo.** Testando em Release no simulador, cancelar a folha da Apple deixava o paywall parado. Com logs temporários, o `onPurchase` do controller **nem era chamado**: o `SuperwallProvider` (`expo-superwall` 1.0.9) só liga `manualPurchaseManagement` se o `CustomPurchaseControllerProvider` estiver **acima** dele, e aqui está abaixo — o SDK sobrescreve o `true` com `false` e compra direto pela StoreKit (em produção também). **Inverter os providers ficou como pendência de propósito** (muda o caminho de compra que funciona hoje; exige testar compra normal, cupom, downsell e restore com Sandbox Tester). **Correção aplicada:** o cancelamento passou a ser detectado pelo **evento** `transactionAbandon` (gratuito, diferente do placement pago) no `onSuperwallEvent` de `paywall-soft.tsx`, com a mesma sequência e o mesmo flag de antes; o bloco `userCancelled` do `app/_layout.tsx` ficou comentado como inativo. **Validado no simulador em Release:** cancelar abre o downsell; cancelar dentro dele não faz nada. **Também:** o build Release local quebrava por um descompasso `expo-updates` × `@expo/config` (entry sem `.js`), contornado com `ENTRY_FILE` no `ios/.xcode.env.local` — ver "QUANDO O BUILD FALHA". Ver "Guard de assinatura → `CustomPurchaseControllerProvider` — INATIVO" e "Downsell".*
 
 *Sessão 68 — Setembro 2026 — **Welcome removido, seletor de ano sem "Selecione", fornecedores de IA corrigidos no consentimento.** (1) Depois da splash o app abre direto na tela de nome, que ganhou o link "Já tem conta? Entrar" (único caminho de login) e perdeu o voltar; `app/index.tsx` só roteia; `Screen1` e o vídeo `welcome-1` apagados; `apresentacao.tsx` intocada. Funil do Mixpanel começa no passo 2 (`OB_STEPS.welcome` removido; numeração das telas mantida). (2) Tela 3 abre em 2002 com idade e botão; o estado "Selecione" saiu do `ObWheel`. (3) `CONSENT_BODY` (`AIConsentModal`) passou a citar OpenAI para pele e produto e Google Gemini só para refeição — antes dizia que tudo era Gemini.*
 

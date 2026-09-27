@@ -137,6 +137,16 @@ const superwallPurchaseController = {
       return active ? { type: 'purchased' } : { type: 'failed', error: 'Entitlement não ativo' };
     } catch (error: any) {
       if (error?.userCancelled) {
+        // ⚠️ HOJE ESTE BLOCO NÃO RODA — o controller inteiro está INATIVO. O
+        // SuperwallProvider do expo-superwall só liga `manualPurchaseManagement`
+        // se o CustomPurchaseControllerProvider estiver ACIMA dele na árvore; aqui
+        // ele está abaixo, então o SDK sobrescreve o `true` das options com `false`
+        // e o Superwall compra direto pela StoreKit, sem chamar este onPurchase.
+        // O downsell no cancelamento vem do evento `transactionAbandon`, em
+        // `(onboarding)/paywall-soft.tsx`. Mantido para quando os providers forem
+        // invertidos (pendência no README, seção 15) — o flag de canShowDownsell
+        // impede disparo duplo entre os dois caminhos.
+        //
         // Cancelou a folha de pagamento da Apple. É o mesmo momento de desistência
         // que o placement `transaction_abandon` do Superwall cobriria — só que ele
         // é pago, então detectamos aqui. Mesmo molde do botão de cupom: arma a

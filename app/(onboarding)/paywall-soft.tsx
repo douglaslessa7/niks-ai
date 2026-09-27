@@ -10,9 +10,12 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
   armSuppressReapresentar,
+  canShowDownsell,
   consumeSuppressReapresentar,
   consumeNextPlacement,
+  markDownsellShown,
   nextPaywallPlacement,
+  requestDownsell,
   subscribeDownsellRequest,
 } from '../../lib/paywallFlow';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
@@ -102,13 +105,28 @@ export default function PaywallSoft() {
         handlingCoupon.current = false;
       }
     },
+    // Cancelamento da folha de pagamento da Apple → downsell. Quem compra hoje é o
+    // PRÓPRIO Superwall (o CustomPurchaseController não está ativo — ver o bloco
+    // `userCancelled` em app/_layout.tsx), então o cancelamento só é visível por
+    // este evento do delegate. É o EVENTO `transactionAbandon`, gratuito — não o
+    // placement `transaction_abandon`, que exige o plano Scale do Superwall.
+    // Mesma sequência do botão de cupom: marca o flag, arma a supressão (senão o
+    // onDismiss reapresentaria o paywall normal por cima), fecha e pede o downsell.
+    // Cancelar DENTRO do downsell dispara o evento de novo, mas o flag já está
+    // marcado e nada acontece — ela segue no paywall.
+    onSuperwallEvent: async (eventInfo) => {
+      if (eventInfo?.event?.event !== 'transactionAbandon') return;
+      if (!canShowDownsell()) return;
+      markDownsellShown();
+      armSuppressReapresentar();
+      try { await Superwall.shared.dismiss(); } catch {}
+      requestDownsell();
+    },
   });
 
-  // Cancelamento da folha de pagamento da Apple: quem detecta é o
-  // CustomPurchaseController (onPurchase → userCancelled), que já marcou o flag,
-  // armou a supressão e fechou o paywall. Aqui só registramos o downsell — é
-  // este registro, e não um `Superwall.shared.register` solto, que carrega os
-  // callbacks de fail closed acima (onSkip/onError → paywall_onboarding).
+  // Pedido de downsell (vindo do `transactionAbandon` acima): aqui só registramos
+  // o placement — é este registro, e não um `Superwall.shared.register` solto, que
+  // carrega os callbacks de fail closed acima (onSkip/onError → paywall_onboarding).
   useEffect(() => {
     if (__DEV__) return;
     return subscribeDownsellRequest(() => {
