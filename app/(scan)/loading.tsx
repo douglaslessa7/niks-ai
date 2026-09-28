@@ -11,6 +11,7 @@ import {
   OB, OB_STEPS, ObScreen, ObCheck, useObFrame, useObName, obStep,
 } from '../../components/onboarding/kit';
 import { answerChips } from '../../components/onboarding/answers';
+import { awaitSkinReport, ensureSkinPreview } from '../../lib/onboardingPrefetch';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -20,13 +21,16 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 // sua, <nome>"; anel de 112 pt; frase embaixo que troca a cada etapa. Sem voltar,
 // sem barra.
 //
-// ⚠️ Só a CAMADA VISUAL mudou. A lógica é a de sempre: chama `analyze-skin` (é
-// aqui, e não na câmera, porque ela usa tipo de pele / sol / sono), dispara a
-// preview antes/depois, salva o scan, retries, aviso de alta demanda, estado de
-// erro, e navega para o resultado do onboarding (`/(scan)/results`).
+// As chamadas de IA NÃO nascem mais aqui: o relatório (`analyze-skin`) é disparado
+// em segundo plano quando ela responde o sono (11b), e o antes/depois pela câmera
+// (tela 7) — ver `lib/onboardingPrefetch.ts`. Esta tela aguarda o relatório já em
+// andamento (e dispara de novo só se ele falhou ou não existe), garante o
+// antes/depois, salva o scan, mostra o aviso de alta demanda / estado de erro e
+// navega para o resultado do onboarding (`/(scan)/results`).
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+// Com o relatório pronto, o anel corre de 0 a 100% neste tempo (proporcional ao
+// que falta), em vez de a tela piscar e sumir.
+const FINISH_MS = 2500;
 
 // Frase de baixo: troca a cada 25% (texto do design).
 const PHASES = ['Analisando sua pele…', 'Cruzando com suas respostas…', 'Escolhendo os ativos certos…', 'Montando sua rotina…'];
@@ -41,7 +45,7 @@ const STEP_NAME = 'Analisando Pele';
 
 export default function Loading() {
   const router = useRouter();
-  const { skinImageBase64, skinImageUri, onboarding, setScanResult, scanSource, setSelectedScan, setSkinPreviewUrl } = useAppStore();
+  const { skinImageUri, onboarding, setScanResult, scanSource, setSelectedScan } = useAppStore();
   const { track } = useMixpanel();
 
   const [percentage, setPercentage] = useState(0);
@@ -51,7 +55,6 @@ export default function Loading() {
   const [showError, setShowError] = useState(false);
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPercentageRef = useRef(0);
-  const retryCount = useRef(0);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const demandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ringProgressAnim = useRef(new Animated.Value(0)).current;
@@ -88,46 +91,10 @@ export default function Loading() {
 
   useEffect(() => {
     track('onboarding_step_viewed', obStep(STEP, STEP_NAME));
-    retryCount.current = 0;
 
-    // Gera a preview "antes/depois" — com timeout por tentativa e até 3 tentativas.
-    // Sem isto, uma OpenAI lenta/congestionada deixava a tela final travada pra sempre.
-    const runSkinPreview = async (attempt = 0): Promise<void> => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 100_000);
-      try {
-        const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/generate-skin-preview`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'apikey': SUPABASE_ANON_KEY,
-            },
-            body: JSON.stringify({ image: skinImageBase64 }),
-            signal: controller.signal,
-          }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.preview_url) {
-            setSkinPreviewUrl(data.preview_url);
-            return;
-          }
-        }
-        throw new Error(`preview failed: ${response.status}`);
-      } catch (e) {
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 2000));
-          return runSkinPreview(attempt + 1);
-        }
-        console.warn('Skin preview generation failed (non-blocking):', e);
-      } finally {
-        clearTimeout(timeout);
-      }
-    };
-    runSkinPreview();
+    // O antes/depois já saiu da câmera (tela 7). Aqui só garantimos: se o de fundo
+    // falhou, dispara de novo (100 s por tentativa, até 3 tentativas).
+    ensureSkinPreview();
 
     const tickProgress = () => {
       const current = currentPercentageRef.current;
@@ -148,55 +115,37 @@ export default function Loading() {
     };
     tickProgress();
 
+    // Relatório pronto → o anel corre até 100% em vez de pular: de 0% leva
+    // FINISH_MS (as respostas ainda acendem uma a uma); de perto do fim, bem menos.
+    const finishProgress = () => new Promise<void>((resolve) => {
+      if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+      const tick = () => {
+        const next = Math.min(100, currentPercentageRef.current + 1);
+        currentPercentageRef.current = next;
+        setPercentage(next);
+        if (next >= 100) resolve();
+        else progressTimerRef.current = setTimeout(tick, FINISH_MS / 100);
+      };
+      tick();
+    });
+
+    // O relatório foi disparado em segundo plano quando ela respondeu o sono (11b).
+    // Aqui só aguardamos — sem chamar de novo. Se não houver job para as respostas
+    // atuais, ou o de fundo tiver falhado, o módulo dispara com as mesmas tentativas
+    // de sempre (1 + 2, 2 s entre elas). Ver `lib/onboardingPrefetch.ts`.
     const runAnalysis = async () => {
+      const { result: data, error } = await awaitSkinReport();
+      if (!data) {
+        track('scan_failed', { error });
+        if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+        setShowError(true);
+        return;
+      }
       try {
-        const birthdayVal = onboarding.birthday;
-        let idadeNum: number | null = null;
-        if (birthdayVal) {
-          const asNum = Number(birthdayVal);
-          if (!isNaN(asNum) && asNum > 0 && asNum < 120) {
-            idadeNum = asNum;
-          } else {
-            const d = new Date(birthdayVal);
-            if (!isNaN(d.getTime())) {
-              idadeNum = Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-            }
-          }
-        }
-
-        const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/analyze-skin`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'apikey': SUPABASE_ANON_KEY,
-            },
-            body: JSON.stringify({
-              imageBase64: skinImageBase64,
-              skinProfile: {
-                skin_type: onboarding.skin_type,
-                concerns: onboarding.concerns,
-                genero: onboarding.genero,
-                idade: idadeNum,
-                sun_exposure: onboarding.sun_exposure,
-                hydration: onboarding.hydration,
-                sleep: onboarding.sleep,
-              },
-            }),
-          }
-        );
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(JSON.stringify(errBody));
-        }
-        const data = await response.json();
-
         setSelectedScan(null);
         setScanResult(data, skinImageUri ?? '');
         track('scan_completed', { skin_score: data.skin_score, skin_type: data.skin_type_detected });
-        setPercentage(100);
+        await finishProgress();
 
         try {
           const { data: { user } } = await supabase.auth.getUser();
@@ -239,15 +188,10 @@ export default function Loading() {
           }
         }, 500);
       } catch (err) {
-        if (retryCount.current < 2) {
-          retryCount.current += 1;
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          await runAnalysis();
-        } else {
-          track('scan_failed', { error: (err as any)?.message ?? 'unknown' });
-          if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
-          setShowError(true);
-        }
+        // As tentativas da chamada já rodaram no módulo; aqui só sobra erro local.
+        track('scan_failed', { error: (err as any)?.message ?? 'unknown' });
+        if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+        setShowError(true);
       }
     };
     runAnalysis();

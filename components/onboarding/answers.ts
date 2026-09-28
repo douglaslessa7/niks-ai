@@ -52,6 +52,38 @@ export function answerChips(o: OnboardingData): string[] {
   return chips;
 }
 
+// Tela "Entendi! Vamos te ajudar a:" (modelo 1f), logo depois da tela 5.
+// Acne e Manchas + o genérico são o texto do design; os demais foram escritos a
+// partir das frases reveladas da tela 5 (mesma promessa, em forma de benefício).
+const CONCERN_BENEFIT: Record<string, string> = {
+  'Acne/espinhas': 'Acalmar a acne sem ressecar a sua pele',
+  Manchas: 'Uniformizar o tom e prevenir novas manchas',
+  Cravos: 'Manter os poros livres de cravos',
+  Oleosidade: 'Equilibrar o brilho sem tirar a hidratação',
+  Rugas: 'Estimular a firmeza e cuidar da pele a longo prazo',
+  'Poros dilatados': 'Deixar os poros mais discretos',
+  Olheiras: 'Cuidar da área dos olhos',
+  Ressecamento: 'Reforçar a hidratação e proteger a barreira da pele',
+  'Textura irregular': 'Deixar a pele mais lisa ao toque',
+  Outro: 'Descobrir pela análise da foto o que priorizar',
+};
+const GENERIC_BENEFIT = 'Seguir uma rotina simples que cabe no seu dia';
+
+/**
+ * Benefícios da tela 1f: um por preocupação marcada, na ordem em que ela marcou,
+ * completando com o genérico do design até 3 itens (o layout comporta 3).
+ */
+export function concernBenefits(concerns: string[]): string[] {
+  const list = concerns.map((c) => CONCERN_BENEFIT[c]).filter(Boolean) as string[];
+  if (list.length < 3) list.push(GENERIC_BENEFIT);
+  return list.slice(0, 3);
+}
+
+/** Etiquetas em volta da logo na tela 1f (o design tem 2 posições). */
+export function concernTags(concerns: string[]): string[] {
+  return concerns.filter((c) => c !== 'Outro').map((c) => CONCERN_CHIP[c] ?? c).slice(0, 2);
+}
+
 // Compromisso (tela 21): o que ela quer resolver, a partir da tela 5.
 const CONCERN_GOAL: Record<string, string> = {
   'Acne/espinhas': 'acalmar a acne',

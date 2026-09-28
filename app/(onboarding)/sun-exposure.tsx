@@ -40,7 +40,7 @@ export default function SunExposure() {
       onSelect={(v) => setOnboardingField('sun_exposure', v)}
       onContinue={() => {
         track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-        router.push('/(onboarding)/hydration-sleep');
+        router.push('/(onboarding)/hydration');
       }}
     />
   );

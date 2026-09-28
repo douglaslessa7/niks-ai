@@ -13,6 +13,8 @@ import { ConsentSheet } from '../../components/onboarding/ConsentSheet';
 // Tela 6 do onboarding novo — preparação do scan (modelo 8a do design): título
 // centralizado sem eyebrow, os 5 cuidados num card branco com divisórias #F0EDEB e
 // ícone branco em círculo #FF5EA8, botão "Abrir câmera".
+// Fundo BRANCO como as demais telas de pergunta (o 8a desenha o degradê rosado
+// das telas de valor; o usuário pediu o mesmo fundo do resto do onboarding).
 //
 // Consentimento de IA (modelo 8b): ao tocar em "Abrir câmera", quem ainda não
 // aceitou vê a folha "Antes de continuar" POR CIMA desta tela. Aceitar grava
@@ -80,7 +82,7 @@ export default function ScanPrep() {
   };
 
   return (
-    <ObScreen variant="blush">
+    <ObScreen>
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(112) }}>
         <ObTitle>Agora vamos analisar sua pele por foto.</ObTitle>
       </View>

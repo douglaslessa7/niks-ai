@@ -44,18 +44,25 @@ export const OB_STEPS = {
   // 1 era o welcome antigo — SAIU (set/2026); o app abre direto no nome. A
   // numeração segue a das telas do design (e a calibração da barra), por isso o
   // funil do Mixpanel começa no passo 2.
-  nome: 2, idade: 3, gravidez: 4, incomoda: 5, prepScan: 6, camera: 7,
-  potencial: 8, tipoPele: 9, sol: 10, hidratacaoSono: 11, rotinaAtual: 12,
-  horarioRotina: 13, avisoLembretes: 14, pedidoNotificacao: 15, alergias: 16,
-  alergiaDetalhe: 17, objetivo: 18, comSemNiks: 19, loading: 20, relatorio: 21,
-  rotinaPronta: 22, compromisso: 23,
+  nome: 2, idade: 3, gravidez: 4, incomoda: 5,
+  // Tela de valor "Entendi! Vamos te ajudar a:" (modelo 1f), entre a tela 5 e a
+  // preparação do scan — daqui em diante todos os passos andaram um.
+  entendi: 6, prepScan: 7, camera: 8, potencial: 9, tipoPele: 10, sol: 11,
+  // A antiga tela 11 (hidratação + sono) virou duas (11a/11b).
+  hidratacao: 12, sono: 13, rotinaAtual: 14,
+  horarioRotina: 15, avisoLembretes: 16, pedidoNotificacao: 17, alergias: 18,
+  alergiaDetalhe: 19, objetivo: 20, comSemNiks: 21, loading: 22, relatorio: 23,
+  rotinaPronta: 24, compromisso: 25,
   // Depois do paywall e do cadastro: carrossel de apresentação (última antes da home).
-  apresentacao: 24,
+  apresentacao: 26,
 } as const;
-export const OB_STEP_TOTAL = 24;
+export const OB_STEP_TOTAL = 26;
 
 // Barra de progresso: `(passo − 1) / 19`. O 19 foi calibrado para bater com as
 // larguras do design (nome 5%, idade 10%, "o que te incomoda" 22%, sol 48%).
+// Mantido em 19 mesmo com os passos a mais (hidratação/sono e a tela "Entendi"),
+// por decisão do produto. Com isso as telas DEPOIS da tela 5 avançam um pouco mais
+// que no design (sol: 52,6% contra 48%) e o objetivo (passo 20) chega a 100%.
 const BAR_TOTAL = 19;
 export function obProgress(step: number) {
   return Math.max(0, Math.min(1, (step - 1) / BAR_TOTAL));

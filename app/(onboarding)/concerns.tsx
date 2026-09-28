@@ -40,7 +40,7 @@ export default function Concerns() {
   const handleContinue = () => {
     haptics.action();
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(scan)/scan-prep' as any);
+    router.push('/(onboarding)/entendi');
   };
 
   const full = selected.length >= MAX_SELECT;

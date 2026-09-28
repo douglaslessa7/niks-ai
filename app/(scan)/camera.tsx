@@ -13,6 +13,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
 import { haptics } from '../../lib/haptics';
 import { OB_STEPS, obStep } from '../../components/onboarding/kit';
+import { syncOnboardingPrefetch } from '../../lib/onboardingPrefetch';
 
 export default function Camera() {
   const router = useRouter();
@@ -24,8 +25,9 @@ export default function Camera() {
   const { track } = useMixpanel();
   // `retake=1`: veio do erro do LOADING (tela 18) para tirar outra foto. No
   // onboarding novo a câmera (tela 7) vem ANTES das perguntas de tipo de pele/sol/
-  // sono e a `analyze-skin` só roda no loading — então a 1ª foto segue para a
-  // tela 8, e a foto refeita volta direto para o loading.
+  // sono, e a `analyze-skin` só dispara depois do sono (11b) — então a 1ª foto segue
+  // para o loading de 5 s (`analisando-foto`, modelo 9f) e dali para a tela 8; a foto
+  // refeita volta direto para o loading da tela 18.
   const { retake } = useLocalSearchParams<{ retake?: string }>();
 
   useEffect(() => {
@@ -38,12 +40,16 @@ export default function Camera() {
   const navigateToLoading = (base64: string, uri: string) => {
     track('onboarding_step_completed', obStep(OB_STEPS.camera, 'Scan - Câmera'));
     setSkinImage(base64, uri);
+    // Antes/depois já sai daqui (só precisa da foto) — e, no retake, o relatório
+    // também, porque as respostas já existem. Ver `lib/onboardingPrefetch.ts`.
+    syncOnboardingPrefetch();
     if (scanSource === 'app') {
       router.push('/(scan)/loading-dentro-app' as any);
     } else if (retake === '1') {
       router.replace('/(scan)/loading' as any);
     } else {
-      router.push('/(onboarding)/goal-validation' as any);
+      // Loading de 5 s (modelo 9f) e só então a tela 8 — ver `analisando-foto.tsx`.
+      router.push('/(scan)/analisando-foto' as any);
     }
   };
 

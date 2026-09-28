@@ -12,7 +12,12 @@
 // É consumida (lida e resetada) na próxima vez que o onDismiss rodar.
 let _suppressReapresentar = false;
 
+// TEMP-DS: log temporário da investigação do downsell no cancelamento (remover).
+export const dslog = (...args: unknown[]) =>
+  console.log('[DS]', ...args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))));
+
 export function armSuppressReapresentar(): void {
+  dslog('armSuppressReapresentar'); // TEMP-DS
   _suppressReapresentar = true;
 }
 
@@ -20,6 +25,7 @@ export function armSuppressReapresentar(): void {
 export function consumeSuppressReapresentar(): boolean {
   const armed = _suppressReapresentar;
   _suppressReapresentar = false;
+  dslog('consumeSuppressReapresentar ->', armed); // TEMP-DS
   return armed;
 }
 
@@ -44,6 +50,7 @@ export function canShowDownsell(): boolean {
 }
 
 export function markDownsellShown(): void {
+  dslog('markDownsellShown (antes:', _downsellShown, ')'); // TEMP-DS
   _downsellShown = true;
 }
 
@@ -54,8 +61,10 @@ export function markDownsellShown(): void {
 export function nextPaywallPlacement(): string {
   if (canShowDownsell()) {
     markDownsellShown();
+    dslog('nextPaywallPlacement -> paywall_downsell'); // TEMP-DS
     return 'paywall_downsell';
   }
+  dslog('nextPaywallPlacement -> paywall_onboarding'); // TEMP-DS
   return 'paywall_onboarding';
 }
 
@@ -71,13 +80,16 @@ type DownsellListener = () => void;
 let _downsellListener: DownsellListener | null = null;
 
 export function subscribeDownsellRequest(listener: DownsellListener): () => void {
+  dslog('subscribeDownsellRequest: inscrito'); // TEMP-DS
   _downsellListener = listener;
   return () => {
+    dslog('subscribeDownsellRequest: desinscrito (era o atual:', _downsellListener === listener, ')'); // TEMP-DS
     if (_downsellListener === listener) _downsellListener = null;
   };
 }
 
 export function requestDownsell(): void {
+  dslog('requestDownsell: há inscrito?', _downsellListener != null); // TEMP-DS
   _downsellListener?.();
 }
 

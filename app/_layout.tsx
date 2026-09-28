@@ -30,6 +30,7 @@ import {
   canShowDownsell,
   markDownsellShown,
   requestDownsell,
+  dslog, // TEMP-DS
 } from '../lib/paywallFlow';
 
 const PAYWALLO_CONFIG = {
@@ -108,6 +109,7 @@ const SUPERWALL_API_KEYS = {
 // não sabe da compra — getCustomerInfo() retorna "não assinante" e o paywall volta.
 const superwallPurchaseController = {
   onPurchase: async ({ productId }: { productId: string }): Promise<PurchaseResult> => {
+    dslog('controller.onPurchase CHAMADO', productId); // TEMP-DS
     try {
       // Procura o produto em TODAS as offerings do projeto, não só na atual.
       // Produtos de cupom (ex.: o anual com desconto da offering `promo10`) vivem
@@ -136,6 +138,7 @@ const superwallPurchaseController = {
       const active = typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined';
       return active ? { type: 'purchased' } : { type: 'failed', error: 'Entitlement não ativo' };
     } catch (error: any) {
+      dslog('controller.onPurchase erro', { userCancelled: error?.userCancelled, code: error?.code, message: error?.message }); // TEMP-DS
       if (error?.userCancelled) {
         // ⚠️ HOJE ESTE BLOCO NÃO RODA — o controller inteiro está INATIVO. O
         // SuperwallProvider do expo-superwall só liga `manualPurchaseManagement`
@@ -168,6 +171,7 @@ const superwallPurchaseController = {
     }
   },
   onPurchaseRestore: async (): Promise<RestoreResult> => {
+    dslog('controller.onPurchaseRestore CHAMADO'); // TEMP-DS
     try {
       const customerInfo = await Purchases.restorePurchases();
       const active = typeof customerInfo.entitlements.active[ENTITLEMENT_ID] !== 'undefined';

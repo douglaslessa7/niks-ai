@@ -367,6 +367,11 @@ type AppStore = {
   setProtocolResult: (result: ProtocolResult) => void
   protocolGenerating: boolean
   setProtocolGenerating: (v: boolean) => void
+  // Rotina pré-gerada no onboarding, ANTES da conta (`lib/onboardingPrefetch.ts`).
+  // `key` = relatório + respostas que a geraram; o signup só a aproveita se a chave
+  // ainda bate. EM MEMÓRIA (fora do partialize): app fechado → o signup gera de novo.
+  prefetchedProtocol: { key: string; result: ProtocolResult } | null
+  setPrefetchedProtocol: (v: { key: string; result: ProtocolResult } | null) => void
   // Regeneração do protocolo no 1º scan in-app: roda em background. Ambos EM MEMÓRIA
   // (fora do partialize): guard de "já rodando nesta sessão" + promessa do modal.
   regenInFlight: boolean
@@ -515,6 +520,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   setProtocolResult: (result) => set({ protocolResult: result }),
   setProtocolGenerating: (v) => set({ protocolGenerating: v }),
+  prefetchedProtocol: null,
+  setPrefetchedProtocol: (v) => set({ prefetchedProtocol: v }),
   regenInFlight: false,
   setRegenInFlight: (v) => set({ regenInFlight: v }),
   routineUpdatingNotice: false,
@@ -607,7 +614,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanId: null, protocolResult: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
 }), {
   // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
   // O store era 100% em memória, então TODO cache dele morria ao fechar o app —
