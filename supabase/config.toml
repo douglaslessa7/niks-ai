@@ -31,6 +31,14 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/cleanup-skin-previews/index.ts"
 
+[functions.cleanup-orphan-storage]
+enabled = true
+# pg_cron não tem sessão de usuário — a trava é o header x-cleanup-secret
+# (segredo próprio: ORPHAN_CLEANUP_SECRET / Vault cleanup_orphan_storage_secret).
+# Remoção só com o secret ORPHAN_CLEANUP_REMOVE=true; sem ele roda a seco.
+verify_jwt = false
+entrypoint = "./functions/cleanup-orphan-storage/index.ts"
+
 [functions.delete-account]
 enabled = true
 # O app manda a sessão real da usuária; a função ainda revalida o JWT por conta
