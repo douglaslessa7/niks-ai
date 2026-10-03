@@ -21,6 +21,7 @@ export type ColecaoItem = {
   marca: string | null;
   categoria: string | null;
   compat: number | null;
+  verdict: string | null;    // veredito do scan (pode_usar | com_ressalva | evitaria) — mostrado quando não há %
   photoUrl: string | null;   // foto original, pronta para exibir (URL assinada no caso do scan)
   cutoutUrl: string | null;  // recorte sem fundo (URL assinada), quando pronto
   cutoutStatus: 'pendente' | 'ok' | 'falhou';
@@ -42,6 +43,33 @@ async function signMany(bucket: string, paths: string[]): Promise<Map<string, st
 
 const isHttp = (s?: string | null) => !!s && /^https?:\/\//.test(s);
 
+// Compatibilidade (0–100) que vale para a usuária, quando a linha da coleção não guardou:
+// produto do catálogo → a da recomendação dela (recomendacoes_produtos); produto escaneado
+// → a da análise do scan. Antes, um item salvo sem o número ficava sem o selo "% compatível".
+async function compatFallback(userId: string, prodIds: string[], scanIds: string[]) {
+  const byProd = new Map<string, number>();
+  const byScan = new Map<string, number>();
+  const verdictByScan = new Map<string, string>();
+  const [rec, scans] = await Promise.all([
+    prodIds.length
+      ? supabase.from('recomendacoes_produtos').select('recomendacao').eq('user_id', userId).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+    scanIds.length
+      ? supabase.from('product_scans').select('id, resultado').in('id', scanIds)
+      : Promise.resolve({ data: [] } as any),
+  ]);
+  const passos = Array.isArray(rec?.data?.recomendacao) ? rec.data.recomendacao : [];
+  passos.forEach((s: any) => (s?.produtos ?? []).forEach((x: any) => {
+    if (x?.produto_id && typeof x.compatibilidade === 'number' && !byProd.has(x.produto_id)) byProd.set(x.produto_id, Math.round(x.compatibilidade));
+  }));
+  (scans?.data ?? []).forEach((r: any) => {
+    const c = r?.resultado?.compatibilidade;
+    if (typeof c === 'number') byScan.set(r.id, Math.round(c));
+    if (typeof r?.resultado?.veredito === 'string') verdictByScan.set(r.id, r.resultado.veredito);
+  });
+  return { byProd, byScan, verdictByScan };
+}
+
 // Coleção da usuária, mais antiga primeiro (a ordem do "Fora da estante" segue a de entrada).
 export async function listColecao(userId: string): Promise<ColecaoItem[]> {
   const { data: rows, error } = await supabase
@@ -57,8 +85,14 @@ export async function listColecao(userId: string): Promise<ColecaoItem[]> {
   const prodIds = list.filter((r: any) => r.origem === 'catalogo' && r.produto_id).map((r: any) => r.produto_id);
   // Produto de scan: usa o recorte do próprio scan (Fase 3, product_scans.recorte_*).
   const scanIds = list.filter((r: any) => r.origem === 'scan' && r.product_scan_id).map((r: any) => r.product_scan_id);
-  const [scanUrls, cutUrls, catCuts, scanCuts] = await Promise.all([
+  const missing = list.filter((r: any) => typeof r.compatibilidade !== 'number');
+  const [scanUrls, cutUrls, catCuts, scanCuts, fb] = await Promise.all([
     signMany('product-scans', scanPaths), signMany('colecao', cutPaths), getCutoutsByProductId(prodIds), getScanCutouts(scanIds),
+    compatFallback(
+      userId,
+      missing.filter((r: any) => r.produto_id).map((r: any) => r.produto_id),
+      missing.filter((r: any) => r.product_scan_id).map((r: any) => r.product_scan_id),
+    ),
   ]);
   return list.map((r: any) => {
     const e = r.estante;
@@ -78,7 +112,9 @@ export async function listColecao(userId: string): Promise<ColecaoItem[]> {
       nome: r.nome,
       marca: r.marca,
       categoria: r.categoria,
-      compat: typeof r.compatibilidade === 'number' ? r.compatibilidade : null,
+      compat: typeof r.compatibilidade === 'number' ? r.compatibilidade
+        : (r.produto_id ? fb.byProd.get(r.produto_id) : undefined) ?? (r.product_scan_id ? fb.byScan.get(r.product_scan_id) : undefined) ?? null,
+      verdict: r.product_scan_id ? fb.verdictByScan.get(r.product_scan_id) ?? null : null,
       photoUrl: isHttp(r.imagem_url) ? r.imagem_url : (scanUrls.get(r.imagem_url) ?? null),
       cutoutUrl: r.recorte_path ? (cutUrls.get(r.recorte_path) ?? null) : null,
       cutoutStatus: r.recorte_status,

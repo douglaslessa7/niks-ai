@@ -60,7 +60,8 @@ const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 // A foto fica no bucket PRIVADO `product-scans` → precisa de URL assinada p/ exibir.
 // Card da grade do 47a (coleção, recomendados e escaneados usam a mesma grade).
 // cutoutUrl: recorte sem fundo (catálogo/scan) — quando existe, a grade mostra ele no lugar da foto.
-type GridItem = { id: string; photoUrl: string | null; cutoutUrl?: string | null; name: string | null; cat: string | null; match: number | null };
+// verdict: veredito do scan — a tag mostra ele quando não há porcentagem (scans antigos).
+type GridItem = { id: string; photoUrl: string | null; cutoutUrl?: string | null; name: string | null; cat: string | null; match: number | null; verdict?: string | null };
 
 // Aba "Recomendados" (design 47a): cada produto que a IA recomendou, com o passo de
 // origem — a tela mostra os que NÃO estão escolhidos na rotina.
@@ -77,11 +78,14 @@ type ScanItem = {
   match: number | null;   // resultado.compatibilidade (0–100); scans antigos não têm
   cutoutUrl?: string | null;    // recorte sem fundo (Fase 3), quando pronto
   cutoutStatus?: string | null; // null = scan antigo, ainda sem pedido de recorte
+  verdict?: string | null;      // veredito da análise (tag quando não há %)
 };
 
 // Filtros do 47a, na ordem do design. A categoria da analisar-produto é texto livre
 // ("sérum facial", "gel de limpeza", "protetor solar com cor"…) → agrupa por palavra.
 const CAT_ORDER = ['Limpeza', 'Tônico', 'Sérum', 'Hidratante', 'Protetor solar'] as const;
+// Tag no lugar do "% compatível" quando o scan é antigo e não tem o número.
+const VEREDITO_TAG: Record<string, string> = { pode_usar: 'Pode usar', com_ressalva: 'Com ressalva', evitaria: 'Evitaria' };
 // "Alternativa ao seu protetor" etc. — linha de baixo dos cards da aba Recomendados.
 const ALT: Record<string, string> = {
   'Limpeza': 'à sua limpeza', 'Tônico': 'ao seu tônico', 'Sérum': 'ao seu sérum',
@@ -143,6 +147,7 @@ function buildItem(passo: RecPasso, prodMap: Map<string, Prod>, prefix: string, 
 
   return {
     id: `${prefix}${index}`, num, step, productId: main.id,
+    compat: typeof principal.x.compatibilidade === 'number' ? Math.round(principal.x.compatibilidade) : null,
     brand: main.marca, name: main.nome, img: { uri: main.imagem_url },
     pra: (principal.x.copy || '').trim(),
     praLong: (principal.x.copy || '').trim(),
@@ -412,6 +417,7 @@ export default function RecomendacaoProdutos() {
         match: typeof r.resultado?.compatibilidade === 'number' ? Math.round(r.resultado.compatibilidade) : null,
         cutoutUrl: r.recorte_status === 'ok' ? (r.recorte_url ?? (r.recorte_path ? signedMap.get(r.recorte_path) ?? null : null)) : null,
         cutoutStatus: r.recorte_status ?? null,
+        verdict: typeof r.resultado?.veredito === 'string' ? r.resultado.veredito : null,
       }));
       setScans(items);
       setScanState('ready');
@@ -629,12 +635,12 @@ export default function RecomendacaoProdutos() {
                       : <IconHerb />}
                   </View>
                   <View style={{ gap: 2, paddingHorizontal: 2 }}>
-                    {p.match != null && (
+                    {(p.match != null || (p.verdict && VEREDITO_TAG[p.verdict])) && (
                       <View style={p47.badge}>
                         <View style={p47.badgeDot}>
                           <Svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
                         </View>
-                        <Text style={p47.badgeText}>{`${p.match}% compatível`}</Text>
+                        <Text style={p47.badgeText}>{p.match != null ? `${p.match}% compatível` : VEREDITO_TAG[p.verdict!]}</Text>
                       </View>
                     )}
                     <Text style={p47.name} lineBreakStrategyIOS="push-out">{p.name || 'Produto'}</Text>
@@ -692,7 +698,7 @@ export default function RecomendacaoProdutos() {
           {PageTop()}
           {ProductGrid<GridItem & { c: ColecaoItem }>({
             items: colecao.map((c) => ({
-              id: c.id, photoUrl: c.cutoutUrl ?? c.photoUrl, name: c.nome, cat: catOf(c.categoria), match: c.compat, c,
+              id: c.id, photoUrl: c.cutoutUrl ?? c.photoUrl, name: c.nome, cat: catOf(c.categoria), match: c.compat, verdict: c.verdict, c,
             })),
             cat: catC, setCat: setCatC, onPick: (p) => { void openColecaoItem(p.c); },
             title: 'Tenho em casa', subOf: (p) => p.c.marca, allTags: true,
