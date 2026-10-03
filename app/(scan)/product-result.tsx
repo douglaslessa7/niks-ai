@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
 import { requestAppReview } from '../../lib/storeReview';
 import { clearShareResume } from '../../lib/shareResume';
+import { useColecaoToggle } from '../../hooks/useColecaoToggle';
+import { waitScanCutout } from '../../lib/scanCutouts';
 
 // Tela de RESULTADO do scan de produto (fluxo da câmera → loading → aqui).
 // O layout inteiro vive em `components/product/ProductAnalysis` — o MESMO componente que o
@@ -23,13 +25,37 @@ export default function ProductResult() {
     ? `data:${productImageMimeType ?? 'image/jpeg'};base64,${productImageBase64}`
     : null;
 
+  // "Tenho em casa" — só para análise ok que foi salva (tem scan_id).
+  const r = productScanResult as any;
+  const colecaoSrc = useMemo(() => (r?.status === 'ok' && r?.scan_id ? {
+    origem: 'scan' as const, productScanId: r.scan_id,
+    nome: r.produto?.nome ?? null, marca: r.produto?.marca ?? null,
+    categoria: r.produto?.categoria ?? null, compat: r.compatibilidade ?? null,
+  } : null), [r]);
+  const col = useColecaoToggle(colecaoSrc);
+
+  // Recorte sem fundo (Fase 3): o servidor faz em segundo plano depois da análise. A foto
+  // original aparece na hora; quando o recorte fica pronto (até ~20 s), troca por ele.
+  // Se falhar ou demorar, fica a original.
+  const [cutoutUri, setCutoutUri] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setCutoutUri(null);
+    if (r?.status === 'ok' && r?.scan_id) {
+      waitScanCutout(r.scan_id).then((url) => { if (alive && url) setCutoutUri(url); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [r?.scan_id, r?.status]);
+
   return (
     <ProductAnalysis
       result={productScanResult}
       photoUri={photoUri}
+      cutoutUri={cutoutUri}
       onClose={() => { requestAppReview(); router.replace('/(app)/recomendacao-produtos' as any); }}
       onRescan={() => router.replace('/(scan)/product-camera' as any)}
       rescanLabel={productScanResult?.status === 'precisa_foto' ? 'Escanear os ingredientes' : 'Escanear outro produto'}
+      colecao={colecaoSrc && col.owned !== null ? { owned: col.owned, busy: col.busy, onToggle: col.toggle } : undefined}
     />
   );
 }

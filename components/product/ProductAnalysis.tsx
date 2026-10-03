@@ -40,7 +40,6 @@ const WHITE = '#ffffff';
 const INK = '#121212';
 const INK_BODY = '#3d3d3d';
 const INK_MUTE = '#818181';
-const ROTINA_PINK = '#ff9d9d'; // cor da marca — só o CTA (botão de escanear), que é constante
 const CARD_BORDER = '#e3e3e6';
 const HAIRLINE = 'rgba(18,18,18,0.06)';
 const PHOTO_BG = '#f4f4f4';
@@ -72,15 +71,19 @@ type Props = {
   result: any;
   /** Foto que a usuária tirou: data URI (fluxo de scan) ou URL assinada (histórico). */
   photoUri: string | null;
+  /** Recorte SEM FUNDO do produto (Fase 3), quando pronto — substitui a foto no círculo. */
+  cutoutUri?: string | null;
   /** Fecha a análise (voltar da tela / fechar o modal). */
   onClose: () => void;
   /** Ação do botão de escanear. Sem ela, o botão não aparece. */
   onRescan?: () => void;
   /** Rótulo do botão de escanear. */
   rescanLabel?: string;
+  /** "Tenho em casa" (Minha coleção, design 47a/48a). Sem ela, o botão não aparece. */
+  colecao?: { owned: boolean; busy?: boolean; onToggle: () => void };
 };
 
-export default function ProductAnalysis({ result: r, photoUri, onClose, onRescan, rescanLabel = 'Escanear outro produto' }: Props) {
+export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClose, onRescan, rescanLabel = 'Escanear outro produto', colecao }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const S = width / 393;
@@ -159,6 +162,8 @@ export default function ProductAnalysis({ result: r, photoUri, onClose, onRescan
     </Pressable>
   );
 
+  // Botões do fim no padrão do design 47c (detalhe do produto): cápsulas de 50pt,
+  // fonte do sistema. Escanear = cápsula branca com texto rosa e ícone de câmera.
   const RescanButton = () =>
     onRescan ? (
       <Pressable
@@ -167,15 +172,44 @@ export default function ProductAnalysis({ result: r, photoUri, onClose, onRescan
           onRescan();
         }}
         style={{
-          marginTop: s(28), marginHorizontal: s(10),
-          height: s(52), borderRadius: s(16),
-          backgroundColor: ROTINA_PINK,
+          marginTop: colecao ? 10 : s(28), marginHorizontal: s(10),
+          height: 50, borderRadius: 100, flexDirection: 'row', gap: 8,
+          backgroundColor: WHITE,
           alignItems: 'center', justifyContent: 'center',
-          shadowColor: ROTINA_PINK, shadowOffset: { width: 0, height: s(6) },
-          shadowOpacity: 0.35, shadowRadius: s(12), elevation: 6,
+          shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.10, shadowRadius: 7, elevation: 3,
         }}
       >
-        <Text style={{ fontFamily: f7, fontSize: s(16), color: WHITE }}>{rescanLabel}</Text>
+        <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="#E8468F" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M14.5 4.5h-5L8 6.5H5A1.5 1.5 0 0 0 3.5 8v10A1.5 1.5 0 0 0 5 19.5h14a1.5 1.5 0 0 0 1.5-1.5V8A1.5 1.5 0 0 0 19 6.5h-3z" />
+          <Path d="M15.5 12.75a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0z" />
+        </Svg>
+        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#E8468F' }}>{rescanLabel}</Text>
+      </Pressable>
+    ) : null;
+
+  // "Adicionar à coleção" (design 47c): cápsula rosa cheia; marcado = check + "Está na
+  // sua coleção" (põe o produto na Minha coleção e na estante); tocar de novo tira.
+  const ColecaoButton = () =>
+    colecao ? (
+      <Pressable
+        disabled={colecao.busy}
+        onPress={() => { haptics.tap(); colecao.onToggle(); }}
+        style={{
+          marginTop: s(28), marginHorizontal: s(10), height: 50, borderRadius: 100,
+          flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: '#FF5EA8',
+          shadowColor: 'rgb(255,94,168)', shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.28, shadowRadius: 8, elevation: 6,
+          opacity: colecao.busy ? 0.6 : 1,
+        }}
+      >
+        <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke={WHITE} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round">
+          <Path d={colecao.owned ? 'M5 12.5l4.5 4.5L19 7.5' : 'M12 5v14M5 12h14'} />
+        </Svg>
+        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: WHITE }}>
+          {colecao.owned ? 'Está na sua coleção' : 'Adicionar à coleção'}
+        </Text>
       </Pressable>
     ) : null;
 
@@ -303,9 +337,14 @@ export default function ProductAnalysis({ result: r, photoUri, onClose, onRescan
           <View style={{ alignItems: 'center', marginTop: s(36), zIndex: 1 }}>
             <View style={{ width: RING, height: RING, alignItems: 'center', justifyContent: 'center' }}>
               <View style={{ width: PHOTO, height: PHOTO, borderRadius: PHOTO / 2, backgroundColor: WHITE, overflow: 'hidden' }}>
-                {photoUri
-                  ? <Image source={{ uri: photoUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                  : <View style={{ flex: 1, backgroundColor: PHOTO_BG }} />}
+                {cutoutUri
+                  // Recorte sem fundo: o produto inteiro, "flutuando" sobre o branco do círculo.
+                  ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                      <Image source={{ uri: cutoutUri }} style={{ width: '74%', height: '74%' }} resizeMode="contain" />
+                    </View>
+                  : photoUri
+                    ? <Image source={{ uri: photoUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    : <View style={{ flex: 1, backgroundColor: PHOTO_BG }} />}
               </View>
               <Image
                 source={theme.ringImg}
@@ -420,6 +459,7 @@ export default function ProductAnalysis({ result: r, photoUri, onClose, onRescan
             <Text style={{ fontFamily: f4, fontSize: s(12.5), lineHeight: s(12.5) * 1.55, color: INK_MUTE, marginTop: s(18), marginHorizontal: s(21), fontStyle: 'italic' }}>{r.nota}</Text>
           )}
 
+          <ColecaoButton />
           <RescanButton />
         </View>
       </ScrollView>

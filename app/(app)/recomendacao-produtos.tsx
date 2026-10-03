@@ -1,23 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Image, Modal, Pressable, TouchableOpacity,
-  useWindowDimensions, ActivityIndicator,
+  View, Text, ScrollView, Image, Modal, TouchableOpacity, TextInput, Keyboard,
+  useWindowDimensions, ActivityIndicator, StyleSheet,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
-  Nunito_500Medium, Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
-import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { concernLabel } from '../../lib/concernLabels';
-import { saveProductForStep, normStepKey } from '../../lib/savedProducts';
+import { saveProductForStep, normStepKey, getSavedProducts, type SavedProduct } from '../../lib/savedProducts';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
+import { listColecao, type ColecaoItem } from '../../lib/colecao';
+import { getScanCutouts, requestScanCutout } from '../../lib/scanCutouts';
+import { useColecaoToggle } from '../../hooks/useColecaoToggle';
+import { getUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
@@ -30,35 +29,26 @@ import { haptics } from '../../lib/haptics';
 // Os campos de exibição (marca/nome/imagem/concerns) são resolvidos por produto_id
 // contra a tabela `produtos`. A tela só EXIBE — ordem e conteúdo vêm do JSON.
 
-const WHITE = '#ffffff';
 const INK = '#121212';
-const INK_BODY = '#3d3d3d';
-const INK_MUTE = '#818181';
 const INK_FAINT = '#b5b5b5';
-const CORAL = '#f86b79';
-const ROTINA_PINK = '#ff9d9d';                 // rosa da tela de Rotina (protocolo BRAND)
-const ROTINA_WASH = 'rgba(255,157,157,0.16)';  // wash do rosa da Rotina — fundo das tags
-const CARD_BORDER = '#e3e3e6';   // hairline-assinatura do app
-const PHOTO_BG = '#f4f4f4';      // fundo neutro claro da foto (sunken)
-
-const LOGO = require('../../assets/home/niks-logo.png');
 
 type Alt = { brand: string; name: string; sub: string; img: any; praLong?: string; targets?: string[] };
 type Item = {
   id: string; num: string; step: string; brand?: string; name?: string; img?: any;
   pra?: string; praLong?: string; targets?: string[]; alts?: Alt[];
   empty?: boolean; note?: string; productId?: string; // id do produto principal (deep-link da home)
+  categoria?: string | null; compat?: number | null;   // vão junto para a coleção ("Tenho em casa")
 };
 
 // ── Formato do JSON salvo em recomendacoes_produtos.recomendacao ──────────────
-type RecProduto = { produto_id: string; principal?: boolean; copy?: string };
+type RecProduto = { produto_id: string; principal?: boolean; copy?: string; compatibilidade?: number };
 type RecPasso = {
   categoria?: string; passo?: string; periodo?: string;
   ingrediente_alvo?: string; produtos?: RecProduto[];
   sem_produto?: boolean; motivo?: string;
 };
 // Linha resolvida da tabela `produtos` (só os campos de exibição).
-type Prod = { id: string; marca: string; nome: string; imagem_url: string; concerns: string[] };
+type Prod = { id: string; marca: string; nome: string; imagem_url: string; concerns: string[]; categoria?: string | null };
 
 // 'generating' = usuária legada (tem scan + protocolo, mas nunca teve recomendação
 // gerada, porque se cadastrou antes da feature existir). Ver `generateOnDemand`.
@@ -66,8 +56,16 @@ type LoadState = 'loading' | 'generating' | 'empty' | 'error' | 'ready';
 
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI';
 
-// ── Aba "Escaneados": produtos que a usuária escaneou (tabela product_scans) ──
+// ── Aba "Minha coleção" (design 47a): produtos que a usuária escaneou (product_scans) ──
 // A foto fica no bucket PRIVADO `product-scans` → precisa de URL assinada p/ exibir.
+// Card da grade do 47a (coleção, recomendados e escaneados usam a mesma grade).
+// cutoutUrl: recorte sem fundo (catálogo/scan) — quando existe, a grade mostra ele no lugar da foto.
+type GridItem = { id: string; photoUrl: string | null; cutoutUrl?: string | null; name: string | null; cat: string | null; match: number | null };
+
+// Aba "Recomendados" (design 47a): cada produto que a IA recomendou, com o passo de
+// origem — a tela mostra os que NÃO estão escolhidos na rotina.
+type RecEntry = GridItem & { prod: Prod; step: string; copy: string };
+
 type ScanItem = {
   id: string;
   photoUrl: string | null;
@@ -75,20 +73,46 @@ type ScanItem = {
   name: string | null;
   createdAt: string;
   result: any;            // objeto `resultado` (resposta da analisar-produto)
+  cat: string | null;     // uma das CAT_ORDER (filtros), ou null se não casar
+  match: number | null;   // resultado.compatibilidade (0–100); scans antigos não têm
+  cutoutUrl?: string | null;    // recorte sem fundo (Fase 3), quando pronto
+  cutoutStatus?: string | null; // null = scan antigo, ainda sem pedido de recorte
 };
 
-// Veredito → rótulo + cores (mesma família do app / product-result).
-const VEREDITO: Record<string, { label: string; fg: string; bg: string }> = {
-  pode_usar:    { label: 'Pode usar',        fg: '#1E9E63', bg: 'rgba(30,158,99,0.12)' },
-  com_ressalva: { label: 'Use com ressalva', fg: '#C67C1E', bg: 'rgba(232,161,60,0.15)' },
-  evitaria:     { label: 'Eu evitaria',      fg: '#D8483F', bg: 'rgba(216,72,63,0.12)' },
+// Filtros do 47a, na ordem do design. A categoria da analisar-produto é texto livre
+// ("sérum facial", "gel de limpeza", "protetor solar com cor"…) → agrupa por palavra.
+const CAT_ORDER = ['Limpeza', 'Tônico', 'Sérum', 'Hidratante', 'Protetor solar'] as const;
+// "Alternativa ao seu protetor" etc. — linha de baixo dos cards da aba Recomendados.
+const ALT: Record<string, string> = {
+  'Limpeza': 'à sua limpeza', 'Tônico': 'ao seu tônico', 'Sérum': 'ao seu sérum',
+  'Hidratante': 'ao seu hidratante', 'Protetor solar': 'ao seu protetor',
 };
+function catOf(raw?: string | null): string | null {
+  const c = (raw ?? '').toLowerCase();
+  if (!c) return null;
+  if (/protetor|fps|solar/.test(c)) return 'Protetor solar';
+  if (/limp|sabonete|micelar|cleans/.test(c)) return 'Limpeza';
+  if (/t[oô]nico|toner|essência|essencia/.test(c)) return 'Tônico';
+  if (/s[ée]rum|ampoule|booster/.test(c)) return 'Sérum';
+  if (/hidrat|creme|loção|locao|gel/.test(c)) return 'Hidratante';
+  return null;
+}
+
+// Busca sem diferenciar maiúscula nem acento ("serum" acha "Sérum").
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+// Quando foi o scan, no formato do 47a: "Hoje, 14:32" · "Ontem, 19:48" · "22 set".
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-const fmtScanDate = (iso: string) => {
+function fmtWhen(iso: string, now: Date = new Date()): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  return `${String(d.getDate()).padStart(2, '0')} ${MESES[d.getMonth()]}`;
-};
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86_400_000);
+  if (diff === 0) return `Hoje, ${hm}`;
+  if (diff === 1) return `Ontem, ${hm}`;
+  return `${d.getDate()} ${MESES[d.getMonth()]}${d.getFullYear() !== now.getFullYear() ? ` ${d.getFullYear()}` : ''}`;
+}
 
 // Rótulos PT dos concerns reais de um produto (omite códigos desconhecidos).
 const targetsOf = (p: Prod): string[] =>
@@ -145,7 +169,10 @@ export default function RecomendacaoProdutos() {
   const triedGenerate = useRef(false);
   const [am, setAm] = useState<Item[]>([]);
   const [pm, setPm] = useState<Item[]>([]);
-  const [count, setCount] = useState(0);
+  const [recList, setRecList] = useState<RecEntry[]>([]);
+  const [catR, setCatR] = useState<string>('Todos'); // filtro dos recomendados
+  // Produtos escolhidos na rotina (por passo) — os recomendados que estão aqui saem da aba.
+  const [saved, setSaved] = useState<Record<string, SavedProduct>>({});
 
   // Deep-link da home ("Para você"): produto_id cujo detalhe deve abrir ao entrar aqui.
   const productDetailTarget = useAppStore((s) => s.productDetailTarget);
@@ -155,21 +182,26 @@ export default function RecomendacaoProdutos() {
   const productDetailStep = useAppStore((s) => s.productDetailStep);
   const setProductDetailStep = useAppStore((s) => s.setProductDetailStep);
 
-  // Abas: "Recomendados" (recomendação salva) | "Escaneados" (histórico de scans).
-  const [tab, setTab] = useState<'recomendados' | 'escaneados'>('recomendados');
+  // Abas (design 47a): "Minha coleção" (o que a usuária tem em casa) | "Recomendados"
+  // (recomendação salva) | "Escaneados" (histórico de product_scans). Abre na coleção.
+  const [tab, setTab] = useState<'colecao' | 'recomendados' | 'escaneados'>('colecao');
   const [scanState, setScanState] = useState<LoadState>('loading');
   const [scans, setScans] = useState<ScanItem[]>([]);
   const [scanDetail, setScanDetail] = useState<ScanItem | null>(null);
+  const [catC, setCatC] = useState<string>('Todos'); // filtro da coleção
+  const [catS, setCatS] = useState<string>('Todos'); // filtro dos escaneados
+  // Busca (lupa do cabeçalho): filtra os produtos da aba aberta pelo nome/marca.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [kbH, setKbH] = useState(0); // altura do teclado — a barra de busca sobe junto
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', (e) => setKbH(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKbH(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  const closeSearch = () => { Keyboard.dismiss(); setSearchOpen(false); setQuery(''); };
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null); // foto do cabeçalho (mesma da home)
 
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
-    Nunito_500Medium, Nunito_400Regular,
-  });
-  const f8 = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const f7 = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const f6 = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const f5 = fontsLoaded ? 'Nunito_500Medium' : undefined;
-  const f4 = fontsLoaded ? 'Nunito_400Regular' : undefined;
 
   // Lê a linha da usuária em `recomendacoes_produtos`. null = erro de rede/RLS.
   const fetchPassos = useCallback(async (userId: string): Promise<RecPasso[] | null> => {
@@ -261,7 +293,7 @@ export default function RecomendacaoProdutos() {
       if (ids.length) {
         const { data: prods } = await supabase
           .from('produtos')
-          .select('id, marca, nome, imagem_url, concerns')
+          .select('id, marca, nome, imagem_url, concerns, categoria')
           .in('id', ids);
         (prods ?? []).forEach((p: any) => prodMap.set(p.id, p));
       }
@@ -280,16 +312,31 @@ export default function RecomendacaoProdutos() {
         }
       }
 
-      if (amItems.length === 0 && pmItems.length === 0) { setState('empty'); return; }
+      // Lista plana da aba Recomendados: todo produto recomendado, uma vez só, na ordem
+      // dos passos. Categoria: a do catálogo; senão, o nome do passo ("Protetor Solar").
+      const seen = new Set<string>();
+      const flat: RecEntry[] = [];
+      for (const passo of passos) {
+        if (passo.sem_produto) continue;
+        const step = (passo.passo || passo.categoria || '').trim();
+        for (const x of passo.produtos ?? []) {
+          const prod = prodMap.get(x.produto_id);
+          if (!prod || seen.has(prod.id)) continue;
+          seen.add(prod.id);
+          flat.push({
+            id: prod.id, photoUrl: prod.imagem_url || null, name: prod.nome,
+            cat: catOf(prod.categoria) ?? catOf(step) ?? catOf(passo.categoria),
+            match: typeof x.compatibilidade === 'number' ? Math.round(x.compatibilidade) : null,
+            prod, step, copy: (x.copy || '').trim(),
+          });
+        }
+      }
 
-      // Nº de passos (únicos) com produto recomendado — usado no rodapé.
-      const withProduct = passos.filter(
-        (p) => !p.sem_produto && (p.produtos ?? []).some((x) => prodMap.has(x.produto_id)),
-      ).length;
+      if (amItems.length === 0 && pmItems.length === 0 && flat.length === 0) { setState('empty'); return; }
 
       setAm(amItems);
       setPm(pmItems);
-      setCount(withProduct);
+      setRecList(flat);
       setState('ready');
     } catch {
       setState('error');
@@ -336,13 +383,16 @@ export default function RecomendacaoProdutos() {
 
       const { data: rows, error } = await supabase
         .from('product_scans')
-        .select('id, image_path, produto_nome, produto_marca, resultado, created_at')
+        .select('id, image_path, produto_nome, produto_marca, resultado, created_at, recorte_status, recorte_path, recorte_url')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) { setScanState('error'); return; }
       if (!rows || rows.length === 0) { setScanState('empty'); return; }
 
-      const paths = rows.map((r: any) => r.image_path).filter(Boolean) as string[];
+      const paths = [
+        ...rows.map((r: any) => r.image_path),
+        ...rows.filter((r: any) => r.recorte_status === 'ok' && r.recorte_path && !r.recorte_url).map((r: any) => r.recorte_path),
+      ].filter(Boolean) as string[];
       const signedMap = new Map<string, string>();
       if (paths.length) {
         const { data: signed } = await supabase.storage.from('product-scans').createSignedUrls(paths, 3600);
@@ -358,6 +408,10 @@ export default function RecomendacaoProdutos() {
         name: r.produto_nome ?? r.resultado?.produto?.nome ?? null,
         createdAt: r.created_at,
         result: r.resultado,
+        cat: catOf(r.resultado?.produto?.categoria),
+        match: typeof r.resultado?.compatibilidade === 'number' ? Math.round(r.resultado.compatibilidade) : null,
+        cutoutUrl: r.recorte_status === 'ok' ? (r.recorte_url ?? (r.recorte_path ? signedMap.get(r.recorte_path) ?? null : null)) : null,
+        cutoutStatus: r.recorte_status ?? null,
       }));
       setScans(items);
       setScanState('ready');
@@ -366,20 +420,95 @@ export default function RecomendacaoProdutos() {
     }
   }, []);
 
-  // Recarrega o histórico toda vez que a aba "Escaneados" é aberta (sempre fresco,
-  // inclui scans feitos desde a última visita).
+  // Scans antigos (de antes do recorte automático) ainda sem recorte: pede um por vez, no
+  // máximo 15 por sessão, e atualiza a grade conforme ficam prontos.
+  const backfilling = useRef(false);
   useEffect(() => {
-    if (tab === 'escaneados') loadScans();
-  }, [tab, loadScans]);
+    if (tab !== 'escaneados' || backfilling.current) return;
+    const todo = scans.filter((s) => !s.cutoutStatus && s.result?.status === 'ok').slice(0, 15);
+    if (!todo.length) return;
+    backfilling.current = true;
+    (async () => {
+      for (const s of todo) {
+        const st = await requestScanCutout(s.id);
+        if (!st) continue;
+        const c = (await getScanCutouts([s.id]))[s.id];
+        setScans((list) => list.map((x) => (x.id === s.id ? { ...x, cutoutStatus: c?.status ?? st, cutoutUrl: c?.url ?? null } : x)));
+      }
+    })().finally(() => { backfilling.current = false; });
+  }, [tab, scans]);
 
-  // Abre a página de detalhe de um produto ALTERNATIVO (mesmo layout, dados da alt).
-  // Herda o período do passo pai (id am*/pm*) p/ o rótulo "Manhã/Noite · passo".
-  const openAlt = (alt: Alt, parent: Item) => setDetail({
-    id: parent.id + '-alt', num: parent.num, step: parent.step,
-    brand: alt.brand, name: alt.name, img: alt.img,
-    pra: alt.sub, praLong: alt.praLong ?? alt.sub,
-    targets: alt.targets ?? [], alts: [],
-  });
+  // Recarrega os escaneados ao abrir a aba e ao voltar para a tela (ex.: depois de
+  // escanear um produto no balão da câmera) — sempre frescos.
+  useFocusEffect(useCallback(() => {
+    if (tab === 'escaneados') loadScans();
+  }, [tab, loadScans]));
+
+  // Produtos escolhidos na rotina — recarrega ao focar (a usuária pode ter trocado na Rotina).
+  useFocusEffect(useCallback(() => { getSavedProducts().then(setSaved).catch(() => {}); }, []));
+
+  // ── Minha coleção (colecao_produtos): o que a usuária marcou "Tenho em casa" ──
+  const [colecao, setColecao] = useState<ColecaoItem[]>([]);
+  const [colState, setColState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const loadColecao = useCallback(async () => {
+    try {
+      const uid = await getUserId();
+      if (!uid) { setColecao([]); setColState('ready'); return; }
+      setColecao(await listColecao(uid));
+      setColState('ready');
+    } catch {
+      setColState('error');
+    }
+  }, []);
+  // Recarrega sempre que a tela ganha foco (e ao trocar de aba): um "Tenho em casa"
+  // marcado no resultado do scan ou em outra tela já aparece aqui na volta.
+  useFocusEffect(useCallback(() => { loadColecao(); }, [tab, loadColecao]));
+
+  // "Tenho em casa" no detalhe de um recomendado (catálogo) e de um escaneado.
+  const detailSrc = useMemo(() => (detail?.productId ? {
+    origem: 'catalogo' as const, produtoId: detail.productId, nome: detail.name ?? null, marca: detail.brand ?? null,
+    categoria: detail.categoria ?? null, compat: detail.compat ?? null,
+    imagemUrl: detail.img && typeof detail.img === 'object' && 'uri' in detail.img ? detail.img.uri : null,
+  } : null), [detail]);
+  const detailCol = useColecaoToggle(detailSrc, loadColecao);
+  const scanSrc = useMemo(() => (scanDetail && scanDetail.result?.status === 'ok' ? {
+    origem: 'scan' as const, productScanId: scanDetail.id, nome: scanDetail.name, marca: scanDetail.brand,
+    categoria: scanDetail.result?.produto?.categoria ?? null, compat: scanDetail.match,
+  } : null), [scanDetail]);
+  const scanCol = useColecaoToggle(scanSrc, loadColecao);
+
+  // Tocar num item da coleção: scan → a análise dele; catálogo → o detalhe do produto.
+  const openColecaoItem = async (c: ColecaoItem) => {
+    if (c.origem === 'scan' && c.productScanId) {
+      const { data: r } = await supabase.from('product_scans').select('id, resultado, created_at').eq('id', c.productScanId).maybeSingle();
+      if (r) {
+        setScanDetail({
+          id: r.id, photoUrl: c.photoUrl, brand: c.marca, name: c.nome, createdAt: r.created_at, result: r.resultado,
+          cat: catOf(c.categoria), match: c.compat, cutoutUrl: c.cutoutUrl, cutoutStatus: c.cutoutStatus,
+        });
+        return;
+      }
+    }
+    setDetail({
+      id: c.id, num: '', step: '', productId: c.produtoId ?? undefined,
+      brand: c.marca ?? undefined, name: c.nome ?? undefined, img: { uri: c.photoUrl ?? c.cutoutUrl ?? '' },
+      pra: '', praLong: '', targets: [], alts: [], categoria: c.categoria, compat: c.compat,
+    });
+  };
+
+  // Foto do cabeçalho: a mesma da home (escolhida na galeria > foto do último scan).
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) return;
+      const [{ data: u }, { data: sc }] = await Promise.all([
+        supabase.from('users').select('foto_home_url').eq('id', user.id).maybeSingle(),
+        supabase.from('skin_scans').select('foto_url').eq('user_id', user.id)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      setFotoUrl(u?.foto_home_url ?? sc?.foto_url ?? null);
+    })().catch(() => {});
+  }, []);
 
   // Reseta o feedback do botão sempre que abre/troca o detalhe.
   useEffect(() => { setSavedNow(false); }, [detail]);
@@ -395,6 +524,7 @@ export default function RecomendacaoProdutos() {
     // tato antes do await faria o app dizer "salvo" para um salvamento que falhou.
     try {
       await saveProductForStep(detail.step, { imageUrl, brand: detail.brand ?? null, name: detail.name ?? null });
+      getSavedProducts().then(setSaved).catch(() => {});
       haptics.success();
       setSavedNow(true);
     } catch (e) {
@@ -410,53 +540,136 @@ export default function RecomendacaoProdutos() {
     router.push('/(scan)/product-camera' as any);
   };
 
-  // Botão "Escanear produto" — MESMO tamanho e cor do botão "Escanear" da home:
-  // pill sólida #FF9D9D (ROTINA_PINK) com sombra rosa, altura 48, raio 42, texto
-  // 16px branco (home.tsx: scanBtn/scanText). Ícone de scan do Figma (node
-  // 128:106: moldura tracejada + frasco). FIXO acima da tab bar (absolute,
-  // bottom 108 = navbar 80px + respiro, mesma posição da home), fora do ScrollView.
-  const ScanProdutoButton = () => (
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 108, alignItems: 'center' }}>
-      <TouchableOpacity activeOpacity={0.9} onPress={handleEscanearProduto}>
-        <LinearGradient
-          colors={[ROTINA_PINK, ROTINA_PINK]}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, paddingHorizontal: 22, borderRadius: 42, shadowColor: ROTINA_PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 12, elevation: 6 }}
-        >
-          <Svg width={20} height={20} viewBox="-1 -1 18 18" fill="none">
-            <Rect x={0} y={0} width={16} height={16} rx={3} stroke="#fff" strokeWidth={1.5} strokeDasharray="2.6 2.2" />
-            <Rect x={5} y={4} width={6} height={8} rx={3} stroke="#fff" strokeWidth={1.5} />
-            <Line x1={3} y1={8} x2={13} y2={8} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" />
-          </Svg>
-          <Text style={{ fontFamily: f7, fontSize: 16, color: '#fff' }}>Escanear produto</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    </View>
+  // Produto já escolhido em algum passo da rotina? (mesma imagem do catálogo, ou mesmo nome)
+  const norm = (x?: string | null) => (x ?? '').trim().toLowerCase();
+  const inRoutine = (prod: Prod) => Object.values(saved).some(
+    (sp) => (!!sp.imageUrl && sp.imageUrl === prod.imagem_url) || (!!sp.name && norm(sp.name) === norm(prod.nome)),
   );
 
-  // Card branco padrão do app (borda-assinatura + sombra suave) — home/niks-chat.
-  const appCard = {
-    backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BORDER, borderRadius: s(20),
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
-  } as const;
+  // ── Design 47a (Claude Design, NiksProductsFlo) ─────────────────────────────
+  // Topo que rola junto com o conteúdo (no design ele está DENTRO da rolagem):
+  // foto + "Meus produtos" · busca, e as abas em cápsula "Minha coleção | Recomendados".
+  const PageTop = () => (
+    <>
+      <View style={{ height: insets.top + 15 }} />
+      <View style={p47.topRow}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {fotoUrl
+            ? <Image source={{ uri: fotoUrl }} style={p47.avatar} />
+            : <View style={[p47.avatar, { backgroundColor: '#F6D3E1' }]} />}
+          <Text style={p47.topTitle}>Meus produtos</Text>
+        </View>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setSearchOpen(true); }} style={p47.circle36} accessibilityLabel="Buscar">
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round">
+            <Circle cx={11} cy={11} r={6.5} />
+            <Path d="M16 16l4 4" />
+          </Svg>
+        </TouchableOpacity>
+      </View>
+      <View style={p47.seg}>
+        {([['colecao', 'Minha coleção'], ['recomendados', 'Recomendados'], ['escaneados', 'Escaneados']] as const).map(([id, label]) => {
+          const on = tab === id;
+          return (
+            <TouchableOpacity key={id} activeOpacity={0.85} onPress={() => { haptics.select(); setTab(id); }} style={[p47.segItem, on && p47.segItemOn]}>
+              <Text numberOfLines={1} style={[p47.segText, { fontWeight: on ? '600' : '500', color: on ? INK : '#6E6468' }]}>{label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </>
+  );
+
+  // Grade do 47a, a mesma nas abas "Minha coleção" e "Escaneados": filtros por
+  // categoria, título + contagem (+ subtítulo nos escaneados) e a grade de 2 colunas
+  // (foto 108 em card branco 150, selo "% compatível", nome e a linha de baixo).
+  const ProductGrid = <G extends GridItem>(o: {
+    items: G[]; cat: string; setCat: (t: string) => void; onPick: (p: G) => void;
+    title: string; note?: string; subOf: (p: G) => string | null;
+    allTags?: boolean; // true = mostra todas as categorias, mesmo sem produto nelas
+    searchOf?: (p: G) => string; // texto que a busca procura (nome + marca)
+  }) => {
+    const tags = ['Todos', ...CAT_ORDER.filter((c) => o.allTags || o.items.some((p) => p.cat === c))];
+    const cur = tags.includes(o.cat) ? o.cat : 'Todos';
+    const q = fold(query.trim());
+    const shown = o.items.filter((p) => (cur === 'Todos' || p.cat === cur)
+      && (!q || fold(o.searchOf ? o.searchOf(p) : (p.name ?? '')).includes(q)));
+    // Linhas explícitas de 2 (flexWrap com folga zero quebra no Fabric — README #29).
+    const rows: G[][] = [];
+    for (let i = 0; i < shown.length; i += 2) rows.push(shown.slice(i, i + 2));
+    return (
+      <>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 18, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 6 }}>
+          {tags.map((t) => {
+            const on = t === cur;
+            return (
+              <TouchableOpacity key={t} activeOpacity={0.85} onPress={() => { haptics.select(); o.setCat(t); }} style={[p47.chip, on ? p47.chipOn : p47.chipOff]}>
+                <Text style={[p47.chipText, { fontWeight: on ? '600' : '500', color: on ? INK : '#6E6468' }]}>{t}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        <View style={p47.titleRow}>
+          <Text style={p47.title}>{o.title}</Text>
+          <Text style={p47.count}>{shown.length === 1 ? '1 produto' : `${shown.length} produtos`}</Text>
+        </View>
+        {!!o.note && <Text style={p47.note} lineBreakStrategyIOS="push-out">{o.note}</Text>}
+        {!!q && shown.length === 0 && (
+          <Text style={[p47.empty, { marginTop: 48, paddingHorizontal: 40 }]} lineBreakStrategyIOS="push-out">
+            {`Nenhum produto encontrado para “${query.trim()}”`}
+          </Text>
+        )}
+        <View style={{ marginTop: 12, paddingHorizontal: 18, gap: 18 }}>
+          {rows.map((row, ri) => (
+            <View key={ri} style={{ flexDirection: 'row', gap: 9 }}>
+              {row.map((p) => (
+                <TouchableOpacity key={p.id} activeOpacity={0.85} onPress={() => { haptics.tap(); o.onPick(p); }} style={{ flex: 1, minWidth: 0, gap: 8 }}>
+                  <View style={p47.imgCard}>
+                    {(p.cutoutUrl ?? p.photoUrl)
+                      ? <ExpoImage source={{ uri: (p.cutoutUrl ?? p.photoUrl)! }} style={{ width: 108, height: 108 }} contentFit="contain" accessibilityLabel={p.name ?? undefined} />
+                      : <IconHerb />}
+                  </View>
+                  <View style={{ gap: 2, paddingHorizontal: 2 }}>
+                    {p.match != null && (
+                      <View style={p47.badge}>
+                        <View style={p47.badgeDot}>
+                          <Svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
+                        </View>
+                        <Text style={p47.badgeText}>{`${p.match}% compatível`}</Text>
+                      </View>
+                    )}
+                    <Text style={p47.name} lineBreakStrategyIOS="push-out">{p.name || 'Produto'}</Text>
+                    {!!o.subOf(p) && <Text style={p47.sub}>{o.subOf(p)}</Text>}
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {row.length === 1 && <View style={{ flex: 1 }} />}
+            </View>
+          ))}
+        </View>
+      </>
+    );
+  };
+
+  // Balões flutuantes do design: estante (esquerda) e câmera (direita), 18pt acima
+  // da navbar (design: bottom 105 no frame de 852 = navbar 87 + 18).
+  const Bubbles = () => (
+    <>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); router.push('/estante' as any); }} accessibilityLabel="Minha estante" style={[p47.bubble, { left: 18, bottom: 53 + insets.bottom + 18 }]}>
+        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M3.5 3v18M20.5 3v18M3.5 10.5h17M3.5 20h17" />
+          <Path d="M7 10.5V6.5M10 10.5V5.5M14.5 20v-5M17.5 20v-3.5" />
+        </Svg>
+      </TouchableOpacity>
+      <TouchableOpacity activeOpacity={0.85} onPress={handleEscanearProduto} accessibilityLabel="Fotografar produto" style={[p47.bubble, { right: 18, bottom: 53 + insets.bottom + 18 }]}>
+        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M14.5 4.5h-5L8 6.5H5A1.5 1.5 0 0 0 3.5 8v10A1.5 1.5 0 0 0 5 19.5h14a1.5 1.5 0 0 0 1.5-1.5V8A1.5 1.5 0 0 0 19 6.5h-3z" />
+          <Circle cx={12} cy={12.75} r={3.5} />
+        </Svg>
+      </TouchableOpacity>
+    </>
+  );
 
   // ── Ícones ──────────────────────────────────────────────────────────────
-  const IconClose = ({ size = 16 }: { size?: number }) => (
-    <Svg width={s(size)} height={s(size)} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Path d="M18 6L6 18M6 6l12 12" /></Svg>
-  );
-  const IconChevronRight = () => (
-    <Svg width={s(14)} height={s(14)} viewBox="0 0 24 24" fill="none" stroke={INK_MUTE} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Path d="M9 18l6-6-6-6" /></Svg>
-  );
-  const IconSun = () => (
-    <Svg width={s(17)} height={s(17)} viewBox="0 0 24 24" fill="none" stroke={ROTINA_PINK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-      <Circle cx="12" cy="12" r="4" />
-      <Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-    </Svg>
-  );
-  const IconMoon = () => (
-    <Svg width={s(16)} height={s(16)} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><Path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></Svg>
-  );
   const IconHerb = () => (
     <Svg width={s(22)} height={s(22)} viewBox="0 0 24 24" fill="none" stroke={INK_FAINT} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
       <Path d="M7 20h10" />
@@ -466,333 +679,211 @@ export default function RecomendacaoProdutos() {
     </Svg>
   );
 
-  // ── Linha de alternativa (sunken dentro do card) — toca p/ abrir o detalhe da alt ──
-  const renderAlt = (alt: Alt, i: number, parent: Item, big = false) => (
-    <TouchableOpacity key={i} activeOpacity={0.85} onPress={() => { haptics.tap(); openAlt(alt, parent); }} style={{
-      flexDirection: 'row', alignItems: 'center', gap: s(10),
-      padding: s(big ? 11 : 10), borderRadius: s(12), backgroundColor: PHOTO_BG, marginBottom: s(8),
-    }}>
-      <View style={{ width: s(big ? 46 : 42), height: s(big ? 46 : 42), borderRadius: s(10), overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: WHITE }}>
-        <ExpoImage source={alt.img} style={{ height: s(big ? 38 : 34), width: '78%' }} contentFit="contain" />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontFamily: f7, fontSize: s(9.5), letterSpacing: s(9.5) * 0.1, textTransform: 'uppercase', color: INK_MUTE }}>{alt.brand}</Text>
-        <Text style={{ fontFamily: f7, fontSize: s(big ? 13.5 : 13), color: INK, lineHeight: s(big ? 13.5 : 13) * 1.2 }}>{alt.name}</Text>
-        <Text style={{ fontFamily: f4, fontSize: s(11.5), color: INK_MUTE, lineHeight: s(11.5) * 1.3, marginTop: s(1) }}>{alt.sub}</Text>
-      </View>
-      {!big && <IconChevronRight />}
-    </TouchableOpacity>
-  );
-
-  // Chips de concern (rótulos reais do produto). `max` limita no card; detalhe usa todos.
-  const renderChips = (targets: string[] | undefined, max?: number) => {
-    if (!targets || targets.length === 0) return null;
-    const list = typeof max === 'number' ? targets.slice(0, max) : targets;
-    return (
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: s(6), marginTop: s(10) }}>
-        {list.map((t) => (
-          <Text key={t} style={{ fontFamily: f6, fontSize: s(10.5), paddingVertical: s(4), paddingHorizontal: s(10), borderRadius: s(100), backgroundColor: ROTINA_WASH, color: ROTINA_PINK, overflow: 'hidden' }}>{t}</Text>
-        ))}
-      </View>
-    );
-  };
-
-  // ── Card de produto (card branco do app) — Manhã e Noite ──────────────────
-  const renderProduct = (item: Item) => (
-    <View key={item.id} style={{ ...appCard, marginHorizontal: s(16), marginBottom: s(14), padding: s(14) }}>
-      <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.tap(); setDetail(item); }}>
-        {/* rótulo do passo */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8), marginBottom: s(12) }}>
-          <Text style={{ fontFamily: f8, fontSize: s(14), color: INK }}>{item.num}</Text>
-          <Text style={{ fontFamily: f7, fontSize: s(11), letterSpacing: s(11) * 0.1, textTransform: 'uppercase', color: INK_MUTE }}>{item.step}</Text>
-        </View>
-        {/* foto do produto — fundo branco (o catálogo usa fotos com fundo branco) */}
-        <View style={{ height: s(172), borderRadius: s(16), backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          <ExpoImage source={item.img} style={{ height: s(138), width: '66%' }} contentFit="contain" />
-          <View style={{ position: 'absolute', bottom: s(10), right: s(10), width: s(30), height: s(30), borderRadius: s(15), backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BORDER, alignItems: 'center', justifyContent: 'center' }}>
-            <IconChevronRight />
-          </View>
-        </View>
-        {/* textos */}
-        <Text style={{ fontFamily: f7, fontSize: s(10.5), letterSpacing: s(10.5) * 0.12, textTransform: 'uppercase', color: INK_MUTE, marginTop: s(14), marginBottom: s(3) }}>{item.brand}</Text>
-        <Text style={{ fontFamily: f8, fontSize: s(18), lineHeight: s(18) * 1.18, letterSpacing: s(18) * -0.02, color: INK }}>{item.name}</Text>
-        <Text style={{ fontFamily: f4, fontSize: s(13.5), lineHeight: s(13.5) * 1.5, color: INK_BODY, marginTop: s(8) }}>{item.pra}</Text>
-        {renderChips(item.targets, 3)}
-      </TouchableOpacity>
-      {!!(item.alts && item.alts.length) && (
-        <View style={{ marginTop: s(14) }}>
-          <View style={{ height: 1, backgroundColor: CARD_BORDER, marginBottom: s(12) }} />
-          <Text style={{ fontFamily: f7, fontSize: s(10), letterSpacing: s(10) * 0.14, textTransform: 'uppercase', color: INK_FAINT, marginBottom: s(9) }}>Alternativas</Text>
-          {item.alts!.map((alt, i) => renderAlt(alt, i, item, false))}
-        </View>
-      )}
-    </View>
-  );
-
-  // ── Card de estado vazio (sem_produto) ────────────────────────────────────
-  const renderEmpty = (item: Item) => (
-    <View key={item.id} style={{ ...appCard, marginHorizontal: s(16), marginBottom: s(14), padding: s(14) }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8), marginBottom: s(12) }}>
-        <Text style={{ fontFamily: f8, fontSize: s(14), color: INK_FAINT }}>{item.num}</Text>
-        <Text style={{ fontFamily: f7, fontSize: s(11), letterSpacing: s(11) * 0.1, textTransform: 'uppercase', color: INK_MUTE }}>{item.step}</Text>
-      </View>
-      <View style={{ flexDirection: 'row', gap: s(12), alignItems: 'flex-start', padding: s(16), borderRadius: s(14), backgroundColor: PHOTO_BG }}>
-        <View style={{ marginTop: s(1) }}><IconHerb /></View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: f8, fontSize: s(15), color: INK, lineHeight: s(15) * 1.25 }}>Ainda sem um produto ideal</Text>
-          <Text style={{ fontFamily: f4, fontSize: s(12.5), lineHeight: s(12.5) * 1.5, color: INK_MUTE, marginTop: s(5) }}>{item.note}</Text>
-        </View>
-      </View>
-    </View>
-  );
-
-  // ── Card de produto ESCANEADO (mesmo visual do card de recomendação) ──────
-  // Foto real que a usuária tirou (cover) + marca/nome + veredito + resumo.
-  const renderScanCard = (item: ScanItem) => {
-    const r = item.result ?? {};
-    const ver = VEREDITO[r.veredito] ?? null;
-    const summary = r.resumo || r.o_que_faz || r.mensagem || '';
-    return (
-      <View key={item.id} style={{ ...appCard, marginHorizontal: s(16), marginBottom: s(14), padding: s(14) }}>
-        <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.tap(); setScanDetail(item); }}>
-          {/* data do scan */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: s(12) }}>
-            <Text style={{ fontFamily: f7, fontSize: s(11), letterSpacing: s(11) * 0.1, textTransform: 'uppercase', color: INK_MUTE }}>{fmtScanDate(item.createdAt)}</Text>
-          </View>
-          {/* foto real da usuária (cover) */}
-          <View style={{ height: s(172), borderRadius: s(16), backgroundColor: PHOTO_BG, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            {item.photoUrl
-              ? <ExpoImage source={{ uri: item.photoUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-              : <IconHerb />}
-            <View style={{ position: 'absolute', bottom: s(10), right: s(10), width: s(30), height: s(30), borderRadius: s(15), backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BORDER, alignItems: 'center', justifyContent: 'center' }}>
-              <IconChevronRight />
-            </View>
-          </View>
-          {/* marca + nome */}
-          {!!item.brand && (
-            <Text style={{ fontFamily: f7, fontSize: s(10.5), letterSpacing: s(10.5) * 0.12, textTransform: 'uppercase', color: INK_MUTE, marginTop: s(14), marginBottom: s(3) }}>{item.brand}</Text>
-          )}
-          <Text style={{ fontFamily: f8, fontSize: s(18), lineHeight: s(18) * 1.18, letterSpacing: s(18) * -0.02, color: INK, marginTop: item.brand ? 0 : s(14) }}>{item.name || 'Produto escaneado'}</Text>
-          {/* veredito */}
-          {!!ver && (
-            <View style={{ flexDirection: 'row', marginTop: s(10) }}>
-              <Text style={{ fontFamily: f6, fontSize: s(11), paddingVertical: s(4), paddingHorizontal: s(11), borderRadius: s(100), backgroundColor: ver.bg, color: ver.fg, overflow: 'hidden' }}>{ver.label}</Text>
-            </View>
-          )}
-          {!!summary && (
-            <Text style={{ fontFamily: f4, fontSize: s(13.5), lineHeight: s(13.5) * 1.5, color: INK_BODY, marginTop: s(8) }}>{summary}</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const SectionHeader = ({ icon, label }: { icon: React.ReactNode; label: string }) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8), marginHorizontal: s(16), marginTop: s(26), marginBottom: s(12) }}>
-      {icon}
-      <Text style={{ fontFamily: f8, fontSize: s(20), letterSpacing: s(20) * -0.03, color: INK }}>{label}</Text>
-    </View>
-  );
-
-  // Card de mensagem central (loading / vazio / erro) — visual do appCard + IconHerb.
-  const CenterCard = ({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) => (
-    <View style={{ ...appCard, marginHorizontal: s(16), marginTop: s(24), padding: s(20) }}>
-      <View style={{ flexDirection: 'row', gap: s(12), alignItems: 'flex-start' }}>
-        <View style={{ marginTop: s(1) }}><IconHerb /></View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: f8, fontSize: s(16), color: INK, lineHeight: s(16) * 1.25 }}>{title}</Text>
-          <Text style={{ fontFamily: f4, fontSize: s(13), lineHeight: s(13) * 1.5, color: INK_MUTE, marginTop: s(6) }}>{body}</Text>
-          {action}
-        </View>
-      </View>
-    </View>
-  );
-
   return (
-    <View style={{ flex: 1, backgroundColor: WHITE }}>
-      {/* Título da tela (réplica do Figma node 92:19): logo + "Produtos" centralizado.
-          Texto: Nunito Medium 24px, #121212, letter-spacing -0.24px; logo 24×24. */}
-      <SafeAreaView edges={['top']} style={{ backgroundColor: WHITE }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: s(20), paddingTop: s(6), paddingBottom: s(14), borderBottomWidth: 0.5, borderBottomColor: 'rgba(18,18,18,0.06)' }}>
-          <Image source={LOGO} style={{ width: s(24), height: s(24), marginRight: s(10), tintColor: ROTINA_PINK }} resizeMode="contain" />
-          <Text style={{ fontFamily: f5, fontSize: s(24), color: INK, letterSpacing: s(-0.24) }}>Produtos</Text>
-        </View>
-      </SafeAreaView>
+    <View style={{ flex: 1, backgroundColor: '#F9F2F5' }}>
+      {/* Fundo do 47a: linear 180° #FFE3EF → #FCEAF2 (30%) → #F9F2F5 (60%–100%). */}
+      <LinearGradient colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']} locations={[0, 0.3, 0.6, 1]} style={StyleSheet.absoluteFill} />
 
-      {/* Abas: Recomendados | Escaneados (lógica da tela de protocolo manhã/noite) */}
-      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: s(32), paddingTop: s(14), paddingBottom: s(8), backgroundColor: WHITE }}>
-        {(['recomendados', 'escaneados'] as const).map((id) => {
-          const active = tab === id;
-          return (
-            <TouchableOpacity key={id} onPress={() => { haptics.select(); setTab(id); }} activeOpacity={0.8} style={{ alignItems: 'center' }}>
-              <Text style={{ fontFamily: active ? f8 : f6, fontSize: s(15), color: active ? INK : INK_FAINT }}>{id === 'recomendados' ? 'Recomendados' : 'Escaneados'}</Text>
-              <View style={{ height: s(2.5), width: s(24), borderRadius: s(2), marginTop: s(7), backgroundColor: active ? ROTINA_PINK : 'transparent' }} />
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* ═══ ABA RECOMENDADOS ═══ */}
-      {tab === 'recomendados' && (<>
-      {state === 'loading' && (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: s(120) }}>
-          <ActivityIndicator size="large" color={ROTINA_PINK} />
-        </View>
-      )}
-
-      {/* Usuária legada: a recomendação está sendo gerada agora, sob demanda (chamada de
-          IA — leva alguns segundos). Só acontece uma vez na vida da conta. */}
-      {state === 'generating' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
-          <CenterCard
-            title="Montando sua recomendação"
-            body="Estamos escolhendo os produtos ideais para cada passo da sua rotina. Leva alguns segundos."
-            action={
-              <View style={{ alignSelf: 'flex-start', marginTop: s(14) }}>
-                <ActivityIndicator color={ROTINA_PINK} />
-              </View>
-            }
-          />
+      {/* ═══ ABA MINHA COLEÇÃO (design 47a) ═══
+          O que a usuária marcou "Tenho em casa" (colecao_produtos). Foto = o recorte sem
+          fundo quando já está pronto; senão, a foto original. */}
+      {tab === 'colecao' && (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
+          {PageTop()}
+          {ProductGrid<GridItem & { c: ColecaoItem }>({
+            items: colecao.map((c) => ({
+              id: c.id, photoUrl: c.cutoutUrl ?? c.photoUrl, name: c.nome, cat: catOf(c.categoria), match: c.compat, c,
+            })),
+            cat: catC, setCat: setCatC, onPick: (p) => { void openColecaoItem(p.c); },
+            title: 'Tenho em casa', subOf: (p) => p.c.marca, allTags: true,
+            searchOf: (p) => `${p.c.nome ?? ''} ${p.c.marca ?? ''}`,
+          })}
+          {colState === 'ready' && colecao.length === 0 && !query.trim() && (
+            // Coleção vazia: mensagem no centro do espaço que sobra.
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+              <Text style={p47.empty} lineBreakStrategyIOS="push-out">Adicione aqui os produtos que você tem na sua casa</Text>
+            </View>
+          )}
         </ScrollView>
       )}
 
-      {state === 'error' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
-          <CenterCard
-            title="Não deu pra carregar agora"
-            body="Tivemos um problema ao buscar sua recomendação. Tente de novo em instantes."
-            action={
-              <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.tap(); load(); }} style={{ alignSelf: 'flex-start', marginTop: s(14), height: s(44), paddingHorizontal: s(20), borderRadius: s(100), backgroundColor: ROTINA_PINK, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontFamily: f7, fontSize: s(14), color: WHITE }}>Tentar de novo</Text>
+      {/* ═══ ABA ESCANEADOS (design 47a) ═══ */}
+      {tab === 'escaneados' && (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
+          {PageTop()}
+          {scanState === 'loading' && (
+            <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
+              <ActivityIndicator size="large" color="#FF5EA8" />
+            </View>
+          )}
+          {scanState === 'error' && (
+            <View style={{ marginTop: 20, paddingHorizontal: 18, gap: 10, alignItems: 'flex-start' }}>
+              <Text style={p47.sub}>Não deu pra carregar seus escaneados agora.</Text>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); loadScans(); }} style={[p47.chip, p47.chipOn]}>
+                <Text style={[p47.chipText, { fontWeight: '600', color: INK }]}>Tentar de novo</Text>
               </TouchableOpacity>
-            }
-          />
-        </ScrollView>
-      )}
-
-      {state === 'empty' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
-          <CenterCard
-            title="Sua recomendação está a caminho"
-            body="Assim que você fizer seu primeiro scan de pele, montamos aqui os produtos ideais pra cada passo da sua rotina."
-          />
-        </ScrollView>
-      )}
-
-      {state === 'ready' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
-          {/* título + subtítulo (contexto da recomendação) */}
-          <View style={{ marginHorizontal: s(16), marginTop: s(18) }}>
-            <Text style={{ fontFamily: f8, fontSize: s(24), lineHeight: s(24) * 1.15, letterSpacing: s(-0.5), color: INK }}>Os produtos certos pra você</Text>
-            <Text style={{ fontFamily: f4, fontSize: s(14), lineHeight: s(14) * 1.5, color: INK_MUTE, marginTop: s(7) }}>Com base na rotina de skincare que montamos pra você, estes são os produtos ideais pra cada passo.</Text>
-          </View>
-
-          {/* MANHÃ */}
-          {am.length > 0 && (
-            <>
-              <SectionHeader icon={<IconSun />} label="Pela manhã" />
-              {am.map((item) => (item.empty ? renderEmpty(item) : renderProduct(item)))}
-            </>
-          )}
-
-          {/* NOITE */}
-          {pm.length > 0 && (
-            <>
-              <SectionHeader icon={<IconMoon />} label="À noite" />
-              {pm.map((item) => (item.empty ? renderEmpty(item) : renderProduct(item)))}
-            </>
-          )}
-
-          {count > 0 && (
-            <Text style={{ fontFamily: f4, fontSize: s(12), color: INK_MUTE, lineHeight: s(12) * 1.5, textAlign: 'center', marginTop: s(18), marginHorizontal: s(24) }}>
-              {count === 1 ? '1 produto escolhido pra sua rotina.' : `${count} produtos escolhidos pra sua rotina.`}
-            </Text>
-          )}
-        </ScrollView>
-      )}
-      </>)}
-
-      {/* ═══ ABA ESCANEADOS ═══ */}
-      {tab === 'escaneados' && (<>
-        {scanState === 'loading' && (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: s(120) }}>
-            <ActivityIndicator size="large" color={ROTINA_PINK} />
-          </View>
-        )}
-
-        {scanState === 'error' && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
-            <CenterCard
-              title="Não deu pra carregar agora"
-              body="Tivemos um problema ao buscar seus produtos escaneados. Tente de novo em instantes."
-              action={
-                <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.tap(); loadScans(); }} style={{ alignSelf: 'flex-start', marginTop: s(14), height: s(44), paddingHorizontal: s(20), borderRadius: s(100), backgroundColor: ROTINA_PINK, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontFamily: f7, fontSize: s(14), color: WHITE }}>Tentar de novo</Text>
-                </TouchableOpacity>
-              }
-            />
-          </ScrollView>
-        )}
-
-        {scanState === 'empty' && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
-            <CenterCard
-              title="Você ainda não escaneou nenhum produto"
-              body="Toque em “Escanear produto” pra analisar um produto — o veredito da NIKS e o histórico aparecem aqui."
-            />
-          </ScrollView>
-        )}
-
-        {scanState === 'ready' && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(160) }} showsVerticalScrollIndicator={false}>
-            <View style={{ marginHorizontal: s(16), marginTop: s(18), marginBottom: s(6) }}>
-              <Text style={{ fontFamily: f8, fontSize: s(24), lineHeight: s(24) * 1.15, letterSpacing: s(-0.5), color: INK }}>Seus produtos escaneados</Text>
-              <Text style={{ fontFamily: f4, fontSize: s(14), lineHeight: s(14) * 1.5, color: INK_MUTE, marginTop: s(7) }}>Todos os produtos que você escaneou, com o veredito da NIKS pra cada um.</Text>
             </View>
-            <View style={{ marginTop: s(12) }}>
-              {scans.map(renderScanCard)}
+          )}
+          {(scanState === 'ready' || scanState === 'empty') && ProductGrid<ScanItem>({
+            items: scanState === 'ready' ? scans : [], cat: catS, setCat: setCatS, onPick: setScanDetail,
+            searchOf: (p) => `${p.name ?? ''} ${p.brand ?? ''}`,
+            title: 'Escaneados recentemente',
+            note: 'Seus últimos escaneamentos, do mais recente pro mais antigo.',
+            subOf: (p) => fmtWhen(p.createdAt),
+          })}
+        </ScrollView>
+      )}
+
+      {/* ═══ ABA RECOMENDADOS (design 47a) ═══
+          Tudo o que a IA recomendou e que NÃO está escolhido na rotina (a rotina só tem um
+          produto por passo — o resto das recomendações fica aqui). Tocar abre o detalhe,
+          com "Salvar na minha rotina". */}
+      {tab === 'recomendados' && (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
+          {PageTop()}
+          {(state === 'loading' || state === 'generating') && (
+            <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 }}>
+              <ActivityIndicator size="large" color="#FF5EA8" />
+              {/* Usuária legada: a recomendação está sendo gerada agora (IA, uma vez na vida da conta). */}
+              {state === 'generating' && <Text style={[p47.note, { textAlign: 'center' }]}>Montando sua recomendação…</Text>}
             </View>
-          </ScrollView>
-        )}
-      </>)}
+          )}
+          {state === 'error' && (
+            <View style={{ marginTop: 20, paddingHorizontal: 18, gap: 10, alignItems: 'flex-start' }}>
+              <Text style={p47.sub}>Não deu pra carregar suas recomendações agora.</Text>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); load(); }} style={[p47.chip, p47.chipOn]}>
+                <Text style={[p47.chipText, { fontWeight: '600', color: INK }]}>Tentar de novo</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {(state === 'ready' || state === 'empty') && ProductGrid<RecEntry>({
+            items: state === 'ready' ? recList.filter((r) => !inRoutine(r.prod)) : [],
+            cat: catR, setCat: setCatR,
+            searchOf: (r) => `${r.prod.nome ?? ''} ${r.prod.marca ?? ''}`,
+            onPick: (r) => setDetail({
+              id: r.id, num: '', step: r.step, productId: r.id,
+              brand: r.prod.marca, name: r.prod.nome, img: { uri: r.prod.imagem_url },
+              pra: r.copy, praLong: r.copy, targets: targetsOf(r.prod), alts: [],
+              categoria: r.prod.categoria ?? null, compat: r.match,
+            }),
+            title: 'Recomendados pra você',
+            note: 'Alternativas que a IA indicou pra sua pele e que ficaram fora da rotina.',
+            subOf: (r) => (r.cat && ALT[r.cat] ? `Alternativa ${ALT[r.cat]}` : 'Alternativa pra sua rotina'),
+          })}
+        </ScrollView>
+      )}
 
-      {/* Botão "Escanear produto" (Figma node 128:106) — fixo acima da tab bar */}
-      <ScanProdutoButton />
+      {/* Balões do 47a: estante (esquerda) e câmera (direita) — somem durante a busca */}
+      {!searchOpen && Bubbles()}
 
-      {/* ── Detalhe (overlay full-screen) ──────────────────────────────────── */}
+      {/* Busca: barra colada no teclado (ou acima da navbar, depois do Enter) */}
+      {searchOpen && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(249,242,245,0)', 'rgba(249,242,245,0.95)', 'rgba(249,242,245,0.95)']}
+          locations={[0, 0.45, 1]}
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: (kbH > 0 ? kbH + 8 : 53 + insets.bottom + 12) + 46 + 40, zIndex: 39 }}
+        />
+      )}
+      {searchOpen && (
+        <View style={[p47.searchWrap, { bottom: kbH > 0 ? kbH + 8 : 53 + insets.bottom + 12 }]}>
+          <View style={p47.searchBar}>
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#8A8385" strokeWidth={1.9} strokeLinecap="round">
+              <Circle cx={11} cy={11} r={6.5} />
+              <Path d="M16 16l4 4" />
+            </Svg>
+            <TextInput
+              autoFocus
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={() => Keyboard.dismiss()}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+              clearButtonMode="never"
+              placeholder={tab === 'colecao' ? 'Buscar na sua coleção' : tab === 'recomendados' ? 'Buscar nos recomendados' : 'Buscar nos escaneados'}
+              placeholderTextColor="#A39A9F"
+              style={p47.searchInput}
+            />
+            {!!query && (
+              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8} accessibilityLabel="Limpar busca">
+                <View style={p47.searchClear}>
+                  <Svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3.2} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity onPress={() => { haptics.tap(); closeSearch(); }} hitSlop={8}>
+            <Text style={p47.searchCancel}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Detalhe do produto — réplica do design 47c (NiksProductDetailFlo) ──────
+          Foto em card branco, selo de compatibilidade, marca, nome, tags (concerns reais)
+          e a descrição; embaixo, fixos sobre um esmaecido, "Adicionar à coleção" e
+          "Salvar na minha rotina" (este só quando o produto veio de um passo). */}
       <Modal visible={!!detail} animationType="slide" onRequestClose={() => setDetail(null)} transparent={false}>
-        <View style={{ flex: 1, backgroundColor: WHITE }}>
-          {detail && (
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(40) }} showsVerticalScrollIndicator={false}>
-              {/* hero em fundo neutro */}
-              <View style={{ height: s(360) + insets.top, alignItems: 'center', justifyContent: 'center', backgroundColor: WHITE }}>
-                <Pressable onPress={() => { haptics.tap(); setDetail(null); }} style={{ position: 'absolute', top: insets.top + s(12), right: s(20), width: s(40), height: s(40), borderRadius: s(20), backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BORDER, alignItems: 'center', justifyContent: 'center' }}>
-                  <IconClose size={17} />
-                </Pressable>
-                <ExpoImage source={detail.img} style={{ height: s(240), width: '62%' }} contentFit="contain" />
-              </View>
-
-              {/* body */}
-              <View style={{ paddingTop: s(22), paddingHorizontal: s(20) }}>
-                <Text style={{ fontFamily: f7, fontSize: s(11), letterSpacing: s(11) * 0.14, textTransform: 'uppercase', color: INK_MUTE, marginBottom: s(4) }}>{detail.brand}</Text>
-                <Text style={{ fontFamily: f8, fontSize: s(24), lineHeight: s(24) * 1.15, letterSpacing: s(24) * -0.02, color: INK }}>{detail.name}</Text>
-                {renderChips(detail.targets, undefined)}
-                <Text style={{ fontFamily: f4, fontSize: s(14.5), lineHeight: s(14.5) * 1.6, color: INK_BODY, marginTop: s(18) }}>{detail.praLong}</Text>
-                {!!(detail.alts && detail.alts.length) && (
-                  <View style={{ marginTop: s(22) }}>
-                    <Text style={{ fontFamily: f7, fontSize: s(10), letterSpacing: s(10) * 0.14, textTransform: 'uppercase', color: INK_FAINT, marginBottom: s(10) }}>Alternativas</Text>
-                    {detail.alts!.map((alt, i) => renderAlt(alt, i, detail, true))}
+        <View style={{ flex: 1, backgroundColor: '#F9F2F5' }}>
+          <LinearGradient colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']} locations={[0, 0.3, 0.6, 1]} style={StyleSheet.absoluteFill} />
+          {detail && (() => {
+            const inRot = savedNow || (!!detail.step && !!saved[normStepKey(detail.step)]
+              && saved[normStepKey(detail.step)].imageUrl === (detail.img && typeof detail.img === 'object' && 'uri' in detail.img ? detail.img.uri : ''));
+            const owned = !!detailCol.owned;
+            return (
+              <>
+                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
+                  <View style={[pd.imgCard, { marginTop: insets.top + 63 }]}>
+                    <ExpoImage source={detail.img} style={{ width: 170, height: 196 }} contentFit="contain" accessibilityLabel={detail.name} />
                   </View>
-                )}
-                <Pressable onPress={handleSaveToRoutine} disabled={savedNow} style={{ marginTop: s(24), height: s(52), borderRadius: s(16), backgroundColor: ROTINA_PINK, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: s(8), opacity: savedNow ? 0.9 : 1, shadowColor: ROTINA_PINK, shadowOffset: { width: 0, height: s(6) }, shadowOpacity: 0.35, shadowRadius: s(12), elevation: 6 }}>
-                  {savedNow && (
-                    <Svg width={s(18)} height={s(18)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><Path d="M20 6L9 17l-5-5" /></Svg>
+                  <View style={{ marginTop: 18, paddingHorizontal: 20 }}>
+                    {detail.compat != null && (
+                      <View style={pd.badge}>
+                        <View style={pd.badgeDot}>
+                          <Svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
+                        </View>
+                        <Text style={pd.badgeText}>{`${detail.compat}% compatível com sua pele`}</Text>
+                      </View>
+                    )}
+                    {!!detail.brand && <Text style={pd.brand}>{detail.brand}</Text>}
+                    <Text style={pd.name} lineBreakStrategyIOS="push-out">{detail.name}</Text>
+                    {!!(detail.targets && detail.targets.length) && (
+                      <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {detail.targets!.map((tg) => (
+                          <View key={tg} style={pd.tag}><Text style={pd.tagText}>{tg}</Text></View>
+                        ))}
+                      </View>
+                    )}
+                    {!!detail.praLong && <Text style={pd.desc} lineBreakStrategyIOS="push-out">{detail.praLong}</Text>}
+                  </View>
+                </ScrollView>
+
+                {/* fechar */}
+                <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setDetail(null); }} style={[pd.close, { top: insets.top + 15 }]} accessibilityLabel="Fechar">
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
+                </TouchableOpacity>
+
+                {/* esmaecido + botões fixos */}
+                <LinearGradient pointerEvents="none" colors={['rgba(249,242,245,0)', 'rgba(249,242,245,0.95)', 'rgba(249,242,245,0.95)']} locations={[0, 0.4, 1]} style={pd.fade} />
+                <View style={[pd.actions, { bottom: Math.max(insets.bottom, 20) }]}>
+                  {detailSrc && (
+                    <TouchableOpacity activeOpacity={0.85} disabled={detailCol.busy || detailCol.owned === null} onPress={() => { haptics.tap(); void detailCol.toggle(); }} style={[pd.btn, pd.btnOwn, detailCol.busy && { opacity: 0.6 }]}>
+                      <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round"><Path d={owned ? 'M5 12.5l4.5 4.5L19 7.5' : 'M12 5v14M5 12h14'} /></Svg>
+                      <Text style={[pd.btnText, { color: '#fff' }]}>{owned ? 'Está na sua coleção' : 'Adicionar à coleção'}</Text>
+                    </TouchableOpacity>
                   )}
-                  <Text style={{ fontFamily: f7, fontSize: s(16), color: WHITE }}>{savedNow ? 'Salvo na sua rotina' : 'Salvar na minha rotina'}</Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          )}
+                  {!!detail.step && (
+                    <TouchableOpacity activeOpacity={0.85} disabled={inRot} onPress={handleSaveToRoutine} style={[pd.btn, pd.btnRot]}>
+                      <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke={inRot ? INK : '#E8468F'} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+                        <Path d={inRot ? 'M5 12.5l4.5 4.5L19 7.5' : 'M8 2v4M16 2v4M4.5 5h15A1.5 1.5 0 0 1 21 6.5v13a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19.5v-13A1.5 1.5 0 0 1 4.5 5zM3 10h18'} />
+                      </Svg>
+                      <Text style={[pd.btnText, { color: inRot ? INK : '#E8468F' }]}>{inRot ? 'Está na sua rotina' : 'Salvar na minha rotina'}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            );
+          })()}
         </View>
       </Modal>
 
@@ -805,14 +896,110 @@ export default function RecomendacaoProdutos() {
           <ProductAnalysis
             result={scanDetail.result}
             photoUri={scanDetail.photoUrl}
+            cutoutUri={scanDetail.cutoutUrl ?? null}
             onClose={() => setScanDetail(null)}
             onRescan={() => {
               setScanDetail(null);
               router.push('/(scan)/product-camera' as any);
             }}
+            colecao={scanSrc && scanCol.owned !== null ? { owned: scanCol.owned, busy: scanCol.busy, onToggle: scanCol.toggle } : undefined}
           />
         )}
       </Modal>
     </View>
   );
 }
+
+// ── Estilos do design 47a (NiksProductsFlo, frame 393×852) ──────────────────────
+// SF Pro (fonte do sistema). Sombras CSS → iOS: blur/2 = shadowRadius.
+const p47 = StyleSheet.create({
+  topRow: { height: 36, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avatar: { width: 32, height: 32, borderRadius: 16 },
+  topTitle: { fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK },
+  circle36: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 7,
+  },
+  seg: { marginTop: 18, marginHorizontal: 14, flexDirection: 'row', gap: 2, padding: 3, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.55)' },
+  segItem: { flexGrow: 1, flexShrink: 1, flexBasis: 'auto', height: 36, paddingHorizontal: 12, borderRadius: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
+  segItemOn: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 5,
+  },
+  segText: { fontSize: 15, letterSpacing: -0.3 },
+  chip: { height: 34, paddingHorizontal: 15, borderRadius: 100, justifyContent: 'center' },
+  chipOn: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 5,
+  },
+  chipOff: { backgroundColor: 'rgba(255,255,255,0.55)' },
+  chipText: { fontSize: 15, letterSpacing: -0.2 },
+  titleRow: { marginTop: 20, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  title: { fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK },
+  count: { fontSize: 15, letterSpacing: -0.2, color: '#8A8385' },
+  empty: { fontSize: 17, lineHeight: 22, letterSpacing: -0.3, color: '#6E6468', textAlign: 'center' },
+  note: { marginTop: 4, paddingHorizontal: 18, fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: '#6E6468' },
+  imgCard: {
+    height: 150, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 7,
+  },
+  badge: {
+    alignSelf: 'flex-start', height: 24, flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingLeft: 4, paddingRight: 9, marginBottom: 4, borderRadius: 100, backgroundColor: '#FFFFFF',
+    shadowColor: 'rgb(192,32,106)', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.10, shadowRadius: 4,
+  },
+  badgeDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#FF5EA8', alignItems: 'center', justifyContent: 'center' },
+  badgeText: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1, color: '#C0206A' },
+  name: { fontSize: 16, fontWeight: '500', lineHeight: 20, letterSpacing: -0.3, color: INK },
+  sub: { fontSize: 15, fontWeight: '400', lineHeight: 20, letterSpacing: -0.2, color: '#8A8385' },
+  searchWrap: { position: 'absolute', left: 14, right: 14, zIndex: 40, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchBar: {
+    flex: 1, height: 46, borderRadius: 100, backgroundColor: '#FFFFFF', paddingLeft: 14, paddingRight: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8,
+  },
+  searchInput: { flex: 1, fontSize: 17, letterSpacing: -0.3, color: INK, paddingVertical: 0 },
+  searchClear: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#C9BFC4', alignItems: 'center', justifyContent: 'center' },
+  searchCancel: { fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: '#E8468F' },
+  bubble: {
+    position: 'absolute', width: 50, height: 50, borderRadius: 25, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 7,
+  },
+});
+
+// ── Estilos do design 47c (NiksProductDetailFlo) — detalhe do produto ────────────
+const pd = StyleSheet.create({
+  imgCard: {
+    marginHorizontal: 18, height: 236, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 7,
+  },
+  badge: {
+    alignSelf: 'flex-start', height: 26, flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingLeft: 5, paddingRight: 11, borderRadius: 100, backgroundColor: '#FFFFFF',
+    shadowColor: 'rgb(192,32,106)', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.10, shadowRadius: 4,
+  },
+  badgeDot: { width: 17, height: 17, borderRadius: 8.5, backgroundColor: '#FF5EA8', alignItems: 'center', justifyContent: 'center' },
+  badgeText: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1, color: '#C0206A' },
+  brand: { marginTop: 16, fontSize: 13, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase', color: '#8A8385' },
+  name: { marginTop: 4, fontSize: 28, fontWeight: '700', lineHeight: 33, letterSpacing: -0.6, color: INK },
+  tag: { height: 30, paddingHorizontal: 13, borderRadius: 100, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.55)' },
+  tagText: { fontSize: 14, fontWeight: '500', letterSpacing: -0.2, color: '#6E6468' },
+  desc: { marginTop: 16, fontSize: 17, fontWeight: '400', lineHeight: 23, letterSpacing: -0.3, color: '#3D3639' },
+  close: {
+    position: 'absolute', right: 20, zIndex: 20, width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 7,
+  },
+  fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 190 },
+  actions: { position: 'absolute', left: 18, right: 18, gap: 10 },
+  btn: { height: 50, borderRadius: 100, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  btnOwn: {
+    backgroundColor: '#FF5EA8',
+    shadowColor: 'rgb(255,94,168)', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
+  },
+  btnRot: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 7,
+  },
+  btnText: { fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
+});
