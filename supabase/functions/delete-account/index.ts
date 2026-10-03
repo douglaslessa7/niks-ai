@@ -7,15 +7,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Os três buckets que guardam arquivo de usuário com o padrão '{user_id}/arquivo'.
+// Os buckets que guardam arquivo de usuário com o padrão '{user_id}/arquivo'.
 //   scans         → foto de rosto, foto de comida e foto da home (prefixo home_)
 //   product-scans → foto de produto
 //   coach-images  → fotos enviadas no chat com a NIKS
+//   routine-photos → "foto do dia" ao concluir a rotina da manhã ({user_id}/{AAAA-MM-DD}.jpg)
+//   colecao       → recortes sem fundo dos produtos da "Minha coleção" ({user_id}/{id}.png)
 //
 // `skin-previews` NÃO entra: os arquivos lá são 'preview_{timestamp}.jpg', sem o
 // user id no caminho, e a URL nunca é gravada em tabela — não há como saber de
 // quem é cada um. Quem cuida deles é a `cleanup-skin-previews`, por idade (2h).
-const USER_BUCKETS = ['scans', 'product-scans', 'coach-images'] as const
+const USER_BUCKETS = ['scans', 'product-scans', 'coach-images', 'routine-photos', 'colecao'] as const
 
 const LIST_PAGE_SIZE = 1000
 const DELETE_BATCH_SIZE = 100
