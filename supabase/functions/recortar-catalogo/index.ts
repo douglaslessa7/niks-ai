@@ -10,6 +10,9 @@ import { Image } from 'https://deno.land/x/imagescript@1.3.0/mod.ts'
 // errado, o produto fica 'falhou' e o app continua usando a original.
 //
 // Trava: header x-admin-secret = secret CATALOG_CUTOUT_SECRET (não é chamada pelo app).
+// Roda 1x/dia via pg_cron (job `recortar-catalogo-daily`, segredo no Vault como
+// `recortar_catalogo_secret`) e grava cada execução em public.catalog_cutout_log.
+// Migration: 20261004120000_recortar_catalogo_diario.sql.
 // Corpo:  { ids?: string[], limit?: number (padrão 20), retryFailed?: boolean }
 // Um produto por vez: conta do Replicate com limite baixo (429) → espera e tenta de novo.
 // Para sozinha perto do limite de tempo da Edge Function e diz quantos faltam —
@@ -146,10 +149,18 @@ serve(async (req) => {
 
   const { count: faltam } = await supabase.from('produtos').select('id', { count: 'exact', head: true })
     .not('imagem_url', 'is', null).is('imagem_recorte_status', null)
-  return json({
+  const summary = {
     processados: results.length,
     ok: results.filter((r) => r.status === 'ok').length,
     falhou: results.filter((r) => r.status === 'falhou').length,
-    faltam_no_catalogo: faltam, ms: Date.now() - t0, results,
+    faltam_no_catalogo: faltam, ms: Date.now() - t0,
+  }
+  // Registro da execução (rotina diária via pg_cron e chamadas à mão) — auditoria do
+  // que foi recortado e do que falhou. Falha do log não derruba a resposta.
+  const { error: logErr } = await supabase.from('catalog_cutout_log').insert({
+    processados: summary.processados, ok: summary.ok, falhou: summary.falhou,
+    faltam: faltam ?? null, ms: summary.ms, details: results,
   })
+  if (logErr) console.error('recortar-catalogo: log', logErr.message)
+  return json({ ...summary, results })
 })
