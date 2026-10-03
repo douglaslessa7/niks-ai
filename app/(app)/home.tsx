@@ -1,272 +1,321 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  View, Text, TouchableOpacity, ScrollView, Image, StyleSheet,
-  useWindowDimensions, LayoutAnimation, Platform, UIManager,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, ScrollView, Image, Animated, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image as ExpoImage } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as ImagePicker from 'expo-image-picker';
-import { trackNativePresentation } from '../../lib/nativePresentation';
-import { useFonts } from 'expo-font';
-import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
-import { Exo2_700Bold } from '@expo-google-fonts/exo-2';
-import { Lato_400Regular } from '@expo-google-fonts/lato';
-import { Lightbulb, ScanFace, ChevronDown, ChevronUp } from 'lucide-react-native';
+import { StatusBar } from 'expo-status-bar';
+import Svg, { Path, Circle } from 'react-native-svg';
+import { BlurView } from 'expo-blur';
 import { useAppStore } from '../../store/onboarding';
 import { useFaceScan } from '../../hooks/useFaceScan';
 import { supabase } from '../../lib/supabase';
-import { getScoreTheme } from '../../lib/scoreTheme';
 import { haptics } from '../../lib/haptics';
-import { metricColor } from '../../lib/metricColor';
-import { METRIC_DEFS, Metricas } from '../../lib/metricDefs';
-import { CATALOGO_DICAS, Dica } from '../../lib/dicas/catalogo';
-import { getDicaDoDia } from '../../lib/dicas/dicaDoDia';
 import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
-import { Skeleton } from '../../components/Skeleton';
-import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
+import { onCoachPrepare, setCoachStageReady } from '../../lib/coachMarks';
+import {
+  getRoutineHistory, routineStreak, routinesDoneOn, sessionDate, getRoutinePeriodForNow,
+  RoutineHistory, RoutinePeriod,
+} from '../../lib/routineProgress';
 
-// Habilita LayoutAnimation no Android (iOS já vem ligado)
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Home — réplica do design 38e do Claude Design ("NIKS home redesign — rotina
+// skincare", NiksScreen.dc.html → NiksHomeFlo com base=7 layout=pill header=greet
+// streak-style=5). A partir das 18h vira a 38f (theme="night"): muda só o fundo,
+// a bolha de cor e o fundo do cabeçalho rolado.
+// Medidas copiadas do frame de 393×852: o topo do conteúdo (69) é a barra de status
+// do frame (54) + 15, por isso aqui é `insets.top + 15`.
+// Fonte = SF Pro (fonte do sistema, sem fontFamily), como no design.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Métricas da home (node 1:63) — alimentadas pelo último scan real ──────────
-// `METRIC_DEFS` (chaves, rótulos, polaridade) vive em `lib/metricDefs` desde que a
-// bandeja de adesivos do Story passou a precisar da MESMA lista. Não redefinir aqui.
+const INK = '#121212';
+const PINK = '#FF5EA8';
+const PINK_DEEP = '#C0206A';
 
-// Semáforo por "bom/ruim pra pessoa" (não pelo valor cru) — vive em lib/metricColor
-// para o adesivo do Story (NiksSticker) usar EXATAMENTE a mesma regra de cor.
+// BG7 / BGN do design (mesmas paradas).
+const BG_DAY = ['#FFE3EF', '#FFD3E5', '#FFC6DC', '#FDDFEB', '#FBEEF3', '#F9F2F5'] as const;
+const BG_NIGHT = ['#EADCF4', '#F0D9EE', '#F6D3E5', '#F9E3EE', '#FBEFF4', '#F9F3F6'] as const;
+const BG_STOPS = [0, 0.28, 0.5, 0.64, 0.8, 1] as const;
 
-// Formato do `full_result` (jsonb do skin_scans) no que a home consome. Tipado local
-// para não tocar no store. `metricas` pode faltar em scans antigos (pré-deploy).
-type FullResult = {
-  skin_score?: number;
-  metricas?: Metricas;
+const LET = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+
+// Fundo da foto do produto por categoria do passo (cores do design: gel, sérum,
+// hidratante, protetor).
+const TINT: Record<string, string> = {
+  Limpeza: '#FDE4EE',
+  Tratamento: '#EEE5F6',
+  'Hidratação': '#E2F1EF',
+  'Proteção': '#FFEFD9',
 };
 
-// Tema de cor por faixa do Niks score (0–25 vermelho, 26–50 laranja, 51–75 amarelo,
-// 76–100 rosa) — vive em lib/scoreTheme para ser compartilhado com a navbar (logo central).
+const DEFAULT_AM = 7 * 60;
+const DEFAULT_PM = 21 * 60;
+const AM_WINDOW_END = 12 * 60; // a "hora" da rotina da manhã vai até o meio-dia
+const NIGHT_WINDOW_END = 4 * 60; // a da noite, até as 04:00 (mesma virada da sessão)
+const MIN_PER_STEP = 3; // mesma conta da Rotina (~3 min por passo)
+
+type HomeProduct = { id: string; name: string; img: string; step: string; tint: string };
+
+type HomeData = {
+  fotoUrl: string | null;
+  skinScore: number | null;
+  firstName: string;
+  amTime: number;
+  pmTime: number;
+  amCount: number;
+  pmCount: number;
+  products: { am: HomeProduct[]; pm: HomeProduct[] };
+  homeTutorialSeenAt: string | null;
+};
+
+function parseTime(v: unknown, fallback: number): number {
+  if (typeof v !== 'string') return fallback;
+  const m = v.match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
+}
+
+function fmtDuration(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}min`;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
+// Minutos de agora até `target` (minuto do dia), sempre no futuro.
+function minutesUntil(target: number, nowMin: number): number {
+  const d = target - nowMin;
+  return d > 0 ? d : d + 24 * 60;
+}
+
+// ── Os 3 estados do herói (ST7 a/b/c do design) ─────────────────────────────
+// a · antes do horário: "Sua rotina da noite em" + contagem regressiva + "Ver rotina"
+// b · na hora:          "Hora da sua rotina da manhã" + duração + "Iniciar rotina"
+// c · concluída:        "Rotina da manhã concluída" + "Xh até a rotina da noite", sem botão
+type Hero = {
+  label: string; num: string; phrase: string; info: boolean;
+  btn: string | null; done: boolean; focus: RoutinePeriod;
+};
+
+function heroFor(now: Date, d: HomeData, hist: RoutineHistory): Hero {
+  const t = now.getHours() * 60 + now.getMinutes();
+  const day = hist[keyOf(sessionDate(now))] ?? {};
+  const amEnd = Math.min(AM_WINDOW_END, d.pmTime);
+  const passos = (n: number) => `${n} ${n === 1 ? 'passo' : 'passos'}`;
+  const dur = (n: number) => fmtDuration(Math.max(n, 1) * MIN_PER_STEP);
+
+  if (t >= d.pmTime || t < NIGHT_WINDOW_END) {
+    if (day.pm) {
+      return { label: 'Rotina da noite concluída', num: fmtDuration(minutesUntil(d.amTime, t)), phrase: 'até a rotina da manhã', info: false, btn: null, done: true, focus: 'am' };
+    }
+    return { label: 'Hora da sua rotina da noite', num: dur(d.pmCount), phrase: passos(d.pmCount), info: true, btn: 'Iniciar rotina', done: false, focus: 'pm' };
+  }
+  if (t >= d.amTime && t < amEnd) {
+    if (day.am) {
+      return { label: 'Rotina da manhã concluída', num: fmtDuration(minutesUntil(d.pmTime, t)), phrase: 'até a rotina da noite', info: false, btn: null, done: true, focus: 'pm' };
+    }
+    return { label: 'Hora da sua rotina da manhã', num: dur(d.amCount), phrase: passos(d.amCount), info: true, btn: 'Iniciar rotina', done: false, focus: 'am' };
+  }
+  if (t < d.amTime) {
+    return { label: 'Sua rotina da manhã em', num: fmtDuration(minutesUntil(d.amTime, t)), phrase: passos(d.amCount), info: true, btn: 'Ver rotina', done: false, focus: 'am' };
+  }
+  return { label: 'Sua rotina da noite em', num: fmtDuration(minutesUntil(d.pmTime, t)), phrase: passos(d.pmCount), info: true, btn: 'Ver rotina', done: false, focus: 'pm' };
+}
+
+function keyOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ── Semana (domingo → sábado da sessão de hoje) ─────────────────────────────
+// Rosa cheio = manhã e noite · anel rosa = só uma · pontilhado = futuro · sem marca = nada.
+type DayCell = {
+  l: string; n: number; today: boolean;
+  kind: 'full' | 'half' | 'empty' | 'future';
+};
+
+function weekFor(now: Date, hist: RoutineHistory): DayCell[] {
+  const today = sessionDate(now);
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay());
+  return LET.map((L, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const isToday = d.getTime() === today.getTime();
+    const done = routinesDoneOn(hist, d);
+    const kind = d.getTime() > today.getTime() ? 'future' : done === 2 ? 'full' : done === 1 ? 'half' : 'empty';
+    return { l: isToday ? 'HOJE' : L, n: d.getDate(), today: isToday, kind };
+  });
+}
+
+// ── Ícones (paths copiados do design) ───────────────────────────────────────
+const FLAME = 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z';
+
+// Cards "Pra você · Hoje" do design 38x (for-you="p6", "Ícone como o dia do
+// calendário"): um path por card, branco sobre o círculo rosa.
+const CARD_ICONS = {
+  chat: 'M21 12a8.5 8.5 0 0 1-12.2 7.6L3.5 21l1.3-4.8A8.5 8.5 0 1 1 21 12zM8.5 11h7M8.5 14h4.5',
+  prod: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M10.5 7h3M11 7v2M13 7v2M10.6 9h2.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6h-2.8a1.6 1.6 0 0 1-1.6-1.6v-4.8a1.6 1.6 0 0 1 1.6-1.6z',
+  coll: 'M10 2.5h4v3h-4zM9.5 5.5h5a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3v-10a3 3 0 0 1 3-3zM10.7 10h2.6a1.2 1.2 0 0 1 1.2 1.2v4.6a1.2 1.2 0 0 1-1.2 1.2h-2.6a1.2 1.2 0 0 1-1.2-1.2v-4.6a1.2 1.2 0 0 1 1.2-1.2z',
+  alarm: 'M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 2M5 3L2 6M22 6l-3-3',
+  cal: 'M8 2v4M16 2v4M4.5 5h15A1.5 1.5 0 0 1 21 6.5v13a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19.5v-13A1.5 1.5 0 0 1 4.5 5zM3 10h18',
+  tip: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z',
+} as const;
+
+// Fileira de 3 ações do design 38z (actions="row3", "como o Flo").
+const ACTION_ICONS = {
+  rotina: 'M10 2h4M11 2v2.5M13 2v2.5M9.5 8.5h5M10 8.5h4a2.5 2.5 0 0 1 2.5 2.5v8.5a2.5 2.5 0 0 1-2.5 2.5h-4a2.5 2.5 0 0 1-2.5-2.5V11a2.5 2.5 0 0 1 2.5-2.5zM8 15.5h4',
+  scan: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8.5 14.5s1.3 1.5 3.5 1.5 3.5-1.5 3.5-1.5M9 9.5h.01M15 9.5h.01',
+  prog: 'M3 17l6-6 4 4 8-8M15 7h6v6',
+} as const;
+type CardIcon = keyof typeof CARD_ICONS;
+
+// Anel pontilhado do dia futuro (`2px dotted rgba(192,32,106,.45)` do design). Em SVG
+// porque borda `dotted` com raio não é confiável no Fabric.
+function DottedRing({ size }: { size: number }) {
+  const r = (size - 2) / 2;
+  const c = 2 * Math.PI * r;
+  const gap = c / Math.round(c / 4);
+  return (
+    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+      <Circle
+        cx={size / 2} cy={size / 2} r={r}
+        fill="none" stroke="rgba(192,32,106,0.45)" strokeWidth={2}
+        strokeDasharray={[0.001, gap]} strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
 
 export default function Home() {
-  const { startFaceScan } = useFaceScan();
-  const setStoreSkinScore = useAppStore((s) => s.setSkinScore); // espelha o score p/ a navbar
-  const setProductDetailTarget = useAppStore((s) => s.setProductDetailTarget);
-  const setHomePhotoDraft = useAppStore((s) => s.setHomePhotoDraft);
   const router = useRouter();
-  const userId = useUserId(); // chaveia o cache — os dados são por usuário
-  const [tipOpen, setTipOpen] = useState(false);
-  const toggleTip = () => {
-    haptics.tap();
-    LayoutAnimation.configureNext(LayoutAnimation.create(240, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
-    setTipOpen((o) => !o);
-  };
-  const { width } = useWindowDimensions();
-  const PHOTO = Math.round(width * 0.58);   // foto = 228/393 (Figma node 1:51)
-  const LOGO = Math.round(width * (49 / 393)); // sparkle do topo = 49/393 (Figma node 1:385)
-  const CARD_OVERLAP = Math.round(width * (40 / 393)); // card sobrepõe 40px do fundo da foto (Figma)
-  const PHOTO_OFFSET = width * (2.5 / 393); // Figma: foto em left calc(50% + 2.5px), à direita do centro
-  // Anel: asset REAL do elipse do Figma (node 1:319). O asset (600px) cobre o frame de 265
-  // unidades; o círculo do anel dentro dele = 228. Renderizando a imagem em PHOTO·265/228, o
-  // círculo do anel fica = PHOTO (bate exatamente com a borda da foto; o traço fica centrado,
-  // extravasando um pouco pra fora, como no Figma).
-  const RING_IMG = PHOTO * (265.005 / 228);
+  const insets = useSafeAreaInsets();
+  const { startFaceScan } = useFaceScan();
+  const setStoreSkinScore = useAppStore((s) => s.setSkinScore);
+  const setProductDetailTarget = useAppStore((s) => s.setProductDetailTarget);
+  const userId = useUserId();
 
-  // ── Último scan real do usuário logado (Niks score + 6 métricas + foto) ───────
-  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
-  const [skinScore, setSkinScore] = useState<number | null>(null);
-  const [metricas, setMetricas] = useState<Metricas>(null);
+  // Relógio da tela: o herói é uma contagem regressiva, então avança a cada minuto.
+  const [now, setNow] = useState(() => new Date());
+  const [hist, setHist] = useState<RoutineHistory>({});
 
-  // Trocar a foto da home: galeria → tela de ajuste (enquadramento no círculo da home).
-  // `allowsEditing: false` de propósito — com `true` o iOS abre o "Move and scale" nativo,
-  // que recorta QUADRADO e não mostra o formato circular real. O enquadramento é nosso.
-  // A foto crua viaja pelo store (regra do projeto: nunca por router params).
-  const pickHomePhoto = useCallback(async () => {
-    haptics.tap();
-    const result = await trackNativePresentation(() => ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 1, // sem perda aqui; a compressão acontece depois do recorte
-      exif: false,
-    }));
-    if (result.canceled || !result.assets?.[0]) return;
-    const a = result.assets[0];
-    setHomePhotoDraft({ uri: a.uri, width: a.width, height: a.height });
-    router.push('/(foto)/ajustar-foto');
-  }, [router, setHomePhotoDraft]);
-
-  // ── Dica do dia — fila numerada, avança a cada DIA DE USO (lib/dicas/dicaDoDia) ─
-  // Começa na dica 1 para nunca existir card vazio enquanto o AsyncStorage é lido.
-  const [dica, setDica] = useState<Dica>(CATALOGO_DICAS[0]);
-
-  // "Para você" — 2 primeiros produtos recomendados (reais), resolvidos por produto_id.
-  const [featured, setFeatured] = useState<{ productId: string; imagemUrl: string }[]>([]);
-
-  // A dica não depende de login nem de scan — efeito próprio, resolvido em cada foco
-  // (getDicaDoDia só anda na fila quando o dia civil vira).
+  // Ao focar: relê o histórico (a cerimônia pode ter acabado de gravar).
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      getDicaDoDia().then((d) => { if (active) setDica(d); });
-      return () => { active = false; };
+      setNow(new Date());
+      getRoutineHistory().then((h) => { if (active) setHist(h); });
+      const id = setInterval(() => setNow(new Date()), 30_000);
+      return () => { active = false; clearInterval(id); };
     }, [])
   );
 
-  // ── Carga da home, cacheada ──────────────────────────────────────────────
-  // Antes: 4–5 requisições SEQUENCIAIS a cada foco da aba, sem nenhuma guarda —
-  // era a principal causa da home "recarregar" toda vez. Agora o resultado inteiro
-  // é uma entrada de cache só: a tela abre com os dados da última visita e revalida
-  // por trás. As 3 primeiras consultas viraram PARALELAS (não dependem entre si);
-  // só `produtos` precisa esperar, porque depende dos ids da recomendação.
-  const fetchHome = useCallback(async () => {
-    const userId = await getUserId();
-    if (!userId) throw new Error('sem sessão');
+  // ── Carga da home, cacheada (stale-while-revalidate) ──────────────────────
+  const fetchHome = useCallback(async (): Promise<HomeData> => {
+    const uid = await getUserId();
+    if (!uid) throw new Error('sem sessão');
 
-    const [scanRes, userRes, recRes] = await Promise.all([
-      // Último scan (score + métricas + foto)
+    const [scanRes, userRes, protoRes, recRes] = await Promise.all([
       supabase
         .from('skin_scans')
         .select('foto_url, full_result')
-        .eq('user_id', userId)
+        .eq('user_id', uid)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
-      // Foto escolhida pela usuária na galeria (se houver) — ver precedência abaixo.
-      // `home_tutorial_seen_at` pega CARONA nesta consulta (é a verdade de "esta
-      // CONTA já viu o tutorial de primeiro acesso"): assim a regra "uma vez por
-      // conta" não custa nenhuma ida à rede a mais. Ver `lib/homeTutorial.ts`.
+      // `home_tutorial_seen_at` pega carona nesta consulta — é a verdade de "esta
+      // CONTA já viu o tutorial" (ver lib/homeTutorial.ts).
       supabase
         .from('users')
-        .select('foto_home_url, home_tutorial_seen_at')
-        .eq('id', userId)
+        .select('nome, foto_home_url, home_tutorial_seen_at, rotina_manha_horario, rotina_noite_horario')
+        .eq('id', uid)
         .maybeSingle(),
-      // "Para você": 2 primeiros produtos recomendados (principal de cada passo, na
-      // ordem do JSON), resolvidos contra `produtos` num único select.
+      supabase
+        .from('protocolos')
+        .select('rotina_am, rotina_pm')
+        .eq('user_id', uid)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
       supabase
         .from('recomendacoes_produtos')
         .select('recomendacao')
-        .eq('user_id', userId)
+        .eq('user_id', uid)
         .maybeSingle(),
     ]);
 
-    const data = scanRes.data;
-    const userRow = userRes.data;
-    const passos: any[] = Array.isArray(recRes.data?.recomendacao) ? recRes.data!.recomendacao : [];
-    const firstIds: string[] = [];
-    for (const p of passos) {
-      if (p?.sem_produto) continue;
-      const prods = p?.produtos ?? [];
-      const principal = prods.find((x: any) => x?.principal) ?? prods[0];
-      if (principal?.produto_id) firstIds.push(principal.produto_id);
-      if (firstIds.length >= 2) break;
-    }
-    let feat: { productId: string; imagemUrl: string }[] = [];
-    if (firstIds.length) {
-      const { data: prods } = await supabase
-        .from('produtos')
-        .select('id, imagem_url')
-        .in('id', firstIds);
-      const byId = new Map((prods ?? []).map((p: any) => [p.id, p]));
-      feat = firstIds
-        .map((id) => byId.get(id))
-        .filter(Boolean)
-        .map((p: any) => ({ productId: p.id, imagemUrl: p.imagem_url }));
-    }
+    const scan = scanRes.data;
+    const user = userRes.data;
+    const proto = protoRes.data;
 
-    const full = (data?.full_result ?? null) as FullResult | null;
+    // "Seus produtos": o produto principal de cada passo, separado por período e
+    // numerado na ordem dos passos daquele período ("Passo 2 · Hidratação").
+    const passos: any[] = Array.isArray(recRes.data?.recomendacao) ? recRes.data!.recomendacao : [];
+    const raw: Record<RoutinePeriod, { id: string; step: string; cat: string }[]> = { am: [], pm: [] };
+    for (const period of ['am', 'pm'] as const) {
+      const doPeriodo = passos.filter((p) => p?.periodo === period || p?.periodo === 'am+pm');
+      doPeriodo.forEach((p, i) => {
+        if (p?.sem_produto) return;
+        const prods = p?.produtos ?? [];
+        const principal = prods.find((x: any) => x?.principal) ?? prods[0];
+        if (!principal?.produto_id) return;
+        raw[period].push({ id: principal.produto_id, step: `Passo ${i + 1} · ${p.categoria ?? ''}`, cat: p.categoria ?? '' });
+      });
+    }
+    const ids = [...new Set([...raw.am, ...raw.pm].map((r) => r.id))];
+    const byId = new Map<string, any>();
+    if (ids.length) {
+      const { data: prods } = await supabase.from('produtos').select('id, nome, imagem_url').in('id', ids);
+      (prods ?? []).forEach((p: any) => byId.set(p.id, p));
+    }
+    const resolve = (list: typeof raw.am): HomeProduct[] => list
+      .filter((r) => byId.has(r.id))
+      .map((r) => {
+        const p = byId.get(r.id);
+        return { id: r.id, name: p.nome, img: p.imagem_url, step: r.step, tint: TINT[r.cat] ?? TINT.Limpeza };
+      });
+
+    const full = (scan?.full_result ?? null) as { skin_score?: number } | null;
     return {
-      // ⚠️ Precedência ABSOLUTA da foto escolhida na galeria: uma vez que a usuária
-      // escolhe uma, novos scans NUNCA mais trocam a foto da home. A única forma de
-      // trocar é tocar na foto e escolher outra (→ `(foto)/ajustar-foto`). Intencional.
-      fotoUrl: userRow?.foto_home_url ?? data?.foto_url ?? null,
+      // Precedência ABSOLUTA da foto escolhida na galeria (ver README).
+      fotoUrl: user?.foto_home_url ?? scan?.foto_url ?? null,
       skinScore: typeof full?.skin_score === 'number' ? full.skin_score : null,
-      metricas: full?.metricas ?? null,
-      featured: feat,
-      // `null` = esta conta NUNCA viu o tutorial. Nunca `undefined` aqui: um
-      // `undefined` significa "payload de uma versão antiga do cache, ainda não
-      // sei a resposta" e é o que segura o tutorial (ver o efeito lá embaixo).
-      homeTutorialSeenAt: (userRow?.home_tutorial_seen_at ?? null) as string | null,
+      firstName: String(user?.nome ?? '').trim().split(/\s+/)[0] ?? '',
+      amTime: parseTime(user?.rotina_manha_horario, DEFAULT_AM),
+      pmTime: parseTime(user?.rotina_noite_horario, DEFAULT_PM),
+      amCount: Array.isArray(proto?.rotina_am) ? proto!.rotina_am.length : 0,
+      pmCount: Array.isArray(proto?.rotina_pm) ? proto!.rotina_pm.length : 0,
+      products: { am: resolve(raw.am), pm: resolve(raw.pm) },
+      homeTutorialSeenAt: (user?.home_tutorial_seen_at ?? null) as string | null,
     };
   }, []);
 
-  const { data: homeData, state: homeState } = useCachedQuery(
+  const { data: cached, state: homeState } = useCachedQuery<HomeData>(
     userId ? `home:${userId}` : null,
     fetchHome,
     { enabled: Boolean(userId) },
   );
+  const loading = cached == null && homeState !== 'error';
 
-  // Pré-carregamento: enquanto `homeData` não chegou (sessão + cache do disco + rede),
-  // mostramos skeletons no lugar dos placeholders vazios. Assim que os dados carregam,
-  // `homeData` vira um objeto (mesmo para quem nunca escaneou — aí some o skeleton e
-  // aparece o estado real de "faça seu primeiro scan"). Ver components/Skeleton.tsx.
-  // Em erro na 1ª carga (sem rede e sem cache), cai no placeholder em vez de pulsar
-  // pra sempre — `homeState` só é 'error' quando não há nada para mostrar.
-  const loading = homeData == null && homeState !== 'error';
+  // Um cache gravado pela home anterior não tem os campos novos — completa com padrões.
+  const d: HomeData = {
+    fotoUrl: cached?.fotoUrl ?? null,
+    skinScore: cached?.skinScore ?? null,
+    firstName: cached?.firstName ?? '',
+    amTime: cached?.amTime ?? DEFAULT_AM,
+    pmTime: cached?.pmTime ?? DEFAULT_PM,
+    amCount: cached?.amCount ?? 0,
+    pmCount: cached?.pmCount ?? 0,
+    products: cached?.products ?? { am: [], pm: [] },
+    homeTutorialSeenAt: cached?.homeTutorialSeenAt as string | null,
+  };
 
   useEffect(() => {
-    if (!homeData) return;
-    setFotoUrl(homeData.fotoUrl);
-    setSkinScore(homeData.skinScore);
-    setStoreSkinScore(homeData.skinScore); // navbar (logo central) usa o mesmo tema de cor
-    setMetricas(homeData.metricas);
-    setFeatured(homeData.featured);
-  }, [homeData, setStoreSkinScore]);
+    if (cached) setStoreSkinScore(cached.skinScore ?? null);
+  }, [cached, setStoreSkinScore]);
 
-  // Card de métricas (Figma node 1:63 = 374×187). Escala proporcional pela largura
-  // real do card (largura da tela − 2×margin de 12) para casar 1:1 com o Figma.
-  const MS = (width - 24) / 374;
-  const COLS = [21, 149, 277].map((x) => x * MS); // x das 3 colunas (esq. de cada métrica)
-
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Exo2_700Bold,
-    Lato_400Regular,
-  });
-
-  // Aliases — fallback undefined evita flash de layout enquanto carrega
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fExo   = fontsLoaded ? 'Exo2_700Bold' : undefined;
-  const fLato  = fontsLoaded ? 'Lato_400Regular' : undefined;
-
-  // Tema de cor pela faixa do Niks score (réplica das 4 variações do Figma)
-  const theme = getScoreTheme(skinScore);
-
-  // Usuária LEGADA: já escaneou (tem score), mas o scan é anterior ao deploy das 6
-  // métricas — o `full_result` dela não tem o campo `metricas`. A própria ausência do
-  // campo é a flag; não há coluna nem migration para isso. Distingue-se de quem nunca
-  // escaneou (`skinScore == null`), que já tem o placeholder da foto.
-  const legacyScan = skinScore != null && metricas == null;
-
-  // ── Alvos do tutorial de primeiro acesso (coach marks) ───────────────────
-  // As posições vão para `lib/coachMarks`; quem desenha o recorte é o overlay
-  // montado no `(app)/_layout.tsx` (a navbar mora lá, e o tutorial precisa
-  // iluminá-la). Ver "Feature: Tutorial de primeiro acesso" no README.
-  const scanMark = useCoachMark('scan', 'pill');
-  // ⚠️ Sem scan o card de métricas está `disabled` — e a frase do tutorial
-  // ("toque nas suas métricas para compartilhar") seria mentira. Não registrar o
-  // alvo faz o overlay PULAR esse passo sozinho. A usuária vinda do onboarding
-  // sempre tem scan; isto é a rede de segurança para qualquer outro caminho.
-  const metricsMark = useCoachMark('metrics', 'rect', { radius: 16, enabled: skinScore != null });
-
-  // ── Liberação do palco: UM efeito só, com a ordem explícita ────────────────
-  // (1) aplica no flag local o "já viu" que veio do servidor e só DEPOIS (2)
-  // libera o tutorial. A ordem é a regra de negócio: no caso da conta existente
-  // que refaz o onboarding, o `pending` está armado e o que impede o tutorial de
-  // abrir é o servidor — se o palco fosse liberado antes, ele apareceria por um
-  // instante antes de sumir. Um efeito só (em vez de dois) tira a ordem da mão da
-  // ordem de declaração dos hooks.
-  //
-  // `homeTutorialSeenAt === undefined` significa "ainda não sei" — payload de uma
-  // versão do cache anterior a esta coluna. Nesse caso o palco NÃO é liberado: é
-  // melhor não mostrar o tutorial do que mostrá-lo para quem já viu. (Conta nova
-  // nunca cai aqui: o cache dela nasce junto com este código.)
-  const homeTutorialSeenAt = homeData?.homeTutorialSeenAt;
+  // ── Tutorial de primeiro acesso: aplica o "já viu" do servidor e SÓ DEPOIS
+  // libera o palco, no mesmo efeito (ver README → "Quem vê").
+  const homeTutorialSeenAt = cached?.homeTutorialSeenAt;
   const markHomeTutorialSeen = useAppStore((s) => s.markHomeTutorialSeen);
   useEffect(() => {
     if (homeTutorialSeenAt) markHomeTutorialSeen();
@@ -274,428 +323,342 @@ export default function Home() {
     return () => setCoachStageReady(false);
   }, [loading, homeTutorialSeenAt, markHomeTutorialSeen]);
 
-  // O overlay avisa antes de medir: a home volta ao topo para o card de métricas
-  // estar visível (ela rola, e medir com a tela rolada poria o buraco no lugar
-  // errado). `animated: false` — é preparação, não animação para a usuária ver.
   const scrollRef = useRef<ScrollView | null>(null);
   useEffect(() => onCoachPrepare(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }), []);
 
+  // Cabeçalho fixo: transparente no topo; ao rolar ganha o fundo rosado + linha
+  // (`transition: background .2s` do design).
+  const [scrolled, setScrolled] = useState(false);
+  const hdrAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(hdrAnim, { toValue: scrolled ? 1 : 0, duration: 200, useNativeDriver: true }).start();
+  }, [scrolled, hdrAnim]);
+
+  const night = getRoutinePeriodForNow(now) === 'pm'; // 38f — a partir das 18h
+  const hero = heroFor(now, d, hist);
+  const days = weekFor(now, hist);
+  const streak = routineStreak(hist, now);
+  const products = d.products[hero.focus];
+
+  const go = (path: string) => { haptics.tap(); router.push(path as any); };
+
+  // Cards "Pra você · Hoje" do 38z (lista PC2 do design).
+  const cards: { text: string; icon: CardIcon; onPress?: () => void }[] = [
+    { text: 'NIKS Chat', icon: 'chat', onPress: () => go('/niks-chat') },
+    { text: 'Escanear produto', icon: 'prod', onPress: () => go('/(scan)/product-camera') },
+    { text: 'Minha coleção', icon: 'coll', onPress: () => go('/recomendacao-produtos') },
+    { text: 'Alarme de rotina', icon: 'alarm', onPress: () => go('/alarme') },
+    { text: 'Ver calendário', icon: 'cal', onPress: () => go('/calendario') },
+    { text: 'Dica do dia', icon: 'tip' },
+  ];
+
+  // Fileira de ações (38z): substitui o botão "Ver rotina" do herói.
+  const actions: { label: string; icon: keyof typeof ACTION_ICONS; primary?: boolean; onPress?: () => void }[] = [
+    { label: 'Ver rotina', icon: 'rotina', primary: true, onPress: () => { haptics.action(); router.push('/protocolo' as any); } },
+    { label: 'Fazer scan', icon: 'scan', onPress: () => { haptics.action(); startFaceScan(); } },
+    // Abre a tela "Seu progresso" (43a) — ainda não existe, então fica sem ação por ora.
+    { label: 'Progresso', icon: 'prog' },
+  ];
+
   return (
     <View style={styles.root}>
+      <StatusBar style="dark" />
+      <LinearGradient
+        colors={night ? BG_NIGHT : BG_DAY}
+        locations={BG_STOPS}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View style={styles.circleWhite} pointerEvents="none" />
+      <View style={[styles.circleBlob, { backgroundColor: night ? 'rgba(232,214,246,0.5)' : 'rgba(255,226,236,0.45)' }]} pointerEvents="none" />
+
       <ScrollView
         ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const v = e.nativeEvent.contentOffset.y > 8;
+          if (v !== scrolled) setScrolled(v);
+        }}
+        contentContainerStyle={{ paddingBottom: 112 }}
       >
-        {/* Fundo gradiente branco → tom do tema atrás do score + foto (muda por faixa
-            de score, como no Figma). Última parada = cor da página (#F9F9F9), que fica
-            atrás do card de métricas, fundindo sem borda dura. */}
-        <LinearGradient
-          colors={['#FFFFFF', '#FFFFFF', theme.heroSoft, theme.heroMed, '#F9F9F9']}
-          locations={[0, 0.5, 0.72, 0.82, 1]}
-          style={styles.heroGradient}
-          pointerEvents="none"
-        />
+        {/* Espaço do cabeçalho fixo (ele flutua por cima, ver abaixo). */}
+        <View style={{ height: insets.top + 15 + 32 + 8 }} />
 
-        <SafeAreaView edges={['top']} style={{ backgroundColor: 'transparent' }}>
-          {/* ── Niks score ─────────────────────────────────────────────── */}
-          <View style={styles.scoreBlock}>
-            <Image source={theme.logo} style={[styles.scoreLogo, { width: LOGO, height: Math.round(LOGO * (199 / 196)) }]} />
-            {loading ? (
-              <Skeleton style={{ width: 92, height: 56, borderRadius: 16, marginTop: 8, marginBottom: 6 }} />
-            ) : (
-              <Text style={[styles.scoreNumber, { fontFamily: fXBold, color: theme.score }]}>{skinScore != null ? skinScore : '—'}</Text>
-            )}
-            <Text style={[styles.scoreLabel, { fontFamily: fXBold }]}>Niks score</Text>
-            <Image
-              source={theme.underline}
-              style={styles.scoreUnderline}
-              resizeMode="stretch"
-            />
-          </View>
-
-          {/* ── Foto circular + anel colorido por tema (recriado em código) ──
-              Com scan: rosto do último scan. Sem scan: placeholder neutro + ícone. */}
-          <View style={styles.photoWrap}>
-            {/* Tocar na foto → galeria → tela de ajuste. O TouchableOpacity envolve o View
-                dimensionado POR FORA: o `photoCircle` tem `overflow: 'hidden'`, que já deu
-                problema de toque no New Architecture neste projeto.
-                ⚠️ O card de métricas cobre os 40px de baixo da foto (zIndex maior, como no
-                Figma), então essa faixa não recebe toque — é esperado, não mexer no zIndex. */}
-            <TouchableOpacity
-              onPress={pickHomePhoto}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Trocar a foto do perfil"
-              style={{ width: PHOTO, height: PHOTO, transform: [{ translateX: PHOTO_OFFSET }] }}
-            >
-              {/* Foto (círculo interno) */}
-              <View style={[styles.photoCircle, { width: PHOTO, height: PHOTO, borderRadius: PHOTO / 2 }]}>
-                {loading ? (
-                  <Skeleton style={{ width: '100%', height: '100%', borderRadius: PHOTO / 2 }} />
-                ) : fotoUrl ? (
-                  <Image source={{ uri: fotoUrl }} style={styles.photo} resizeMode="cover" />
-                ) : (
-                  <View style={styles.photoPlaceholder}>
-                    <ScanFace size={PHOTO * 0.26} color="#F3A9A6" strokeWidth={1.6} />
-                  </View>
-                )}
-              </View>
-              {/* Anel = asset REAL do elipse do Figma (node 1:319) com centro transparente,
-                  sobreposto à foto. Centrado; o círculo do anel = PHOTO, traço centrado na borda. */}
-              <Image
-                source={theme.ringImg}
-                style={{
-                  position: 'absolute',
-                  width: RING_IMG, height: RING_IMG,
-                  left: (PHOTO - RING_IMG) / 2, top: (PHOTO - RING_IMG) / 2,
-                }}
-              />
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-
-        {/* ── Card de métricas (sobrepõe os 40px de baixo da foto, como no Figma) ──
-            Réplica pixel-perfect do node 1:63: 3 colunas absolutas em x=21/149/277,
-            2 linhas. Cada métrica = label (Lato) + valor (Exo 2 Bold) + barra.
-
-            TOCAR NO CARD = compartilhar (substituiu o link "Compartilhar" que ficava
-            embaixo dele). O TouchableOpacity envolve o card POR FORA e carrega só a
-            posição (margens + zIndex): o card em si tem `overflow: 'hidden'`, que já
-            causou problema de toque no New Architecture neste projeto. Como o wrapper
-            não tem filhos em fluxo normal além do próprio card, a grade absoluta do
-            node 1:63 não se move. */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          disabled={skinScore == null}
-          accessibilityRole="button"
-          accessibilityLabel="Compartilhar minhas métricas"
-          style={[styles.metricsCardTouch, { marginTop: -CARD_OVERLAP }]}
-          onPress={() => { haptics.tap(); router.push('/(share)/share-capture' as any); }}
-        >
-        <View
-          ref={metricsMark.ref}
-          onLayout={metricsMark.onLayout}
-          style={[styles.metricsCard, { height: 187 * MS }]}
-        >
-          {/* Wrapper absoluto que PREENCHE o card: as métricas seguem posicionadas pelas
-              coordenadas do Figma (left/top a partir de 0), idêntico a antes. Existe só
-              para apagar as 6 de uma vez no estado legado, virando fundo do aviso. */}
-          <View style={[StyleSheet.absoluteFill, legacyScan && { opacity: 0.22 }]}>
-          {METRIC_DEFS.map((m, i) => {
-            const col = i % 3;
-            const row = Math.floor(i / 3);
-            const twoLine = m.label.includes('\n');
-            // tops (Figma, node 1:63) — label sobe para 91 quando tem 2 linhas
-            const labelTop = row === 0 ? 17 : twoLine ? 91 : 101;
-            const numTop = row === 0 ? 34.24 : 118.24;
-            const trackTop = row === 0 ? 71.85 : 155.85;
-            // valor real do último scan (null = sem dado → "—" + barra vazia)
-            const v = metricas?.[m.key] ?? null;
-            const fill = v == null ? 0 : v / 100;
-            const barColor = v == null ? 'transparent' : metricColor(v, m.positive);
+        {/* ── Semana ───────────────────────────────────────────────────── */}
+        <View style={styles.week}>
+          {days.map((day, i) => {
+            const sz = day.today ? 50 : 34;
+            const fullToday = day.today && day.kind === 'full';
+            const bg = fullToday ? PINK : day.today ? '#FFFFFF' : day.kind === 'full' ? PINK : 'transparent';
+            // Número sempre preto (hoje e dias com uma rotina também); branco só sobre o círculo rosa cheio.
+            const nc = day.kind === 'full' ? '#FFFFFF' : INK;
             return (
-              <View key={m.label} style={{ position: 'absolute', left: COLS[col], top: 0, width: 110 * MS, height: '100%' }}>
-                <Text
-                  numberOfLines={2}
-                  style={{
-                    position: 'absolute', left: 0, top: labelTop * MS, width: 110 * MS,
-                    fontFamily: fLato, fontSize: 12.536 * MS, lineHeight: 14.5 * MS,
-                    color: '#000000', letterSpacing: -0.2507 * MS,
-                  }}
-                >
-                  {m.label}
-                </Text>
-                {loading ? (
-                  <Skeleton style={{ position: 'absolute', left: 0, top: numTop * MS, width: 34 * MS, height: 24 * MS, borderRadius: 6 }} />
-                ) : (
-                  <Text
-                    style={{
-                      position: 'absolute', left: 0, top: numTop * MS,
-                      fontFamily: fExo, fontSize: 28.206 * MS,
-                      color: '#000000', letterSpacing: -0.5641 * MS, textTransform: 'uppercase',
-                    }}
+              // Tocar em qualquer dia abre o calendário (42b).
+              <TouchableOpacity key={i} activeOpacity={0.7} onPress={() => go('/calendario')} style={styles.dayCol}>
+                <Text style={[styles.dayLetter, day.today && { fontWeight: '700', color: INK }]}>{day.l}</Text>
+                <View style={styles.daySlot}>
+                  <View
+                    style={[
+                      { width: sz, height: sz, borderRadius: sz / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' },
+                      day.kind === 'half' && { borderWidth: 2, borderColor: PINK },
+                      day.today && styles.todayShadow,
+                    ]}
                   >
-                    {v == null ? '—' : v}
-                  </Text>
-                )}
-                <View
-                  style={{
-                    position: 'absolute', left: 0, top: trackTop * MS,
-                    width: 76 * MS, height: 4.701 * MS, borderRadius: 40,
-                    backgroundColor: '#F3F3F4', overflow: 'hidden',
-                  }}
-                >
-                  <View style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: fill * 76 * MS, borderRadius: 40, backgroundColor: barColor }} />
+                    {day.kind === 'future' && <DottedRing size={sz} />}
+                    <Text style={{ fontSize: day.today ? 18 : 17, fontWeight: day.today ? '700' : '400', letterSpacing: -0.3, color: nc }}>
+                      {day.n}
+                    </Text>
+                  </View>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
-          </View>
-
-          {/* Estado LEGADO: a usuária tem scan (logo, tem score), mas o scan é anterior
-              às 6 métricas — `full_result.metricas` não existe. Sem esse aviso o card
-              vira 6 travessões sem explicação. Os travessões ficam de fundo (opacity
-              acima) e o scrim carrega a mensagem: mostram A FORMA do que ela desbloqueia.
-              Sem CTA próprio de propósito — o botão "Escanear" já é fixo no rodapé. */}
-          {legacyScan && (
-            <View style={styles.metricsLock} pointerEvents="none">
-              <Text style={[styles.metricsLockTitle, { fontFamily: fXBold, fontSize: 15 * MS }]}>
-                Aprimoramos a análise de pele.
-              </Text>
-              <Text style={[styles.metricsLockBody, { fontFamily: fSemi, fontSize: 12.5 * MS, lineHeight: 17 * MS, marginTop: 6 * MS }]}>
-                Faça um novo scan para desbloquear suas 6 novas métricas e ter uma análise mais precisa.
-              </Text>
-            </View>
-          )}
         </View>
-        </TouchableOpacity>
 
-        {/* ── Dica do dia (toca para expandir o conteúdo) ─────────────────
-            Colapsado: eyebrow + título (o gancho). Expandido: nas receitas, os
-            ingredientes e o preparo vêm ANTES do corpo. O campo `fonte` do catálogo
-            é auditoria interna — nunca é renderizado. */}
-        <TouchableOpacity activeOpacity={0.85} style={styles.tipCard} onPress={toggleTip}>
-          <View style={styles.tipHeader}>
-            <View style={styles.tipIconBox}>
-              <Lightbulb size={24} color="#121212" strokeWidth={2} />
-            </View>
-            <View style={styles.tipTexts}>
-              {/* A frase é escrita aqui, não lida do catálogo: lá o `eyebrow` é 'DICA DO DIA'
-                  (caixa alta, uniforme nas 26 dicas) e a caixa certa na UI é "Dica do Dia" —
-                  que nenhum textTransform produz ('capitalize' maiusculiza o "do"). */}
-              <Text style={[styles.tipKicker, { fontFamily: fXBold }]} numberOfLines={1}>
-                Dica do Dia
-              </Text>
-              <Text
-                style={[styles.tipTitle, { fontFamily: fXBold }]}
-                numberOfLines={tipOpen ? undefined : 2}
-              >
-                {dica.titulo}
-              </Text>
-            </View>
-            {tipOpen
-              ? <ChevronUp size={20} color="#B5B5B5" strokeWidth={2.5} />
-              : <ChevronDown size={20} color="#B5B5B5" strokeWidth={2.5} />}
-          </View>
-
-          {tipOpen && (
-            <View style={styles.tipBody}>
-              {!!dica.ingredientes?.length && (
-                <View style={styles.tipSection}>
-                  <Text style={[styles.tipBlockLabel, { fontFamily: fBold }]}>Ingredientes</Text>
-                  {dica.ingredientes.map((item, i) => (
-                    <View key={i} style={styles.tipListRow}>
-                      <View style={styles.tipBullet} />
-                      <Text style={[styles.tipListText, { fontFamily: fSemi }]}>{item}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {!!dica.preparo?.length && (
-                <View style={styles.tipSection}>
-                  <Text style={[styles.tipBlockLabel, { fontFamily: fBold }]}>Preparo</Text>
-                  {dica.preparo.map((passo, i) => (
-                    <View key={i} style={styles.tipListRow}>
-                      <Text style={[styles.tipStepNumber, { fontFamily: fBold }]}>{i + 1}</Text>
-                      <Text style={[styles.tipListText, { fontFamily: fSemi }]}>{passo}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* "Por que fazer" existe em TODA dica — receita ou não. É a anatomia fixa
-                  do card: a usuária sempre sabe onde procurar o motivo. */}
-              <View style={styles.tipSection}>
-                <Text style={[styles.tipBlockLabel, { fontFamily: fBold }]}>Por que fazer</Text>
-                <Text style={[styles.tipParagraph, { fontFamily: fSemi }]}>{dica.corpo}</Text>
+        {/* ── Herói: rotina ─────────────────────────────────────────────── */}
+        <Text style={styles.heroLabel}>{hero.label}</Text>
+        <Text style={styles.heroNum}>{hero.num}</Text>
+        {/* 38z: sem a frase "N passos ⓘ" embaixo da contagem (showPhrase: !r3). */}
+        {/* ── Ações: Ver rotina · Fazer scan · Progresso ─────────────────── */}
+        <View style={styles.actionsRow}>
+          {actions.map((a) => (
+            <TouchableOpacity
+              key={a.label}
+              activeOpacity={a.onPress ? 0.85 : 1}
+              disabled={!a.onPress}
+              onPress={a.onPress}
+              style={styles.action}
+            >
+              <View style={[styles.actionCircle, a.primary ? styles.actionCirclePrimary : styles.actionCircleWhite]}>
+                <Svg width={24} height={24} viewBox="0 0 24 24">
+                  <Path
+                    d={ACTION_ICONS[a.icon]}
+                    fill="none"
+                    stroke={a.primary ? '#FFFFFF' : INK}
+                    strokeWidth={a.primary ? 1.9 : 1.7}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
               </View>
-            </View>
-          )}
-        </TouchableOpacity>
+              <Text style={styles.actionLabel} numberOfLines={1}>{a.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-        {/* ── Para você — 2 primeiros produtos recomendados (reais) ──────────
-            Toque abre direto o detalhe do produto na tela de recomendação. */}
-        {featured.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { fontFamily: fBold }]}>Para você</Text>
-            <View style={styles.productsRow}>
-              {featured.map((f) => (
+        {/* ── Pra você · Hoje ──────────────────────────────────────────── */}
+        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Pra você · Hoje</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginTop: 10 }}
+          contentContainerStyle={{ paddingTop: 2, paddingHorizontal: 18, paddingBottom: 14, gap: 8 }}
+        >
+          {cards.map((c) => (
+            // Vidro: branco 58% + desfoque (backdrop-filter blur 16) + contorno rosa.
+            // A sombra fica no wrapper; o recorte arredondado do desfoque, no de dentro
+            // (overflow:hidden e sombra não convivem na mesma View — README #20).
+            <TouchableOpacity
+              key={c.icon}
+              activeOpacity={c.onPress ? 0.85 : 1}
+              disabled={!c.onPress}
+              onPress={c.onPress}
+              style={styles.card}
+            >
+              <View style={styles.cardClip}>
+                <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
+                <View style={styles.cardInner}>
+                  <View style={styles.cardCircle}>
+                    <Svg width={19} height={19} viewBox="0 0 24 24">
+                      <Path d={CARD_ICONS[c.icon]} fill="none" stroke="#fff" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </View>
+                  <Text style={styles.cardText} lineBreakStrategyIOS="push-out">{c.text}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* ── Seus produtos · Rotina da manhã/noite ───────────────────── */}
+        {products.length > 0 && (
+          <View style={styles.surface}>
+            <Text style={styles.surfaceTitle}>
+              Seus produtos · {hero.focus === 'am' ? 'Rotina da manhã' : 'Rotina da noite'}
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 9, paddingTop: 16, paddingHorizontal: 17, paddingBottom: 20 }}
+            >
+              {products.map((p) => (
                 <TouchableOpacity
-                  key={f.productId}
-                  activeOpacity={0.9}
-                  style={styles.productCard}
+                  key={`${p.id}-${p.step}`}
+                  activeOpacity={0.85}
+                  style={styles.prod}
                   onPress={() => {
                     haptics.tap();
-                    setProductDetailTarget(f.productId);
+                    setProductDetailTarget(p.id);
                     router.push('/recomendacao-produtos' as any);
                   }}
                 >
-                  <ExpoImage source={{ uri: f.imagemUrl }} style={styles.productImg} contentFit="contain" />
+                  <View style={[styles.prodImgBox, { backgroundColor: p.tint }]}>
+                    <ExpoImage source={{ uri: p.img }} style={styles.prodImg} contentFit="contain" />
+                  </View>
+                  <View style={{ gap: 2 }}>
+                    <Text style={styles.prodName}>{p.name}</Text>
+                    <Text style={styles.prodStep}>{p.step}</Text>
+                  </View>
                 </TouchableOpacity>
               ))}
-              {/* completa a linha se só houver 1 produto (mantém o card à esquerda) */}
-              {featured.length === 1 && <View style={[styles.productCard, { opacity: 0 }]} pointerEvents="none" />}
-            </View>
-          </>
+            </ScrollView>
+          </View>
         )}
-
       </ScrollView>
 
-      {/* ── Botão Escanear — fixo, logo acima da tab bar (não rola com o conteúdo) ──
-          bottom = BAR_HEIGHT da navbar (80px, node 1:27) + 12px de respiro. */}
-      <View style={styles.scanWrap} pointerEvents="box-none">
-        {/* A View de medida do coach mark abraça só o botão (o `scanWrap` é
-            full-width e daria uma pílula do tamanho da tela). */}
-        <View ref={scanMark.ref} onLayout={scanMark.onLayout}>
-        <TouchableOpacity activeOpacity={0.9} onPress={() => { haptics.action(); startFaceScan(); }}>
-          <LinearGradient
-            colors={['#FF9D9D', '#FF9D9D']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={styles.scanBtn}
-          >
-            <ScanFace size={22} color="#FFFFFF" strokeWidth={2} />
-            <Text style={[styles.scanText, { fontFamily: fBold }]}>Escanear</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+      {/* ── Cabeçalho fixo: foto + "Olá, Nome" · sequência ───────────────
+          No design é `position: sticky; top: 0` no topo da rolagem — ou seja, nunca
+          se move. Aqui é uma camada absoluta por cima do ScrollView (o
+          `stickyHeaderIndices` deslocava tudo no Fabric). */}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top + 15, paddingBottom: 8 }}>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              opacity: hdrAnim,
+              backgroundColor: night ? 'rgba(234,218,244,0.94)' : 'rgba(255,214,231,0.94)',
+              borderBottomWidth: 1,
+              borderBottomColor: 'rgba(192,32,106,0.10)',
+            },
+          ]}
+        />
+        <View style={styles.hdrRow}>
+          <View style={styles.hdrLeft}>
+            <View style={styles.avatarWrap}>
+              {d.fotoUrl ? (
+                <Image source={{ uri: d.fotoUrl }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, { backgroundColor: '#F6D3E1' }]} />
+              )}
+              <View style={styles.avatarDot} />
+            </View>
+            <Text style={styles.greet}>{d.firstName ? `Olá, ${d.firstName}` : 'Olá'}</Text>
+          </View>
+
+          {/* Sequência — estilo 5: círculo branco + selo rosa. Abre o calendário (42b). */}
+          <TouchableOpacity activeOpacity={0.85} onPress={() => go('/calendario')} style={styles.streakBtn} accessibilityLabel="Abrir calendário">
+            <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Path d={FLAME} fill="none" stroke={INK} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            <View style={styles.streakBadge}>
+              <Text style={styles.streakBadgeText}>{streak}</Text>
+            </View>
+          </TouchableOpacity>
         </View>
       </View>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F9F9F9' },
-  scroll: { flex: 1, backgroundColor: '#F9F9F9' },
-  // paddingBottom = navbar (80) + botão fixo (48, bottom 108) + respiros → conteúdo rola livre atrás do botão
-  content: { paddingBottom: 186 },
+  root: { flex: 1 }, // sem overflow:hidden — pai de ScrollView (README #24)
 
-  heroGradient: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: 520,
+  // Círculos decorativos do fundo (fixos, não rolam).
+  circleWhite: {
+    position: 'absolute', width: 620, height: 620, borderRadius: 310,
+    left: -330, top: 250, backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  circleBlob: {
+    position: 'absolute', width: 560, height: 560, borderRadius: 280,
+    left: 190, top: -90,
   },
 
-  // Score
-  scoreBlock: { alignItems: 'center', paddingTop: 2 },
-  scoreLogo: { resizeMode: 'contain' }, // tamanho definido inline (LOGO, proporcional à largura)
-  scoreNumber: { fontSize: 72, color: '#121212', letterSpacing: -2.88, marginTop: 2 },
-  scoreLabel: { fontSize: 30.5, color: '#121212', letterSpacing: -1.2, marginTop: -14 },
-  scoreUnderline: { width: 160, height: 7, marginTop: 3 },
-
-  // Foto
-  photoWrap: { alignItems: 'center', marginTop: 10, width: '100%', zIndex: 1 },
-  photoCircle: {
-    overflow: 'hidden',
-    backgroundColor: '#F3F3F4',
-    // Só a foto (círculo). O anel é uma Image sobreposta (asset real do elipse do Figma,
-    // node 1:319) — ver render. `profile-photo.png` não é mais usado.
+  hdrRow: {
+    height: 32, paddingHorizontal: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  photo: { width: '100%', height: '100%' },
-  photoPlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
-
-  // Métricas — card réplica do node 1:63. Sem padding: as métricas são posicionadas
-  // absolutamente pelas coordenadas do Figma (ver render). overflow hidden = "overflow-clip".
-  // Wrapper tocável (compartilhar): carrega SÓ a posição do card. A `marginHorizontal: 12`
-  // é a mesma do card "Dica do dia" — as duas caixas têm a mesma largura de propósito.
-  metricsCardTouch: {
-    marginHorizontal: 12,
-    zIndex: 2,
+  hdrLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatarWrap: { width: 32, height: 32 },
+  avatar: { width: 32, height: 32, borderRadius: 16 },
+  avatarDot: {
+    position: 'absolute', top: -1, right: -2, width: 9, height: 9, borderRadius: 4.5,
+    backgroundColor: PINK, borderWidth: 1.5, borderColor: '#FFFFFF',
   },
-  metricsCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#E3E3E6',
-    borderRadius: 16,
-    overflow: 'hidden',
+  greet: { fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK },
+  streakBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
   },
-
-  // Aviso do estado legado — scrim sobre as métricas fantasmas, DENTRO do card (que já
-  // tem overflow:hidden + borderRadius 16, então se recorta sozinho). Não altera a altura
-  // do card nem a grade absoluta do node 1:63 — é sobreposição pura.
-  metricsLock: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  metricsLockTitle: { color: '#121212', textAlign: 'center', letterSpacing: -0.3 },
-  metricsLockBody: { color: '#818181', textAlign: 'center' },
-
-  // Dica do dia — mesma casca do antigo card de skincare (borda, sombra, chip 62×62,
-  // expansão por LayoutAnimation). Só o conteúdo mudou.
-  tipCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#E3E3E6',
-    borderRadius: 18,
-    marginHorizontal: 12, marginTop: 16,
-    paddingHorizontal: 12, paddingVertical: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1, shadowRadius: 3, elevation: 2,
-  },
-  tipHeader: { flexDirection: 'row', alignItems: 'center' },
-  tipIconBox: {
-    width: 68, height: 68, borderRadius: 15,
-    backgroundColor: '#F9F9F9',
+  streakBadge: {
+    position: 'absolute', top: -5, left: 21, minWidth: 21, height: 18,
+    paddingHorizontal: 5, borderRadius: 100,
+    backgroundColor: PINK, borderWidth: 1.5, borderColor: '#FDE6EF',
     alignItems: 'center', justifyContent: 'center',
   },
-  tipTexts: { flex: 1, marginLeft: 12, marginRight: 8 },
-  // "Dica do dia" — NÃO é um eyebrow: mesma tipografia do título (Nunito ExtraBold 17),
-  // só que em rosa. Faz parte do texto, não é uma etiqueta.
-  tipKicker: { fontSize: 17, lineHeight: 23, color: '#FF9D9D', letterSpacing: -0.5 },
-  tipTitle: { fontSize: 17, lineHeight: 23, color: '#121212', letterSpacing: -0.5 },
-  // Conteúdo expandido — alinhado à coluna do título (chip 68 + gap 12 = 80).
-  // Anatomia fixa: INGREDIENTES + PREPARO (só receitas) + POR QUE FAZER (todas as dicas).
-  tipBody: { marginTop: 14, paddingLeft: 80, paddingRight: 4, paddingBottom: 4 },
-  tipSection: { marginBottom: 16 },
-  tipBlockLabel: {
-    fontSize: 12, color: '#121212', letterSpacing: 0.3,
-    textTransform: 'uppercase', marginBottom: 8,
-  },
-  tipListRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
-  tipBullet: {
-    width: 4, height: 4, borderRadius: 2,
-    backgroundColor: '#FF9D9D',
-    marginTop: 8, marginRight: 10,
-  },
-  // Número do passo do preparo — largura fixa para os textos alinharem numa coluna só
-  tipStepNumber: {
-    width: 14, marginRight: 8,
-    fontSize: 14, lineHeight: 20, color: '#FF9D9D', letterSpacing: -0.2,
-  },
-  tipListText: { flex: 1, fontSize: 14, lineHeight: 20, color: '#515151', letterSpacing: -0.2 },
-  tipParagraph: { fontSize: 14, lineHeight: 21, color: '#515151', letterSpacing: -0.2 },
+  streakBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600', lineHeight: 15, letterSpacing: -0.2, textAlign: 'center' },
 
-  // Para você
-  sectionTitle: { fontSize: 20, color: '#121212', letterSpacing: -0.8, marginTop: 22, marginLeft: 16 },
-  productsRow: { flexDirection: 'row', gap: 8, marginTop: 14, paddingHorizontal: 16 },
-  productCard: {
-    flex: 1, height: 142,
+  week: { marginTop: 1, paddingHorizontal: 20, flexDirection: 'row' },
+  dayCol: { flex: 1, alignItems: 'center' },
+  dayLetter: { height: 14, lineHeight: 14, fontSize: 11.5, fontWeight: '400', letterSpacing: 0.3, color: '#6E6468' },
+  daySlot: { marginTop: 4, height: 50, alignItems: 'center', justifyContent: 'center' },
+  todayShadow: {
+    shadowColor: PINK_DEEP, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 6,
+  },
+
+  heroLabel: {
+    marginTop: 92, height: 22, lineHeight: 22, textAlign: 'center',
+    fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK,
+  },
+  heroNum: {
+    marginTop: 5, height: 56, lineHeight: 56, textAlign: 'center',
+    fontSize: 48, fontWeight: '700', letterSpacing: -0.6, color: INK,
+  },
+  // 3 colunas de 100pt centralizadas (grid-template-columns: repeat(3, 100px)).
+  actionsRow: { marginTop: 135, paddingHorizontal: 17, flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start' },
+  action: { width: 100, alignItems: 'center', gap: 6 },
+  actionCircle: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
+  actionCirclePrimary: {
+    backgroundColor: PINK,
+    shadowColor: PINK, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 7,
+  },
+  actionCircleWhite: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#E3E3E6',
-    borderRadius: 24,
-    alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 7,
   },
-  productImg: { height: 120, width: '55%' },
+  actionLabel: { fontSize: 16, fontWeight: '400', lineHeight: 21, letterSpacing: -0.3, textAlign: 'center', color: INK },
 
-  // Escanear — fixo acima da tab bar (80px de altura, node 1:27)
-  scanWrap: {
-    position: 'absolute',
-    left: 0, right: 0, bottom: 108,
-    alignItems: 'center',
+  sectionTitle: {
+    paddingHorizontal: 18, fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK,
   },
-  scanBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, height: 48, width: 134, borderRadius: 42,
-    shadowColor: '#FF9D9D', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45, shadowRadius: 12, elevation: 6,
+  card: {
+    width: 120, height: 142, borderRadius: 18,
+    shadowColor: PINK_DEEP, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.09, shadowRadius: 12,
   },
-  scanText: { fontSize: 16, color: '#FFFFFF' },
+  cardClip: {
+    flex: 1, borderRadius: 18, overflow: 'hidden',
+    borderWidth: 2, borderColor: PINK, backgroundColor: 'rgba(255,255,255,0.58)',
+  },
+  cardInner: {
+    flex: 1, paddingTop: 14, paddingHorizontal: 13, paddingBottom: 13, justifyContent: 'space-between',
+  },
+  cardCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
+  cardText: { fontSize: 16, fontWeight: '600', lineHeight: 19, letterSpacing: -0.4, color: INK },
+
+  // Sem overflow:hidden: o ScrollView horizontal já recorta (README #24).
+  surface: { marginTop: 22, marginHorizontal: 18, backgroundColor: '#FFFFFF', borderRadius: 13 },
+  surfaceTitle: {
+    paddingTop: 16, paddingHorizontal: 17, paddingBottom: 14,
+    fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK,
+    borderBottomWidth: 1, borderBottomColor: '#EEE8E8',
+  },
+  prod: { width: 137, gap: 8 },
+  prodImgBox: { height: 130, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  prodImg: { width: 96, height: 96 },
+  prodName: { fontSize: 16, fontWeight: '500', lineHeight: 20, letterSpacing: -0.3, color: INK },
+  prodStep: { fontSize: 15, fontWeight: '400', lineHeight: 20, letterSpacing: -0.2, color: '#8A8385' },
 });
