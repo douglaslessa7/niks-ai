@@ -45,3 +45,10 @@ enabled = true
 # própria (_shared/jwt.ts), então são duas camadas.
 verify_jwt = true
 entrypoint = "./functions/delete-account/index.ts"
+
+[functions.recortar-produto]
+enabled = true
+# Mesmo padrão da analisar-produto/niks-chat: o gateway não barra, e a função
+# verifica o JWT localmente (_shared/jwt.ts) — o user_id vem do token, nunca do corpo.
+verify_jwt = false
+entrypoint = "./functions/recortar-produto/index.ts"
