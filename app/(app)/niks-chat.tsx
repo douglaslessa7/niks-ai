@@ -1,25 +1,15 @@
 import {
-  View, Text, TouchableOpacity, ScrollView, TextInput,
-  KeyboardAvoidingView, Platform, Keyboard, Image,
-  TouchableWithoutFeedback,
+  View, Text, TouchableOpacity, ScrollView, TextInput, Animated, Easing,
+  KeyboardAvoidingView, Platform, Keyboard, Image, ActionSheetIOS, Alert, StyleSheet, AccessibilityInfo,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker'
 import { trackNativePresentation } from '../../lib/nativePresentation'
-;
 import * as ImageManipulator from 'expo-image-manipulator';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFonts } from 'expo-font';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import {
-  Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
-  Nunito_500Medium, Nunito_400Regular, Nunito_300Light,
-} from '@expo-google-fonts/nunito';
+import { StatusBar } from 'expo-status-bar';
 import Svg, { Circle, Path } from 'react-native-svg';
-import Animated, {
-  useSharedValue, useAnimatedStyle,
-  withRepeat, withSequence, withTiming, withDelay, Easing, cancelAnimation,
-} from 'react-native-reanimated';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
@@ -27,605 +17,137 @@ import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 
-// ── Color tokens (novo design system NIKS — home/protocolo/recomendação) ──────
-const INK        = '#121212';
-const INK_SOFT   = '#515151';
-const INK_MUTE   = '#818181';
-const INK_FAINT  = '#B5B5B5';
-const CORAL      = '#FF9D9D';                 // rosa da Rotina (protocolo BRAND)
-const CORAL_TINT = 'rgba(255,157,157,0.12)';  // wash do rosa da Rotina
-const CARD_BD    = '#E3E3E6';
-const BUBBLE_BG  = '#F3EEEE'; // balão de mensagem (Figma node 1:424/1:425)
-const WHITE      = '#FFFFFF';
-const PILL_BG    = '#FFFFFF';
-// Gradiente vermelho dos botões de ação (mesmo dos "Escanear")
-const RED_GRAD: [string, string] = ['#FF9D9D', '#FF9D9D']; // rosa da Rotina (protocolo BRAND)
+// ─────────────────────────────────────────────────────────────────────────────
+// NIKS Chat — réplica dos designs 39a (início) e 39b (conversa em andamento) do
+// Claude Design (projeto "NIKS home redesign — rotina skincare", NiksChatFlo.dc.html).
+// Tela cheia, sem a navbar (como no design). Fonte = SF Pro (sistema), rosa #FF5EA8.
+// Medidas do frame 393×852: o cabeçalho do design (110) = barra de status (54) +
+// barra (54) + progresso (2) → aqui `insets.top + 56`.
+// A LÓGICA (streaming XHR, histórico no banco, fotos, card de aprovação do protocolo,
+// niksChatMode) é a mesma de antes — só a camada visual mudou.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Avatar da NIKS nas mensagens = logo (sparkle bloom), como no Figma (node 1:408)
-function NiksAvatar({ size }: { size: number }) {
+const INK = '#121212';
+const PINK = '#FF5EA8';
+const PINK_TEXT = '#E8468F';
+const BUBBLE = '#F3EFF1';
+const MUTED = '#8A8387';
+const HAIR = '#EFE8EB';
+const FIELD_BD = '#E3DCDF';
+// `text-wrap: pretty` do design (sem palavra sozinha na última linha) = `lineBreakStrategyIOS="push-out"`.
+
+// ── Ícones (paths copiados do design) ───────────────────────────────────────
+function CameraIcon() {
   return (
-    <Image
-      source={require('../../assets/home/niks-logo.png')}
-      style={{ width: size, height: size, resizeMode: 'contain', tintColor: '#FF9D9D' }}
-    />
+    <Svg width={22} height={22} viewBox="0 0 24 24">
+      <Path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" fill="none" stroke={MUTED} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx={12} cy={13} r={3.5} fill="none" stroke={MUTED} strokeWidth={1.7} />
+    </Svg>
   );
 }
 
-// Logo do app (sparkle NIKS) com o mesmo "respiro" da orbe — usado no hero do estado inicial
-function AnimatedLogo({ size }: { size: number }) {
-  const scale = useSharedValue(1);
+// Rabicho do balão (14×14, fora do balão, embaixo).
+function BotTail() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 14 14" style={{ position: 'absolute', left: -6, bottom: 0 }}>
+      <Path d="M14 0v14H0c4.5-1 8-4.5 8-14z" fill={BUBBLE} />
+    </Svg>
+  );
+}
+function MeTail() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 14 14" style={{ position: 'absolute', right: -6, bottom: 0 }}>
+      <Path d="M0 0v14h14C9.5 13 6 9.5 6 0z" fill={PINK} />
+    </Svg>
+  );
+}
+
+// Três pontinhos de "digitando" — as cores do design, piscando em onda.
+function TypingBubble({ marginTop }: { marginTop: number }) {
+  const dots = useRef([0, 1, 2].map(() => new Animated.Value(0))).current
   useEffect(() => {
-    scale.value = withRepeat(
-      withSequence(
-        withTiming(1.04, { duration: 2400, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1,    { duration: 2400, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1, false,
-    );
-  }, []);
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+    const anim = Animated.loop(Animated.stagger(160, dots.map(v => Animated.sequence([
+      Animated.timing(v, { toValue: 1, duration: 280, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(v, { toValue: 0, duration: 280, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+    ]))))
+    anim.start()
+    return () => anim.stop()
+  }, [dots])
   return (
-    <Animated.View style={style}>
-      <Image
-        source={require('../../assets/home/niks-logo.png')}
-        style={{ width: size, height: size, resizeMode: 'contain', tintColor: '#FF9D9D' }}
-      />
-    </Animated.View>
-  );
-}
-
-// ── ChatHeader ────────────────────────────────────────────────────────────────
-// Padrão dos headers do novo design: logo NIKS (sparkle) + título Nunito, centrado.
-function ChatHeader({
-  showBack, onBack, onHistoryPress, showHistory,
-  title, titleFont, titleSize = 20, logoSize = 22,
-}: {
-  showBack: boolean; onBack: () => void; onHistoryPress: () => void; showHistory: boolean;
-  title: string; titleFont?: string; titleSize?: number; logoSize?: number;
-}) {
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-      paddingHorizontal: 20, paddingTop: 6, paddingBottom: 14,
-      borderBottomWidth: 0.5, borderBottomColor: 'rgba(18,18,18,0.06)',
-    }}>
-      {showBack ? (
-        <TouchableOpacity
-          onPress={() => { haptics.tap(); onBack(); }}
-          style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Svg width={22} height={22} viewBox="0 0 24 24">
-            <Path
-              d="M15 18l-6-6 6-6"
-              stroke={INK_MUTE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              fill="none"
-            />
-          </Svg>
-        </TouchableOpacity>
-      ) : (
-        <View style={{ width: 32, height: 32 }} />
-      )}
-
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Image
-          source={require('../../assets/home/niks-logo.png')}
-          style={{ width: logoSize, height: logoSize, resizeMode: 'contain', tintColor: '#FF9D9D' }}
+    <View style={[styles.typing, { marginTop }]}>
+      {['#C9BFC4', '#B0A5AB', '#958A90'].map((c, i) => (
+        <Animated.View
+          key={c}
+          style={[styles.typingDot, {
+            backgroundColor: c,
+            opacity: dots[i].interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] }),
+            transform: [{ translateY: dots[i].interpolate({ inputRange: [0, 1], outputRange: [0, -2.5] }) }],
+          }]}
         />
-        <Text style={{
-          marginLeft: 8, fontFamily: titleFont, fontSize: titleSize, color: INK, letterSpacing: -0.6,
-        }}>
-          {title}
-        </Text>
-      </View>
-
-      {showHistory ? (
-        <TouchableOpacity onPress={() => { haptics.tap(); onHistoryPress(); }} style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
-          <Svg width={20} height={20} viewBox="0 0 24 24">
-            <Path d="M3 12a9 9 0 1 0 3-6.7" stroke={INK_MUTE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            <Path d="M3 4v5h5"            stroke={INK_MUTE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            <Path d="M12 8v4l2.5 1.5"     stroke={INK_MUTE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          </Svg>
-        </TouchableOpacity>
-      ) : (
-        <View style={{ width: 32, height: 32 }} />
-      )}
+      ))}
+      <BotTail />
     </View>
-  );
+  )
 }
 
-// ── Suggestion icons ──────────────────────────────────────────────────────────
-const SUGGESTION_ICONS: Record<string, React.ReactNode> = {
-  spot: (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={9}   stroke={CORAL} strokeWidth="1.4" fill="none" />
-      <Circle cx={12} cy={12} r={2.4} fill={CORAL} />
-    </Svg>
-  ),
-  product: (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Path d="M9 14.5c.6 1 1.6 1.5 2.7 1.5"                       stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" fill="none" />
-    </Svg>
-  ),
-  meal: (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      {/* Garfo */}
-      <Path d="M4 3v5a2 2 0 0 0 2 2 2 2 0 0 0 2-2V3" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Path d="M6 10v11"                              stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      {/* Faca */}
-      <Path d="M20 14V3a4 4 0 0 0-4 4v4a2 2 0 0 0 2 2h2zm0 0v7" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  ),
-  mood: (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={9} stroke={CORAL} strokeWidth="1.4" fill="none" />
-      <Path d="M8.5 14c.8.9 2 1.5 3.5 1.5s2.7-.6 3.5-1.5" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" fill="none" />
-      <Circle cx={9}  cy={10} r={0.8} fill={CORAL} />
-      <Circle cx={15} cy={10} r={0.8} fill={CORAL} />
-    </Svg>
-  ),
-  chart: (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Path d="M4 17l5-5 3.5 3.5L20 8" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Path d="M15 8h5v5"               stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  ),
-  alert: (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Path d="M12 3l9.5 16.5a1 1 0 0 1-.87 1.5H3.37a1 1 0 0 1-.87-1.5L12 3z" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      <Path d="M12 10v4.5" stroke={CORAL} strokeWidth="1.4" strokeLinecap="round" fill="none" />
-      <Circle cx={12} cy={17} r={0.6} fill={CORAL} />
-    </Svg>
-  ),
-};
-
-// ── SuggestionCard ────────────────────────────────────────────────────────────
-// Card branco arredondado com borda #E3E3E6 (mesmo padrão de home/recomendação).
-function SuggestionCard({ icon, text, index, onPress, fSemi }: {
-  icon: string; text: string; index: number; onPress: () => void; fSemi?: string;
-}) {
-  const opacity    = useSharedValue(0);
-  const translateY = useSharedValue(6);
-
+// Entrada de cada mensagem da abertura: aparece subindo de leve, como num chat real.
+function FadeIn({ children, enabled }: { children: React.ReactNode; enabled: boolean }) {
+  const v = useRef(new Animated.Value(enabled ? 0 : 1)).current
   useEffect(() => {
-    const delay = index * 60;
-    opacity.value    = withDelay(delay, withTiming(1, { duration: 480, easing: Easing.bezier(0.2, 0.7, 0.2, 1) }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: 480, easing: Easing.bezier(0.2, 0.7, 0.2, 1) }));
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-    marginBottom: 10,
-  }));
-
+    if (!enabled) return
+    Animated.timing(v, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start()
+  }, [enabled, v])
   return (
-    <Animated.View style={animStyle}>
-      <TouchableOpacity
-        onPress={() => { haptics.tap(); onPress(); }}
-        activeOpacity={0.85}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          width: '100%',
-          backgroundColor: WHITE,
-          borderWidth: 1,
-          borderColor: CARD_BD,
-          borderRadius: 18,
-          paddingTop: 14,
-          paddingRight: 14,
-          paddingBottom: 14,
-          paddingLeft: 16,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.05,
-          shadowRadius: 4,
-          elevation: 2,
-        }}
-      >
-        <View style={{
-          width: 34,
-          height: 34,
-          borderRadius: 17,
-          backgroundColor: CORAL_TINT,
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginRight: 14,
-          flexShrink: 0,
-        }}>
-          {SUGGESTION_ICONS[icon]}
-        </View>
-        <Text style={{
-          flex: 1, fontFamily: fSemi, fontSize: 14, lineHeight: 19, letterSpacing: -0.3, color: INK,
-        }}>
-          {text}
-        </Text>
-        <View style={{ flexShrink: 0, marginLeft: 4 }}>
-          <Svg width={14} height={14} viewBox="0 0 24 24">
-            <Path
-              d="M9 6l6 6-6 6"
-              stroke={INK_FAINT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"
-            />
-          </Svg>
-        </View>
-      </TouchableOpacity>
+    <Animated.View style={{ opacity: v, transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
+      {children}
     </Animated.View>
-  );
+  )
 }
 
-// ── NiksMessage ───────────────────────────────────────────────────────────────
-// Avatar orb 28px à esquerda + balão branco borda #E3E3E6 com texto Nunito.
-function NiksMessage({ children, streaming = false, fReg }: {
-  children: React.ReactNode; streaming?: boolean; fReg?: string;
-}) {
-  const caretOpacity = useSharedValue(0);
-
-  useEffect(() => {
-    if (streaming) {
-      caretOpacity.value = 1;
-      caretOpacity.value = withRepeat(
-        withSequence(
-          withTiming(1, { duration: 450 }),
-          withTiming(0, { duration: 450 }),
-        ),
-        -1, false,
-      );
-    } else {
-      cancelAnimation(caretOpacity);
-      caretOpacity.value = 0;
-    }
-  }, [streaming]);
-
-  const caretStyle = useAnimatedStyle(() => ({ opacity: caretOpacity.value }));
-
-  // Figma node 1:424 — balão #F3EEEE radius 18, avatar (logo) no canto inferior esquerdo
-  return (
-    <View style={{
-      flexDirection: 'row', gap: 10, alignItems: 'flex-end',
-      alignSelf: 'flex-start', maxWidth: '92%',
-    }}>
-      <View style={{ flexShrink: 0, paddingBottom: 2 }}>
-        <NiksAvatar size={30} />
-      </View>
-      <View style={{ flexShrink: 1, minWidth: 0 }}>
-        <View style={{
-          backgroundColor: WHITE,
-          borderWidth: 1, borderColor: CARD_BD,
-          borderRadius: 18,
-          paddingVertical: 15, paddingHorizontal: 20,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.04,
-          shadowRadius: 4,
-          elevation: 1,
-        }}>
-          <Text style={{
-            fontFamily: fReg,
-            fontSize: 14,
-            lineHeight: 20,
-            letterSpacing: -0.3,
-            color: '#111111',
-          }}>
-            {children}
-            {streaming && (
-              <Animated.Text style={[{ color: CORAL }, caretStyle]}>{'|'}</Animated.Text>
-            )}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ── UserBubble ────────────────────────────────────────────────────────────────
-// Figma node 1:425 — balão #F3EEEE radius 18, à direita, texto preto.
-function UserBubble({ text, fReg }: { text: string; fReg?: string }) {
-  return (
-    <View style={{ alignItems: 'flex-end' }}>
-      <View style={{
-        maxWidth: '82%',
-        backgroundColor: BUBBLE_BG,
-        borderRadius: 18,
-        paddingVertical: 14, paddingHorizontal: 20,
-      }}>
-        <Text style={{
-          fontFamily: fReg, fontSize: 14, lineHeight: 20, letterSpacing: -0.3, color: '#111111',
-        }}>
-          {text}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// ── UserPhotoBubble ───────────────────────────────────────────────────────────
-// Figma node 1:423 — imagem arredondada radius 35, alinhada à direita.
-function UserPhotoBubble({ imageUri }: { imageUri?: string }) {
-  return (
-    <View style={{ alignItems: 'flex-end' }}>
-      <View style={{
-        width: 222, height: 207,
-        borderRadius: 35,
-        overflow: 'hidden',
-      }}>
-        {imageUri ? (
-          <Image
-            source={{ uri: imageUri }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : (
-          <LinearGradient
-            colors={['#F4D8C2', '#E8B59A', '#C58A6F']}
-            locations={[0, 0.45, 1]}
-            start={{ x: 0.3, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ flex: 1 }}
-          />
-        )}
-      </View>
-    </View>
-  );
-}
-
-// ── Typing dots ───────────────────────────────────────────────────────────────
-function DotPulse({ delay }: { delay: number }) {
-  const scale   = useSharedValue(0.7);
-  const opacity = useSharedValue(0.4);
-
-  useEffect(() => {
-    const cfg = { duration: 480, easing: Easing.inOut(Easing.ease) };
-    const cfg2 = { duration: 720, easing: Easing.inOut(Easing.ease) };
-    scale.value   = withDelay(delay, withRepeat(withSequence(
-      withTiming(1.0, cfg),
-      withTiming(0.7, cfg2),
-    ), -1, false));
-    opacity.value = withDelay(delay, withRepeat(withSequence(
-      withTiming(1.0, cfg),
-      withTiming(0.4, cfg2),
-    ), -1, false));
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View style={[{
-      width: 6, height: 6, borderRadius: 3,
-      backgroundColor: 'rgba(248,107,121,0.6)',
-    }, animStyle]} />
-  );
-}
-
-function TypingDots() {
-  return (
-    <View style={{
-      flexDirection: 'row', gap: 10, alignItems: 'flex-end',
-      alignSelf: 'flex-start', maxWidth: '92%',
-    }}>
-      <View style={{ flexShrink: 0, paddingBottom: 2 }}>
-        <NiksAvatar size={30} />
-      </View>
-      <View style={{
-        backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BD, borderRadius: 18,
-        paddingVertical: 15, paddingHorizontal: 18,
-        justifyContent: 'center',
-      }}>
-        <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
-          <DotPulse delay={0}   />
-          <DotPulse delay={180} />
-          <DotPulse delay={360} />
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ── ChatInputBar ──────────────────────────────────────────────────────────────
-// Pill de input branca com borda #E3E3E6 + botão enviar em gradiente vermelho.
-function ChatInputBar({
-  value, onChangeText, onSend, fReg,
-  bottomInset = 0, keyboardOpen = false,
-  onCameraPress, onGalleryPress,
-  pendingImages, onRemoveImage, atLimit,
-}: {
-  value: string
-  onChangeText: (t: string) => void
-  onSend: () => void
-  fReg?: string
-  bottomInset?: number
-  keyboardOpen?: boolean
-  onCameraPress: () => void
-  onGalleryPress: () => void
-  pendingImages: Array<{ uri: string }>
-  onRemoveImage: (index: number) => void
-  atLimit: boolean
-}) {
-  // Navbar global = 80px fixos (cobre o home indicator). Ancorar a ~20px acima dela,
-  // sem somar a safe area (evita o vão grande e o risco de colar no menu).
-  const paddingBottom = keyboardOpen ? 8 : 100;
-
-  const LINE_HEIGHT = 20;
-  const MAX_INPUT_HEIGHT = LINE_HEIGHT * 4;
-  const [contentHeight, setContentHeight] = useState(LINE_HEIGHT);
-  const isMultiline = contentHeight > LINE_HEIGHT + 4;
-
-  useEffect(() => {
-    if (!value) setContentHeight(LINE_HEIGHT);
-  }, [value]);
-
-  return (
-    <View style={{
-      paddingTop: 12, paddingHorizontal: 16, paddingBottom,
-      backgroundColor: 'transparent',
-    }}>
-      {pendingImages.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 8 }}
-          contentContainerStyle={{ paddingHorizontal: 4, gap: 8 }}
-        >
-          {pendingImages.map((img, index) => (
-            <View key={index} style={{ width: 56, height: 56 }}>
-              <Image
-                source={{ uri: img.uri }}
-                style={{ width: 56, height: 56, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(248,107,121,0.3)' }}
-              />
-              <TouchableOpacity
-                onPress={() => { haptics.tap(); onRemoveImage(index); }}
-                style={{
-                  position: 'absolute', top: -5, right: -5,
-                  width: 18, height: 18, borderRadius: 9,
-                  backgroundColor: INK_SOFT,
-                  alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <Svg width={10} height={10} viewBox="0 0 24 24">
-                  <Path d="M18 6L6 18M6 6l12 12" stroke={WHITE} strokeWidth="2.5" strokeLinecap="round" fill="none" />
-                </Svg>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView>
-      )}
-      <View style={{ flexDirection: 'row', alignItems: isMultiline ? 'flex-end' : 'center', gap: 10 }}>
-        {/* Pill */}
-        <View style={{
-          flex: 1, flexDirection: 'row', alignItems: isMultiline ? 'flex-end' : 'center', gap: 4,
-          backgroundColor: PILL_BG,
-          borderWidth: 1, borderColor: CARD_BD,
-          borderRadius: isMultiline ? 22 : 100,
-          paddingTop: 8, paddingBottom: 8, paddingLeft: 14, paddingRight: 8,
-          minHeight: 46,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.04,
-          shadowRadius: 8,
-          elevation: 1,
-        }}>
-          {/* Camera */}
-          <View style={{ opacity: atLimit ? 0.3 : 1 }} pointerEvents={atLimit ? 'none' : 'auto'}>
-            <TouchableOpacity
-              onPress={() => { haptics.tap(); onCameraPress(); }}
-              style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Svg width={20} height={20} viewBox="0 0 24 24">
-                <Path d="M4 8a2 2 0 0 1 2-2h2.5l1.5-2h4l1.5 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z" stroke={INK_MUTE} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                <Circle cx={12} cy={13} r={3.5} stroke={INK_MUTE} strokeWidth="1.5" fill="none" />
-              </Svg>
-            </TouchableOpacity>
-          </View>
-          {/* Gallery */}
-          <View style={{ opacity: atLimit ? 0.3 : 1 }} pointerEvents={atLimit ? 'none' : 'auto'}>
-            <TouchableOpacity
-              onPress={() => { haptics.tap(); onGalleryPress(); }}
-              style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Svg width={20} height={20} viewBox="0 0 24 24">
-                <Path d="M3.5 4.5h17a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5h-17A2.5 2.5 0 0 1 1 17V7a2.5 2.5 0 0 1 2.5-2.5z" stroke={INK_MUTE} strokeWidth="1.5" fill="none" />
-                <Circle cx={9} cy={10} r={1.4} stroke={INK_MUTE} strokeWidth="1.5" fill="none" />
-                <Path d="M4 17l5-5 4 4 3-3 4 4" stroke={INK_MUTE} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-              </Svg>
-            </TouchableOpacity>
-          </View>
-          {/* Text input */}
-          <TextInput
-            value={value}
-            onChangeText={onChangeText}
-            placeholder="pergunte algo…"
-            placeholderTextColor={INK_FAINT}
-            multiline
-            onContentSizeChange={(e) => {
-              setContentHeight(e.nativeEvent.contentSize.height);
-            }}
-            style={{
-              flex: 1,
-              fontFamily: fReg,
-              fontSize: 15,
-              lineHeight: LINE_HEIGHT,
-              color: INK,
-              paddingVertical: 0,
-              paddingLeft: 8, paddingRight: 6,
-              maxHeight: MAX_INPUT_HEIGHT,
-            }}
-          />
-        </View>
-        {/* Send button */}
-        <TouchableOpacity onPress={() => { haptics.action(); onSend(); }} activeOpacity={0.9} style={{ flexShrink: 0 }}>
-          <LinearGradient
-            colors={RED_GRAD}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={{
-              width: 46, height: 46, borderRadius: 23,
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#FF9D9D',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.30,
-              shadowRadius: 18,
-              elevation: 6,
-            }}
-          >
-            <Svg width={18} height={18} viewBox="0 0 24 24">
-              <Path d="M12 19V6M5 13l7-7 7 7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            </Svg>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-// ── Suggestions data ──────────────────────────────────────────────────────────
-const SUGGESTIONS = [
-  { icon: 'spot',    text: 'Apareceu uma espinha no meu rosto, preciso de ajuda' },
-  { icon: 'meal',    text: 'Analisar o impacto da minha refeição na minha pele', action: 'foodScan' },
-  { icon: 'mood',    text: 'Não tô gostando da minha pele hoje, me ajuda a melhorar?' },
-  { icon: 'chart',   text: 'Tô vendo resultado com meu protocolo?' },
-  { icon: 'alert',   text: 'Minha pele reagiu a algo que usei' },
+// ── Conteúdo do design ──────────────────────────────────────────────────────
+const SUGS = [
+  'Apareceu uma espinha no meu rosto. Preciso de ajuda.',
+  'Estou vendo o resultado com o meu protocolo?',
+  'Minha pele reagiu a algo que eu usei.',
 ];
-
-// ── Predefined responses ──────────────────────────────────────────────────────
+// Respostas prontas das 3 opções (texto do design). Gravadas no banco como uma
+// conversa normal, igual às respostas pré-definidas de antes.
 const PREDEFINED_RESPONSES: Record<string, string> = {
-  'Apareceu uma espinha no meu rosto, preciso de ajuda':
-    'Me manda uma foto para eu ver o que está acontecendo.',
-  'Não tô gostando da minha pele hoje, me ajuda a melhorar?':
-    'Me conta mais. O que você tá sentindo que está diferente nela? Ressecamento, oleosidade? Se puder me envia uma foto também pra eu conseguir te ajudar melhor.',
-  'Minha pele reagiu a algo que usei':
-    'Me manda uma foto da área afetada e me diz o que você usou antes de perceber a reação.',
+  [SUGS[0]]: 'ah, que chato! me manda uma foto de perto dela? assim eu vejo se tá inflamada e te digo o que passar hoje.',
+  [SUGS[1]]: 'bora ver juntas! me manda uma selfie agora que eu comparo com o seu último scan.',
+  [SUGS[2]]: 'entendi. qual produto você usou por último? e o que apareceu: vermelhidão, coceira ou bolinhas?',
+};
+const ABOUT = ['Analisa fotos da sua pele e dos seus produtos', 'Tira dúvidas sobre o seu protocolo', 'Ajusta a rotina quando a pele reage'];
+
+// ── Datas ───────────────────────────────────────────────────────────────────
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+function daysAgo(iso: string): number {
+  const d = new Date(iso);
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const now = new Date();
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.round((b - a) / 86_400_000);
 }
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
-function formatConversationDate(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const isToday = d.toDateString() === now.toDateString()
-  const dayLabel = isToday
-    ? 'HOJE'
-    : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-  return `${dayLabel} · ${time}`
-}
-
-function formatRelativeTime(iso: string): string {
-  const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
-  if (diffMin < 1)  return 'agora'
-  if (diffMin < 60) return `${diffMin}m`
-  const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24)   return `${diffH}h`
-  const diffD = Math.floor(diffH / 24)
-  if (diffD < 30)   return `${diffD}d`
-  return `${Math.floor(diffD / 30)}mm`
+// "Hoje" · "Ontem" · "Seg" (esta semana) · "19 set"
+function shortDay(iso: string): string {
+  const n = daysAgo(iso);
+  if (n <= 0) return 'Hoje';
+  if (n === 1) return 'Ontem';
+  const d = new Date(iso);
+  if (n < 7) return WEEKDAYS[d.getDay()];
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type HistoryConversation = {
   id: string
   title: string
-  relativeTime: string
+  when: string
+  prev: string
+  recent: boolean
 }
 
 // ── Coach protocol suggestion (card de aprovação — Bloco 3) ───────────────────
@@ -651,6 +173,9 @@ type Message = {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
+  // Mensagem nascida nesta sessão: a resposta da NIKS é "digitada" bolha a bolha.
+  live?: boolean
+  createdAt?: number
   imageUris?: string[]
   suggestion?: CoachSuggestion
 }
@@ -732,12 +257,13 @@ function formatChangeSummary(pc: ProposedChanges): string {
 }
 
 // ── ProtocolApprovalCard ──────────────────────────────────────────────────────
+// Não existe no design; segue a linguagem do card "O que a NIKS faz" (branco,
+// borda #E6E0E3, raio 20) com o botão rosa do design.
 function ProtocolApprovalCard({
-  suggestion, onDecide, fBold, fSemi, fReg,
+  suggestion, onDecide,
 }: {
   suggestion: CoachSuggestion
   onDecide: (approved: boolean) => Promise<{ ok: boolean; action?: string }>
-  fBold?: string; fSemi?: string; fReg?: string
 }) {
   const [submitting, setSubmitting] = useState<null | 'approve' | 'reject'>(null)
   const [failed, setFailed] = useState(false)
@@ -757,57 +283,38 @@ function ProtocolApprovalCard({
       : suggestion.status === 'expired' ? 'Essa sugestão expirou'
       : 'Resolvido'
     return (
-      <View style={{
-        alignSelf: 'flex-start', maxWidth: '92%', marginLeft: 40,
-        backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BD, borderRadius: 18,
-        paddingVertical: 14, paddingHorizontal: 18,
-      }}>
-        <Text style={{ fontFamily: fSemi, fontSize: 13, letterSpacing: -0.2, color: INK_MUTE }}>{label}</Text>
+      <View style={[styles.card, { marginTop: 8 }]}>
+        <Text style={{ fontSize: 15, letterSpacing: -0.25, color: MUTED }}>{label}</Text>
       </View>
     )
   }
 
   return (
-    <View style={{
-      alignSelf: 'flex-start', maxWidth: '92%', marginLeft: 40,
-      backgroundColor: WHITE, borderWidth: 1, borderColor: CARD_BD, borderRadius: 18,
-      paddingVertical: 16, paddingHorizontal: 18,
-    }}>
-      <Text style={{ fontFamily: fBold, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', color: CORAL, marginBottom: 8 }}>
-        Sugestão para seu protocolo
-      </Text>
-      <Text style={{ fontFamily: fSemi, fontSize: 14, lineHeight: 19, letterSpacing: -0.3, color: INK, marginBottom: 6 }}>
-        {formatChangeSummary(suggestion.proposed_changes)}
-      </Text>
+    <View style={[styles.card, { marginTop: 8 }]}>
+      <Text style={styles.cardTitle}>Sugestão para o seu protocolo</Text>
+      <Text style={[styles.aboutText, { marginTop: 8 }]}>{formatChangeSummary(suggestion.proposed_changes)}</Text>
       {!!suggestion.reason && (
-        <Text style={{ fontFamily: fReg, fontSize: 13, lineHeight: 18, letterSpacing: -0.2, color: INK_SOFT }}>
-          {suggestion.reason}
-        </Text>
+        <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: MUTED }}>{suggestion.reason}</Text>
       )}
       {failed && (
-        <Text style={{ fontFamily: fReg, fontSize: 12, color: '#C0392B', marginTop: 8 }}>
-          Não consegui registrar agora. Tenta de novo.
-        </Text>
+        <Text style={{ fontSize: 13, color: '#C0392B', marginTop: 8 }}>Não consegui registrar agora. Tenta de novo.</Text>
       )}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-        <TouchableOpacity onPress={() => decide(true)} disabled={submitting !== null} activeOpacity={0.9} style={{ flex: 1 }}>
-          <LinearGradient
-            colors={RED_GRAD}
-            start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }}
-            style={{ height: 44, borderRadius: 100, alignItems: 'center', justifyContent: 'center', opacity: submitting !== null ? 0.6 : 1 }}
-          >
-            <Text style={{ fontFamily: fBold, fontSize: 14, color: '#fff' }}>
-              {submitting === 'approve' ? 'Aprovando…' : 'Aprovar'}
-            </Text>
-          </LinearGradient>
+        <TouchableOpacity
+          onPress={() => decide(true)}
+          disabled={submitting !== null}
+          activeOpacity={0.85}
+          style={[styles.sendBtn, { flex: 1, height: 44, opacity: submitting !== null ? 0.6 : 1 }]}
+        >
+          <Text style={styles.sendText}>{submitting === 'approve' ? 'Aprovando…' : 'Aprovar'}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => decide(false)}
           disabled={submitting !== null}
           activeOpacity={0.85}
-          style={{ flex: 1, height: 44, borderRadius: 100, borderWidth: 1, borderColor: CARD_BD, alignItems: 'center', justifyContent: 'center', opacity: submitting !== null ? 0.6 : 1 }}
+          style={{ flex: 1, height: 44, borderRadius: 100, borderWidth: 1, borderColor: FIELD_BD, alignItems: 'center', justifyContent: 'center', opacity: submitting !== null ? 0.6 : 1 }}
         >
-          <Text style={{ fontFamily: fSemi, fontSize: 14, color: INK_SOFT }}>
+          <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: INK }}>
             {submitting === 'reject' ? 'Recusando…' : 'Recusar'}
           </Text>
         </TouchableOpacity>
@@ -816,36 +323,51 @@ function ProtocolApprovalCard({
   )
 }
 
+// ── Resposta "ao vivo" ──────────────────────────────────────────────────────
+// Cada parágrafo da resposta vira uma bolha, e antes de cada bolha a NIKS
+// "digita" (três pontinhos) por um tempo proporcional ao tamanho do texto.
+function splitBubbles(text: string): string[] {
+  return text.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean)
+}
+const FIRST_BUBBLE_MS = 900 // mínimo de "digitando" antes da 1ª bolha (conta a espera da rede)
+function typingMs(text: string): number {
+  return Math.min(1600, Math.max(700, 350 + text.length * 12))
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function NiksChat() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_500Medium,
-    Nunito_400Regular,
-    Nunito_300Light,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold'      : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold'  : undefined;
-  const fMed   = fontsLoaded ? 'Nunito_500Medium'    : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular'   : undefined;
 
-  const { setTabBarTheme, setNiksChatMode } = useAppStore();
+  const { setTabBarTheme, setNiksChatMode, setTabBarVisible } = useAppStore();
 
+  // O design é tela cheia, sem a navbar: some ao entrar e volta ao sair.
   useFocusEffect(
     useCallback(() => {
       setTabBarTheme('light');
-      return () => { setTabBarTheme('light'); };
+      setTabBarVisible(false);
+      return () => { setTabBarTheme('light'); setTabBarVisible(true); };
     }, [])
   );
 
   const [mode,           setMode]           = useState<'empty' | 'active'>('empty');
-  const [firstName,      setFirstName]      = useState('você');
+  const [firstName,      setFirstName]      = useState('');
   const [inputText,      setInputText]      = useState('');
+  const [freeText,       setFreeText]       = useState('');
+  const [pick,           setPick]           = useState<number | null>(null);
+  const [aboutOpen,      setAboutOpen]      = useState(false);
+  // Abertura "ao vivo": quantas das 3 peças fixas (oi · me conta · card) já apareceram,
+  // se a NIKS está "digitando" a próxima, e se as opções já subiram.
+  const [introShown,     setIntroShown]     = useState(3);
+  const [introTyping,    setIntroTyping]    = useState(false);
+  const [introAnimated,  setIntroAnimated]  = useState(false);
+  // Quantas bolhas de cada resposta ao vivo já apareceram (id da mensagem → n).
+  const [revealed,       setRevealed]       = useState<Record<string, number>>({});
+  const revealTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const reduceMotion = useRef(false);
+  const introTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const sheetAnim = useRef(new Animated.Value(1)).current;
+  const modeRef = useRef<'empty' | 'active'>('empty');
   const [keyboardOpen,   setKeyboardOpen]   = useState(false);
   const [userId,         setUserId]         = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -865,10 +387,7 @@ export default function NiksChat() {
   }, []);
 
   // ── Carga inicial do chat, cacheada ──────────────────────────────────────
-  // Antes eram 4 requisições a CADA foco da aba — incluindo rebaixar a conversa
-  // inteira — e a checagem de `niksChatMode` acontecia DEPOIS de tudo, ou seja,
-  // não evitava requisição nenhuma. Agora nome + conversa + mensagens são uma
-  // entrada de cache só, e a tela volta instantânea.
+  // Nome + conversa + mensagens são uma entrada de cache só → a tela volta instantânea.
   const cachedUserId = useUserId()
 
   const fetchChat = useCallback(async () => {
@@ -910,35 +429,18 @@ export default function NiksChat() {
     if (!chatData) return
 
     setUserId(chatData.userId)
-    if (chatData.nome) setFirstName(chatData.nome.trim().split(' ')[0] || 'você')
+    if (chatData.nome) setFirstName(chatData.nome.trim().split(' ')[0] || '')
     if (!chatData.conversationId) return
     setConversationId(chatData.conversationId)
 
     // ⚠️ `niksChatMode` (store) decide se a conversa é RESTAURADA na tela. Cold
-    // start cai em 'empty' de propósito (README) — o cache não muda isso, só
-    // evita ir à rede para descobrir o que já sabíamos.
+    // start cai em 'empty' de propósito (README) — o cache não muda isso.
     const chatMode = useAppStore.getState().niksChatMode
     if (chatMode === 'empty') return
 
     const msgs = chatData.msgs
     if (msgs.length > 0) {
-      setMessages(msgs.map((msg: any) => {
-        let imageUris: string[] | undefined
-        if (msg.image_url) {
-          try {
-            const parsed = JSON.parse(msg.image_url)
-            imageUris = Array.isArray(parsed) ? parsed : [msg.image_url]
-          } catch {
-            imageUris = [msg.image_url]
-          }
-        }
-        return {
-          id: msg.id,
-          role: msg.role as 'user' | 'assistant',
-          content: msg.content,
-          imageUris,
-        }
-      }))
+      setMessages(msgs.map(toMessage))
       setConversationTime(msgs[0].created_at)
       setMode('active')
       void attachPendingToLast(chatData.conversationId)
@@ -948,11 +450,77 @@ export default function NiksChat() {
     }
   }, [chatData])
 
-  const handleBackToEmpty = () => {
+  // "Nova conversa" (painel de conversas): volta ao início (39a).
+  // Abertura ao vivo: digitando → "oi, Nome! 👋" → digitando → "me conta…" → card →
+  // as opções sobem. Com "Reduzir movimento" ligado, aparece tudo de uma vez.
+  const clearIntro = () => { introTimers.current.forEach(clearTimeout); introTimers.current = [] }
+  const runIntro = async () => {
+    clearIntro()
+    const reduce = await AccessibilityInfo.isReduceMotionEnabled().catch(() => false)
+    if (reduce) {
+      setIntroShown(3); setIntroTyping(false); setIntroAnimated(false); sheetAnim.setValue(1)
+      return
+    }
+    setIntroAnimated(true)
+    setIntroShown(0)
+    setIntroTyping(true)
+    sheetAnim.setValue(0)
+    const at = (ms: number, fn: () => void) => { introTimers.current.push(setTimeout(fn, ms)) }
+    at(900,  () => { setIntroTyping(false); setIntroShown(1) })
+    at(1150, () => setIntroTyping(true))
+    at(2250, () => { setIntroTyping(false); setIntroShown(2) })
+    at(2700, () => setIntroShown(3))
+    at(3000, () => {
+      Animated.timing(sheetAnim, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start()
+    })
+  }
+
+  useEffect(() => { modeRef.current = mode }, [mode])
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(v => { reduceMotion.current = v }).catch(() => {})
+    return () => { Object.values(revealTimers.current).forEach(clearTimeout) }
+  }, [])
+
+  // Agenda a próxima bolha de cada resposta ao vivo. Enquanto o texto ainda chega
+  // (streaming), só parágrafos COMPLETOS podem aparecer — o último pode estar pela metade.
+  useEffect(() => {
+    for (const m of messages) {
+      if (m.role !== 'assistant' || !m.live || revealTimers.current[m.id]) continue
+      const parts = splitBubbles(m.content)
+      const ready = m.isStreaming ? Math.max(0, parts.length - 1) : parts.length
+      const n = revealed[m.id] ?? 0
+      if (n >= ready) continue
+      const delay = reduceMotion.current ? 0
+        : n === 0 ? Math.max(0, FIRST_BUBBLE_MS - (Date.now() - (m.createdAt ?? 0)))
+        : typingMs(parts[n])
+      revealTimers.current[m.id] = setTimeout(() => {
+        delete revealTimers.current[m.id]
+        setRevealed(r => ({ ...r, [m.id]: (r[m.id] ?? 0) + 1 }))
+      }, delay)
+    }
+  }, [messages, revealed])
+
+  // Cada vez que a usuária abre o chat numa conversa nova, a abertura roda de novo.
+  useFocusEffect(
+    useCallback(() => {
+      if (modeRef.current === 'empty') void runIntro()
+      return () => clearIntro()
+    }, [])
+  );
+
+  const startNewChat = () => {
     setNiksChatMode('empty')
     setMode('empty')
     setMessages([])
     setConversationTime(null)
+    setPick(null)
+    setFreeText('')
+    setInputText('')
+    setPendingImages([])
+    setAboutOpen(false)
+    setHistoryVisible(false)
+    void runIntro()
   }
 
   // Anexa a sugestão pendente da conversa à última mensagem da NIKS (ao recarregar /
@@ -997,10 +565,6 @@ export default function NiksChat() {
       else if (res.action === 'expired') status = 'expired'
       return { ...m, suggestion: { ...m.suggestion, status } }
     }))
-    // ── Bloco 4 (NÃO implementar agora) — ponto de integração da tela de Rotina ──
-    // Em res.ok && approved && res.protocol: mapear rotina_am→morning / rotina_pm→night,
-    // chamar setProtocolResult(...) e invalidateCache(`protocolo:${userId}`) para a
-    // Rotina refletir a mudança (o store persistido tem precedência sobre a tabela).
     return { ok: res.ok, action: res.action }
   }
 
@@ -1032,11 +596,10 @@ export default function NiksChat() {
 
     setMessages(prev => [
       ...prev,
-      { id: userMsgId,      role: 'user',      content: text, imageUris: images?.map(i => i.uri) },
-      { id: assistantMsgId, role: 'assistant',  content: '', isStreaming: true },
+      { id: userMsgId,      role: 'user',      content: text, imageUris: images?.map(i => i.uri), live: true },
+      { id: assistantMsgId, role: 'assistant',  content: '', isStreaming: true, live: true, createdAt: Date.now() },
     ])
     setMode('active')
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50)
 
     const showSendError = (msg: string) => {
       setMessages(prev => prev.map(m =>
@@ -1046,9 +609,7 @@ export default function NiksChat() {
       ))
     }
 
-    // Obtain a valid token before sending. Only refresh when the token is
-    // about to expire (<5 min) to avoid the extra network round-trip on
-    // every message while still handling clock-skew / near-expiry cases.
+    // Token válido antes de enviar: só renova perto de expirar (<5 min).
     let accessToken: string | null = null
 
     try {
@@ -1089,7 +650,6 @@ export default function NiksChat() {
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId ? { ...m, content: m.content + chunk } : m
       ))
-      scrollRef.current?.scrollToEnd({ animated: false })
     }
 
     xhr.onload = () => {
@@ -1101,15 +661,13 @@ export default function NiksChat() {
         ))
         return
       }
-      // Always use the full responseText to guarantee no truncation,
-      // regardless of whether onprogress fired for every chunk.
+      // Sempre o responseText inteiro — garante que nada fica truncado.
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
           ? { ...m, content: xhr.responseText, isStreaming: false }
           : m
       ))
-      // A conversa cresceu no banco — marca o cache como velho para que a próxima
-      // entrada na aba busque o histórico atualizado em vez de servir o antigo.
+      // A conversa cresceu no banco — marca o cache como velho.
       if (cachedUserId) invalidateCache(`chat:${cachedUserId}`)
       // Se a NIKS propôs (frase-gatilho no texto visível), busca a sugestão que o
       // servidor acabou de criar e ancora o card à mensagem dela.
@@ -1127,9 +685,8 @@ export default function NiksChat() {
       ))
     }
 
-    // Image analysis requires more time (upload + multimodal inference).
-    // Supabase Edge Functions run up to ~150s, so give the client enough
-    // headroom: 120s with images, 90s for text-only.
+    // Análise de imagem demora mais (upload + inferência multimodal):
+    // 120s com imagens, 90s só texto.
     xhr.timeout = images && images.length > 0 ? 120000 : 90000
     xhr.ontimeout = () => {
       setMessages(prev => prev.map(m =>
@@ -1170,10 +727,11 @@ export default function NiksChat() {
         { conversation_id: activeConvId, user_id: userId, role: 'user',      content: text },
         { conversation_id: activeConvId, user_id: userId, role: 'assistant', content: predefined },
       ])
+      if (cachedUserId) invalidateCache(`chat:${cachedUserId}`)
 
       setMessages([
-        { id: `user_${Date.now()}`,      role: 'user',      content: text },
-        { id: `assistant_${Date.now()}`, role: 'assistant',  content: predefined },
+        { id: `user_${Date.now()}`,      role: 'user',      content: text, live: true },
+        { id: `assistant_${Date.now()}`, role: 'assistant',  content: predefined, live: true, createdAt: Date.now() },
       ])
       setMode('active')
     } else {
@@ -1215,6 +773,24 @@ export default function NiksChat() {
     }])
   }
 
+  // O design tem UM ícone de câmera no campo: ele oferece câmera ou galeria.
+  const choosePhotoSource = () => {
+    haptics.tap()
+    if (pendingImages.length >= 5) return
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Tirar foto', 'Escolher da galeria', 'Cancelar'], cancelButtonIndex: 2 },
+        (i) => { if (i === 0) pickImage('camera'); if (i === 1) pickImage('gallery') },
+      )
+    } else {
+      Alert.alert('Enviar foto', undefined, [
+        { text: 'Tirar foto', onPress: () => pickImage('camera') },
+        { text: 'Escolher da galeria', onPress: () => pickImage('gallery') },
+        { text: 'Cancelar', style: 'cancel' },
+      ])
+    }
+  }
+
   const loadHistory = async () => {
     if (!userId) return
     setHistoryLoading(true)
@@ -1225,7 +801,7 @@ export default function NiksChat() {
       .select('id')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(5)
+      .limit(20)
 
     if (!convs || convs.length === 0) {
       setHistoryConversations([])
@@ -1244,26 +820,30 @@ export default function NiksChat() {
         .order('created_at', { ascending: true }),
       supabase
         .from('coach_messages')
-        .select('conversation_id, created_at')
+        .select('conversation_id, content, created_at')
         .in('conversation_id', convIds)
         .order('created_at', { ascending: false }),
     ])
 
     const titleMap: Record<string, string> = {}
     userMsgs?.forEach(msg => {
-      if (!titleMap[msg.conversation_id]) titleMap[msg.conversation_id] = msg.content || 'Conversa'
+      if (!titleMap[msg.conversation_id]) titleMap[msg.conversation_id] = msg.content || 'Foto'
     })
 
-    const lastTimeMap: Record<string, string> = {}
+    const lastMap: Record<string, { content: string; created_at: string }> = {}
     lastMsgs?.forEach(msg => {
-      if (!lastTimeMap[msg.conversation_id]) lastTimeMap[msg.conversation_id] = msg.created_at
+      if (!lastMap[msg.conversation_id]) lastMap[msg.conversation_id] = msg
     })
 
-    setHistoryConversations(convIds.map(id => ({
-      id,
-      title: (titleMap[id] ?? 'Conversa').slice(0, 80),
-      relativeTime: formatRelativeTime(lastTimeMap[id] ?? new Date().toISOString()),
-    })))
+    setHistoryConversations(convIds
+      .filter(id => lastMap[id])
+      .map(id => ({
+        id,
+        title: (titleMap[id] ?? 'Conversa').slice(0, 80),
+        when: shortDay(lastMap[id].created_at),
+        prev: (lastMap[id].content || 'Foto').replace(/\s+/g, ' '),
+        recent: daysAgo(lastMap[id].created_at) < 7,
+      })))
     setHistoryLoading(false)
   }
 
@@ -1282,269 +862,521 @@ export default function NiksChat() {
 
     setConversationId(convId)
     setConversationTime(msgs[0].created_at)
-    setMessages(msgs.map(msg => {
-      let imageUris: string[] | undefined
-      if (msg.image_url) {
-        try {
-          const parsed = JSON.parse(msg.image_url)
-          imageUris = Array.isArray(parsed) ? parsed : [msg.image_url]
-        } catch {
-          imageUris = [msg.image_url]
-        }
-      }
-      return {
-        id: msg.id,
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-        imageUris,
-      }
-    }))
+    setMessages(msgs.map(toMessage))
     setMode('active')
     void attachPendingToLast(convId)
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100)
   }
 
+  // Composer (39b): campo "Pergunte à NIKS" + botão rosa.
   const handleSend = () => {
     const text = inputText.trim()
     if (!text && pendingImages.length === 0) return
+    haptics.action()
     setInputText('')
     const images = pendingImages.length > 0 ? [...pendingImages] : undefined
     setPendingImages([])
     sendMessage(text || '', images)
   }
 
+  // Folha do início (39a): opção marcada OU texto livre (OU foto) + "Enviar".
+  const canSubmit = pick !== null || !!freeText.trim() || pendingImages.length > 0
+  const handleSubmit = () => {
+    if (!canSubmit) return
+    haptics.action()
+    Keyboard.dismiss()
+    if (freeText.trim() || pendingImages.length > 0) {
+      const images = pendingImages.length > 0 ? [...pendingImages] : undefined
+      const text = freeText.trim()
+      setFreeText('')
+      setPendingImages([])
+      sendMessage(text, images)
+    } else if (pick !== null) {
+      handleSuggestionPress(SUGS[pick])
+    }
+    setPick(null)
+  }
+
+  // ── Barra de progresso do topo (24% → 62% com "Ler mais" aberto → 100% na conversa)
+  const done = mode === 'active'
+  const progressTarget = done ? 1 : aboutOpen ? 0.62 : 0.24
+  const progress = useRef(new Animated.Value(progressTarget)).current
+  useEffect(() => {
+    Animated.timing(progress, { toValue: progressTarget, duration: 400, easing: Easing.inOut(Easing.ease), useNativeDriver: false }).start()
+  }, [progressTarget, progress])
+
+  // ── Painel "Conversas" (desliza da direita) ──────────────────────────────
+  const drawer = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    Animated.timing(drawer, {
+      toValue: historyVisible ? 1 : 0,
+      duration: 320,
+      easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+      useNativeDriver: true,
+    }).start()
+  }, [historyVisible, drawer])
+
+  // ── Linhas da conversa: 2 balões de boas-vindas + card + mensagens ────────
+  type Row =
+    | { kind: 'bot'; key: string; text: string; streaming?: boolean; suggestion?: CoachSuggestion; msgId?: string; anim?: boolean }
+    | { kind: 'me'; key: string; text: string; images?: string[]; anim?: boolean }
+    | { kind: 'card'; key: string }
+    | { kind: 'typing'; key: string }
+  const intro: Row[] = [
+    { kind: 'bot', key: 'hi', text: firstName ? `oi, ${firstName}! 👋` : 'oi! 👋' },
+    { kind: 'bot', key: 'help', text: 'me conta, como posso te ajudar hoje?' },
+    { kind: 'card', key: 'about' },
+  ]
+  const rows: Row[] = done ? intro : intro.slice(0, introShown)
+  if (!done && introTyping) rows.push({ kind: 'typing', key: 'intro-typing' })
+  if (done) {
+    for (const m of messages) {
+      if (m.role === 'user') {
+        rows.push({ kind: 'me', key: m.id, text: m.content, images: m.imageUris, anim: m.live })
+        continue
+      }
+      // Resposta da NIKS: um parágrafo por bolha. Ao vivo, só as já "digitadas"
+      // aparecem e os pontinhos ficam embaixo até a última; o card de aprovação
+      // (se houver) só entra depois da última bolha.
+      const parts = splitBubbles(m.content)
+      const n = m.live ? Math.min(revealed[m.id] ?? 0, parts.length) : parts.length
+      const finished = !m.isStreaming && n >= parts.length
+      parts.slice(0, n).forEach((t, k) => {
+        const last = k === parts.length - 1 && finished
+        rows.push({
+          kind: 'bot', key: `${m.id}-${k}`, text: t, anim: m.live,
+          suggestion: last ? m.suggestion : undefined, msgId: m.id,
+        })
+      })
+      if (!finished) rows.push({ kind: 'typing', key: `${m.id}-typing` })
+    }
+  }
+  const isBot = (r?: Row) => r?.kind === 'bot' || r?.kind === 'typing'
+
+  const renderRow = (r: Row, i: number) => {
+    const prev = rows[i - 1]
+    const next = rows[i + 1]
+    const sameAsPrev = !!prev && prev.kind !== 'card' && r.kind !== 'card' && isBot(prev) === isBot(r)
+    const mt = i === 0 ? 14 : sameAsPrev ? 5 : r.kind === 'card' ? 8 : 21
+
+    if (r.kind === 'card') {
+      return (
+        <View key={r.key} style={[styles.card, { marginTop: mt }]}>
+          <Text style={styles.cardTitle} lineBreakStrategyIOS="push-out">O que a NIKS faz neste chat? Veja aqui os detalhes</Text>
+          {aboutOpen && (
+            <View style={{ marginTop: 12, gap: 8 }}>
+              {ABOUT.map(ab => (
+                <View key={ab} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                  <View style={styles.aboutDot} />
+                  <Text style={[styles.aboutText, { flex: 1 }]}>{ab}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => { haptics.tap(); setAboutOpen(o => !o) }}
+            style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}
+          >
+            <Text style={styles.moreText}>{aboutOpen ? 'Ler menos' : 'Ler mais'}</Text>
+            <Svg width={16} height={16} viewBox="0 0 24 24" style={{ transform: [{ rotate: aboutOpen ? '180deg' : '0deg' }] }}>
+              <Path d="M6 9l6 6 6-6" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </TouchableOpacity>
+        </View>
+      )
+    }
+
+    if (r.kind === 'typing') {
+      return <TypingBubble key={r.key} marginTop={mt} />
+    }
+
+    if (r.kind === 'me') {
+      return (
+        <View key={r.key} style={{ marginTop: mt, alignItems: 'flex-end', gap: 5 }}>
+          {r.images?.map((uri, k) => (
+            <Image key={k} source={{ uri }} style={styles.photo} />
+          ))}
+          {!!r.text && (
+            <View style={styles.meBubble}>
+              <Text style={styles.meText} lineBreakStrategyIOS="push-out">{r.text}</Text>
+              <MeTail />
+            </View>
+          )}
+        </View>
+      )
+    }
+
+    const lastOfGroup = !isBot(next) && !r.suggestion
+    const tail = lastOfGroup && next?.kind !== 'card'
+    return (
+      <View key={r.key} style={{ marginTop: mt }}>
+        <View style={[styles.botBubble, { borderBottomLeftRadius: tail ? 4 : 20 }]}>
+          <Text style={styles.botText} lineBreakStrategyIOS="push-out">{r.text}</Text>
+          {tail && <BotTail />}
+        </View>
+        {r.suggestion && r.msgId && (
+          <ProtocolApprovalCard
+            suggestion={r.suggestion}
+            onDecide={(approved) => handleSuggestionDecision(r.msgId!, r.suggestion!.id, approved)}
+          />
+        )}
+      </View>
+    )
+  }
+
+  const dayLabel = done && conversationTime ? shortDay(conversationTime) : 'Hoje'
+  const recentConvs = historyConversations.filter(c => c.recent)
+  const olderConvs = historyConversations.filter(c => !c.recent)
+
+  const renderHistItem = (c: HistoryConversation) => (
+    <TouchableOpacity
+      key={c.id}
+      activeOpacity={0.85}
+      onPress={() => { haptics.tap(); loadConversation(c.id) }}
+      style={[styles.histItem, c.id === conversationId && done && { backgroundColor: '#FDEEF4' }]}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+        <Text style={styles.histTitle} numberOfLines={1}>{c.title}</Text>
+        <Text style={styles.histWhen}>{c.when}</Text>
+      </View>
+      <Text style={styles.histPrev} numberOfLines={1}>{c.prev}</Text>
+    </TouchableOpacity>
+  )
+
+  const pendingStrip = pendingImages.length > 0 && (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ marginBottom: 8 }}
+      contentContainerStyle={{ gap: 8, paddingTop: 6 }}
+      keyboardShouldPersistTaps="handled"
+    >
+      {pendingImages.map((img, index) => (
+        <View key={index} style={{ width: 56, height: 56 }}>
+          <Image source={{ uri: img.uri }} style={{ width: 56, height: 56, borderRadius: 12 }} />
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); setPendingImages(prev => prev.filter((_, i) => i !== index)) }}
+            style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9, backgroundColor: INK, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Svg width={10} height={10} viewBox="0 0 24 24">
+              <Path d="M18 6L6 18M6 6l12 12" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" fill="none" />
+            </Svg>
+          </TouchableOpacity>
+        </View>
+      ))}
+    </ScrollView>
+  )
+
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      <StatusBar style="dark" />
 
-      <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          <ChatHeader
-            showBack={mode === 'active'}
-            onBack={handleBackToEmpty}
-            onHistoryPress={loadHistory}
-            showHistory={mode !== 'active'}
-            title={mode === 'active' ? 'NIKS Chat' : 'NIKS'}
-            titleFont={mode === 'active' ? fMed : fBold}
-            titleSize={mode === 'active' ? 22 : 20}
-            logoSize={mode === 'active' ? 24 : 22}
-          />
-
-          <View style={{ flex: 1 }}>
-          {mode === 'empty' ? (
-            // ── ESTADO INICIAL ──────────────────────────────────────────────
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-            <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-              {/* Welcome hero */}
-              <View style={{
-                paddingTop: 36, paddingHorizontal: 28, paddingBottom: 22,
-                alignItems: 'center',
-              }}>
-                <View style={{ marginBottom: 22 }}>
-                  <AnimatedLogo size={84} />
-                </View>
-
-                {/* Greeting "Olá, juliana" */}
-                <Text style={{
-                  fontFamily: fXBold,
-                  fontSize: 32, lineHeight: 36,
-                  letterSpacing: -1, color: '#FF9D9D',
-                  textAlign: 'center',
-                }}>
-                  {'Olá, '}
-                  <Text style={{ color: '#FF9D9D' }}>{firstName}</Text>
-                </Text>
-
-                {/* Tagline */}
-                <Text style={{
-                  fontFamily: fMed,
-                  fontSize: 16, lineHeight: 22,
-                  letterSpacing: -0.3,
-                  color: INK_MUTE,
-                  maxWidth: 260, textAlign: 'center',
-                  marginTop: 8,
-                }}>
-                  como posso te ajudar hoje?
-                </Text>
-              </View>
-
-              {/* "SUGESTÕES" divider */}
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 12,
-                paddingTop: 10, paddingHorizontal: 28, paddingBottom: 16,
-              }}>
-                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(18,18,18,0.07)' }} />
-                <Text style={{
-                  fontFamily: fBold,
-                  fontSize: 10, letterSpacing: 1.6,
-                  textTransform: 'uppercase', color: INK_MUTE,
-                }}>
-                  SUGESTÕES
-                </Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(18,18,18,0.07)' }} />
-              </View>
-
-              {/* Suggestion cards list */}
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 144 }}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps='handled'
-              >
-                {SUGGESTIONS.map((s, i) => (
-                  <SuggestionCard
-                    key={i}
-                    icon={s.icon}
-                    text={s.text}
-                    index={i}
-                    fSemi={fSemi}
-                    onPress={() =>
-                      s.action === 'foodScan'
-                        ? router.push('/(scan)/food-camera' as any)
-                        : handleSuggestionPress(s.text)
-                    }
-                  />
-                ))}
-              </ScrollView>
+      {/* ── Cabeçalho: degradê rosado + voltar · logo NIKS · conversas + progresso ── */}
+      <LinearGradient
+        colors={['#FCEAF1', '#FDF3F7', '#FFFFFF']}
+        locations={[0, 0.55, 1]}
+        style={{ height: insets.top + 56, paddingTop: insets.top, zIndex: 4 }}
+      >
+        <View style={styles.bar}>
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); router.navigate('/home' as any) }}
+            activeOpacity={0.85}
+            style={[styles.barBtn, { left: 14 }]}
+            accessibilityLabel="Voltar"
+          >
+            <Svg width={24} height={24} viewBox="0 0 24 24">
+              <Path d="M15.5 4.5 8 12l7.5 7.5" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); loadHistory() }}
+            activeOpacity={0.85}
+            style={[styles.barBtn, { right: 14 }]}
+            accessibilityLabel="Conversas anteriores"
+          >
+            <Svg width={24} height={24} viewBox="0 0 24 24">
+              <Path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.3" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              <Path d="M3 3.5v4.8h4.8" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              <Path d="M12 7.5V12l3.2 1.9" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            <View style={styles.logoCircle}>
+              <Image source={require('../../assets/home/score-logo-pink.png')} style={{ width: 27, height: 27 }} resizeMode="contain" />
             </View>
-            </TouchableWithoutFeedback>
-          ) : (
-            // ── CONVERSA EM ANDAMENTO ───────────────────────────────────────
-            <ScrollView
-              ref={scrollRef}
-              style={{ flex: 1, backgroundColor: 'transparent' }}
-              contentContainerStyle={{
-                paddingTop: 20, paddingHorizontal: 22, paddingBottom: insets.bottom + 144,
-                gap: 18,
-              }}
-              showsVerticalScrollIndicator={false}
-            >
-              {messages.map(m => {
-                if (m.role === 'user') {
-                  return (
-                    <View key={m.id} style={{ gap: 8 }}>
-                      {m.imageUris && m.imageUris.length > 0 && (
-                        <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                          {m.imageUris.map((uri, i) => (
-                            <UserPhotoBubble key={i} imageUri={uri} />
-                          ))}
-                        </View>
-                      )}
-                      {m.content ? <UserBubble text={m.content} fReg={fReg} /> : null}
-                    </View>
-                  )
-                }
-                if (m.content === '' && m.isStreaming) {
-                  return <TypingDots key={m.id} />
-                }
-                return (
-                  <View key={m.id} style={{ gap: 10 }}>
-                    <NiksMessage fReg={fReg} streaming={m.isStreaming}>
-                      {m.content}
-                    </NiksMessage>
-                    {m.suggestion && (
-                      <ProtocolApprovalCard
-                        suggestion={m.suggestion}
-                        onDecide={(approved) => handleSuggestionDecision(m.id, m.suggestion!.id, approved)}
-                        fBold={fBold} fSemi={fSemi} fReg={fReg}
-                      />
-                    )}
-                  </View>
-                )
-              })}
-            </ScrollView>
-          )}
+            <Text style={styles.barTitle}>NIKS</Text>
+          </View>
+        </View>
+        <View style={styles.progressTrack}>
+          <Animated.View
+            style={{
+              height: 2, backgroundColor: PINK,
+              width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+            }}
+          />
+        </View>
+      </LinearGradient>
 
-          {/* ── History panel ─────────────────────────────────────────────── */}
-          {historyVisible && (
-            <>
-              <TouchableOpacity
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
-                activeOpacity={1}
-                onPress={() => setHistoryVisible(false)}
-              />
-              <View style={{
-                position: 'absolute', top: 8, right: 16, width: 276, zIndex: 11,
-                backgroundColor: WHITE,
-                borderRadius: 20,
-                borderWidth: 1, borderColor: CARD_BD,
-                shadowColor: INK,
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.10,
-                shadowRadius: 28,
-                elevation: 16,
-                overflow: 'hidden',
-              }}>
-                <View style={{
-                  paddingVertical: 14, paddingHorizontal: 18,
-                  borderBottomWidth: 1, borderBottomColor: 'rgba(18,18,18,0.06)',
-                }}>
-                  <Text style={{
-                    fontFamily: fBold,
-                    fontSize: 10, letterSpacing: 1.6,
-                    textTransform: 'uppercase', color: INK_MUTE,
-                  }}>
-                    Conversas recentes
-                  </Text>
-                </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        {/* ── Conversa ───────────────────────────────────────────────────── */}
+        <ScrollView
+          ref={scrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 21, paddingBottom: 20 }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+        >
+          <Text style={styles.dayLabel}>{dayLabel}</Text>
+          {rows.map((r, i) => (
+            <FadeIn key={r.key} enabled={(introAnimated && !done && (r.key === 'hi' || r.key === 'help' || r.key === 'about')) || ('anim' in r && !!r.anim)}>
+            {renderRow(r, i)}
+            </FadeIn>
+          ))}
+        </ScrollView>
 
-                {historyLoading ? (
-                  <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                    <Text style={{ fontFamily: fMed, fontSize: 13, color: INK_FAINT }}>Carregando…</Text>
+        {/* ── 39a: folha com as opções + "Ou escreva sua pergunta" + Enviar ── */}
+        {!done && (
+          <Animated.View
+            pointerEvents={introShown < 3 ? 'none' : 'auto'}
+            style={[styles.sheet, {
+              paddingBottom: keyboardOpen ? 14 : insets.bottom,
+              opacity: sheetAnim,
+              transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
+            }]}
+          >
+            {SUGS.map((q, i) => {
+              const on = pick === i
+              return (
+                <TouchableOpacity
+                  key={q}
+                  activeOpacity={0.85}
+                  onPress={() => { haptics.select(); setPick(i); setFreeText('') }}
+                  style={[styles.opt, i > 0 && { borderTopWidth: 1, borderTopColor: HAIR }]}
+                >
+                  <View style={[styles.radio, on ? { borderWidth: 2, borderColor: PINK } : { borderWidth: 1.5, borderColor: '#A39A9F' }]}>
+                    <View style={[styles.radioDot, { backgroundColor: on ? PINK : 'transparent' }]} />
                   </View>
-                ) : historyConversations.length === 0 ? (
-                  <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                    <Text style={{ fontFamily: fMed, fontSize: 13, color: INK_FAINT }}>Nenhuma conversa ainda.</Text>
-                  </View>
-                ) : (
-                  historyConversations.map((conv, index) => (
-                    <TouchableOpacity
-                      key={conv.id}
-                      onPress={() => { haptics.tap(); loadConversation(conv.id); }}
-                      activeOpacity={0.7}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 12,
-                        paddingVertical: 14, paddingHorizontal: 18,
-                        borderBottomWidth: index < historyConversations.length - 1 ? 1 : 0,
-                        borderBottomColor: 'rgba(18,18,18,0.06)',
-                      }}
-                    >
-                      <Text
-                        style={{ flex: 1, fontFamily: fSemi, fontSize: 13, lineHeight: 18, color: INK }}
-                        numberOfLines={2}
-                      >
-                        {conv.title}
-                      </Text>
-                      <Text style={{ fontFamily: fMed, fontSize: 11, color: INK_FAINT, flexShrink: 0 }}>
-                        {conv.relativeTime}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
+                  <Text style={styles.optText} lineBreakStrategyIOS="push-out">{q}</Text>
+                </TouchableOpacity>
+              )
+            })}
+            <View style={{ paddingTop: 8, paddingHorizontal: 21, borderTopWidth: 1, borderTopColor: HAIR }}>
+              {pendingStrip}
+              <View style={[styles.freeField, freeText.trim() ? { borderWidth: 1.5, borderColor: PINK } : { borderWidth: 1, borderColor: FIELD_BD }]}>
+                <TextInput
+                  value={freeText}
+                  onChangeText={(t) => { setFreeText(t); if (t) setPick(null) }}
+                  placeholder="Ou escreva sua pergunta"
+                  placeholderTextColor="#9A9497"
+                  style={styles.input}
+                />
+                <TouchableOpacity onPress={choosePhotoSource} hitSlop={8} activeOpacity={0.85}>
+                  <CameraIcon />
+                </TouchableOpacity>
               </View>
+            </View>
+            <View style={{ paddingTop: 14, paddingHorizontal: 21 }}>
+              <TouchableOpacity
+                activeOpacity={canSubmit ? 0.85 : 1}
+                disabled={!canSubmit}
+                onPress={handleSubmit}
+                style={[styles.sendBtn, !canSubmit && { backgroundColor: '#FFD3E5', shadowOpacity: 0 }]}
+              >
+                <Text style={styles.sendText}>Enviar</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        )}
+
+        {/* ── 39b: campo "Pergunte à NIKS" + enviar ─────────────────────── */}
+        {done && (
+          <View style={[styles.composer, { paddingBottom: keyboardOpen ? 12 : 20 + insets.bottom }]}>
+            {pendingStrip}
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
+              <View style={styles.composerField}>
+                <TextInput
+                  value={inputText}
+                  onChangeText={setInputText}
+                  placeholder="Pergunte à NIKS"
+                  placeholderTextColor="#9A9497"
+                  multiline
+                  style={[styles.input, { maxHeight: 96, paddingTop: 9, paddingBottom: 9 }]}
+                />
+                <TouchableOpacity onPress={choosePhotoSource} hitSlop={8} activeOpacity={0.85} style={{ marginBottom: 9 }}>
+                  <CameraIcon />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity onPress={handleSend} activeOpacity={0.85} style={styles.composerSend}>
+                <Svg width={18} height={18} viewBox="0 0 24 24">
+                  <Path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </KeyboardAvoidingView>
+
+      {/* ── Painel "Conversas" ─────────────────────────────────────────────── */}
+      <Animated.View
+        pointerEvents={historyVisible ? 'auto' : 'none'}
+        style={[StyleSheet.absoluteFill, { zIndex: 7, backgroundColor: 'rgba(18,18,18,0.35)', opacity: drawer }]}
+      >
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setHistoryVisible(false)} />
+      </Animated.View>
+      <Animated.View
+        pointerEvents={historyVisible ? 'auto' : 'none'}
+        style={[
+          styles.drawer,
+          { transform: [{ translateX: drawer.interpolate({ inputRange: [0, 1], outputRange: [340, 0] }) }] },
+        ]}
+      >
+        <LinearGradient
+          colors={['#FCEAF1', '#FFFFFF']}
+          style={{ height: insets.top + 56, paddingTop: insets.top + 6, paddingLeft: 20, paddingRight: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <Text style={styles.drawerTitle}>Conversas</Text>
+          <TouchableOpacity onPress={() => { haptics.tap(); setHistoryVisible(false) }} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+            <Svg width={22} height={22} viewBox="0 0 24 24">
+              <Path d="M6 6l12 12M18 6 6 18" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" />
+            </Svg>
+          </TouchableOpacity>
+        </LinearGradient>
+        <View style={{ paddingTop: 8, paddingHorizontal: 18, paddingBottom: 12 }}>
+          <TouchableOpacity onPress={() => { haptics.action(); startNewChat() }} activeOpacity={0.85} style={[styles.sendBtn, { height: 44, flexDirection: 'row', gap: 8 }]}>
+            <Svg width={18} height={18} viewBox="0 0 24 24">
+              <Path d="M12 5v14M5 12h14" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" />
+            </Svg>
+            <Text style={styles.sendText}>Nova conversa</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+          {historyLoading ? (
+            <Text style={[styles.histGroup, { textAlign: 'center' }]}>Carregando…</Text>
+          ) : historyConversations.length === 0 ? (
+            <Text style={[styles.histGroup, { textAlign: 'center' }]}>Nenhuma conversa ainda.</Text>
+          ) : (
+            <>
+              {recentConvs.length > 0 && <Text style={styles.histGroup}>Esta semana</Text>}
+              {recentConvs.map(renderHistItem)}
+              {olderConvs.length > 0 && <Text style={styles.histGroup}>Anteriores</Text>}
+              {olderConvs.map(renderHistItem)}
             </>
           )}
-
-          <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
-            <ChatInputBar
-              value={inputText}
-              onChangeText={setInputText}
-              onSend={handleSend}
-              fReg={fReg}
-              bottomInset={insets.bottom}
-              keyboardOpen={keyboardOpen}
-              onCameraPress={() => pickImage('camera')}
-              onGalleryPress={() => pickImage('gallery')}
-              pendingImages={pendingImages}
-              onRemoveImage={(index) => setPendingImages(prev => prev.filter((_, i) => i !== index))}
-              atLimit={pendingImages.length >= 5}
-            />
-          </View>
-          </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        </ScrollView>
+      </Animated.View>
     </View>
   );
 }
+
+// Linha do banco → mensagem da tela (image_url pode ser URL única ou JSON de URLs).
+function toMessage(msg: any): Message {
+  let imageUris: string[] | undefined
+  if (msg.image_url) {
+    try {
+      const parsed = JSON.parse(msg.image_url)
+      imageUris = Array.isArray(parsed) ? parsed : [msg.image_url]
+    } catch {
+      imageUris = [msg.image_url]
+    }
+  }
+  return {
+    id: msg.id,
+    role: msg.role as 'user' | 'assistant',
+    content: msg.content,
+    imageUris,
+  }
+}
+
+const styles = StyleSheet.create({
+  bar: { height: 54, alignItems: 'center', justifyContent: 'center' },
+  barBtn: { position: 'absolute', top: 5, width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
+  logoCircle: {
+    width: 33, height: 33, borderRadius: 16.5, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: PINK, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 4,
+  },
+  barTitle: { fontSize: 18, fontWeight: '600', letterSpacing: -0.4, color: INK },
+  progressTrack: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, backgroundColor: HAIR },
+
+  dayLabel: { marginTop: 22, textAlign: 'center', fontSize: 13, fontWeight: '600', letterSpacing: -0.1, color: MUTED },
+
+  botBubble: {
+    alignSelf: 'flex-start', maxWidth: 300,
+    paddingVertical: 9, paddingHorizontal: 13,
+    borderRadius: 20, backgroundColor: BUBBLE,
+  },
+  botText: { fontSize: 17, lineHeight: 24, letterSpacing: -0.35, color: INK },
+  meBubble: {
+    alignSelf: 'flex-end', maxWidth: 290,
+    paddingVertical: 9, paddingHorizontal: 14,
+    borderRadius: 20, borderBottomRightRadius: 4, backgroundColor: PINK,
+  },
+  meText: { fontSize: 17, lineHeight: 24, letterSpacing: -0.35, color: '#FFFFFF' },
+  photo: { width: 222, height: 207, borderRadius: 20 },
+
+  card: {
+    paddingTop: 16, paddingHorizontal: 16, paddingBottom: 14,
+    borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E6E0E3',
+  },
+  cardTitle: { fontSize: 17, fontWeight: '600', lineHeight: 23, letterSpacing: -0.4, color: INK },
+  aboutDot: { width: 6, height: 6, marginTop: 8, borderRadius: 3, backgroundColor: PINK },
+  aboutText: { fontSize: 16, lineHeight: 22, letterSpacing: -0.3, color: '#3D3A3C' },
+  moreText: { color: PINK_TEXT, fontSize: 17, fontWeight: '500', letterSpacing: -0.3 },
+
+  typing: {
+    alignSelf: 'flex-start', height: 42, paddingHorizontal: 15,
+    borderRadius: 20, borderBottomLeftRadius: 4, backgroundColor: BUBBLE,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+  },
+  typingDot: { width: 7, height: 7, borderRadius: 3.5 },
+
+  sheet: {
+    backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 4,
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.1, shadowRadius: 14,
+    elevation: 10,
+  },
+  opt: {
+    minHeight: 58, paddingVertical: 12, paddingLeft: 24, paddingRight: 21,
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+  },
+  radio: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  radioDot: { width: 8, height: 8, borderRadius: 4 },
+  optText: { flex: 1, fontSize: 17, lineHeight: 22, letterSpacing: -0.35, color: INK },
+  freeField: {
+    height: 44, borderRadius: 100, backgroundColor: '#FFFFFF',
+    flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 14, gap: 8,
+  },
+  input: { flex: 1, minWidth: 0, fontSize: 17, letterSpacing: -0.35, color: INK, paddingVertical: 0 },
+  sendBtn: {
+    height: 50, borderRadius: 100, backgroundColor: PINK,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
+  },
+  sendText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
+
+  composer: { backgroundColor: '#F6F2F4', paddingTop: 24, paddingLeft: 17, paddingRight: 14 },
+  composerField: {
+    flex: 1, minWidth: 0, minHeight: 40, borderRadius: 20, backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: FIELD_BD,
+    flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 16, paddingRight: 8, gap: 8,
+  },
+  composerSend: {
+    width: 36, height: 36, marginBottom: 2, borderRadius: 18, backgroundColor: PINK,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: PINK, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6,
+  },
+
+  drawer: {
+    position: 'absolute', top: 0, right: 0, bottom: 0, width: 322, zIndex: 8,
+    backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderBottomLeftRadius: 24,
+    shadowColor: '#783C48', shadowOffset: { width: -10, height: 0 }, shadowOpacity: 0.14, shadowRadius: 15,
+  },
+  drawerTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.6, color: INK },
+  histGroup: { paddingTop: 16, paddingHorizontal: 10, paddingBottom: 6, fontSize: 13, fontWeight: '600', letterSpacing: -0.1, color: MUTED },
+  histItem: { paddingVertical: 11, paddingHorizontal: 10, borderRadius: 14, gap: 2 },
+  histTitle: { flex: 1, minWidth: 0, fontSize: 17, fontWeight: '500', letterSpacing: -0.35, color: INK },
+  histWhen: { fontSize: 13, color: MUTED },
+  histPrev: { fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: MUTED },
+});

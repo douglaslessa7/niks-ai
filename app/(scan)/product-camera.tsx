@@ -255,7 +255,7 @@ export default function ProductCamera() {
             }}
           />
 
-          {/* Animated coral scan line */}
+          {/* Linha de scan animada — rosa da identidade nova (#FF5EA8) */}
           <Animated.View
             style={{
               position: 'absolute',
@@ -263,8 +263,8 @@ export default function ProductCamera() {
               right: 12,
               height: 2,
               borderRadius: 1,
-              backgroundColor: '#FB7B6B',
-              shadowColor: '#FB7B6B',
+              backgroundColor: '#FF5EA8',
+              shadowColor: '#FF5EA8',
               shadowOffset: { width: 0, height: 0 },
               shadowOpacity: 0.6,
               shadowRadius: 6,

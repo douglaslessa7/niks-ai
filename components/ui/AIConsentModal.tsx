@@ -71,7 +71,7 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
 
         {/* Ícone */}
         <View style={styles.iconCircle}>
-          <ShieldCheck size={22} color="#FB7B6B" strokeWidth={2} />
+          <ShieldCheck size={22} color="#FF5EA8" strokeWidth={2} />
         </View>
 
         {/* Título */}
@@ -134,6 +134,8 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
   );
 }
 
+// Identidade nova (home 38e / NIKS Chat 39a-b): SF Pro (sistema), rosa #FF5EA8,
+// tinta #121212, cinza #8A8387, links #E8468F, botão em pílula com brilho rosa.
 const styles = StyleSheet.create({
   inlineLayer: {
     zIndex: 1000,
@@ -141,7 +143,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(18,18,18,0.35)',
   },
   card: {
     position: 'absolute',
@@ -149,17 +151,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     paddingTop: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 21,
     paddingBottom: 40,
+    shadowColor: '#783C48',
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
   },
   handle: {
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: '#E3DCDF',
     alignSelf: 'center',
     marginBottom: 24,
   },
@@ -167,7 +173,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#FFF5F4',
+    backgroundColor: '#FDEEF4',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
@@ -176,30 +182,40 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1A1A1A',
+    lineHeight: 24,
+    letterSpacing: -0.5,
+    color: '#121212',
     textAlign: 'center',
     marginBottom: 16,
   },
   body: {
     fontSize: 15,
-    color: '#717182',
-    lineHeight: 24.75,
+    lineHeight: 22,
+    letterSpacing: -0.25,
+    color: '#8A8387',
     marginBottom: 12,
   },
   link: {
-    color: '#FB7B6B',
+    color: '#E8468F',
+    fontWeight: '500',
   },
   btnPrimary: {
-    backgroundColor: '#FB7B6B',
-    borderRadius: 14,
-    paddingVertical: 16,
+    height: 50,
+    borderRadius: 100,
+    backgroundColor: '#FF5EA8',
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 8,
     marginBottom: 8,
+    shadowColor: '#FF5EA8',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
   },
   btnPrimaryText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
+    letterSpacing: -0.3,
     color: '#FFFFFF',
   },
   btnSecondary: {
@@ -207,7 +223,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   btnSecondaryText: {
-    fontSize: 15,
-    color: '#717182',
+    fontSize: 17,
+    letterSpacing: -0.3,
+    color: '#8A8387',
   },
 });
