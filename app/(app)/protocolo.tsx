@@ -1,152 +1,114 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Rotina de Beleza — layout fiel ao Design Component do Claude Design, com os
-// DADOS REAIS do usuário (protocolo salvo em Supabase `protocolos` / cache do store).
-// Fonte visual: "Rotinas de skin care/Rotina de Beleza.dc.html" + tokens do DS.
-// Dois temas: Manhã (claro, sol) e Noite (escuro, lua). Os passos AM/PM, contagem e
-// duração vêm da rotina real; o texto "Como fazer" usa a instruction clínica do passo.
-// Medidas do frame 393px, escaladas por S = width/393 para proporção idêntica.
+// Rotina de Skincare — réplica do design 41d do Claude Design (projeto "NIKS home
+// redesign — rotina skincare", NiksRoutineFlo2.dc.html com v="timeline"): cabeçalho
+// com foto + "Sua rotina" + sequência, seletor Manhã/Noite, herói com "Iniciar
+// rotina", passos em linha do tempo com o produto escolhido, "O que esperar" (cards
+// que viram), "Como introduzir os ativos" e a rotina passo a passo (com a tela de
+// concluída). "Escolher/Ver produto" leva para a tela de Produtos (não para a folha
+// do design), no produto daquele passo.
+// Fonte = SF Pro (sistema), rosa #FF5EA8. Medidas do frame 393×852: o topo do
+// conteúdo (69) = barra de status do frame (54) + 15 → `insets.top + 15`.
+// Os DADOS continuam reais: tabela `protocolos` (fonte de verdade) + store como
+// fallback do vão + geração sob demanda para usuária legada — lógica intacta.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, ScrollView, Image, TouchableOpacity, Animated,
-  useWindowDimensions, LayoutAnimation, Platform, UIManager, ActivityIndicator, StyleSheet,
+  View, Text, ScrollView, Image, TouchableOpacity, Animated, Easing, Modal,
+  ActivityIndicator, StyleSheet, LayoutAnimation, Platform, UIManager,
+  type StyleProp, type TextStyle,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFonts } from 'expo-font';
+import { StatusBar } from 'expo-status-bar';
+import { Image as ExpoImage } from 'expo-image';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
-import {
-  Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
-  Nunito_500Medium, Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
-import Svg, {
-  Path, Line, Circle, Rect, Defs, RadialGradient as SvgRadialGradient, Stop,
-} from 'react-native-svg';
-// Skia — orb com gradiente radial + numeral da cerimônia (aliased p/ não colidir com react-native-svg)
-import {
-  Canvas, Circle as SkiaCircle, Rect as SkiaRect, Group,
-  RadialGradient as SkiaRadialGradient, vec, BlurMask, Shadow as SkiaShadow,
-  Text as SkiaText, useFont,
-} from '@shopify/react-native-skia';
-// NightSky — céu estrelado (estrelas + estrelas cadentes) reaproveitado do modo noturno antigo
-import NightSky from '../../components/ui/NightSky';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
+import * as Device from 'expo-device';
+import Svg, { Path, Line, Circle, Rect, Ellipse } from 'react-native-svg';
 import { useAppStore, type OnboardingData, type ScanResult, type ProtocolResult } from '../../store/onboarding';
 import { useFaceScan } from '../../hooks/useFaceScan';
 import { supabase } from '../../lib/supabase';
 import { generateAndSaveProtocol } from '../../lib/generateProtocol';
 import { buildOnboardingDataFromUserRow } from '../../lib/buildOnboardingDataFromUserRow';
-import { markStepCompleted } from '../../lib/routineProgress';
+import {
+  markStepCompleted, markRoutineDone, getCompletedSteps, getRoutineHistory, routineStreak,
+  sessionDate, dateKey, type RoutineHistory,
+  getRoutineFlow, saveRoutineFlow, clearRoutineFlow, type RoutineFlowState,
+} from '../../lib/routineProgress';
 import { requestAppReview } from '../../lib/storeReview';
 import { getSavedProducts, normStepKey, type SavedProduct } from '../../lib/savedProducts';
+import { getCutoutsByImageUrl, type Cutout } from '../../lib/productCutouts';
+import { getFacePhotoUrl } from '../../lib/facePhoto';
+import { getPhotoJourney, saveRoutinePhoto } from '../../lib/routinePhotos';
 import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 
-// Habilita LayoutAnimation no Android (iOS já vem ligado)
+// LayoutAnimation no Android (iOS já vem ligado) — expandir "Como introduzir os ativos".
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// ── Marca (override do .dc.html): --brand vira #FF9D9D em ambos os temas ────────
-const BRAND = '#FF9D9D';
+const INK = '#121212';
+const PINK = '#FF5EA8';
+const PINK_TEXT = '#E8468F';
+const PINK_DEEP = '#C0206A';
+const MUTED = '#8A8387';
+const BODY = '#3D3A3C';
+const SOFT = '#6E6468';
 
-// ── Tokens por tema ─────────────────────────────────────────────────────────
-type Theme = {
-  bg: string;
-  surfaceCard: string;
-  surfaceSunken: string;
-  textHeading: string;
-  textBody: string;
-  textMuted: string;
-  textCaption: string;
-  red200: string;   // aro do círculo do número + linha tracejada
-  hairline: string;
-  chevron: string;
-  cardShadow: {
-    shadowColor: string; shadowOpacity: number;
-    shadowRadius: number; shadowOffset: { width: number; height: number }; elevation: number;
-  };
-  brandShadowOpacity: number;
+// Degradês do design (BG.am / BG.pm) — mesmas paradas da home.
+const BG = {
+  am: ['#FFE3EF', '#FFD3E5', '#FFC6DC', '#FDDFEB', '#FBEEF3', '#F9F2F5'],
+  pm: ['#EADCF4', '#F0D9EE', '#F6D3E5', '#F9E3EE', '#FBEFF4', '#F9F3F6'],
+} as const;
+const BG_STOPS = [0, 0.28, 0.5, 0.64, 0.8, 1] as const;
+
+// Foco por período (texto do design).
+const FOCUS: Record<'am' | 'pm', string> = {
+  am: 'Proteção & antioxidação',
+  pm: 'Reparação & barreira',
 };
 
-const DAY: Theme = {
-  bg: '#FFFFFF',
-  surfaceCard: '#FFFFFF',
-  surfaceSunken: '#F4F4F4',
-  textHeading: '#1A1A1A',
-  textBody: '#3D3D3D',
-  textMuted: '#6B6B6B',
-  textCaption: '#9A9A9A',
-  red200: '#FFC9C9',
-  hairline: '#ECECEC',
-  chevron: '#9A9A9A',
-  cardShadow: { shadowColor: '#281414', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
-  brandShadowOpacity: 0.42,
+// Fundo do produto por categoria (cores do design por produto).
+const TINT: Record<string, string> = {
+  Limpeza: '#FDE4EE',
+  'Tônico': '#E2F1EF',
+  Tratamento: '#EEE5F6',
+  'Hidratação': '#E3EEF8',
+  Barreira: '#E2F1EF',
+  'Proteção': '#FFF1D6',
 };
 
-const NIGHT: Theme = {
-  bg: '#0F1420',
-  surfaceCard: '#161E31',
-  surfaceSunken: '#212B42',
-  textHeading: '#F3EEE2',
-  textBody: '#C6CDDD',
-  textMuted: '#8B93A8',
-  textCaption: '#727B90',
-  red200: 'rgba(255,157,157,0.5)',
-  hairline: 'rgba(255,255,255,0.09)',
-  chevron: '#727B90',
-  cardShadow: { shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
-  brandShadowOpacity: 0.28,
-};
+const DEFAULT_AM = 7 * 60;
+const DEFAULT_PM = 21 * 60;
 
-// ── Tipos + mapeamento dos DADOS REAIS do usuário ───────────────────────────
-// A rotina vem de `protocolos.rotina_am` / `rotina_pm` (Supabase) ou do cache do
-// store (`protocolResult`). Cada passo cru tem a forma ProtocolStep; convertemos
-// para o tipo Step consumido pela UI (title/ingredients/category/icon/how).
-type IconName = 'sun' | 'moon' | 'drop' | 'cleanser' | 'sparkle' | 'flask' | 'shield';
-type Step = { title: string; ingredients: string; category: string; icon: IconName; how: string };
-
+// ── Tipos + mapeamento dos DADOS REAIS ───────────────────────────────────────
 // Passo cru salvo pelo generate-protocol (ver README → mapeamento generate-protocol).
 type RawStep = {
   id?: number; name?: string; ingredient?: string; instruction?: string;
   steps?: string[]; color?: string; waitTime?: string | null; product_suggestions?: string[];
 };
 
-// Deriva { categoria curta, ícone } por palavras-chave do nome + ingrediente.
-// Não depende do hex `color` (que a IA nem sempre acerta). Ordem = prioridade clínica.
-function classifyStep(name: string, ingredient: string): { category: string; icon: IconName } {
-  const t = `${name} ${ingredient}`.toLowerCase();
-  const has = (...ks: string[]) => ks.some((k) => t.includes(k));
-
-  if (has('protetor solar', 'protetor', 'fps', 'filtro solar', 'spf')) return { category: 'Proteção', icon: 'sun' };
-  if (has('limpeza', 'cleanser', 'sabonete', 'espuma de limp', 'demaquilante', 'água micelar', 'agua micelar')) {
-    const oleoso = has('óleo', 'oleo', 'balm', 'bálsamo', 'balsamo', 'oil');
-    return { category: 'Limpeza', icon: oleoso ? 'drop' : 'cleanser' };
-  }
-  if (has('tônico', 'tonico', 'essência', 'essencia', 'tônica', 'tonica')) return { category: 'Tônico', icon: 'drop' };
-  if (has('barreira')) return { category: 'Barreira', icon: 'shield' };
-  if (has('hidratante', 'ceramida', 'emoliente', 'gel-creme', 'gel creme', 'creme hidratante', 'hidrata')) {
-    return { category: 'Hidratação', icon: 'flask' };
-  }
-  if (has('oclusivo', 'esqualano', 'óleo facial', 'oleo facial', 'vaselina')) return { category: 'Finalização', icon: 'drop' };
-  if (has('sérum', 'serum', 'ácido', 'acido', 'retinol', 'retinoide', 'retinal', 'tretinoína', 'tretinoina',
-          'vitamina c', 'niacinamida', 'azelaico', 'peptíde', 'peptide', 'antioxidante', 'aha', 'bha', 'tratamento')) {
-    if (has('reparador', 'ceramida')) return { category: 'Tratamento', icon: 'flask' };
-    return { category: 'Tratamento', icon: 'sparkle' };
-  }
-  return { category: 'Cuidado', icon: 'sparkle' };
+// Categoria do passo — função `cat()` do design (palavras-chave do nome + ingrediente).
+function cat(name: string, ing: string): string {
+  const t = `${name} ${ing}`.toLowerCase();
+  const has = (...k: string[]) => k.some((x) => t.includes(x));
+  if (has('protetor', 'fps')) return 'Proteção';
+  if (has('limpeza', 'demaquilante')) return 'Limpeza';
+  if (has('tônico')) return 'Tônico';
+  if (has('barreira')) return 'Barreira';
+  if (has('hidratante', 'gel-creme')) return 'Hidratação';
+  return 'Tratamento';
 }
 
-// Converte um passo cru do protocolo real na forma consumida pela UI.
-function mapStep(raw: RawStep): Step {
-  const name = (raw?.name ?? '').trim();
-  const ingredient = (raw?.ingredient ?? '').trim();
-  const { category, icon } = classifyStep(name, ingredient);
-  // "Como fazer": prioriza a instruction clínica; se ausente, junta os steps.
-  const how = (raw?.instruction ?? '').trim()
+// "Como fazer": prioriza a instruction clínica; se ausente, junta os steps.
+function howOf(raw: RawStep): string {
+  return (raw?.instruction ?? '').trim()
     || (Array.isArray(raw?.steps) ? raw.steps.join(' ').trim() : '');
-  return { title: name, ingredients: ingredient, category, icon, how };
 }
 
 // Reconstrói o array `dicas` a partir do store (a tabela guarda `dicas` como coluna
@@ -161,17 +123,9 @@ function storeDicas(r: ProtocolResult): (string | null)[] {
   ];
 }
 
-// Foco continua fixo por período (rótulo editorial); passos/duração são derivados
-// da rotina real do usuário.
-const FOCUS: Record<'am' | 'pm', string> = {
-  am: 'Proteção & antioxidação',
-  pm: 'Reparação & barreira',
-};
-
 // Quebra o texto de "introdução gradual" (dicas[4]) em blocos por semana.
-// Regex idêntico ao da tela antiga (ver README → parsing de dicas[4]). Suporta:
-// "Semana 1:", "Semanas 1–2:", "Nas semanas 3–4,", "A partir da semana 5:".
-// Se achar menos de 2 ocorrências, devolve o texto inteiro como bloco único.
+// Regex idêntico ao da tela antiga (ver README → parsing de dicas[4]).
+// Rótulos no formato do design: "Semanas 1–2", "Semana 5+".
 function parseCronograma(raw?: string | null): { week: string; body: string }[] {
   if (!raw) return [];
   const re = /(?:(?:Nas\s+)?Semanas?\s+([\d][\d\-–—]*\+?(?:\s+em diante)?)|A partir da semana\s+(\d+))\s*[,:]/gi;
@@ -180,385 +134,175 @@ function parseCronograma(raw?: string | null): { week: string; body: string }[] 
   return matches.map((m, i) => {
     const start = (m.index ?? 0) + m[0].length;
     const end = matches[i + 1]?.index ?? raw.length;
-    const rawLabel = (m[1] ?? m[2] ?? '').trim().replace(/\s+em diante/, '');
+    const rawLabel = (m[1] ?? m[2] ?? '').trim().replace(/\s+em diante/, '').replace('-', '–');
     const label = m[2] ? `${m[2]}+` : rawLabel;
-    return { week: `Semana ${label}`, body: raw.slice(start, end).trim().replace(/\.$/, '') + '.' };
+    const plural = /[–—]/.test(label);
+    return { week: `${plural ? 'Semanas' : 'Semana'} ${label}`, body: raw.slice(start, end).trim().replace(/\.$/, '') + '.' };
   });
 }
 
-// ── Ícones (portados do makeIcon do .dc.html: viewBox 0 0 24 24, sw 1.9, round) ─
-function Icon({ name, size, color }: { name: IconName | 'chevron' | 'play' | 'alert'; size: number; color: string }) {
-  if (name === 'play') {
-    return (
-      <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
-        <Path d="M8 5v14l11-7z" />
+function parseTime(v: unknown, fallback: number): number {
+  if (typeof v !== 'string') return fallback;
+  const m = v.match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
+}
+function fmtDuration(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
+// ── Ícones ───────────────────────────────────────────────────────────────────
+function Chevron({ open, size = 18, color = '#A39A9F' }: { open: boolean; size?: number; color?: string }) {
+  const rot = useRef(new Animated.Value(open ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(rot, { toValue: open ? 1 : 0, duration: 250, useNativeDriver: true }).start();
+  }, [open, rot]);
+  return (
+    <Animated.View style={{ transform: [{ rotate: rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}>
+      <Svg width={size} height={size} viewBox="0 0 24 24">
+        <Path d="M6 9l6 6 6-6" fill="none" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
       </Svg>
-    );
-  }
-  const sw = name === 'chevron' ? 2.2 : 1.9;
-  const stroke = color;
-  const common = { stroke, strokeWidth: sw, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, fill: 'none' as const };
-  let children: React.ReactNode = null;
-  switch (name) {
-    case 'chevron':
-      children = <Path d="M6 9l6 6 6-6" {...common} />;
-      break;
-    case 'alert':
-      children = (
-        <>
-          <Path d="M12 3L22 20H2L12 3Z" {...common} />
-          <Path d="M12 10v4" {...common} />
-          <Path d="M12 17h.01" {...common} />
-        </>
-      );
-      break;
-    case 'sun':
-      children = (
-        <>
-          <Path d="M12 2v2" {...common} /><Path d="M12 20v2" {...common} />
-          <Path d="M4.9 4.9l1.4 1.4" {...common} /><Path d="M17.7 17.7l1.4 1.4" {...common} />
-          <Path d="M2 12h2" {...common} /><Path d="M20 12h2" {...common} />
-          <Path d="M4.9 19.1l1.4-1.4" {...common} /><Path d="M17.7 6.3l1.4-1.4" {...common} />
-          <Circle cx={12} cy={12} r={4} {...common} />
-        </>
-      );
-      break;
-    case 'moon':
-      children = <Path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" {...common} />;
-      break;
-    case 'drop':
-      children = <Path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" {...common} />;
-      break;
-    case 'cleanser':
-      children = (
-        <>
-          <Path d="M9 3h6" {...common} /><Path d="M10 3v3" {...common} /><Path d="M14 3v3" {...common} />
-          <Rect x={7} y={6} width={10} height={15} rx={3} {...common} /><Path d="M7 12h10" {...common} />
-        </>
-      );
-      break;
-    case 'sparkle':
-      children = <Path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" {...common} />;
-      break;
-    case 'flask':
-      children = (
-        <>
-          <Path d="M9 3h6" {...common} />
-          <Path d="M10 3v6L5 19a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 19l-5-10V3" {...common} />
-          <Path d="M7.5 14h9" {...common} />
-        </>
-      );
-      break;
-    case 'shield':
-      children = (
-        <>
-          <Path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z" {...common} />
-          <Path d="M9 12l2 2 4-4" {...common} />
-        </>
-      );
-      break;
-  }
-  return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">{children}</Svg>;
+    </Animated.View>
+  );
 }
-
-// ── Herói: Manhã — a MESMA logo da navbar (niks-logo.png) na cor do botão (BRAND) ──
-// tintColor recolore a logo pela sua opacidade (fica suave, como a niks-logo é — foi o
-// pedido do usuário: exatamente a logo da navbar, só na cor coral do botão).
-function SunHero({ s }: { s: (n: number) => number }) {
-  const D = s(132); // proporcional à tela — um pouco menor que a lua do modo noturno
+function PlusIcon({ size, sw = 2.2 }: { size: number; sw?: number }) {
   return (
-    <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-      <Image
-        source={require('../../assets/home/niks-logo.png')}
-        style={{ width: D, height: D, tintColor: BRAND }}
-        resizeMode="contain"
-      />
-    </View>
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 5v14M5 12h14" fill="none" stroke={PINK_TEXT} strokeWidth={sw} strokeLinecap="round" />
+    </Svg>
   );
 }
 
-// ── Herói: Lua (noite) — imagem renderizada do CSS EXATO do arquivo de design ────
-// `rotina-moon.png` = render headless-Chrome do `.dc.html` (corpo com gradiente radial +
-// inset box-shadow + 5 crateras + glow). É literalmente a lua do arquivo, não uma aproximação.
-// Disco = 53,1% da imagem (900px) → largura s(301) rende o disco em ~160 (tamanho do design).
-function MoonHero({ s }: { s: (n: number) => number }) {
+// Linha pontilhada vertical da linha do tempo (`2px dotted` do design). Em SVG porque
+// borda pontilhada de um lado só não é confiável no Fabric.
+function DottedLine({ color, hidden }: { color: string; hidden: boolean }) {
+  const [h, setH] = useState(0);
   return (
-    <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-      <Image
-        source={require('../../assets/home/rotina-moon.png')}
-        style={{ width: s(301), height: s(301) }}
-        resizeMode="contain"
-      />
-    </View>
-  );
-}
-
-// ── Fundo por tema ──────────────────────────────────────────────────────────
-function Background({ isNight, width, height, s }: { isNight: boolean; width: number; height: number; s: (n: number) => number }) {
-  if (isNight) {
-    // Modo noturno antigo do protocolo: gradiente escuro + NightSky (estrelas + estrelas cadentes)
-    return (
-      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} pointerEvents="none">
-        <LinearGradient
-          colors={['#0F1420', '#1A1F2E', '#2A1F28']}
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-        />
-        <NightSky />
-      </View>
-    );
-  }
-  // Dia: dois glows radiais suaves de canto (top-direito + baixo-esquerdo)
-  return (
-    <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} pointerEvents="none">
-      <Svg width={width} height={height} style={{ position: 'absolute' }}>
-        <Defs>
-          <SvgRadialGradient id="glowTR" cx="100%" cy="0%" r="80%">
-            <Stop offset="0%" stopColor="#FD3238" stopOpacity={0.07} />
-            <Stop offset="55%" stopColor="#FD3238" stopOpacity={0} />
-          </SvgRadialGradient>
-          <SvgRadialGradient id="glowBL" cx="0%" cy="100%" r="80%">
-            <Stop offset="0%" stopColor="#FD3238" stopOpacity={0.06} />
-            <Stop offset="55%" stopColor="#FD3238" stopOpacity={0} />
-          </SvgRadialGradient>
-        </Defs>
-        <Rect x={0} y={0} width={width} height={height} fill="url(#glowTR)" />
-        <Rect x={0} y={0} width={width} height={height} fill="url(#glowBL)" />
-      </Svg>
-    </View>
-  );
-}
-
-// ── Card de passo (expansível inline) ───────────────────────────────────────
-function StepCard({
-  step, n, showLine, T, s, F, photoUrl, period,
-}: {
-  step: Step; n: number; showLine: boolean; T: Theme; s: (n: number) => number;
-  F: { xbold?: string; bold?: string; semi?: string; medium?: string; regular?: string };
-  photoUrl?: string;
-  period: 'am' | 'pm';
-}) {
-  const [open, setOpen] = useState(false);
-  const [lineH, setLineH] = useState(0);
-  const chev = useRef(new Animated.Value(0)).current;
-  const router = useRouter();
-  const setProductDetailStep = useAppStore((st) => st.setProductDetailStep);
-
-  const toggle = () => {
-    haptics.tap();
-    LayoutAnimation.configureNext(LayoutAnimation.create(280, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
-    Animated.timing(chev, { toValue: open ? 0 : 1, duration: 220, useNativeDriver: true }).start();
-    setOpen(o => !o);
-  };
-
-  const rotate = chev.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch', paddingBottom: s(14) }}>
-      {/* rail */}
-      <View style={{ position: 'relative', width: s(32), flexShrink: 0, alignItems: 'center', marginRight: s(14) }}>
-        {showLine && (
-          <View
-            onLayout={(e) => setLineH(e.nativeEvent.layout.height)}
-            style={{ position: 'absolute', top: s(36), bottom: s(-6), left: s(16) - 1, width: 2 }}
-          >
-            {lineH > 0 && (
-              <Svg width={2} height={lineH}>
-                <Line x1={1} y1={0} x2={1} y2={lineH} stroke={T.red200} strokeWidth={2} strokeDasharray="4 4" />
-              </Svg>
-            )}
-          </View>
-        )}
-        <View style={{
-          zIndex: 1, width: s(32), height: s(32), borderRadius: 999,
-          backgroundColor: T.surfaceCard, borderWidth: 2, borderColor: T.red200,
-          alignItems: 'center', justifyContent: 'center',
-          ...T.cardShadow,
-        }}>
-          <Text style={{ fontFamily: F.xbold, fontSize: s(14), color: BRAND }}>{n}</Text>
-        </View>
-      </View>
-
-      {/* card */}
-      <View style={{
-        flex: 1, backgroundColor: T.surfaceCard, borderRadius: s(20),
-        borderWidth: 1, borderColor: T.hairline, overflow: 'hidden', ...T.cardShadow,
-      }}>
-        <TouchableOpacity
-          onPress={toggle} activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: s(14), paddingVertical: s(13) }}
-        >
-          <View style={{
-            width: s(46), height: s(46), borderRadius: s(16), backgroundColor: T.surfaceSunken,
-            alignItems: 'center', justifyContent: 'center', marginRight: s(12), flexShrink: 0, overflow: 'hidden',
-          }}>
-            {photoUrl ? (
-              <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            ) : (
-              <Icon name={step.icon} size={s(22)} color={BRAND} />
-            )}
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{
-              fontFamily: F.bold, fontSize: s(12), color: T.textCaption,
-              textTransform: 'uppercase', letterSpacing: 0.48, marginBottom: 2,
-            }}>{step.category}</Text>
-            <Text style={{ fontFamily: F.xbold, fontSize: s(16.5), color: T.textHeading, lineHeight: s(19) }}>{step.title}</Text>
-            <Text style={{ fontFamily: F.semi, fontSize: s(12.5), color: T.textMuted, marginTop: 2 }}>{step.ingredients}</Text>
-          </View>
-          <Animated.View style={{ flexShrink: 0, marginLeft: s(6), transform: [{ rotate }] }}>
-            <Icon name="chevron" size={s(20)} color={T.chevron} />
-          </Animated.View>
-        </TouchableOpacity>
-
-        {open && (
-          <View style={{ paddingLeft: s(72), paddingRight: s(16), paddingBottom: s(15) }}>
-            <View style={{ height: 1, backgroundColor: T.hairline, marginBottom: s(11) }} />
-            <Text style={{
-              fontFamily: F.xbold, fontSize: s(12), color: BRAND,
-              textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: s(5),
-            }}>Como fazer</Text>
-            <Text style={{ fontFamily: F.regular, fontSize: s(14), lineHeight: s(22), color: T.textBody }}>{step.how}</Text>
-            {/* Atalho para a tela de recomendação de produtos — abre DIRETO o detalhe
-                do produto recomendado para ESTE passo (deep-link por nome do passo +
-                período; a Rotina não conhece o produto_id). Sem match, a tela de
-                Produtos abre normalmente no topo. */}
-            <TouchableOpacity
-              onPress={() => {
-                haptics.tap();
-                setProductDetailStep({ passo: step.title, periodo: period });
-                router.push('/recomendacao-produtos' as any);
-              }}
-              activeOpacity={0.7}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: s(6), marginTop: s(12) }}
-            >
-              <Text style={{ fontFamily: F.xbold, fontSize: s(13.5), color: BRAND }}>Ver produto recomendado</Text>
-              <Svg width={s(16)} height={s(16)} viewBox="0 0 24 24" fill="none" stroke={BRAND} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-                <Path d="M5 12h14M13 6l6 6-6 6" />
-              </Svg>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    </View>
-  );
-}
-
-// ── Card colapsível genérico (usado nas Recomendações) ──────────────────────
-function Collapsible({
-  title, subtitle, T, s, F, children,
-}: {
-  title: string; subtitle?: string; T: Theme; s: (n: number) => number;
-  F: { xbold?: string; bold?: string; semi?: string; medium?: string; regular?: string };
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const chev = useRef(new Animated.Value(0)).current;
-  const toggle = () => {
-    haptics.tap();
-    LayoutAnimation.configureNext(LayoutAnimation.create(280, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
-    Animated.timing(chev, { toValue: open ? 0 : 1, duration: 220, useNativeDriver: true }).start();
-    setOpen((o) => !o);
-  };
-  const rotate = chev.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
-
-  return (
-    <View style={{
-      backgroundColor: T.surfaceCard, borderRadius: s(20), borderWidth: 1,
-      borderColor: T.hairline, overflow: 'hidden', marginBottom: s(14), ...T.cardShadow,
-    }}>
-      <TouchableOpacity
-        onPress={toggle} activeOpacity={0.7}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: s(16), paddingVertical: s(15) }}
-      >
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontFamily: F.xbold, fontSize: s(16), color: T.textHeading }}>{title}</Text>
-          {subtitle ? (
-            <Text style={{ fontFamily: F.semi, fontSize: s(12.5), color: T.textMuted, marginTop: 3 }}>{subtitle}</Text>
-          ) : null}
-        </View>
-        <Animated.View style={{ flexShrink: 0, marginLeft: s(8), transform: [{ rotate }] }}>
-          <Icon name="chevron" size={s(20)} color={T.chevron} />
-        </Animated.View>
-      </TouchableOpacity>
-
-      {open && (
-        <View style={{ paddingHorizontal: s(16), paddingBottom: s(16) }}>
-          <View style={{ height: 1, backgroundColor: T.hairline, marginBottom: s(14) }} />
-          {children}
-        </View>
+    <View style={{ flex: 1, width: 2, marginTop: 4, opacity: hidden ? 0 : 1 }} onLayout={(e) => setH(e.nativeEvent.layout.height)}>
+      {h > 0 && (
+        // Absoluta: o desenho não pode entrar no cálculo da altura (senão a linha
+        // aumenta o card, que aumenta a linha… em ciclo).
+        <Svg width={2} height={h} style={{ position: 'absolute', top: 0, left: 0 }}>
+          <Line x1={1} y1={1} x2={1} y2={h} stroke={color} strokeWidth={2} strokeDasharray={[0.001, 4]} strokeLinecap="round" />
+        </Svg>
       )}
     </View>
   );
 }
 
-// ── Tela ────────────────────────────────────────────────────────────────────
+// Quadradinho tracejado do passo SEM produto (`1.5px dashed #F4B5CF`).
+function DashedTile({ size, radius }: { size: number; radius: number }) {
+  return (
+    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+      <Rect x={0.75} y={0.75} width={size - 1.5} height={size - 1.5} rx={radius - 0.75} fill="none" stroke="#F4B5CF" strokeWidth={1.5} strokeDasharray={[4, 3]} />
+    </Svg>
+  );
+}
+
+// `text-wrap: balance` do design (45c), que o RN não tem: se o texto quebrar em
+// exatamente 2 linhas, reparte no espaço mais perto do meio para as duas ficarem
+// do mesmo tamanho (em vez de uma linha cheia e uma palavra sozinha embaixo).
+function BalancedText({ text, style }: { text: string; style: StyleProp<TextStyle> }) {
+  const [out, setOut] = useState(text);
+  useEffect(() => setOut(text), [text]);
+  return (
+    <Text
+      style={style}
+      onTextLayout={(e) => {
+        if (out !== text || e.nativeEvent.lines.length !== 2) return;
+        const mid = text.length / 2;
+        let cut = -1;
+        for (let i = 0; i < text.length; i++) {
+          if (text[i] === ' ' && (cut < 0 || Math.abs(i - mid) < Math.abs(cut - mid))) cut = i;
+        }
+        if (cut > 0) setOut(`${text.slice(0, cut)}\n${text.slice(cut + 1)}`);
+      }}
+    >
+      {out}
+    </Text>
+  );
+}
+
+// Card "O que esperar" que vira no toque (frente colorida / verso com o texto).
+function FlipCard({ label, body, bg }: { label: string; body: string; bg: string }) {
+  const [flipped, setFlipped] = useState(false);
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(v, { toValue: flipped ? 1 : 0, duration: 550, easing: Easing.bezier(0.3, 0.7, 0.2, 1), useNativeDriver: true }).start();
+  }, [flipped, v]);
+  const front = v.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
+  const back = v.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '360deg'] });
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={() => { haptics.tap(); setFlipped((f) => !f); }} style={{ width: 160, height: 176 }}>
+      <Animated.View style={[styles.flipFace, { backgroundColor: bg, padding: 14, justifyContent: 'space-between', transform: [{ perspective: 900 }, { rotateY: front }] }]}>
+        <View style={{ gap: 1 }}>
+          <Text style={styles.flipEm}>Em</Text>
+          <Text style={styles.flipLabel}>{label}</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={styles.flipEm}>Toque para ver</Text>
+          <View style={styles.flipBtn}>
+            <Svg width={15} height={15} viewBox="0 0 24 24">
+              {['M3 12a9 9 0 0 1 15.5-6.2L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-15.5 6.2L3 16', 'M3 21v-5h5'].map((d) => (
+                <Path key={d} d={d} fill="none" stroke={PINK_TEXT} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
+              ))}
+            </Svg>
+          </View>
+        </View>
+      </Animated.View>
+      <Animated.View style={[styles.flipFace, styles.flipBack, { transform: [{ perspective: 900 }, { rotateY: back }] }]}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: PINK_DEEP }}>Em {label}</Text>
+        <Text style={{ fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: INK }} numberOfLines={6} lineBreakStrategyIOS="push-out">{body}</Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
 export default function Protocolo() {
-  const { width, height } = useWindowDimensions();
-  const S = width / 393;
-  const s = (n: number) => n * S;
-
-  const [period, setPeriod] = useState<'am' | 'pm'>('am');
-  const isNight = period === 'pm';
-  const T = isNight ? NIGHT : DAY;
-
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold,
-    Nunito_500Medium, Nunito_400Regular,
-  });
-  const F = {
-    xbold: fontsLoaded ? 'Nunito_800ExtraBold' : undefined,
-    bold: fontsLoaded ? 'Nunito_700Bold' : undefined,
-    semi: fontsLoaded ? 'Nunito_600SemiBold' : undefined,
-    medium: fontsLoaded ? 'Nunito_500Medium' : undefined,
-    regular: fontsLoaded ? 'Nunito_400Regular' : undefined,
-  };
-  // Cerimônia migrada para Nunito (identidade nova) — cerimFont = ênfase/títulos, cerimFontReg = títulos/corpo
-  const cerimFont = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const cerimFontReg = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  // Skia font para o numeral do orb — Nunito ExtraBold (era DM Serif Italic)
-  const cerimSkiaFont = useFont(Nunito_800ExtraBold, 84);
+  const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Sincroniza a tab bar global (GlobalBottomBar) com o tema: escura no modo Noite,
-  // clara no resto e ao sair da tela. Assim o menu inferior não destoa da tela escura.
+  // Abre na rotina que importa agora — mesma regra da home: manhã até o meio-dia.
+  const [period, setPeriod] = useState<'am' | 'pm'>(() => {
+    const h = new Date().getHours();
+    return h >= 4 && h < 12 ? 'am' : 'pm';
+  });
+  const am = period === 'am';
+
+  // A navbar desta tela é sempre clara (o design não tem versão escura).
   const setTabBarTheme = useAppStore((s) => s.setTabBarTheme);
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   useFocusEffect(
     useCallback(() => {
-      setTabBarTheme(isNight ? 'dark' : 'light');
-      // Restaura a tab bar ao sair da tela (caso saia no meio da cerimônia).
+      setTabBarTheme('light');
       return () => { setTabBarTheme('light'); setTabBarVisible(true); };
-    }, [isNight, setTabBarTheme, setTabBarVisible])
+    }, [setTabBarTheme, setTabBarVisible])
   );
 
   // ── Rotina REAL do usuário ────────────────────────────────────────────────
   const protocolResult = useAppStore((s) => s.protocolResult);
   const setProtocolResult = useAppStore((s) => s.setProtocolResult);
   const { startFaceScan } = useFaceScan();
-  const [amSteps, setAmSteps] = useState<Step[]>([]);
-  const [pmSteps, setPmSteps] = useState<Step[]>([]);
-  // Passos crus (name/ingredient/steps[]/waitTime) — a cerimônia precisa deles.
+  // Passos crus (name/ingredient/instruction/steps) por período.
   const [amRaw, setAmRaw] = useState<RawStep[]>([]);
   const [pmRaw, setPmRaw] = useState<RawStep[]>([]);
   // dicas[]: [0]=visão geral/aviso, [1]=2 semanas, [2]=1 mês, [3]=3 meses, [4]=cronograma
   const [dicas, setDicas] = useState<(string | null)[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'generating' | 'ready' | 'empty' | 'error'>('loading');
-  // Trava: no máximo UMA geração sob demanda por montagem da tela (mesmo padrão do
-  // triedGenerate da tela de recomendação). Rearmada só no toque explícito de "Tentar de novo".
+  // Trava: no máximo UMA geração sob demanda por montagem da tela. Rearmada só no
+  // toque explícito de "Tentar de novo".
   const triedGenerate = useRef(false);
 
   // FALLBACK do vão: o store cobre a janela em que a tabela ainda não tem o protocolo
-  // — timing do onboarding (o insert roda DEPOIS do setProtocolResult) OU insert falho.
-  // A FONTE DE VERDADE é a tabela `protocolos` (ver efeito abaixo). Persistido em disco
-  // (`partialize`), então pinta na hora e sobrevive a restart até a tabela assumir.
+  // (timing do onboarding OU insert falho). A FONTE DE VERDADE é a tabela `protocolos`.
   const fromStore = protocolResult?.morning?.length && protocolResult?.night?.length
     ? protocolResult
     : null;
 
-  // FONTE DE VERDADE: tabela `protocolos`. Sempre consultada e revalidada A CADA FOCO
-  // (staleMs:0) — é isso que faz uma alteração feita no servidor (card do Coach,
-  // aprovação por texto, etc.) aparecer ao voltar para a aba. Stale-while-revalidate:
-  // pinta do cache na hora e atualiza em silêncio, sem piscar.
+  // FONTE DE VERDADE: tabela `protocolos`, revalidada A CADA FOCO (staleMs:0) — é isso
+  // que faz uma alteração feita no servidor (card do Coach) aparecer ao voltar.
   const userId = useUserId();
   const fetchProtocolo = useCallback(async () => {
     const uid = await getUserId();
@@ -581,19 +325,9 @@ export default function Protocolo() {
   );
 
   // ── Geração SOB DEMANDA do protocolo — usuária legada ─────────────────────────
-  // Espelha o generateOnDemand da tela de recomendação: só dispara se a usuária CHEGAR
-  // nesta tela e não houver protocolo salvo — nunca em background, pra não gastar IA com
-  // quem não abrir. A base clínica vem do SCAN (skin_scans.full_result); o onboardingData
-  // é reconstruído da linha em `users` no mesmo formato que o signup manda.
-  //
-  // Piso mínimo: exige um scan aproveitável — full_result com skin_score (número) +
-  // skin_type_detected (texto). Sem isso não há base clínica e gerar seria lixo → 'sem-scan'
-  // (a tela mostra o CTA de escanear). O tipo_pele declarado, se nulo na linha legada, cai no
-  // detectado pelo scan — nunca geramos com skin_type vazio.
-  //
-  // 'ok' SÓ quando o protocolo foi lido de volta em `protocolos` — o insert do supabase-js
-  // não lança em falha de RLS, então a leitura de volta é o que garante que salvou de fato.
-  // Só então o resultado é comprometido no store (evita pintar um protocolo fantasma).
+  // Só dispara se a usuária CHEGAR nesta tela e não houver protocolo salvo. Piso
+  // mínimo: scan aproveitável (skin_score + skin_type_detected). 'ok' SÓ depois de
+  // ler de volta a linha em `protocolos` (o insert não lança em falha de RLS).
   const generateOnDemand = useCallback(
     async (uid: string): Promise<'ok' | 'sem-scan' | 'falhou'> => {
       const { data: scan, error: scanErr } = await supabase
@@ -614,7 +348,6 @@ export default function Protocolo() {
         return 'sem-scan';
       }
 
-      // Perfil da usuária → OnboardingData (reverso do saveToSupabase do store).
       const { data: urow } = await supabase
         .from('users')
         .select(
@@ -625,8 +358,6 @@ export default function Protocolo() {
 
       const onboardingData: OnboardingData = buildOnboardingDataFromUserRow(urow, scanResult);
 
-      // Gera + salva com a lib COMO ESTÁ (fetch direto, insert em `protocolos`, encadeia a
-      // recomendação). Guarda o resultado, mas ainda NÃO o compromete no store.
       let produced: ProtocolResult | null = null;
       await new Promise<void>((resolve) => {
         generateAndSaveProtocol({
@@ -640,7 +371,6 @@ export default function Protocolo() {
       });
       if (!produced) return 'falhou';
 
-      // Leitura de volta: 'ok' só se a linha existe MESMO em `protocolos`.
       const { data: savedRow } = await supabase
         .from('protocolos')
         .select('id')
@@ -650,950 +380,1038 @@ export default function Protocolo() {
       if (!savedRow) return 'falhou';
 
       setProtocolResult(produced);
-      void refreshProtocolo(); // a tabela vira a verdade dentro do mesmo mount
+      void refreshProtocolo();
       return 'ok';
     },
     [setProtocolResult, refreshProtocolo],
   );
 
-  // Dispara a geração sob demanda uma vez (trava). Mostra 'generating' enquanto roda.
   const runOnDemandGeneration = useCallback(async () => {
     if (!userId) return;
     triedGenerate.current = true;
     setLoadState('generating');
     const gen = await generateOnDemand(userId);
     if (gen === 'sem-scan') { setLoadState('empty'); return; }
-    // Falha de rede/função/escrita: rearma a trava e cai no erro (com "Tentar de novo").
-    // NUNCA no empty de "faça a avaliação" — seria mentira com quem já escaneou.
+    // Falha nunca cai no empty de "faça a avaliação" — seria mentira com quem já escaneou.
     if (gen === 'falhou') { triedGenerate.current = false; setLoadState('error'); return; }
-    // 'ok' → setProtocolResult já povoou o store; o efeito reativo (fromStore) mostra a rotina.
   }, [userId, generateOnDemand]);
 
-  // Aplica um par de rotinas cru no estado de render (title/ingredients via mapStep +
-  // crus para a cerimônia + dicas).
-  const aplica = useCallback((am: RawStep[], pm: RawStep[], ds: (string | null)[]) => {
-    setAmRaw(am); setPmRaw(pm);
-    setAmSteps(am.map(mapStep));
-    setPmSteps(pm.map(mapStep));
+  const aplica = useCallback((amS: RawStep[], pmS: RawStep[], ds: (string | null)[]) => {
+    setAmRaw(amS); setPmRaw(pmS);
     setDicas(ds);
   }, []);
 
   useEffect(() => {
-    if (!userId) return;              // ainda resolvendo a sessão
+    if (!userId) return;
 
-    // FONTE DE VERDADE: a tabela ganha quando QUALQUER período tem dado (||, não &&) —
-    // exigir os dois faria uma linha com um período vazio cair no store e voltar a mentir.
-    const am = (saved?.rotina_am as RawStep[]) ?? [];
-    const pm = (saved?.rotina_pm as RawStep[]) ?? [];
-    if (am.length || pm.length) {
-      aplica(am, pm, Array.isArray(saved?.dicas) ? saved!.dicas : []);
+    // A tabela ganha quando QUALQUER período tem dado (||, não &&).
+    const amS = (saved?.rotina_am as RawStep[]) ?? [];
+    const pmS = (saved?.rotina_pm as RawStep[]) ?? [];
+    if (amS.length || pmS.length) {
+      aplica(amS, pmS, Array.isArray(saved?.dicas) ? saved!.dicas : []);
       setLoadState('ready');
       return;
     }
 
-    // VÃO — tabela vazia por timing do onboarding OU por insert falho (indistinguíveis):
-    // o store cobre os dois, a tela NUNCA fica em branco.
+    // VÃO — tabela vazia por timing do onboarding OU insert falho: o store cobre.
     if (fromStore) {
       aplica(fromStore.morning as RawStep[], fromStore.night as RawStep[], storeDicas(fromStore));
       setLoadState('ready');
       return;
     }
 
-    // Nem tabela nem store:
     if (savedState === 'error') { setLoadState('error'); return; }
-    if (savedState === 'loading') return; // tabela ainda resolvendo, sem store → mantém 'loading'
+    if (savedState === 'loading') return;
     if (!triedGenerate.current) {
-      // Usuária legada (tem scan, nunca teve protocolo) → gera sob demanda UMA vez por
-      // montagem. A trava evita laço se a geração responder mas a linha continuar vazia.
       void runOnDemandGeneration();
     } else {
-      // Já tentamos gerar nesta montagem e ainda vazio → empty legítimo (sem scan aproveitável).
       setLoadState('empty');
     }
   }, [fromStore, saved, savedState, userId, runOnDemandGeneration, aplica]);
 
-  // Sincroniza o store a partir da tabela (fonte de verdade) — mantém o cold-start
-  // mostrando a última versão e o store consistente. Preserva os campos soltos do store
-  // (a tabela não os guarda como colunas). Guard de igualdade em morning/night evita laço.
+  // Sincroniza o store a partir da tabela (fonte de verdade). Guard de igualdade evita laço.
   useEffect(() => {
-    const am = (saved?.rotina_am as RawStep[]) ?? [];
-    const pm = (saved?.rotina_pm as RawStep[]) ?? [];
-    if (!am.length && !pm.length) return;
+    const amS = (saved?.rotina_am as RawStep[]) ?? [];
+    const pmS = (saved?.rotina_pm as RawStep[]) ?? [];
+    if (!amS.length && !pmS.length) return;
     const same = protocolResult
-      && JSON.stringify(protocolResult.morning) === JSON.stringify(am)
-      && JSON.stringify(protocolResult.night) === JSON.stringify(pm);
+      && JSON.stringify(protocolResult.morning) === JSON.stringify(amS)
+      && JSON.stringify(protocolResult.night) === JSON.stringify(pmS);
     if (same) return;
     setProtocolResult({
       ...(protocolResult ?? ({} as ProtocolResult)),
-      morning: am as unknown as ProtocolResult['morning'],
-      night: pm as unknown as ProtocolResult['night'],
+      morning: amS as unknown as ProtocolResult['morning'],
+      night: pmS as unknown as ProtocolResult['night'],
       dicas: Array.isArray(saved?.dicas) ? saved!.dicas : [],
     });
   }, [saved, protocolResult, setProtocolResult]);
 
-  // Produtos salvos na rotina (via "Salvar na minha rotina" na tela de Produtos).
-  // A foto salva substitui o ícone do passo. Recarrega ao focar a tela — assim um
-  // produto recém-salvo já aparece ao voltar.
+  // ── Extras da tela: foto, horários da rotina e o produto recomendado de cada passo ─
+  const fetchExtras = useCallback(async () => {
+    const uid = await getUserId();
+    if (!uid) throw new Error('sem sessão');
+    const [foto, userRes] = await Promise.all([
+      getFacePhotoUrl(uid),
+      supabase.from('users').select('rotina_manha_horario, rotina_noite_horario').eq('id', uid).maybeSingle(),
+    ]);
+    return {
+      foto,
+      amTime: parseTime(userRes.data?.rotina_manha_horario, DEFAULT_AM),
+      pmTime: parseTime(userRes.data?.rotina_noite_horario, DEFAULT_PM),
+    };
+  }, []);
+  const { data: extras } = useCachedQuery(
+    userId ? `rotina:${userId}` : null,
+    fetchExtras,
+    { enabled: Boolean(userId) },
+  );
+
+  // Produtos escolhidos (AsyncStorage, por nome do passo) + progresso do dia + sequência.
   const [savedProducts, setSavedProducts] = useState<Record<string, SavedProduct>>({});
+  // Recorte sem fundo (catálogo, Fase 2) de cada produto escolhido — chave = URL da foto original.
+  const [cutouts, setCutouts] = useState<Record<string, Cutout>>({});
+  const [doneSteps, setDoneSteps] = useState<{ am: number[]; pm: number[] }>({ am: [], pm: [] });
+  const [hist, setHist] = useState<RoutineHistory>({});
+  const [now, setNow] = useState(() => new Date());
+  const reloadLocal = useCallback(() => {
+    getSavedProducts().then((sp) => {
+      setSavedProducts(sp);
+      getCutoutsByImageUrl(Object.values(sp).map((p) => p.imageUrl)).then(setCutouts).catch(() => {});
+    });
+    Promise.all([getCompletedSteps('am'), getCompletedSteps('pm')]).then(([a, p]) => setDoneSteps({ am: a, pm: p }));
+    getRoutineHistory().then(setHist);
+    setNow(new Date());
+  }, []);
   useFocusEffect(useCallback(() => {
-    let active = true;
-    getSavedProducts().then((m) => { if (active) setSavedProducts(m); });
-    return () => { active = false; };
-  }, []));
+    reloadLocal();
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, [reloadLocal]));
 
-  // ── Cerimônia (ritual passo a passo) — portada da produção ──────────────────
-  const [ritualOpen, setRitualOpen] = useState(false);
-  const [ritualStep, setRitualStep] = useState(0);
-  const [ritualDone, setRitualDone] = useState(false);
+  // ── Fluxo do "Iniciar rotina" (designs 45a–45c) ──────────────────────────────
+  // check = checklist rápido (45a) · guide = guia passo a passo · cam = foto do dia
+  // (45b, só na manhã) · done = rotina concluída (45c).
+  const [flow, setFlow] = useState<null | 'check' | 'guide' | 'cam' | 'done'>(null);
+  const [run, setRun] = useState(0);            // passo atual do guia
+  const [lit, setLit] = useState<number[]>([]); // produtos marcados no checklist
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [journey, setJourney] = useState({ day: 1, left: 29 });
+  const [flash, setFlash] = useState(false);
+  const [facing, setFacing] = useState<'front' | 'back'>('front');
+  const shootingRef = useRef(false);
+  const cameraRef = useRef<CameraView>(null);
+  const [camPermission, requestCamPermission] = useCameraPermissions();
+  const [openStep, setOpenStep] = useState(-1);
+  const [cronOpen, setCronOpen] = useState(false);
+  const setProductDetailStep = useAppStore((st) => st.setProductDetailStep);
   const player = useAudioPlayer(require('../../assets/sounds/check.mp3'));
-
-  // Toca o som mesmo com o iPhone no silencioso (default do expo-audio é NÃO tocar).
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
   }, []);
 
-  // Anéis respiratórios do orb
-  const orbBreath1 = useRef(new Animated.Value(1)).current;
-  const orbBreath2 = useRef(new Animated.Value(1)).current;
-  // Entradas escalonadas da tela de celebração
-  const celebScreenOpacity = useRef(new Animated.Value(0)).current;
-  const celebScreenScale = useRef(new Animated.Value(0.96)).current;
-  const celebOrbScale = useRef(new Animated.Value(0.5)).current;
-  const celebOrbOpacity = useRef(new Animated.Value(0)).current;
-  const celebEyebrowAnim = useRef(new Animated.Value(0)).current;
-  const celebTitleAnim = useRef(new Animated.Value(0)).current;
-  const celebSubtextoAnim = useRef(new Animated.Value(0)).current;
-  const celebFooterAnim = useRef(new Animated.Value(0)).current;
-
+  // [dev] Diagnóstico do "fluxo fechou sozinho": registra quem fechou e se a tela foi
+  // recriada (o que zeraria o fluxo). Some do build de produção (__DEV__ é false).
   useEffect(() => {
-    const breathe = (anim: Animated.Value, delay: number) => {
-      Animated.loop(Animated.sequence([
-        Animated.timing(anim, { toValue: 1.08, duration: 3000, useNativeDriver: true, delay }),
-        Animated.timing(anim, { toValue: 1, duration: 3000, useNativeDriver: true, delay: 0 }),
-      ])).start();
-    };
-    breathe(orbBreath1, 0);
-    breathe(orbBreath2, 300);
+    if (!__DEV__) return;
+    console.log('[rotina] tela montada');
+    return () => console.log('[rotina] tela desmontada');
   }, []);
+  const closeFlow = (origin: string) => {
+    if (__DEV__ && flow) {
+      console.log(`[rotina] fluxo fechado (${flow ?? '-'}) por: ${origin}`, new Error().stack?.split('\n').slice(1, 6).join('\n'));
+    }
+    setFlow(null);
+  };
 
-  // Celebration screen — entradas escalonadas quando ritualDone vira true
+  // Fluxo em andamento gravado por dia + período (lib/routineProgress): se a tela for
+  // recriada ou o app morrer no meio, reabre onde parou. O checklist/guia grava a cada
+  // toque; a foto do dia grava a etapa; a concluída apaga.
+  const flowLoadedRef = useRef(false); // não grava nada antes de ler o que havia
   useEffect(() => {
-    if (!ritualDone) return;
-    celebScreenOpacity.setValue(0); celebScreenScale.setValue(0.96);
-    celebOrbScale.setValue(0.5); celebOrbOpacity.setValue(0);
-    celebEyebrowAnim.setValue(0); celebTitleAnim.setValue(0);
-    celebSubtextoAnim.setValue(0); celebFooterAnim.setValue(0);
-    Animated.parallel([
-      Animated.timing(celebScreenOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.spring(celebScreenScale, { toValue: 1, tension: 80, friction: 12, useNativeDriver: true }),
-      Animated.spring(celebOrbScale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
-      Animated.timing(celebOrbOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      Animated.timing(celebEyebrowAnim, { toValue: 1, duration: 700, delay: 400, useNativeDriver: true }),
-      Animated.timing(celebTitleAnim, { toValue: 1, duration: 700, delay: 550, useNativeDriver: true }),
-      Animated.timing(celebSubtextoAnim, { toValue: 1, duration: 700, delay: 700, useNativeDriver: true }),
-      Animated.timing(celebFooterAnim, { toValue: 1, duration: 700, delay: 850, useNativeDriver: true }),
-    ]).start();
-  }, [ritualDone]);
+    if (!flowLoadedRef.current) return;
+    if (flow === 'check' || flow === 'guide' || flow === 'cam') {
+      void saveRoutineFlow(period, { step: flow, open: true, lit, run });
+    } else if (flow === 'done') {
+      void clearRoutineFlow(period);
+    }
+  }, [flow, lit, run, period]);
+  // Guarda o progresso sem reabrir sozinho (fechou no X / foi escolher produto).
+  const parkFlow = () => {
+    if (flow === 'check' || flow === 'guide') void saveRoutineFlow(period, { step: flow, open: false, lit, run });
+    else if (flow === 'cam') void clearRoutineFlow(period);
+  };
 
-  // Feedback tátil + som ao concluir um passo + persiste o progresso (índice do passo
-  // no período atual) para o card "Cuidados diários" da home refletir a conclusão.
-  const toggleStepCompletion = (index: number) => {
+  const rawList = am ? amRaw : pmRaw;
+  const n = rawList.length;
+  const done = doneSteps[period];
+  const k = done.length;
+  const ft = rawList.findIndex((_, i) => !done.includes(i));
+  const finAt = hist[dateKey(sessionDate(now))]?.[period];
+  const finToday = !!finAt;
+  // "Feita às 7:18" (design 41f) — horário real em que a cerimônia gravou a rotina.
+  const finLabel = finAt ? `Feita às ${new Date(finAt).getHours()}:${String(new Date(finAt).getMinutes()).padStart(2, '0')}` : '';
+  const streak = routineStreak(hist, now);
+
+  const steps = rawList.map((raw, i) => {
+    const name = (raw?.name ?? '').trim();
+    const ingredient = (raw?.ingredient ?? '').trim();
+    const c = cat(name, ingredient);
+    const chosen = savedProducts[normStepKey(name)];
+    const cut = chosen ? cutouts[chosen.imageUrl] : undefined;
+    return {
+      i, name, ingredient, cat: c, instruction: howOf(raw),
+      chosen, hasProd: !!chosen,
+      img: cut?.url ?? chosen?.imageUrl ?? '', cut: !!cut, // recorte sem fundo quando pronto
+      tint: chosen ? (TINT[c] ?? '#FDE4EE') : '#FFF5F9',
+      pline: chosen ? [chosen.brand, chosen.name].filter(Boolean).join(' · ') : 'Escolher produto',
+    };
+  });
+
+  // Toque em "Próximo passo": haptic + som + grava o passo (e a rotina no último).
+  const completeStep = (index: number) => {
     haptics.action();
     try { player.seekTo(0); player.play(); } catch {}
     markStepCompleted(period, index);
+    setDoneSteps((d) => ({ ...d, [period]: d[period].includes(index) ? d[period] : [...d[period], index] }));
+  };
+  // Rotina concluída (pelo checklist ou pelo guia): todos os passos ficam feitos, a
+  // rotina entra no histórico (sequência/semana) e — só na MANHÃ — vem a foto do dia.
+  const finishRoutine = () => {
+    haptics.success();
+    try { player.seekTo(0); player.play(); } catch {}
+    rawList.forEach((_, i) => markStepCompleted(period, i));
+    setDoneSteps((d) => ({ ...d, [period]: rawList.map((_, i) => i) }));
+    markRoutineDone(period).then(() => getRoutineHistory().then(setHist));
+    setPhotoUri(null);
+    if (am) {
+      getUserId().then((uid) => { if (uid) void getPhotoJourney(uid).then(setJourney); });
+      if (!camPermission?.granted) requestCamPermission();
+      setFlow('cam');
+    } else {
+      setFlow('done');
+    }
+  };
+  const nextStep = () => {
+    completeStep(run);
+    if (run + 1 >= n) finishRoutine();
+    else setRun(run + 1);
   };
 
-  const openRitual = () => {
+  // Foto do dia: dispara, mostra o clarão e conclui; o envio roda em segundo plano
+  // (falhar o upload não desfaz a rotina — ela já está concluída).
+  const shoot = async () => {
+    if (shootingRef.current) return;
+    shootingRef.current = true;
     haptics.action();
-    setRitualStep(0); setRitualDone(false);
-    setTabBarVisible(false); setRitualOpen(true);
+    try {
+      let uri: string | null = null;
+      if (__DEV__ && !Device.isDevice) {
+        // Simulador não tem câmera: em dev, a galeria fornece a foto.
+        const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] as any, quality: 0.8 });
+        uri = r.canceled ? null : r.assets?.[0]?.uri ?? null;
+      } else {
+        const pic = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
+        uri = pic?.uri ?? null;
+      }
+      if (!uri) return;
+      const small = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: 1080 } }], {
+        compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true,
+      });
+      setFlash(true);
+      setPhotoUri(small.uri);
+      const uid = await getUserId();
+      if (uid && small.base64) {
+        saveRoutinePhoto(uid, small.base64).catch((e) => console.warn('[foto do dia] falhou ao salvar', e));
+      }
+      setTimeout(() => { setFlash(false); setFlow('done'); }, 260);
+    } catch (e) {
+      console.warn('[foto do dia] falhou', e);
+    } finally {
+      shootingRef.current = false;
+    }
   };
-  const closeRitual = () => {
-    setTabBarVisible(true); setRitualOpen(false); setRitualDone(false);
-  };
+  const skipPhoto = () => { haptics.tap(); setPhotoUri(null); setFlow('done'); };
 
-  const steps = isNight ? pmSteps : amSteps;
-  const rawSteps = isNight ? pmRaw : amRaw;
-  const meta = {
-    focus: FOCUS[period],
-    passos: `${steps.length} ${steps.length === 1 ? 'passo' : 'passos'}`,
-    duracao: `~${Math.max(5, steps.length * 3)} minutos`,
-  };
+  // ── Herói ──────────────────────────────────────────────────────────────────
+  // Antes do horário: "Sua rotina começa em" + contagem. Na janela da rotina:
+  // "Rotina da manhã" + "N passos". Concluída hoje: "… concluída" + "Concluída".
+  const t = now.getHours() * 60 + now.getMinutes();
+  const amTime = extras?.amTime ?? DEFAULT_AM;
+  const pmTime = extras?.pmTime ?? DEFAULT_PM;
+  const start = am ? amTime : pmTime;
+  // Janela em que a rotina pode ser feita: a da manhã vai do horário dela até o
+  // horário da noite (dá para fazer atrasada); a da noite vai do horário dela até as
+  // 04:00 (a virada da sessão-do-dia). Fora da janela o botão fica bloqueado.
+  const windowOpen = (p: 'am' | 'pm') => (p === 'am' ? (t >= amTime && t < pmTime) : (t >= pmTime || t < 4 * 60));
+  const inWindow = windowOpen(period);
+  const canStart = inWindow && !finToday;
 
-  // ── Recomendações derivadas das dicas (globais, iguais em AM/PM) ────────────
-  const visaoGeral = (dicas[0] ?? '').trim() || null;
+  // Reabre o fluxo que estava ABERTO quando a tela foi recriada / o app morreu — uma
+  // vez, quando a rotina já carregou. Checklist/guia só se a rotina daquele período
+  // ainda não foi feita e a janela está aberta; a foto do dia só se a manhã já foi
+  // concluída (é a etapa logo depois). Se a usuária já abriu outro fluxo, não mexe.
+  const flowRef = useRef(flow);
+  flowRef.current = flow;
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || loadState !== 'ready') return;
+    restoredRef.current = true;
+    let alive = true;
+    void Promise.all([getRoutineHistory(), getRoutineFlow('am'), getRoutineFlow('pm')]).then(([h, amF, pmF]) => {
+      if (!alive) return;
+      flowLoadedRef.current = true;
+      if (flowRef.current) return;
+      const today = h[dateKey(sessionDate())] ?? {};
+      const other: 'am' | 'pm' = period === 'am' ? 'pm' : 'am';
+      const cands: ['am' | 'pm', RoutineFlowState | null][] = [
+        [period, period === 'am' ? amF : pmF],
+        [other, other === 'am' ? amF : pmF],
+      ];
+      for (const [p, s] of cands) {
+        if (!s?.open) continue;
+        const len = (p === 'am' ? amRaw : pmRaw).length;
+        const ok = s.step === 'cam' ? p === 'am' && !!today.am : !today[p] && windowOpen(p) && len > 0;
+        if (!ok) continue;
+        if (p !== period) setPeriod(p);
+        setLit(s.lit.filter((i) => i < len));
+        setRun(Math.min(s.run, Math.max(0, len - 1)));
+        if (s.step === 'cam') {
+          setPhotoUri(null);
+          getUserId().then((uid) => { if (uid) void getPhotoJourney(uid).then(setJourney); });
+          if (!camPermission?.granted) requestCamPermission();
+        }
+        setFlow(s.step);
+        if (__DEV__) console.log(`[rotina] fluxo reaberto onde parou: ${p} · ${s.step}`);
+        break;
+      }
+    });
+    return () => { alive = false; };
+  }, [loadState]);
+  const untilStart = start - t > 0 ? start - t : start - t + 24 * 60;
+  const hero = finToday
+    ? { label: am ? 'Rotina da manhã concluída' : 'Rotina da noite concluída', big: 'Concluída' }
+    : inWindow
+      ? { label: am ? 'Rotina da manhã' : 'Rotina da noite', big: `${n} ${n === 1 ? 'passo' : 'passos'}` }
+      : { label: 'Sua rotina começa em', big: fmtDuration(untilStart) };
+
+  // ── Recomendações ──────────────────────────────────────────────────────────
   const marcos = [
-    dicas[1] ? { label: 'Em 2 semanas', body: dicas[1] } : null,
-    dicas[2] ? { label: 'Em 1 mês', body: dicas[2] } : null,
-    dicas[3] ? { label: 'Em 3 meses', body: dicas[3] } : null,
-  ].filter((m): m is { label: string; body: string } => m !== null);
-  const cronograma = parseCronograma(dicas[4]);
-  const hasPrognostico = !!visaoGeral || marcos.length > 0;
-  const hasRecomendacoes = hasPrognostico || cronograma.length > 0;
+    { l: '2 semanas', b: dicas[1] },
+    { l: '1 mês', b: dicas[2] },
+    { l: '3 meses', b: dicas[3] },
+  ].map((m, i) => ({ ...m, bg: ['#FFE3EE', '#F1E4F7', '#E2F1EF'][i] }))
+    .filter((m): m is { l: string; b: string; bg: string } => !!(m.b ?? '').trim());
+  const cron = parseCronograma(dicas[4]);
+  const alert = (dicas[0] ?? '').trim();
 
-  // ── Cerimônia — tokens de cor/layout (idênticos à produção; usa teal + coral) ─
-  const isPM = isNight;
-  const accent = '#FF9D9D';
-  // Gradientes do modo DIA — recoloridos de pêssego para rosa suave (identidade nova #FF9D9D)
-  const dayGradients: string[][] = [
-    ['#FFF1F2', '#FFE0E4', '#FFC4CB'],
-    ['#FFF3F4', '#FFDCE1', '#FFB9C1'],
-    ['#FFEFF1', '#FFD6DC', '#FFAEB7'],
-    ['#FFF2F3', '#FFDBE0', '#FFB3BB'],
-    ['#FFECEF', '#FFD0D6', '#FCA8B0'],
-  ];
-  const currentDayColors = dayGradients[ritualStep % dayGradients.length];
-  const rtInk = isPM ? '#FFFFFF' : '#121212';
-  const rtInkSoft = isPM ? 'rgba(255,255,255,0.65)' : '#515151';
-  const rtInkHair = isPM ? 'rgba(255,255,255,0.18)' : 'rgba(18,18,18,0.2)';
-  const chipBg = isPM ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.5)';
-  const chipBorder = isPM ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.7)';
-  const ritualCurrentStep = rawSteps[ritualStep] ?? rawSteps[rawSteps.length - 1];
-  const isRitualLast = ritualStep === rawSteps.length - 1;
-  // Posicionamento do numeral Skia dentro do Canvas 200×200 (cx=100, cy=100)
-  const stepText = String(ritualStep + 1).padStart(2, '0');
-  const skiaTextW = cerimSkiaFont?.measureText(stepText).width ?? 95;
-  const skiaTextX = (200 - skiaTextW) / 2;
-  // capHeight existe em runtime mas não está tipado na FontMetrics do Skia 2.4 → cast
-  const rawCapH = cerimSkiaFont ? ((cerimSkiaFont.getMetrics() as any).capHeight ?? 0) : 0;
-  const skiaCapH = rawCapH ? Math.abs(rawCapH) : 84 * 0.70;
-  const skiaTextY = 100 + skiaCapH / 2;
-  // Título partido: 1ª palavra italic + restante normal
-  const cerimTitleParts = (ritualCurrentStep?.name ?? '').split(' ');
-  const cerimTitleFirst = cerimTitleParts[0] ?? '';
-  const cerimTitleRest = cerimTitleParts.slice(1).join(' ');
-  // Tema da tela de celebração
-  const celebTextColor = isPM ? '#F5E6D3' : '#121212';
-  const celebSubtleColor = isPM ? 'rgba(245,230,211,0.6)' : 'rgba(18,18,18,0.55)';
-  const celebRuleColor = isPM ? 'rgba(245,230,211,0.25)' : 'rgba(18,18,18,0.2)';
-  const celebCtaBg = isPM ? '#F5E6D3' : '#FF9D9D';
-  const celebCtaText = isPM ? '#0a1420' : '#FFFFFF';
-
-  const brandShadow = {
-    shadowColor: BRAND, shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: T.brandShadowOpacity, shadowRadius: 12, elevation: 6,
+  // "Escolher/Ver produto": abre a tela de Produtos já no produto deste passo — o
+  // casamento passo↔produto é pelo NOME do passo (normStepKey), igual a antes.
+  const openProducts = (stepName: string) => {
+    haptics.tap();
+    parkFlow();
+    closeFlow('openProducts (escolher produto)');
+    setProductDetailStep({ passo: stepName, periodo: period });
+    router.push('/recomendacao-produtos' as any);
   };
 
-  const MetaRow = ({ label, value }: { label: string; value: string }) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: s(9) }}>
-      <Text style={{ fontFamily: F.semi, fontSize: s(16), color: T.textMuted, marginRight: s(8) }}>{label}</Text>
-      <Text style={{ fontFamily: F.xbold, fontSize: s(16), color: T.textHeading }}>{value}</Text>
-    </View>
-  );
+  // "Iniciar rotina" abre o checklist (45a) — ou retoma onde parou hoje (produtos
+  // marcados, ou o passo do guia), se a usuária tinha fechado no meio.
+  const startRun = () => {
+    if (!n) return;
+    haptics.action();
+    flowLoadedRef.current = true;
+    void getRoutineFlow(period).then((s) => {
+      const resume = s && s.step !== 'cam' ? s : null;
+      setLit(resume ? resume.lit.filter((i) => i < n) : []);
+      setRun(resume ? Math.min(resume.run, n - 1) : 0);
+      setFlow(resume?.step ?? 'check');
+    });
+  };
+  const stopRun = (origin: string) => {
+    haptics.tap();
+    const wasDone = flow === 'done';
+    parkFlow();
+    closeFlow(origin);
+    if (wasDone) requestAppReview();
+  };
+  const toggleLit = (i: number) => {
+    haptics.select();
+    setLit((l) => (l.includes(i) ? l.filter((x) => x !== i) : [...l, i]));
+  };
 
-  // Segmento do toggle
-  const Segment = ({ value, label, icon }: { value: 'am' | 'pm'; label: string; icon: IconName }) => {
-    const active = period === value;
+  const rs = flow === 'guide' ? steps[Math.min(run, n - 1)] : null;
+  const modalVisible = flow != null;
+  const doneSub = photoUri
+    ? (journey.left > 0
+      ? `Foto do dia ${journey.day} salva · seu vídeo fica pronto em ${journey.left} ${journey.left === 1 ? 'dia' : 'dias'}`
+      : `Foto do dia ${journey.day} salva · seu vídeo já está pronto`)
+    : (am ? 'Sem foto hoje. Seu vídeo só não terá este dia.' : 'Até amanhã de manhã');
+  // Linha da sequência na 45c. Qualquer rotina concluída já vale o dia, então hoje
+  // sempre conta. Inclui a rotina recém-concluída mesmo antes de o histórico
+  // (AsyncStorage) responder, para não piscar um número menor.
+  const todayKey = dateKey(sessionDate(now));
+  const histNow: RoutineHistory = {
+    ...hist,
+    [todayKey]: { ...hist[todayKey], [period]: hist[todayKey]?.[period] ?? Date.now() },
+  };
+  const doneStreak = routineStreak(histNow, now);
+  const doneStreakLine = `${doneStreak} ${doneStreak === 1 ? 'dia seguido' : 'dias seguidos'}`;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const segBtn = (value: 'am' | 'pm', label: string) => {
+    const on = period === value;
+    const ink = on ? INK : SOFT;
     return (
       <TouchableOpacity
-        onPress={() => { haptics.select(); setPeriod(value); }} activeOpacity={0.85}
-        style={{
-          flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-          paddingHorizontal: s(20), height: s(40), borderRadius: 999,
-          backgroundColor: active ? BRAND : 'transparent',
-          ...(active ? brandShadow : {}),
-        }}
+        key={value}
+        activeOpacity={0.85}
+        onPress={() => { haptics.select(); setPeriod(value); setOpenStep(-1); }}
+        style={[styles.seg, on && styles.segOn]}
       >
-        <Icon name={icon} size={s(16)} color={active ? '#FFFFFF' : T.textMuted} />
-        <Text style={{
-          marginLeft: s(7), fontFamily: active ? F.xbold : F.semi,
-          fontSize: s(15), color: active ? '#FFFFFF' : T.textMuted,
-        }}>{label}</Text>
+        <Svg width={16} height={16} viewBox="0 0 24 24">
+          {value === 'am' ? (
+            <>
+              <Circle cx={12} cy={12} r={4} fill="none" stroke={ink} strokeWidth={1.9} />
+              <Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke={ink} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+            </>
+          ) : (
+            <Path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="none" stroke={ink} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+          )}
+        </Svg>
+        <Text style={{ fontSize: 15, fontWeight: on ? '600' : '500', letterSpacing: -0.2, color: ink }}>{label}</Text>
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: T.bg }}>
-      <Background isNight={isNight} width={width} height={height} s={s} />
+    <View style={{ flex: 1 }}>
+      <StatusBar style="dark" />
+      <LinearGradient colors={BG[period]} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <View style={styles.circleWhite} pointerEvents="none" />
+      <View style={styles.circleBlob} pointerEvents="none" />
 
-      <SafeAreaView edges={['top']} style={{ flex: 1 }}>
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: s(20), paddingTop: s(8), paddingBottom: s(120) }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* herói — altura ajustada ao conteúdo: a lua (s301, disco ~s160) precisa de mais
-              espaço; a logo da manhã (s132) fica encaixada num container menor p/ não deixar
-              vão grande até o título nem até o topo. */}
-          <View style={{ height: isNight ? s(200) : s(140), justifyContent: 'center', alignItems: 'center', marginTop: isNight ? 0 : s(22), marginBottom: s(4) }}>
-            {isNight ? <MoonHero s={s} /> : <SunHero s={s} />}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 112 }}>
+        <View style={{ height: insets.top + 15 }} />
+
+        {/* ── Cabeçalho: foto + "Sua rotina" · sequência ─────────────────── */}
+        <View style={styles.hdrRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{ width: 32, height: 32 }}>
+              {extras?.foto ? (
+                <Image source={{ uri: extras.foto }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatar, { backgroundColor: '#F6D3E1' }]} />
+              )}
+              <View style={styles.avatarDot} />
+            </View>
+            <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>Sua rotina</Text>
           </View>
-
-          {/* título + squiggle */}
-          <View style={{ alignItems: 'center', marginBottom: s(16) }}>
-            <Text style={{ fontFamily: F.xbold, fontSize: s(30), color: T.textHeading, letterSpacing: -0.3 }}>Rotina de Skincare</Text>
-            <Svg width={s(176)} height={s(10)} viewBox="0 0 150 10" preserveAspectRatio="none" style={{ marginTop: s(7) }}>
-              <Path d="M2 6 Q 14 1, 26 6 T 50 6 T 74 6 T 98 6 T 122 6 T 148 6" stroke={BRAND} strokeWidth={3.2} strokeLinecap="round" fill="none" />
+          <View style={styles.streakBtn}>
+            <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" fill="none" stroke={INK} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
-            <Text style={{ fontFamily: F.semi, fontSize: s(14), color: T.textMuted, marginTop: s(9) }}>Feita para a sua pele</Text>
-          </View>
-
-          {/* toggle Manhã / Noite */}
-          <View style={{ alignItems: 'center', marginBottom: s(18) }}>
-            <View style={{
-              flexDirection: 'row', alignSelf: 'center', padding: s(4),
-              backgroundColor: T.surfaceSunken, borderRadius: 999,
-            }}>
-              <Segment value="am" label="Manhã" icon="sun" />
-              <View style={{ width: s(4) }} />
-              <Segment value="pm" label="Noite" icon="moon" />
+            <View style={styles.streakBadge}>
+              <Text style={styles.streakBadgeText}>{streak}</Text>
             </View>
           </View>
+        </View>
 
-          {loadState === 'loading' || loadState === 'generating' ? (
-            /* carregando a rotina real — ou montando sob demanda p/ usuária legada */
-            <View style={{ paddingTop: s(48), alignItems: 'center' }}>
-              <ActivityIndicator size="large" color={BRAND} />
-              <Text style={{ fontFamily: F.semi, fontSize: s(14), color: T.textMuted, marginTop: s(14) }}>
-                {loadState === 'generating' ? 'Montando seu protocolo…' : 'Carregando sua rotina…'}
-              </Text>
+        {/* ── Manhã / Noite ─────────────────────────────────────────────── */}
+        <View style={styles.segWrap}>
+          {segBtn('am', 'Manhã')}
+          {segBtn('pm', 'Noite')}
+        </View>
+
+        {loadState === 'loading' || loadState === 'generating' ? (
+          <View style={{ paddingTop: 64, alignItems: 'center', gap: 14 }}>
+            <ActivityIndicator size="large" color={PINK} />
+            <Text style={{ fontSize: 15, color: MUTED }}>
+              {loadState === 'generating' ? 'Montando seu protocolo…' : 'Carregando sua rotina…'}
+            </Text>
+          </View>
+        ) : loadState === 'ready' && n > 0 ? (
+          <>
+            {/* ── Herói ─────────────────────────────────────────────────── */}
+            <Text style={styles.heroLabel}>{hero.label}</Text>
+            <Text style={styles.heroBig}>{hero.big}</Text>
+            <Text style={styles.heroSub}>{FOCUS[period]}</Text>
+            {finToday ? (
+              // Concluída — "linha simples" do design 41f: check rosa + "Feita às H:MM".
+              // Não é botão: a rotina não reabre no mesmo dia.
+              <View style={styles.doneLine}>
+                <View style={styles.doneLineCheck}>
+                  <Svg width={14} height={14} viewBox="0 0 24 24">
+                    <Path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#fff" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </View>
+                <Text style={styles.doneLineText}>{finLabel}</Text>
+              </View>
+            ) : (
+              <View style={{ marginTop: 26, alignItems: 'center' }}>
+                {/* Só dá para iniciar a partir do horário da rotina (antes disso o botão
+                    fica rosa-claro, bloqueado). */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  disabled={!canStart}
+                  onPress={startRun}
+                  accessibilityState={{ disabled: !canStart }}
+                  style={[styles.heroBtn, !inWindow && styles.heroBtnLocked]}
+                >
+                  <Svg width={13} height={14} viewBox="0 0 13 14">
+                    <Path d="M1 1.6v10.8c0 .8.9 1.3 1.6.9l9-5.4c.6-.4.6-1.3 0-1.7l-9-5.4C1.9.4 1 .8 1 1.6z" fill="#fff" />
+                  </Svg>
+                  <Text style={styles.heroBtnText}>Iniciar rotina</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Seus passos (linha do tempo) ─────────────────────────────── */}
+            <View style={styles.listHead}>
+              <Text style={styles.sectionTitle}>{am ? 'Seus passos · Manhã' : 'Seus passos · Noite'}</Text>
+              <Text style={{ fontSize: 15, color: MUTED }}>{`${finToday ? n : k}/${n}`}</Text>
             </View>
-          ) : loadState === 'ready' && steps.length > 0 ? (
-            <>
-              {/* meta */}
-              <View style={{ marginHorizontal: s(2), marginBottom: s(20) }}>
-                <MetaRow label="Foco:" value={meta.focus} />
-                <MetaRow label="Passos:" value={meta.passos} />
-                <MetaRow label="Duração:" value={meta.duracao} />
-              </View>
-
-              {/* botão Iniciar rotina — abre a cerimônia */}
-              <TouchableOpacity
-                onPress={openRitual}
-                disabled={rawSteps.length === 0}
-                activeOpacity={0.9}
-                style={{
-                  height: s(56), borderRadius: 999, backgroundColor: BRAND,
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: s(26), ...brandShadow,
-                }}
-              >
-                <Icon name="play" size={s(20)} color="#FFFFFF" />
-                <Text style={{ fontFamily: F.xbold, fontSize: s(17), color: '#FFFFFF', marginLeft: s(8) }}>Iniciar rotina</Text>
-              </TouchableOpacity>
-
-              {/* timeline de passos */}
-              <View>
-                {steps.map((step, i) => (
-                  <StepCard
-                    key={`${period}-${i}`}
-                    step={step} n={i + 1} showLine={i < steps.length - 1}
-                    T={T} s={s} F={F} period={period}
-                    photoUrl={savedProducts[normStepKey(step.title)]?.imageUrl}
-                  />
-                ))}
-              </View>
-
-              <Text style={{ textAlign: 'center', fontFamily: F.semi, fontSize: s(13), color: T.textCaption, marginTop: s(8) }}>
-                Toque em um passo para ver como fazer
-              </Text>
-
-              {/* ═══ RECOMENDAÇÕES (globais — vindas das dicas da IA) ═══ */}
-              {hasRecomendacoes && (
-                <View style={{ marginTop: s(38) }}>
-                  {/* header da seção */}
-                  <View style={{ alignItems: 'center', marginBottom: s(18) }}>
-                    <Text style={{
-                      fontFamily: F.bold, fontSize: s(11), letterSpacing: 2.4,
-                      color: BRAND, textTransform: 'uppercase',
-                    }}>Recomendações</Text>
-                    <Text style={{
-                      fontFamily: F.xbold, fontSize: s(22), color: T.textHeading,
-                      marginTop: s(6), textAlign: 'center', letterSpacing: -0.3,
-                    }}>O que esperar do seu protocolo</Text>
-                  </View>
-
-                  {/* Prognóstico — visão geral + marcos de evolução */}
-                  {hasPrognostico && (
-                    <Collapsible
-                      title="Prognóstico"
-                      subtitle="Marcos de evolução e um aviso importante"
-                      T={T} s={s} F={F}
-                    >
-                      {visaoGeral && (
-                        <View style={{
-                          flexDirection: 'row', gap: s(10), backgroundColor: T.surfaceSunken,
-                          borderRadius: s(14), padding: s(13), marginBottom: marcos.length ? s(18) : 0,
-                        }}>
-                          <View style={{ marginTop: s(1), flexShrink: 0 }}>
-                            <Icon name="alert" size={s(18)} color={BRAND} />
+            <View style={{ marginTop: 12, paddingLeft: 14, paddingRight: 18 }}>
+              {steps.map((s) => {
+                const open = openStep === s.i;
+                return (
+                  <View key={`${period}-${s.i}`} style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={{ width: 30, alignItems: 'center' }}>
+                      {finToday ? (
+                        // Rotina concluída (41f): todo passo vira check rosa.
+                        <View style={[styles.num, styles.numDone]}>
+                          <Svg width={14} height={14} viewBox="0 0 24 24">
+                            <Path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#fff" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" />
+                          </Svg>
+                        </View>
+                      ) : (
+                        <View style={[styles.num, s.i === ft ? { borderWidth: 2, borderColor: PINK } : { borderWidth: 1.5, borderColor: '#F4C2D7' }]}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: PINK_TEXT }}>{s.i + 1}</Text>
+                        </View>
+                      )}
+                      <DottedLine color={done.includes(s.i) ? PINK : 'rgba(192,32,106,0.28)'} hidden={s.i === n - 1} />
+                    </View>
+                    <View style={[styles.stepCard, open ? styles.stepCardOpen : styles.stepCardClosed]}>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => { haptics.tap(); setOpenStep(open ? -1 : s.i); }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}
+                      >
+                        {s.hasProd ? (
+                          <View style={[styles.tile, { backgroundColor: s.tint }, finToday && { opacity: 0.55 }]}>
+                            <ExpoImage source={{ uri: s.img }} style={{ width: 42, height: 42 }} contentFit="contain" />
                           </View>
-                          <Text style={{ flex: 1, fontFamily: F.regular, fontSize: s(13), lineHeight: s(20), color: T.textBody }}>
-                            {visaoGeral}
+                        ) : (
+                          // Sem produto: o quadradinho "+" é um botão próprio e vai direto
+                          // escolher o produto. O resto do card continua abrindo/fechando.
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => openProducts(s.name)}
+                            accessibilityLabel={`Escolher produto para ${s.name}`}
+                            style={[styles.tile, { backgroundColor: s.tint }, finToday && { opacity: 0.55 }]}
+                          >
+                            <DashedTile size={52} radius={11} />
+                            <PlusIcon size={18} />
+                          </TouchableOpacity>
+                        )}
+                        <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+                          {/* Card mais limpo (pedido do usuário): sem a categoria. O nome do passo
+                              vira o texto pequeno de cima e o produto sobe para o centro — ou
+                              "Escolher produto" em rosa, se ainda não houver produto. */}
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }} numberOfLines={1}>{s.name}</Text>
+                          <Text
+                            style={[styles.stepName, !s.hasProd ? { color: PINK_TEXT } : finToday && styles.stepNameDone]}
+                            numberOfLines={2}
+                            lineBreakStrategyIOS="push-out"
+                          >
+                            {s.pline}
                           </Text>
                         </View>
-                      )}
-                      {marcos.map((m, i) => (
-                        <View key={i} style={{ marginBottom: i < marcos.length - 1 ? s(16) : 0 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: s(5) }}>
-                            <View style={{ width: s(7), height: s(7), borderRadius: 999, backgroundColor: BRAND, marginRight: s(9) }} />
-                            <Text style={{ fontFamily: F.xbold, fontSize: s(14), color: T.textHeading }}>{m.label}</Text>
-                          </View>
-                          <Text style={{
-                            fontFamily: F.regular, fontSize: s(13.5), lineHeight: s(21),
-                            color: T.textBody, marginLeft: s(16),
-                          }}>{m.body}</Text>
+                        <Chevron open={open} />
+                      </TouchableOpacity>
+                      {open && (
+                        <View style={styles.stepBody}>
+                          <Text style={styles.stepInstruction} lineBreakStrategyIOS="push-out">{s.instruction}</Text>
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => openProducts(s.name)}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}
+                          >
+                            <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>
+                              {s.hasProd ? 'Ver produto' : 'Escolher produto'}
+                            </Text>
+                            <Svg width={14} height={14} viewBox="0 0 24 24">
+                              <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                            </Svg>
+                          </TouchableOpacity>
                         </View>
-                      ))}
-                    </Collapsible>
-                  )}
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+              {/* "Editar rotina": a rotina muda pela NIKS (ela propõe, você aprova). */}
+              <TouchableOpacity
+                activeOpacity={0.6}
+                onPress={() => { haptics.tap(); router.push('/niks-chat' as any); }}
+                style={{ marginTop: 10, marginLeft: -14, marginRight: -18, height: 44, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Editar rotina</Text>
+              </TouchableOpacity>
+            </View>
 
-                  {/* Cronograma de introdução gradual */}
-                  {cronograma.length > 0 && (
-                    <Collapsible
-                      title="Cronograma de introdução"
-                      subtitle="Como introduzir os ativos sem agredir a pele"
-                      T={T} s={s} F={F}
-                    >
-                      {/* mini timeline de bolinhas */}
-                      {cronograma.length > 1 && (
-                        <View style={{ paddingTop: s(2), paddingBottom: s(10) }}>
-                          <View style={{ position: 'absolute', left: s(24), right: s(24), top: s(6), height: 1, backgroundColor: T.hairline }} />
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
-                            {cronograma.map((c, i) => (
-                              <View key={i} style={{ alignItems: 'center' }}>
-                                <View style={{ width: s(9), height: s(9), borderRadius: 999, backgroundColor: BRAND, marginBottom: s(8) }} />
-                                <Text style={{ fontFamily: F.bold, fontSize: s(11.5), color: BRAND }}>{c.week}</Text>
-                              </View>
-                            ))}
-                          </View>
-                        </View>
-                      )}
-                      {/* lista detalhada */}
-                      {cronograma.map((c, i) => (
-                        <View key={i} style={{
-                          flexDirection: 'row', gap: s(12), paddingVertical: s(13),
-                          borderTopWidth: i === 0 ? 0 : 1, borderTopColor: T.hairline,
-                        }}>
-                          <Text style={{ fontFamily: F.xbold, fontSize: s(13.5), color: BRAND, width: s(72), flexShrink: 0 }}>{c.week}</Text>
-                          <Text style={{ flex: 1, fontFamily: F.regular, fontSize: s(13), lineHeight: s(20), color: T.textBody }}>{c.body}</Text>
-                        </View>
-                      ))}
-                    </Collapsible>
-                  )}
-                </View>
-              )}
-            </>
-          ) : (
-            /* sem protocolo salvo ou erro de carregamento */
-            <View style={{ paddingTop: s(24), alignItems: 'center', paddingHorizontal: s(10) }}>
-              <Text style={{ fontFamily: F.xbold, fontSize: s(20), color: T.textHeading, textAlign: 'center' }}>
+            {/* ── O que esperar ───────────────────────────────────────────── */}
+            {marcos.length > 0 && (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: 30, paddingHorizontal: 18 }]}>O que esperar</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 9 }} contentContainerStyle={{ gap: 9, paddingHorizontal: 18 }}>
+                  {marcos.map((m) => <FlipCard key={m.l} label={m.l} body={m.b} bg={m.bg} />)}
+                </ScrollView>
+              </>
+            )}
+
+            {/* ── Como introduzir os ativos ───────────────────────────────── */}
+            {(cron.length > 0 || !!alert) && (
+              <View style={styles.cronCard}>
+                {/* Fechado por padrão: o toque no cabeçalho abre o cronograma e o aviso. */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    haptics.tap();
+                    LayoutAnimation.configureNext(LayoutAnimation.create(260, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
+                    setCronOpen((o) => !o);
+                  }}
+                  style={[styles.cronHead, !cronOpen && { borderBottomWidth: 0 }]}
+                >
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <Text style={styles.sectionTitle}>Como introduzir os ativos</Text>
+                    <Text style={{ fontSize: 15, letterSpacing: -0.2, color: MUTED }}>Sem agredir a pele</Text>
+                  </View>
+                  <Chevron open={cronOpen} />
+                </TouchableOpacity>
+                {cronOpen && cron.map((c, i) => (
+                  <View key={i} style={[styles.cronRow, i > 0 && { borderTopWidth: 1, borderTopColor: '#EFE8EB' }]}>
+                    <Text style={styles.cronWeek}>{c.week}</Text>
+                    <Text style={styles.cronBody}>{c.body}</Text>
+                  </View>
+                ))}
+                {cronOpen && !!alert && (
+                  <View style={styles.alert}>
+                    <Svg width={18} height={18} viewBox="0 0 24 24" style={{ marginTop: 2 }}>
+                      <Circle cx={12} cy={12} r={9.5} fill="none" stroke={PINK_TEXT} strokeWidth={1.9} />
+                      <Path d="M12 11v6M12 7.5v.01" fill="none" stroke={PINK_TEXT} strokeWidth={1.9} strokeLinecap="round" />
+                    </Svg>
+                    <Text style={{ flex: 1, fontSize: 15, lineHeight: 21, letterSpacing: -0.25, color: BODY }}>{alert}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </>
+        ) : (
+          /* sem protocolo salvo ou erro de carregamento */
+          <View style={styles.stateBox}>
+            <View style={{ gap: 8 }}>
+              <Text style={styles.stateTitle}>
                 {loadState === 'error' ? 'Não conseguimos carregar sua rotina' : 'Sua rotina ainda não está pronta'}
               </Text>
-              <Text style={{ fontFamily: F.semi, fontSize: s(14), color: T.textMuted, textAlign: 'center', marginTop: s(8), lineHeight: s(21) }}>
+              <Text style={{ fontSize: 15, lineHeight: 21, letterSpacing: -0.25, color: MUTED, textAlign: 'center' }}>
                 {loadState === 'error'
                   ? 'Verifique sua conexão e tente novamente.'
                   : 'Faça uma análise de pele para gerar seu protocolo de skincare personalizado.'}
               </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  haptics.action();
-                  if (loadState !== 'error') { startFaceScan(); return; }
-                  // "Tentar de novo": rearma a trava e re-lê da rede. Se ainda não houver
-                  // protocolo (usuária legada), o efeito re-dispara a geração — uma vez por
-                  // toque, nunca em cadeia automática. Re-ler antes de gerar evita protocolo
-                  // duplicado caso a falha tenha sido só na leitura de volta.
-                  triedGenerate.current = false;
-                  setLoadState('loading');
-                  void refreshProtocolo(); // ignora o frescor do cache e vai à rede
-                }}
-                activeOpacity={0.9}
-                style={{
-                  marginTop: s(22), height: s(52), paddingHorizontal: s(28), borderRadius: 999,
-                  backgroundColor: BRAND, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', ...brandShadow,
-                }}
-              >
-                <Text style={{ fontFamily: F.xbold, fontSize: s(16), color: '#FFFFFF' }}>
-                  {loadState === 'error' ? 'Tentar novamente' : 'Escanear minha pele'}
-                </Text>
-              </TouchableOpacity>
             </View>
-          )}
-        </ScrollView>
-      </SafeAreaView>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.heroBtn}
+              onPress={() => {
+                haptics.action();
+                if (loadState !== 'error') { startFaceScan(); return; }
+                // "Tentar de novo": rearma a trava e re-lê da rede. Se ainda não houver
+                // protocolo (usuária legada), o efeito re-dispara a geração — uma vez por
+                // toque, nunca em cadeia automática. Re-ler antes de gerar evita protocolo
+                // duplicado caso a falha tenha sido só na leitura de volta.
+                triedGenerate.current = false;
+                setLoadState('loading');
+                void refreshProtocolo();
+              }}
+            >
+              <Text style={styles.heroBtnText}>{loadState === 'error' ? 'Tentar novamente' : 'Escanear minha pele'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
 
-      {/* ═══ CERIMÔNIA (ritual passo a passo) — portada da produção ═══ */}
-      {ritualOpen && (
-        ritualDone ? (
-          <Animated.View style={{
-            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60,
-            overflow: 'hidden',
-            opacity: celebScreenOpacity,
-            transform: [{ scale: celebScreenScale }],
-          }}>
-            {isPM ? (
-              <Canvas style={StyleSheet.absoluteFill}>
-                <SkiaRect x={0} y={0} width={width} height={height}>
-                  <SkiaRadialGradient
-                    c={vec(width * 0.5, height * 0.3)}
-                    r={width * 1.5}
-                    colors={['#1a2332', '#0a1420', '#050a12']}
-                    positions={[0, 0.6, 1]}
-                  />
-                </SkiaRect>
-              </Canvas>
-            ) : (
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} />
-            )}
-            {isPM && <NightSky />}
-
-            {/* Masthead */}
-            <View style={{
-              paddingTop: insets.top + 20, paddingHorizontal: 28,
-              flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-              zIndex: 2,
-            }}>
-              <Text style={{ fontFamily: cerimFont, fontSize: 12, letterSpacing: 1.2, color: celebSubtleColor }}>
-                niks · {isPM ? 'noite' : 'manhã'}
-              </Text>
-              <Text style={{ fontFamily: cerimFontReg, fontSize: 12, letterSpacing: 1.92, color: celebSubtleColor, textTransform: 'uppercase' }}>
-                {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            </View>
-
-            {/* Centro: orb + texto */}
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, zIndex: 2 }}>
-              <Animated.View style={{
-                width: 220, height: 220, marginBottom: 48,
-                alignItems: 'center', justifyContent: 'center',
-                opacity: celebOrbOpacity,
-                transform: [{ scale: celebOrbScale }],
-              }}>
-                {/* Glow radial */}
-                <Canvas style={{ position: 'absolute', width: 300, height: 300, top: -40, left: -40 }}>
-                  <SkiaCircle cx={150} cy={150} r={130}>
-                    <SkiaRadialGradient
-                      c={vec(150, 150)} r={130}
-                      colors={isPM
-                        ? ['rgba(245,230,211,0.25)', 'rgba(245,230,211,0)']
-                        : ['rgba(255,157,157,0.14)', 'rgba(255,157,157,0)']}
-                    />
-                    <BlurMask blur={24} style="normal" />
-                  </SkiaCircle>
-                </Canvas>
-                {/* Outer ring */}
-                <View style={{
-                  position: 'absolute', width: 252, height: 252, borderRadius: 126,
-                  top: -16, left: -16, borderWidth: 1,
-                  borderColor: isPM ? 'rgba(245,230,211,0.18)' : 'rgba(255,157,157,0.18)',
-                }} />
-                {/* Orb body */}
-                <Canvas style={{ width: 220, height: 220, position: 'absolute' }}>
-                  <SkiaCircle cx={110} cy={110} r={110}>
-                    <SkiaRadialGradient
-                      c={vec(77, 77)} r={198}
-                      colors={isPM
-                        ? ['#FAF3E3', '#E8D9B8', '#B8A685']
-                        : ['#FFFFFF', '#FFC4C6', '#FF9D9D']}
-                    />
-                  </SkiaCircle>
-                  {isPM && (
-                    <>
-                      <SkiaCircle cx={90.6} cy={68.6} r={7}>
-                        <SkiaRadialGradient c={vec(85.7, 63.7)} r={7}
-                          colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                      <SkiaCircle cx={141.4} cy={119.4} r={5}>
-                        <SkiaRadialGradient c={vec(137.9, 115.9)} r={5}
-                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                      <SkiaCircle cx={70} cy={153.6} r={4}>
-                        <SkiaRadialGradient c={vec(67.2, 150.8)} r={4}
-                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                      <SkiaCircle cx={58} cy={95.4} r={3}>
-                        <SkiaRadialGradient c={vec(55.9, 93.3)} r={3}
-                          colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                    </>
-                  )}
-                </Canvas>
-                {/* Checkmark sobreposto */}
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-                  <Svg width={48} height={48} viewBox="0 0 48 48" fill="none">
-                    <Path d="M14 24.5L21 31.5L34 17"
-                      stroke={isPM ? '#121212' : '#FFFFFF'}
-                      strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-                  </Svg>
-                </View>
-              </Animated.View>
-
-              {/* Eyebrow */}
-              <Animated.View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20,
-                opacity: celebEyebrowAnim,
-                transform: [{ translateY: celebEyebrowAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
-              }}>
-                <View style={{ width: 28, height: 1, backgroundColor: celebRuleColor }} />
-                <Text style={{ fontFamily: cerimFont, fontSize: 13, letterSpacing: 1.04, color: celebSubtleColor, textTransform: 'lowercase' }}>
-                  rotina concluída
-                </Text>
-                <View style={{ width: 28, height: 1, backgroundColor: celebRuleColor }} />
-              </Animated.View>
-
-              {/* Título */}
-              <Animated.Text style={{
-                fontFamily: cerimFontReg, fontSize: 44, lineHeight: 46,
-                color: celebTextColor, textAlign: 'center', letterSpacing: -0.88, marginBottom: 20,
-                opacity: celebTitleAnim,
-                transform: [{ translateY: celebTitleAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
-              }}>
-                <Text style={{ fontFamily: cerimFont }}>{isPM ? 'Boa' : 'Bem'}</Text>
-                {isPM ? ' noite,\n' : ' feita,\n'}
-                <Text>{isPM ? 'sua pele descansa.' : 'sua pele agradece.'}</Text>
-              </Animated.Text>
-
-              {/* Subtexto */}
-              <Animated.Text style={{
-                fontFamily: F.medium, fontSize: 15, lineHeight: 23.25,
-                color: celebSubtleColor, textAlign: 'center', maxWidth: 280,
-                opacity: celebSubtextoAnim,
-                transform: [{ translateY: celebSubtextoAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
-              }}>
-                {isPM
-                  ? 'Quatro gestos para selar o dia. Agora é a noite que cuida — descanse.'
-                  : 'Quatro gestos simples, feitos com intenção. Leve essa calma pro resto do dia.'}
-              </Animated.Text>
-            </View>
-
-            {/* Rodapé */}
-            <Animated.View style={{
-              paddingHorizontal: 28, paddingBottom: insets.bottom + 40, zIndex: 2,
-              opacity: celebFooterAnim,
-              transform: [{ translateY: celebFooterAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
-            }}>
-              <Text style={{
-                fontFamily: cerimFont, fontSize: 13, letterSpacing: 0.13,
-                color: celebSubtleColor, textAlign: 'center', marginBottom: 20, textTransform: 'lowercase',
-              }}>
-                {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </Text>
-              <TouchableOpacity
-                onPress={() => { haptics.success(); requestAppReview(); closeRitual(); }}
-                activeOpacity={0.88}
-                style={{
-                  backgroundColor: celebCtaBg, borderRadius: 100,
-                  paddingVertical: 20, paddingHorizontal: 24,
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  shadowColor: isPM ? '#000' : '#FF9D9D', shadowOffset: { width: 0, height: 12 },
-                  shadowOpacity: isPM ? 0.4 : 0.35, shadowRadius: isPM ? 40 : 24,
-                }}
-              >
-                <Text style={{ color: celebCtaText, fontFamily: cerimFont, fontSize: 15, letterSpacing: -0.075 }}>
-                  voltar ao protocolo
-                </Text>
-                <Svg width={14} height={14} viewBox="0 0 16 16" fill="none">
-                  <Path d="M6 3L11 8L6 13" stroke={celebCtaText} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-                </Svg>
-              </TouchableOpacity>
-            </Animated.View>
-          </Animated.View>
-        ) : (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 60, overflow: 'hidden' }}>
-            {isPM ? (
-              <LinearGradient
-                colors={['#0F1420', '#1A1F2E', '#2A1F28']}
-                locations={[0, 0.45, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-            ) : (
-              <Canvas style={StyleSheet.absoluteFill}>
-                <Group transform={[{ scaleY: (height * 0.7) / (width * 0.5) }]}>
-                  <SkiaRect x={0} y={0} width={width} height={(width * 0.5 * height) / (height * 0.7)}>
-                    <SkiaRadialGradient
-                      c={vec(width * 0.5, (height * 0.3 * width * 0.5) / (height * 0.7))}
-                      r={width * 0.5}
-                      colors={currentDayColors}
-                      positions={[0, 0.35, 1]}
-                    />
-                  </SkiaRect>
-                </Group>
-                <Group transform={[{ scaleY: (height * 1.1) / (width * 0.5) }]}>
-                  <SkiaRect x={0} y={0} width={width} height={(width * 0.5 * height) / (height * 1.1)}>
-                    <SkiaRadialGradient
-                      c={vec(width * 0.5, width * 0.5)}
-                      r={width * 0.5}
-                      colors={['rgba(255,255,255,0.5)', 'rgba(255,255,255,0)']}
-                      positions={[0, 0.6]}
-                    />
-                  </SkiaRect>
-                </Group>
-              </Canvas>
-            )}
-            {isPM && <NightSky />}
-
-            {/* Masthead: fechar + chip período + som */}
-            <View style={{
-              paddingTop: insets.top + 20, paddingHorizontal: 24,
-              flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 5,
-            }}>
-              <TouchableOpacity
-                onPress={() => { haptics.tap(); closeRitual(); }}
-                style={{
-                  width: 36, height: 36, borderRadius: 18,
-                  backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
-                  alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-                  <Path d="M18 6L6 18M6 6l12 12" stroke={rtInk} strokeWidth={2} strokeLinecap="round" />
-                </Svg>
-              </TouchableOpacity>
-
-              <View style={{
-                flexDirection: 'row', alignItems: 'center', gap: 7,
-                paddingVertical: 8, paddingHorizontal: 14, borderRadius: 100,
-                backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
-              }}>
-                {isPM ? (
-                  <Svg width={12} height={12} viewBox="0 0 14 14" fill="none">
-                    <Path d="M11 8.5 A 5 5 0 1 1 5.5 3 A 4 4 0 0 0 11 8.5 Z" stroke={rtInk} strokeWidth={0.8} strokeLinejoin="round" />
-                  </Svg>
-                ) : (
-                  <Svg width={12} height={12} viewBox="0 0 14 14" fill="none">
-                    <Circle cx={7} cy={7} r={2.4} stroke={rtInk} strokeWidth={0.8} />
-                    <Line x1={7} y1={1} x2={7} y2={2.8} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                    <Line x1={7} y1={11.2} x2={7} y2={13} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                    <Line x1={1} y1={7} x2={2.8} y2={7} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                    <Line x1={11.2} y1={7} x2={13} y2={7} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                    <Line x1={2.76} y1={2.76} x2={4.04} y2={4.04} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                    <Line x1={9.96} y1={9.96} x2={11.24} y2={11.24} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                    <Line x1={11.24} y1={2.76} x2={9.96} y2={4.04} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                    <Line x1={4.04} y1={9.96} x2={2.76} y2={11.24} stroke={rtInk} strokeWidth={0.8} strokeLinecap="round" />
-                  </Svg>
-                )}
-                <Text style={{ fontFamily: cerimFont, fontSize: 13, color: rtInk, letterSpacing: -0.07 }}>
-                  {isPM ? 'rotina da noite' : 'rotina da manhã'}
-                </Text>
-              </View>
-
-              <View style={{
-                width: 36, height: 36, borderRadius: 18,
-                backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
-                alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-                  <Path d="M11 5L6 9H2v6h4l5 4V5z" stroke={rtInk} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-                  <Path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke={rtInk} strokeWidth={1.5} strokeLinecap="round" />
-                </Svg>
-              </View>
-            </View>
-
-            {/* Progresso segmentado */}
-            <View style={{ paddingTop: 24, paddingHorizontal: 48, flexDirection: 'row', gap: 10, zIndex: 5 }}>
-              {rawSteps.map((_, i) => (
-                <TouchableOpacity
-                  key={i}
-                  onPress={() => { haptics.select(); setRitualStep(i); }}
-                  style={{
-                    flex: 1, height: 1.5, borderRadius: 1,
-                    backgroundColor: i <= ritualStep ? rtInk : rtInkHair,
-                    opacity: i === ritualStep ? 1 : (i < ritualStep ? 0.9 : 0.4),
-                  }}
-                />
-              ))}
-            </View>
-
-            {/* Label do passo */}
-            <View style={{ paddingTop: 28, paddingHorizontal: 24, alignItems: 'center', zIndex: 5 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{ width: 24, height: 0.5, backgroundColor: rtInkHair }} />
-                <Text style={{
-                  fontFamily: F.semi, fontSize: 10, fontWeight: '500', letterSpacing: 2.5,
-                  color: rtInkSoft, textTransform: 'uppercase',
-                }}>
-                  Passo {ritualStep + 1} · {rawSteps.length}{ritualCurrentStep?.waitTime ? `  ·  ${ritualCurrentStep.waitTime}` : ''}
-                </Text>
-                <View style={{ width: 24, height: 0.5, backgroundColor: rtInkHair }} />
-              </View>
-            </View>
-
-            {/* Orb com numeral */}
-            <View style={{ paddingTop: 18, alignItems: 'center', zIndex: 5 }}>
-              <View style={{ width: 220, height: 220, alignItems: 'center', justifyContent: 'center' }}>
-                <Animated.View style={{
-                  position: 'absolute', width: 260, height: 260, borderRadius: 130, borderWidth: 0.5,
-                  borderColor: isPM ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
-                  transform: [{ scale: orbBreath1 }],
-                }} />
-                <Animated.View style={{
-                  position: 'absolute', width: 300, height: 300, borderRadius: 150, borderWidth: 0.5,
-                  borderColor: isPM ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.3)',
-                  transform: [{ scale: orbBreath2 }],
-                }} />
-                <Canvas style={{ width: 200, height: 200, position: 'absolute' }}>
-                  <SkiaCircle cx={100} cy={100} r={100}>
-                    <SkiaRadialGradient
-                      c={vec(70, 60)} r={180}
-                      colors={isPM
-                        ? ['#FFFFFF', '#F4EEE4', '#D8CDB8', '#A89676']
-                        : ['rgba(255,255,255,0.9)', 'rgba(255,224,228,0.7)', 'rgba(255,157,157,0.4)']}
-                    />
-                  </SkiaCircle>
-                  {isPM && (
-                    <>
-                      <SkiaCircle cx={141} cy={71} r={11}>
-                        <SkiaRadialGradient c={vec(133.3, 63.3)} r={11}
-                          colors={['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                      <SkiaCircle cx={68} cy={123} r={8}>
-                        <SkiaRadialGradient c={vec(62.4, 117.4)} r={8}
-                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.16)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                      <SkiaCircle cx={165.5} cy={95.5} r={5.5}>
-                        <SkiaRadialGradient c={vec(161.65, 91.65)} r={5.5}
-                          colors={['rgba(0,0,0,0.06)', 'rgba(0,0,0,0.14)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                      <SkiaCircle cx={119.5} cy={152.5} r={4.5}>
-                        <SkiaRadialGradient c={vec(116.35, 149.35)} r={4.5}
-                          colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                      <SkiaCircle cx={88.5} cy={53.5} r={3.5}>
-                        <SkiaRadialGradient c={vec(86.05, 51.05)} r={3.5}
-                          colors={['rgba(0,0,0,0.04)', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0)']} />
-                      </SkiaCircle>
-                    </>
-                  )}
-                  {cerimSkiaFont && (
-                    <SkiaText
-                      x={skiaTextX}
-                      y={skiaTextY}
-                      text={stepText}
-                      font={cerimSkiaFont}
-                      color={isPM ? '#3D2F1F' : '#FFFFFF'}
-                    >
-                      {!isPM && (
-                        <SkiaShadow dx={0} dy={2} blur={5} color="rgba(180,60,80,0.55)" />
-                      )}
-                    </SkiaText>
-                  )}
-                </Canvas>
-              </View>
-            </View>
-
-            {/* Título + instrução + chip — área ROLÁVEL (flex:1) que reserva o espaço do CTA.
-                O texto da IA varia de tamanho: curto fica centralizado (igual antes), longo rola,
-                nunca sendo cortado nem colando no botão "Concluir este passo". */}
-            <View style={{ flex: 1, zIndex: 5 }}>
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{
-                  flexGrow: 1, justifyContent: 'center', alignItems: 'center',
-                  paddingTop: 28, paddingHorizontal: 24, paddingBottom: 16,
-                }}
-              >
-                <Text style={{
-                  fontFamily: cerimFontReg, fontSize: 38, fontWeight: '400',
-                  color: isPM ? rtInk : '#FFFFFF', letterSpacing: -0.95, textAlign: 'center', lineHeight: 42,
-                  ...(isPM ? {} : {
-                    textShadowColor: 'rgba(180,60,80,0.45)',
-                    textShadowOffset: { width: 0, height: 1.5 },
-                    textShadowRadius: 5,
-                  }),
-                }}>
-                  <Text style={{ fontFamily: cerimFont }}>{cerimTitleFirst}</Text>
-                  {cerimTitleRest ? ` ${cerimTitleRest}` : ''}
-                </Text>
-
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18 }}>
-                  <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
-                  <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: accent }} />
-                  <View style={{ width: 30, height: 0.5, backgroundColor: rtInkHair }} />
-                </View>
-
-                <Text style={{
-                  fontFamily: F.regular, fontSize: 14, color: rtInkSoft,
-                  textAlign: 'center', lineHeight: 21.7, marginTop: 16, maxWidth: 340,
-                }}>{(ritualCurrentStep?.steps ?? []).join(' ') + (ritualCurrentStep?.waitTime ? ` Aguardar ${ritualCurrentStep.waitTime} com o produto aplicado antes de passar para o próximo passo.` : '')}</Text>
-
-                <View style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 6,
-                  paddingVertical: 7, paddingHorizontal: 13, marginTop: 18, borderRadius: 100,
-                  backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
-                }}>
-                  <Svg width={11} height={11} viewBox="0 0 11 11" fill="none">
-                    <Path d="M5.5 1.5C5.5 1.5 2.5 5 2.5 7a3 3 0 1 0 6 0C8.5 5 5.5 1.5 5.5 1.5z"
-                      stroke={rtInk} strokeWidth={0.9} fill="none" strokeLinejoin="round" />
-                  </Svg>
-                  <Text style={{ fontFamily: cerimFont, fontSize: 11, letterSpacing: 0.3, color: rtInk }}>
-                    {ritualCurrentStep?.ingredient ?? ''}
-                  </Text>
-                </View>
-              </ScrollView>
-            </View>
-
-            {/* Controles: anterior + CTA principal — EM FLUXO (não absoluto), logo abaixo da
-                área rolável. Isso garante que a rolagem termine onde o botão começa: o texto
-                nunca cola nem passa por baixo do botão, em qualquer tamanho. */}
-            <View style={{
-              paddingHorizontal: 24, paddingTop: 6, paddingBottom: insets.bottom + 16, zIndex: 10,
-            }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <TouchableOpacity
-                  onPress={() => {
-                    // O botão fica só esmaecido (opacity 0.35) no primeiro passo, não
-                    // desabilitado — então a guarda evita vibrar sem ter para onde voltar.
-                    if (ritualStep > 0) haptics.tap();
-                    setRitualStep((prev) => Math.max(0, prev - 1));
-                  }}
-                  activeOpacity={0.75}
-                  style={{
-                    width: 54, height: 54, borderRadius: 27, flexShrink: 0,
-                    backgroundColor: chipBg, borderWidth: 0.5, borderColor: chipBorder,
-                    alignItems: 'center', justifyContent: 'center',
-                    opacity: ritualStep === 0 ? 0.35 : 1,
-                  }}
-                >
-                  <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
-                    <Path d="M10 3L5 8L10 13" stroke={rtInk} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      {/* ── "Iniciar rotina": checklist (45a) · guia · foto do dia (45b) · concluída (45c) ── */}
+      <Modal visible={modalVisible} transparent animationType="none" onRequestClose={() => stopRun('onRequestClose (voltar do Android / gesto)')}>
+        {/* 45a — Checklist rápido */}
+        {flow === 'check' && (
+          <View style={{ flex: 1 }}>
+            <LinearGradient colors={BG[period]} locations={BG_STOPS} style={StyleSheet.absoluteFill} />
+            <View style={{ flex: 1, paddingTop: insets.top + 8, paddingHorizontal: 18, paddingBottom: Math.max(insets.bottom - 6, 16) }}>
+              <View style={{ height: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <TouchableOpacity onPress={() => stopRun('X do checklist')} activeOpacity={0.85} style={styles.circleBtn}>
+                  <Svg width={16} height={16} viewBox="0 0 24 24">
+                    <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" />
                   </Svg>
                 </TouchableOpacity>
+                <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>{am ? 'Rotina da manhã' : 'Rotina da noite'}</Text>
+                <View style={{ width: 36 }} />
+              </View>
+              <Text style={styles.ckHint}>Toque em cada produto ao passar</Text>
+              <Text style={styles.ckCount}>{`${lit.length} de ${n}`}</Text>
+              <ScrollView style={{ marginTop: 20, flex: 1 }} contentContainerStyle={{ gap: 8, paddingVertical: 2 }} showsVerticalScrollIndicator={false}>
+                {steps.map((s) => {
+                  const on = lit.includes(s.i);
+                  return (
+                    <TouchableOpacity
+                      key={s.i}
+                      activeOpacity={0.9}
+                      onPress={() => toggleLit(s.i)}
+                      style={[styles.ckItem, on ? styles.ckItemOn : styles.ckItemOff]}
+                    >
+                      <View style={[styles.ckTile, { backgroundColor: s.tint, opacity: on ? 1 : 0.55 }]}>
+                        {s.hasProd ? (
+                          s.cut
+                            // Recorte sem fundo: o produto "flutua" sobre a cor do quadro (design 45a).
+                            ? <ExpoImage source={{ uri: s.img }} style={{ width: 46, height: 46 }} contentFit="contain" />
+                            // Sem recorte ainda: a foto preenche o quadro (a original tem fundo branco,
+                            // e "contain" deixava um quadrado branco dentro do quadro colorido).
+                            : <ExpoImage source={{ uri: s.img }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                        ) : (
+                          <PlusIcon size={18} />
+                        )}
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>{`Passo ${s.i + 1} · ${s.cat}`}</Text>
+                        <Text style={styles.ckName} numberOfLines={1}>{s.name}</Text>
+                      </View>
+                      <View style={[styles.ckCheck, on ? { backgroundColor: PINK } : { borderWidth: 1.5, borderColor: '#D6CCD1', backgroundColor: '#FFFFFF' }]}>
+                        {on && (
+                          <Svg width={15} height={15} viewBox="0 0 24 24">
+                            <Path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                          </Svg>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              {(() => {
+                const all = n > 0 && lit.length === n;
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    disabled={!all}
+                    onPress={finishRoutine}
+                    style={[styles.bigBtn, { marginTop: 14 }, !all && { backgroundColor: '#FFC2DB', shadowOpacity: 0 }]}
+                  >
+                    <Text style={styles.heroBtnText}>{all ? 'Concluir rotina' : `Faltam ${n - lit.length} ${n - lit.length === 1 ? 'produto' : 'produtos'}`}</Text>
+                  </TouchableOpacity>
+                );
+              })()}
+              <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); setRun(0); setFlow('guide'); }} style={{ marginTop: 6, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Ver guia passo a passo</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
-                <TouchableOpacity
-                  onPress={() => {
-                    toggleStepCompletion(ritualStep);
-                    if (isRitualLast) {
-                      setRitualDone(true);
-                    } else {
-                      setRitualStep((prev) => prev + 1);
-                    }
-                  }}
-                  activeOpacity={0.88}
-                  style={{
-                    flex: 1,
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 100, paddingVertical: 18, paddingHorizontal: 20,
-                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-                    shadowOpacity: isPM ? 0.4 : 0.25, shadowRadius: isPM ? 32 : 20,
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <View style={{
-                      width: 28, height: 28, borderRadius: 14, backgroundColor: accent,
-                      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}>
-                      <Svg width={14} height={14} viewBox="0 0 14 14" fill="none">
-                        <Path d="M3 7L5.8 9.5L11 4.5" stroke="#fff" strokeWidth={1.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                      </Svg>
-                    </View>
-                    <Text style={{
-                      fontFamily: cerimFont, fontSize: 14,
-                      color: '#121212', letterSpacing: -0.07,
-                    }}>
-                      {isRitualLast ? 'Finalizar rotina' : 'Concluir este passo'}
-                    </Text>
-                  </View>
-                  <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
-                    <Path d="M6 3L11 8L6 13" stroke="#121212" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+        {/* Guia passo a passo (o "Iniciar rotina" antigo) */}
+        {flow === 'guide' && rs && (
+          <View style={{ flex: 1 }}>
+            <LinearGradient colors={BG[period]} locations={BG_STOPS} style={StyleSheet.absoluteFill} />
+            <View style={{ flex: 1, paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 20) }}>
+              <View style={{ height: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <TouchableOpacity onPress={() => stopRun('X do guia')} activeOpacity={0.85} style={styles.circleBtn}>
+                  <Svg width={16} height={16} viewBox="0 0 24 24">
+                    <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" />
                   </Svg>
+                </TouchableOpacity>
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK }}>{`Passo ${run + 1} de ${n}`}</Text>
+                <View style={{ width: 36 }} />
+              </View>
+              <View style={{ marginTop: 16, flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
+                {rawList.map((_, i) => (
+                  <View key={i} style={{ width: 30, height: 4, borderRadius: 2, backgroundColor: i <= run ? PINK : 'rgba(255,255,255,0.85)' }} />
+                ))}
+              </View>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 16 }} showsVerticalScrollIndicator={false}>
+                <TouchableOpacity activeOpacity={0.9} onPress={() => openProducts(rs.name)} style={styles.runCircle}>
+                  {rs.hasProd ? (
+                    <ExpoImage source={{ uri: rs.img }} style={{ width: 120, height: 124 }} contentFit="contain" />
+                  ) : (
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <PlusIcon size={28} sw={2} />
+                      <Text style={{ color: PINK_TEXT, fontSize: 15, fontWeight: '500' }}>Escolher produto</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                <Text style={{ marginTop: 24, fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: SOFT }}>{rs.cat}</Text>
+                <Text style={styles.runName}>{rs.name}</Text>
+                <Text style={{ marginTop: 6, fontSize: 15, letterSpacing: -0.2, color: rs.hasProd ? MUTED : PINK_TEXT, textAlign: 'center' }}>{rs.pline}</Text>
+                <Text style={styles.runInstruction} lineBreakStrategyIOS="push-out">{rs.instruction}</Text>
+              </ScrollView>
+              <View style={{ alignItems: 'center', gap: 6 }}>
+                <TouchableOpacity activeOpacity={0.85} onPress={nextStep} style={[styles.bigBtn, { alignSelf: 'stretch' }]}>
+                  <Text style={styles.heroBtnText}>{run === n - 1 ? 'Concluir rotina' : 'Próximo passo'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  disabled={run === 0}
+                  onPress={() => { haptics.tap(); setRun(Math.max(0, run - 1)); }}
+                  style={{ height: 40, justifyContent: 'center' }}
+                >
+                  <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: run ? PINK_TEXT : 'rgba(232,70,143,0)' }}>Passo anterior</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
-        )
-      )}
+        )}
+
+        {/* 45b — Foto do dia (só ao concluir a manhã; opcional) */}
+        {flow === 'cam' && (
+          <View style={{ flex: 1, backgroundColor: INK }}>
+            <StatusBar style="light" />
+            {camPermission?.granted && (
+              <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} mirror={facing === 'front'} />
+            )}
+            <LinearGradient colors={['rgba(18,18,18,0.62)', 'rgba(18,18,18,0)']} style={styles.camTopShade} pointerEvents="none" />
+            <LinearGradient colors={['rgba(18,18,18,0)', 'rgba(18,18,18,0.66)']} style={styles.camBottomShade} pointerEvents="none" />
+            {/* Moldura oval tracejada (250×330) para enquadrar o rosto */}
+            <Svg width={250} height={330} style={{ position: 'absolute', top: insets.top + 174, alignSelf: 'center' }} pointerEvents="none">
+              <Ellipse cx={125} cy={165} rx={124} ry={164} fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth={2} strokeDasharray={[6, 5]} />
+            </Svg>
+            <View style={{ position: 'absolute', left: 0, right: 0, top: insets.top + 58, alignItems: 'center', gap: 6 }} pointerEvents="none">
+              <Text style={styles.camTitle}>{`Foto do dia ${journey.day}`}</Text>
+              <Text style={styles.camSub}>
+                {journey.left > 0
+                  ? `Dia ${journey.day} de 30 · faltam ${journey.left} ${journey.left === 1 ? 'dia' : 'dias'} para o seu vídeo`
+                  : `Dia ${journey.day} · seu vídeo já está pronto`}
+              </Text>
+              <View style={styles.camBar}>
+                <View style={{ width: `${Math.min(100, (journey.day / 30) * 100)}%`, height: '100%', backgroundColor: '#FFFFFF', borderRadius: 2 }} />
+              </View>
+            </View>
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom, alignItems: 'center', gap: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 40 }}>
+                <View style={{ width: 48 }} />
+                <TouchableOpacity activeOpacity={0.85} onPress={shoot} style={styles.shutter} accessibilityLabel="Tirar foto">
+                  <View style={styles.shutterInner} />
+                </TouchableOpacity>
+                <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setFacing((f) => (f === 'front' ? 'back' : 'front')); }} style={styles.camFlipBtn} accessibilityLabel="Virar câmera">
+                  <Svg width={22} height={22} viewBox="0 0 24 24">
+                    <Path d="M20 11a8 8 0 0 0-14.9-4M4 4v4h4M4 13a8 8 0 0 0 14.9 4M20 20v-4h-4" fill="none" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity activeOpacity={0.6} onPress={skipPhoto} style={{ height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: '#FFFFFF' }}>Pular foto hoje</Text>
+                <Svg width={16} height={16} viewBox="0 0 24 24">
+                  <Path d="M9 6l6 6-6 6" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </TouchableOpacity>
+              <Text style={{ marginTop: -12, fontSize: 13, letterSpacing: -0.1, color: '#FFFFFF', opacity: 0.85 }}>Sua sequência continua mesmo sem foto</Text>
+            </View>
+            {flash && <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} pointerEvents="none" />}
+          </View>
+        )}
+
+        {/* 45c — Rotina concluída (com ou sem foto) */}
+        {flow === 'done' && (
+          <View style={{ flex: 1 }}>
+            <StatusBar style="dark" />
+            <LinearGradient colors={BG[period]} locations={BG_STOPS} style={StyleSheet.absoluteFill} />
+            <View style={{ flex: 1, paddingTop: insets.top + 8, paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 20) }}>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                {photoUri ? (
+                  // Sombra num View por fora: a Image recorta os cantos e engoliria a sombra.
+                  <View style={styles.donePhotoShadow}>
+                    <Image source={{ uri: photoUri }} style={styles.donePhoto} />
+                    <View style={styles.donePhotoCheck}>
+                      <Svg width={20} height={20} viewBox="0 0 24 24">
+                        <Path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.doneCircle}>
+                    <Svg width={56} height={56} viewBox="0 0 24 24">
+                      <Path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </View>
+                )}
+                <Text style={styles.doneTitle}>{am ? 'Rotina da manhã concluída' : 'Rotina da noite concluída'}</Text>
+                <BalancedText text={doneSub} style={styles.doneSub} />
+                <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Svg width={15} height={15} viewBox="0 0 24 24">
+                    <Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" fill="none" stroke={PINK_TEXT} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                  <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: SOFT }}>
+                    {doneStreakLine}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => stopRun('Voltar para a rotina')} style={styles.bigBtn}>
+                <Text style={styles.heroBtnText}>Voltar para a rotina</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </Modal>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  circleWhite: {
+    position: 'absolute', width: 620, height: 620, borderRadius: 310,
+    left: -330, top: 250, backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  circleBlob: {
+    position: 'absolute', width: 560, height: 560, borderRadius: 280,
+    left: 190, top: -90, backgroundColor: 'rgba(255,226,236,0.40)',
+  },
+
+  hdrRow: { height: 36, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avatar: { width: 32, height: 32, borderRadius: 16 },
+  avatarDot: {
+    position: 'absolute', top: -1, right: -2, width: 9, height: 9, borderRadius: 4.5,
+    backgroundColor: PINK, borderWidth: 1.5, borderColor: '#FFFFFF',
+  },
+  streakBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
+  },
+  streakBadge: {
+    position: 'absolute', top: -5, left: 21, minWidth: 21, height: 18, paddingHorizontal: 5, borderRadius: 100,
+    backgroundColor: PINK, borderWidth: 1.5, borderColor: '#FDE6EF', alignItems: 'center', justifyContent: 'center',
+  },
+  streakBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600', lineHeight: 15, letterSpacing: -0.2, textAlign: 'center' },
+
+  segWrap: {
+    marginTop: 18, alignSelf: 'center', flexDirection: 'row', gap: 2, padding: 3,
+    borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  seg: { height: 36, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, borderRadius: 100 },
+  segOn: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 5,
+  },
+
+  heroLabel: { marginTop: 44, height: 22, lineHeight: 22, textAlign: 'center', fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK },
+  heroBig: { marginTop: 5, height: 56, lineHeight: 56, textAlign: 'center', fontSize: 48, fontWeight: '700', letterSpacing: -0.6, color: INK },
+  heroSub: { marginTop: 14, paddingHorizontal: 24, textAlign: 'center', fontSize: 17, fontWeight: '400', lineHeight: 22, letterSpacing: -0.3, color: INK },
+  heroBtn: {
+    height: 48, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 32, borderRadius: 100,
+    backgroundColor: PINK,
+    shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
+  },
+  // Antes do horário: o mesmo rosa-claro do "Enviar" desabilitado do chat, sem brilho.
+  heroBtnLocked: { backgroundColor: '#FFD3E5', shadowOpacity: 0 },
+  doneLine: { marginTop: 26, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  doneLineCheck: { width: 26, height: 26, borderRadius: 13, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
+  doneLineText: { fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK },
+  heroBtnText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
+
+  sectionTitle: { fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK },
+  listHead: { marginTop: 36, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  num: {
+    marginTop: 14, width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  numDone: {
+    backgroundColor: PINK,
+    shadowColor: PINK, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 5,
+  },
+  stepCard: { flex: 1, minWidth: 0, marginBottom: 10, backgroundColor: '#FFFFFF', borderRadius: 13 },
+  stepCardOpen: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 9 },
+  stepCardClosed: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 1 },
+  tile: { width: 52, height: 52, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  stepName: { fontSize: 17, fontWeight: '600', lineHeight: 21, letterSpacing: -0.4, color: INK },
+  stepNameDone: { color: MUTED, textDecorationLine: 'line-through' },
+  stepBody: { paddingTop: 2, paddingHorizontal: 14, paddingBottom: 14, gap: 12, borderTopWidth: 1, borderTopColor: '#F3EDF0' },
+  stepInstruction: { paddingTop: 12, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, color: BODY },
+
+  flipFace: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 13, backfaceVisibility: 'hidden' },
+  flipBack: {
+    backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: PINK,
+    paddingTop: 13, paddingHorizontal: 13, paddingBottom: 12, gap: 6,
+  },
+  flipEm: { fontSize: 13, fontWeight: '500', color: SOFT },
+  flipLabel: { fontSize: 24, fontWeight: '700', lineHeight: 28, letterSpacing: -0.7, color: INK },
+  flipBtn: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 5,
+  },
+
+  cronCard: { marginTop: 26, marginHorizontal: 18, backgroundColor: '#FFFFFF', borderRadius: 13 },
+  cronHead: { paddingTop: 16, paddingHorizontal: 17, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: '#EEE8E8' },
+  cronRow: { flexDirection: 'row', gap: 14, paddingVertical: 13, paddingHorizontal: 17 },
+  cronWeek: { width: 96, fontSize: 15, fontWeight: '600', letterSpacing: -0.3, color: PINK_DEEP },
+  cronBody: { flex: 1, fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: BODY },
+  alert: {
+    marginTop: 4, marginHorizontal: 17, marginBottom: 17, flexDirection: 'row', gap: 10,
+    paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, backgroundColor: '#FDEEF4',
+  },
+
+  stateBox: { paddingTop: 56, paddingHorizontal: 32, alignItems: 'center', gap: 20 },
+  stateTitle: { fontSize: 17, fontWeight: '500', lineHeight: 22, letterSpacing: -0.3, color: INK, textAlign: 'center' },
+
+  circleBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
+  },
+  runCircle: {
+    width: 180, height: 180, borderRadius: 90, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    shadowColor: PINK_DEEP, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.12, shadowRadius: 15,
+  },
+  runName: { marginTop: 4, fontSize: 28, fontWeight: '700', lineHeight: 33, letterSpacing: -0.6, color: INK, textAlign: 'center' },
+  runInstruction: { marginTop: 16, fontSize: 17, lineHeight: 23, letterSpacing: -0.3, color: BODY, textAlign: 'center' },
+  bigBtn: {
+    height: 50, borderRadius: 100, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center',
+    shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
+  },
+  ckHint: { marginTop: 22, height: 22, lineHeight: 22, textAlign: 'center', fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK },
+  ckCount: { marginTop: 5, height: 56, lineHeight: 56, textAlign: 'center', fontSize: 48, fontWeight: '700', letterSpacing: -0.6, color: INK },
+  ckItem: {
+    height: 76, borderRadius: 18, borderWidth: 2, paddingLeft: 9, paddingRight: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  ckItemOn: {
+    borderColor: PINK, backgroundColor: '#FFFFFF',
+    shadowColor: PINK, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 10,
+  },
+  ckItemOff: { borderColor: 'transparent', backgroundColor: 'rgba(255,255,255,0.55)' },
+  ckTile: { width: 56, height: 56, borderRadius: 12, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  ckName: { fontSize: 17, fontWeight: '600', lineHeight: 21, letterSpacing: -0.4, color: INK },
+  ckCheck: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+
+  camTopShade: { position: 'absolute', left: 0, right: 0, top: 0, height: 280 },
+  camBottomShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 300 },
+  camTitle: { fontSize: 28, fontWeight: '700', lineHeight: 33, letterSpacing: -0.6, color: '#FFFFFF' },
+  camSub: { fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: '#FFFFFF' },
+  camBar: { marginTop: 6, width: 180, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)', overflow: 'hidden' },
+  shutter: { width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFFFFF' },
+  camFlipBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+
+  // Design: box-shadow 0 10px 30px rgba(192,32,106,0.18).
+  donePhotoShadow: {
+    width: 150, height: 190, borderRadius: 18, backgroundColor: '#FFFFFF',
+    shadowColor: '#C0206A', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 15,
+  },
+  donePhoto: {
+    width: 150, height: 190, borderRadius: 18, borderWidth: 3, borderColor: '#FFFFFF',
+  },
+  donePhotoCheck: {
+    position: 'absolute', right: -12, bottom: -12, width: 44, height: 44, borderRadius: 22,
+    backgroundColor: PINK, borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+  },
+  doneTitle: { marginTop: 28, fontSize: 28, fontWeight: '700', lineHeight: 33, letterSpacing: -0.6, color: INK, textAlign: 'center' },
+  doneSub: { marginTop: 8, fontSize: 17, lineHeight: 22, letterSpacing: -0.3, color: '#3D3A3C', textAlign: 'center' },
+  doneCircle: {
+    width: 128, height: 128, borderRadius: 64, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center',
+    shadowColor: PINK, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 15,
+  },
+
+});
