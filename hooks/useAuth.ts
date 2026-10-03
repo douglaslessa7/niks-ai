@@ -151,9 +151,17 @@ export function useAuth() {
   }
 
   const signOut = async () => {
+    // Um erro do Google (ex.: conta que nem entrou pelo Google) NÃO pode impedir o
+    // logout do Supabase — antes, ele pulava o signOut e a sessão ficava no aparelho.
     try {
       await GoogleSignin.signOut()
-      await supabase.auth.signOut()
+    } catch (error) {
+      console.warn('Erro no logout do Google (seguindo com o do Supabase):', error)
+    }
+    try {
+      // 'local': encerra só a sessão DESTE aparelho. O padrão do supabase-js é
+      // 'global', que derrubava a mesma conta em todos os outros aparelhos.
+      await supabase.auth.signOut({ scope: 'local' })
     } catch (error) {
       console.error('Erro no logout:', error)
     } finally {
@@ -178,7 +186,7 @@ export function useAuth() {
     if (error) throw error
 
     try { await GoogleSignin.signOut() } catch {}
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     await clearLocalData()
   }
 
