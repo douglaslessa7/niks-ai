@@ -13,8 +13,8 @@ import { useAppStore } from '../../store/onboarding';
 import { concernLabel } from '../../lib/concernLabels';
 import { saveProductForStep, normStepKey, getSavedProducts, type SavedProduct } from '../../lib/savedProducts';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
-import { listColecao, type ColecaoItem } from '../../lib/colecao';
-import { getScanCutouts, requestScanCutout } from '../../lib/scanCutouts';
+import { listColecao, requestMissingColecaoCutouts, type ColecaoItem } from '../../lib/colecao';
+import { getScanCutouts, requestMissingScanCutouts } from '../../lib/scanCutouts';
 import { useColecaoToggle } from '../../hooks/useColecaoToggle';
 import { getUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
@@ -34,7 +34,9 @@ const INK_FAINT = '#b5b5b5';
 
 type Alt = { brand: string; name: string; sub: string; img: any; praLong?: string; targets?: string[] };
 type Item = {
-  id: string; num: string; step: string; brand?: string; name?: string; img?: any;
+  // `img` = foto ORIGINAL do catálogo (é o que "Salvar na minha rotina" grava — a Rotina
+  // acha o recorte por ela). `cutout` = recorte sem fundo, só para EXIBIR.
+  id: string; num: string; step: string; brand?: string; name?: string; img?: any; cutout?: string | null;
   pra?: string; praLong?: string; targets?: string[]; alts?: Alt[];
   empty?: boolean; note?: string; productId?: string; // id do produto principal (deep-link da home)
   categoria?: string | null; compat?: number | null;   // vão junto para a coleção ("Tenho em casa")
@@ -48,7 +50,16 @@ type RecPasso = {
   sem_produto?: boolean; motivo?: string;
 };
 // Linha resolvida da tabela `produtos` (só os campos de exibição).
-type Prod = { id: string; marca: string; nome: string; imagem_url: string; concerns: string[]; categoria?: string | null };
+type Prod = {
+  id: string; marca: string; nome: string; imagem_url: string; concerns: string[]; categoria?: string | null;
+  imagem_recorte_url?: string | null; imagem_recorte_status?: string | null;
+};
+
+// Recorte sem fundo do catálogo (Fase 2), quando pronto. Algumas fotos originais têm
+// fundo cinza embutido (ex.: as da Creamy, #F2F2F2) — o recorte some com ele.
+function cutoutOf(p: Prod): string | null {
+  return p.imagem_recorte_status === 'ok' && p.imagem_recorte_url ? p.imagem_recorte_url : null;
+}
 
 // 'generating' = usuária legada (tem scan + protocolo, mas nunca teve recomendação
 // gerada, porque se cadastrou antes da feature existir). Ver `generateOnDemand`.
@@ -148,7 +159,7 @@ function buildItem(passo: RecPasso, prodMap: Map<string, Prod>, prefix: string, 
   return {
     id: `${prefix}${index}`, num, step, productId: main.id,
     compat: typeof principal.x.compatibilidade === 'number' ? Math.round(principal.x.compatibilidade) : null,
-    brand: main.marca, name: main.nome, img: { uri: main.imagem_url },
+    brand: main.marca, name: main.nome, img: { uri: main.imagem_url }, cutout: cutoutOf(main),
     pra: (principal.x.copy || '').trim(),
     praLong: (principal.x.copy || '').trim(),
     targets: targetsOf(main),
@@ -298,7 +309,7 @@ export default function RecomendacaoProdutos() {
       if (ids.length) {
         const { data: prods } = await supabase
           .from('produtos')
-          .select('id, marca, nome, imagem_url, concerns, categoria')
+          .select('id, marca, nome, imagem_url, concerns, categoria, imagem_recorte_url, imagem_recorte_status')
           .in('id', ids);
         (prods ?? []).forEach((p: any) => prodMap.set(p.id, p));
       }
@@ -329,7 +340,7 @@ export default function RecomendacaoProdutos() {
           if (!prod || seen.has(prod.id)) continue;
           seen.add(prod.id);
           flat.push({
-            id: prod.id, photoUrl: prod.imagem_url || null, name: prod.nome,
+            id: prod.id, photoUrl: prod.imagem_url || null, cutoutUrl: cutoutOf(prod), name: prod.nome,
             cat: catOf(prod.categoria) ?? catOf(step) ?? catOf(passo.categoria),
             match: typeof x.compatibilidade === 'number' ? Math.round(x.compatibilidade) : null,
             prod, step, copy: (x.copy || '').trim(),
@@ -426,22 +437,18 @@ export default function RecomendacaoProdutos() {
     }
   }, []);
 
-  // Scans antigos (de antes do recorte automático) ainda sem recorte: pede um por vez, no
-  // máximo 15 por sessão, e atualiza a grade conforme ficam prontos.
-  const backfilling = useRef(false);
+  // Scans antigos (de antes do recorte automático) ainda sem recorte: pede um por vez,
+  // dentro da cota da sessão (40, dividida com coleção/estante — lib/scanCutouts), e
+  // atualiza a grade conforme ficam prontos.
   useEffect(() => {
-    if (tab !== 'escaneados' || backfilling.current) return;
-    const todo = scans.filter((s) => !s.cutoutStatus && s.result?.status === 'ok').slice(0, 15);
-    if (!todo.length) return;
-    backfilling.current = true;
-    (async () => {
-      for (const s of todo) {
-        const st = await requestScanCutout(s.id);
-        if (!st) continue;
-        const c = (await getScanCutouts([s.id]))[s.id];
-        setScans((list) => list.map((x) => (x.id === s.id ? { ...x, cutoutStatus: c?.status ?? st, cutoutUrl: c?.url ?? null } : x)));
-      }
-    })().finally(() => { backfilling.current = false; });
+    if (tab !== 'escaneados') return;
+    void requestMissingScanCutouts(
+      scans.filter((s) => s.result?.status === 'ok').map((s) => ({ id: s.id, status: s.cutoutStatus })),
+      async (id, st) => {
+        const c = (await getScanCutouts([id]))[id];
+        setScans((list) => list.map((x) => (x.id === id ? { ...x, cutoutStatus: c?.status ?? st, cutoutUrl: c?.url ?? null } : x)));
+      },
+    );
   }, [tab, scans]);
 
   // Recarrega os escaneados ao abrir a aba e ao voltar para a tela (ex.: depois de
@@ -460,8 +467,12 @@ export default function RecomendacaoProdutos() {
     try {
       const uid = await getUserId();
       if (!uid) { setColecao([]); setColState('ready'); return; }
-      setColecao(await listColecao(uid));
+      const list = await listColecao(uid);
+      setColecao(list);
       setColState('ready');
+      // Itens vindos de scan antigo sem recorte: pede (cota da sessão) e recarrega a
+      // grade a cada um que fica pronto.
+      void requestMissingColecaoCutouts(list, () => { listColecao(uid).then(setColecao).catch(() => {}); });
     } catch {
       setColState('error');
     }
@@ -497,7 +508,7 @@ export default function RecomendacaoProdutos() {
     }
     setDetail({
       id: c.id, num: '', step: '', productId: c.produtoId ?? undefined,
-      brand: c.marca ?? undefined, name: c.nome ?? undefined, img: { uri: c.photoUrl ?? c.cutoutUrl ?? '' },
+      brand: c.marca ?? undefined, name: c.nome ?? undefined, img: { uri: c.photoUrl ?? c.cutoutUrl ?? '' }, cutout: c.cutoutUrl ?? null,
       pra: '', praLong: '', targets: [], alts: [], categoria: c.categoria, compat: c.compat,
     });
   };
@@ -768,7 +779,7 @@ export default function RecomendacaoProdutos() {
             searchOf: (r) => `${r.prod.nome ?? ''} ${r.prod.marca ?? ''}`,
             onPick: (r) => setDetail({
               id: r.id, num: '', step: r.step, productId: r.id,
-              brand: r.prod.marca, name: r.prod.nome, img: { uri: r.prod.imagem_url },
+              brand: r.prod.marca, name: r.prod.nome, img: { uri: r.prod.imagem_url }, cutout: r.cutoutUrl ?? null,
               pra: r.copy, praLong: r.copy, targets: targetsOf(r.prod), alts: [],
               categoria: r.prod.categoria ?? null, compat: r.match,
             }),
@@ -840,7 +851,7 @@ export default function RecomendacaoProdutos() {
               <>
                 <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 170 }} showsVerticalScrollIndicator={false}>
                   <View style={[pd.imgCard, { marginTop: insets.top + 63 }]}>
-                    <ExpoImage source={detail.img} style={{ width: 170, height: 196 }} contentFit="contain" accessibilityLabel={detail.name} />
+                    <ExpoImage source={detail.cutout ? { uri: detail.cutout } : detail.img} style={{ width: 170, height: 196 }} contentFit="contain" accessibilityLabel={detail.name} />
                   </View>
                   <View style={{ marginTop: 18, paddingHorizontal: 20 }}>
                     {detail.compat != null && (

@@ -13,7 +13,7 @@ import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { getUserId } from '../../lib/currentUser';
-import { listColecao, requestCutout, setShelfPos, type ColecaoItem, type ShelfPos } from '../../lib/colecao';
+import { listColecao, requestMissingColecaoCutouts, setShelfPos, type ColecaoItem, type ShelfPos } from '../../lib/colecao';
 import { haptics } from '../../lib/haptics';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,8 +213,10 @@ export default function Estante() {
         list.forEach((c) => { next[c.id] = c.id in cur ? cur[c.id] : c.estante; });
         return next;
       });
-      // Recorte ainda não feito (ou que falhou antes): pede de novo (uma vez por sessão).
-      list.filter((c) => c.cutoutStatus !== 'ok').forEach((c) => { void requestCutout(c.id); });
+      // Item de scan antigo sem recorte: pede o recorte do scan (mesma cota de 40 por
+      // sessão de Escaneados/coleção) e recarrega quando fica pronto. Item do catálogo
+      // usa o recorte do catálogo (rotina diária), nada a pedir daqui.
+      void requestMissingColecaoCutouts(list, () => { void load(); });
     } catch (e) {
       console.warn('[estante] falha ao carregar', e);
     } finally {

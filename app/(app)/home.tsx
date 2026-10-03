@@ -5,7 +5,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { useAppStore } from '../../store/onboarding';
 import { useFaceScan } from '../../hooks/useFaceScan';
@@ -15,9 +15,10 @@ import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { onCoachPrepare, setCoachStageReady } from '../../lib/coachMarks';
 import {
-  getRoutineHistory, routineStreak, routinesDoneOn, sessionDate, getRoutinePeriodForNow,
+  getRoutineHistory, routineStreak, routinesDoneOn, sessionDate,
   RoutineHistory, RoutinePeriod,
 } from '../../lib/routineProgress';
+import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Home — réplica do design 38e do Claude Design ("NIKS home redesign — rotina
@@ -34,20 +35,14 @@ const PINK = '#FF5EA8';
 const PINK_DEEP = '#C0206A';
 
 // BG7 / BGN do design (mesmas paradas).
-const BG_DAY = ['#FFE3EF', '#FFD3E5', '#FFC6DC', '#FDDFEB', '#FBEEF3', '#F9F2F5'] as const;
-const BG_NIGHT = ['#EADCF4', '#F0D9EE', '#F6D3E5', '#F9E3EE', '#FBEFF4', '#F9F3F6'] as const;
-const BG_STOPS = [0, 0.28, 0.5, 0.64, 0.8, 1] as const;
+// Fundo dia (BG7) / noite (BGN) vem de lib/homeTheme (fonte única, também usada por
+// "Seu progresso" e pelo alarme).
 
 const LET = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
-// Fundo da foto do produto por categoria do passo (cores do design: gel, sérum,
-// hidratante, protetor).
-const TINT: Record<string, string> = {
-  Limpeza: '#FDE4EE',
-  Tratamento: '#EEE5F6',
-  'Hidratação': '#E2F1EF',
-  'Proteção': '#FFEFD9',
-};
+// Fundo da foto do produto em "Seus produtos": branco para todos (pedido do usuário —
+// só o produto, sem a cor por categoria do design).
+const PRODUCT_BG = '#FFFFFF';
 
 const DEFAULT_AM = 7 * 60;
 const DEFAULT_PM = 21 * 60;
@@ -55,7 +50,7 @@ const AM_WINDOW_END = 12 * 60; // a "hora" da rotina da manhã vai até o meio-d
 const NIGHT_WINDOW_END = 4 * 60; // a da noite, até as 04:00 (mesma virada da sessão)
 const MIN_PER_STEP = 3; // mesma conta da Rotina (~3 min por passo)
 
-type HomeProduct = { id: string; name: string; img: string; step: string; tint: string };
+type HomeProduct = { id: string; name: string; img: string; step: string };
 
 type HomeData = {
   fotoUrl: string | null;
@@ -67,7 +62,18 @@ type HomeData = {
   pmCount: number;
   products: { am: HomeProduct[]; pm: HomeProduct[] };
   homeTutorialSeenAt: string | null;
+  /** created_at do último scan de rosto — conta os 7 dias até o próximo (51a). */
+  lastScanAt: string | null;
 };
+
+// Scan de rosto de 7 em 7 dias (51a): dias que faltam a partir do último scan,
+// contados em dias de calendário com a virada às 04:00 (a mesma da rotina).
+const SCAN_INTERVAL_DAYS = 7;
+function scanDaysLeft(lastScanAt: string | null, now: Date): number {
+  if (!lastScanAt) return 0;
+  const passed = Math.round((sessionDate(now).getTime() - sessionDate(new Date(lastScanAt)).getTime()) / 86_400_000);
+  return Math.max(0, SCAN_INTERVAL_DAYS - passed);
+}
 
 function parseTime(v: unknown, fallback: number): number {
   if (typeof v !== 'string') return fallback;
@@ -153,6 +159,8 @@ const FLAME = 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.
 // Cards "Pra você · Hoje" do design 38x (for-you="p6", "Ícone como o dia do
 // calendário"): um path por card, branco sobre o círculo rosa.
 const CARD_ICONS = {
+  scan: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8.5 14.5s1.3 1.5 3.5 1.5 3.5-1.5 3.5-1.5M9 9.5h.01M15 9.5h.01',
+  prog: 'M3 17l6-6 4 4 8-8M15 7h6v6',
   chat: 'M21 12a8.5 8.5 0 0 1-12.2 7.6L3.5 21l1.3-4.8A8.5 8.5 0 1 1 21 12zM8.5 11h7M8.5 14h4.5',
   prod: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M10.5 7h3M11 7v2M13 7v2M10.6 9h2.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6h-2.8a1.6 1.6 0 0 1-1.6-1.6v-4.8a1.6 1.6 0 0 1 1.6-1.6z',
   coll: 'M10 2.5h4v3h-4zM9.5 5.5h5a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3v-10a3 3 0 0 1 3-3zM10.7 10h2.6a1.2 1.2 0 0 1 1.2 1.2v4.6a1.2 1.2 0 0 1-1.2 1.2h-2.6a1.2 1.2 0 0 1-1.2-1.2v-4.6a1.2 1.2 0 0 1 1.2-1.2z',
@@ -161,13 +169,10 @@ const CARD_ICONS = {
   tip: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z',
 } as const;
 
-// Fileira de 3 ações do design 38z (actions="row3", "como o Flo").
-const ACTION_ICONS = {
-  rotina: 'M10 2h4M11 2v2.5M13 2v2.5M9.5 8.5h5M10 8.5h4a2.5 2.5 0 0 1 2.5 2.5v8.5a2.5 2.5 0 0 1-2.5 2.5h-4a2.5 2.5 0 0 1-2.5-2.5V11a2.5 2.5 0 0 1 2.5-2.5zM8 15.5h4',
-  scan: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8.5 14.5s1.3 1.5 3.5 1.5 3.5-1.5 3.5-1.5M9 9.5h.01M15 9.5h.01',
-  prog: 'M3 17l6-6 4 4 8-8M15 7h6v6',
-} as const;
 type CardIcon = keyof typeof CARD_ICONS;
+
+// Cadeado do card de scan bloqueado (51a), em #C0206A sobre o círculo #F6D3E3.
+const LOCK_PATH = 'M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5';
 
 // Anel pontilhado do dia futuro (`2px dotted rgba(192,32,106,.45)` do design). Em SVG
 // porque borda `dotted` com raio não é confiável no Fabric.
@@ -217,7 +222,7 @@ export default function Home() {
     const [scanRes, userRes, protoRes, recRes] = await Promise.all([
       supabase
         .from('skin_scans')
-        .select('foto_url, full_result')
+        .select('foto_url, full_result, created_at')
         .eq('user_id', uid)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -250,7 +255,7 @@ export default function Home() {
     // "Seus produtos": o produto principal de cada passo, separado por período e
     // numerado na ordem dos passos daquele período ("Passo 2 · Hidratação").
     const passos: any[] = Array.isArray(recRes.data?.recomendacao) ? recRes.data!.recomendacao : [];
-    const raw: Record<RoutinePeriod, { id: string; step: string; cat: string }[]> = { am: [], pm: [] };
+    const raw: Record<RoutinePeriod, { id: string; step: string }[]> = { am: [], pm: [] };
     for (const period of ['am', 'pm'] as const) {
       const doPeriodo = passos.filter((p) => p?.periodo === period || p?.periodo === 'am+pm');
       doPeriodo.forEach((p, i) => {
@@ -258,20 +263,25 @@ export default function Home() {
         const prods = p?.produtos ?? [];
         const principal = prods.find((x: any) => x?.principal) ?? prods[0];
         if (!principal?.produto_id) return;
-        raw[period].push({ id: principal.produto_id, step: `Passo ${i + 1} · ${p.categoria ?? ''}`, cat: p.categoria ?? '' });
+        raw[period].push({ id: principal.produto_id, step: `Passo ${i + 1} · ${p.categoria ?? ''}` });
       });
     }
     const ids = [...new Set([...raw.am, ...raw.pm].map((r) => r.id))];
     const byId = new Map<string, any>();
     if (ids.length) {
-      const { data: prods } = await supabase.from('produtos').select('id, nome, imagem_url').in('id', ids);
+      const { data: prods } = await supabase
+        .from('produtos')
+        .select('id, nome, imagem_url, imagem_recorte_url, imagem_recorte_status')
+        .in('id', ids);
       (prods ?? []).forEach((p: any) => byId.set(p.id, p));
     }
     const resolve = (list: typeof raw.am): HomeProduct[] => list
       .filter((r) => byId.has(r.id))
       .map((r) => {
         const p = byId.get(r.id);
-        return { id: r.id, name: p.nome, img: p.imagem_url, step: r.step, tint: TINT[r.cat] ?? TINT.Limpeza };
+        // Recorte sem fundo quando pronto — algumas fotos originais têm fundo cinza embutido.
+        const img = p.imagem_recorte_status === 'ok' && p.imagem_recorte_url ? p.imagem_recorte_url : p.imagem_url;
+        return { id: r.id, name: p.nome, img, step: r.step };
       });
 
     const full = (scan?.full_result ?? null) as { skin_score?: number } | null;
@@ -286,6 +296,7 @@ export default function Home() {
       pmCount: Array.isArray(proto?.rotina_pm) ? proto!.rotina_pm.length : 0,
       products: { am: resolve(raw.am), pm: resolve(raw.pm) },
       homeTutorialSeenAt: (user?.home_tutorial_seen_at ?? null) as string | null,
+      lastScanAt: (scan?.created_at ?? null) as string | null,
     };
   }, []);
 
@@ -307,6 +318,7 @@ export default function Home() {
     pmCount: cached?.pmCount ?? 0,
     products: cached?.products ?? { am: [], pm: [] },
     homeTutorialSeenAt: cached?.homeTutorialSeenAt as string | null,
+    lastScanAt: cached?.lastScanAt ?? null,
   };
 
   useEffect(() => {
@@ -336,7 +348,7 @@ export default function Home() {
     Animated.timing(hdrAnim, { toValue: scrolled ? 1 : 0, duration: 200, useNativeDriver: true }).start();
   }, [scrolled, hdrAnim]);
 
-  const night = getRoutinePeriodForNow(now) === 'pm'; // 38f — a partir das 18h
+  const theme = homeTheme(isNightTheme(now)); // 38f — a partir das 18h
   const hero = heroFor(now, d, hist);
   const days = weekFor(now, hist);
   const streak = routineStreak(hist, now);
@@ -344,8 +356,13 @@ export default function Home() {
 
   const go = (path: string) => { haptics.tap(); router.push(path as any); };
 
-  // Cards "Pra você · Hoje" do 38z (lista PC2 do design).
+  // Scan de rosto a cada 7 dias (51a): bloqueado enquanto faltam dias.
+  const scanDays = scanDaysLeft(d.lastScanAt, now);
+
+  // Cards "Pra você · Hoje" da 51a: depois do card de scan vem Progresso e então a
+  // lista PC2 do design (sem o progresso repetido).
   const cards: { text: string; icon: CardIcon; onPress?: () => void }[] = [
+    { text: 'Progresso', icon: 'prog', onPress: () => go('/progresso') },
     { text: 'NIKS Chat', icon: 'chat', onPress: () => go('/niks-chat') },
     { text: 'Escanear produto', icon: 'prod', onPress: () => go('/(scan)/product-camera') },
     { text: 'Minha coleção', icon: 'coll', onPress: () => go('/recomendacao-produtos') },
@@ -354,25 +371,17 @@ export default function Home() {
     { text: 'Dica do dia', icon: 'tip' },
   ];
 
-  // Fileira de ações (38z): substitui o botão "Ver rotina" do herói.
-  const actions: { label: string; icon: keyof typeof ACTION_ICONS; primary?: boolean; onPress?: () => void }[] = [
-    { label: 'Ver rotina', icon: 'rotina', primary: true, onPress: () => { haptics.action(); router.push('/protocolo' as any); } },
-    { label: 'Fazer scan', icon: 'scan', onPress: () => { haptics.action(); startFaceScan(); } },
-    // Abre a tela "Seu progresso" (43a) — ainda não existe, então fica sem ação por ora.
-    { label: 'Progresso', icon: 'prog' },
-  ];
-
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
       <LinearGradient
-        colors={night ? BG_NIGHT : BG_DAY}
+        colors={theme.bg}
         locations={BG_STOPS}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
       <View style={styles.circleWhite} pointerEvents="none" />
-      <View style={[styles.circleBlob, { backgroundColor: night ? 'rgba(232,214,246,0.5)' : 'rgba(255,226,236,0.45)' }]} pointerEvents="none" />
+      <View style={[styles.circleBlob, { backgroundColor: theme.blob }]} pointerEvents="none" />
 
       <ScrollView
         ref={scrollRef}
@@ -421,42 +430,68 @@ export default function Home() {
         {/* ── Herói: rotina ─────────────────────────────────────────────── */}
         <Text style={styles.heroLabel}>{hero.label}</Text>
         <Text style={styles.heroNum}>{hero.num}</Text>
-        {/* 38z: sem a frase "N passos ⓘ" embaixo da contagem (showPhrase: !r3). */}
-        {/* ── Ações: Ver rotina · Fazer scan · Progresso ─────────────────── */}
-        <View style={styles.actionsRow}>
-          {actions.map((a) => (
+        {/* 51a: a linha da frase "N passos ⓘ" continua no lugar, vazia (phrase: '',
+            info: false quando há o card de scan). */}
+        <View style={styles.heroPhrase} />
+        {/* ── Botão rosa da 38o: "Ver rotina"/"Iniciar rotina" (some com a rotina feita) ── */}
+        {!hero.done && hero.btn && (
+          <View style={{ marginTop: 28, alignItems: 'center' }}>
             <TouchableOpacity
-              key={a.label}
-              activeOpacity={a.onPress ? 0.85 : 1}
-              disabled={!a.onPress}
-              onPress={a.onPress}
-              style={styles.action}
+              activeOpacity={0.85}
+              onPress={() => { haptics.action(); router.push('/protocolo' as any); }}
+              style={styles.heroPill}
             >
-              <View style={[styles.actionCircle, a.primary ? styles.actionCirclePrimary : styles.actionCircleWhite]}>
-                <Svg width={24} height={24} viewBox="0 0 24 24">
-                  <Path
-                    d={ACTION_ICONS[a.icon]}
-                    fill="none"
-                    stroke={a.primary ? '#FFFFFF' : INK}
-                    strokeWidth={a.primary ? 1.9 : 1.7}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </Svg>
-              </View>
-              <Text style={styles.actionLabel} numberOfLines={1}>{a.label}</Text>
+              <Text style={styles.heroPillText}>{hero.btn}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          </View>
+        )}
 
         {/* ── Pra você · Hoje ──────────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Pra você · Hoje</Text>
+        <Text style={[styles.sectionTitle, { marginTop: hero.done ? 56 : 40 }]}>Pra você · Hoje</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={{ marginTop: 10 }}
           contentContainerStyle={{ paddingTop: 2, paddingHorizontal: 18, paddingBottom: 14, gap: 8 }}
         >
+          {/* Primeiro card = scan de rosto. Bloqueado (51a · scan-card="a"): contorno
+              rosa a 35%, cadeado #C0206A sobre #F6D3E3, título apagado e "Faltam N
+              dias". Liberado: card normal, abre o scan. */}
+          {scanDays > 0 ? (
+            <View style={[styles.card, styles.cardLocked]}>
+              <View style={[styles.cardClip, styles.cardClipLocked]}>
+                <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
+                <View style={styles.cardInner}>
+                  <View style={[styles.cardCircle, { backgroundColor: '#F6D3E3' }]}>
+                    <Svg width={18} height={18} viewBox="0 0 24 24">
+                      <Rect x={5} y={10.5} width={14} height={10} rx={2.5} fill="none" stroke={PINK_DEEP} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d={LOCK_PATH} fill="none" stroke={PINK_DEEP} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </View>
+                  <View style={{ gap: 2 }}>
+                    <Text style={[styles.cardText, { color: 'rgba(18,18,18,0.55)' }]}>Fazer scan</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: PINK_DEEP }}>
+                      {scanDays === 1 ? 'Falta 1 dia' : `Faltam ${scanDays} dias`}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.action(); startFaceScan(); }} style={styles.card}>
+              <View style={styles.cardClip}>
+                <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
+                <View style={styles.cardInner}>
+                  <View style={styles.cardCircle}>
+                    <Svg width={19} height={19} viewBox="0 0 24 24">
+                      <Path d={CARD_ICONS.scan} fill="none" stroke="#fff" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </View>
+                  <Text style={styles.cardText}>Fazer scan</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
           {cards.map((c) => (
             // Vidro: branco 58% + desfoque (backdrop-filter blur 16) + contorno rosa.
             // A sombra fica no wrapper; o recorte arredondado do desfoque, no de dentro
@@ -505,7 +540,7 @@ export default function Home() {
                     router.push('/recomendacao-produtos' as any);
                   }}
                 >
-                  <View style={[styles.prodImgBox, { backgroundColor: p.tint }]}>
+                  <View style={[styles.prodImgBox, { backgroundColor: PRODUCT_BG }]}>
                     <ExpoImage source={{ uri: p.img }} style={styles.prodImg} contentFit="contain" />
                   </View>
                   <View style={{ gap: 2 }}>
@@ -530,7 +565,7 @@ export default function Home() {
             StyleSheet.absoluteFill,
             {
               opacity: hdrAnim,
-              backgroundColor: night ? 'rgba(234,218,244,0.94)' : 'rgba(255,214,231,0.94)',
+              backgroundColor: theme.header,
               borderBottomWidth: 1,
               borderBottomColor: 'rgba(192,32,106,0.10)',
             },
@@ -610,27 +645,22 @@ const styles = StyleSheet.create({
     shadowColor: PINK_DEEP, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 6,
   },
 
+  // 51a (layout pill): label a 72, linha da frase a 24, botão a 28, "Pra você" a 40.
   heroLabel: {
-    marginTop: 92, height: 22, lineHeight: 22, textAlign: 'center',
+    marginTop: 72, height: 22, lineHeight: 22, textAlign: 'center',
     fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK,
   },
   heroNum: {
     marginTop: 5, height: 56, lineHeight: 56, textAlign: 'center',
     fontSize: 48, fontWeight: '700', letterSpacing: -0.6, color: INK,
   },
-  // 3 colunas de 100pt centralizadas (grid-template-columns: repeat(3, 100px)).
-  actionsRow: { marginTop: 135, paddingHorizontal: 17, flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start' },
-  action: { width: 100, alignItems: 'center', gap: 6 },
-  actionCircle: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  actionCirclePrimary: {
-    backgroundColor: PINK,
-    shadowColor: PINK, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 7,
+  heroPhrase: { marginTop: 24, height: 22 },
+  heroPill: {
+    height: 48, paddingHorizontal: 32, borderRadius: 100, backgroundColor: PINK,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
   },
-  actionCircleWhite: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 7,
-  },
-  actionLabel: { fontSize: 16, fontWeight: '400', lineHeight: 21, letterSpacing: -0.3, textAlign: 'center', color: INK },
+  heroPillText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
 
   sectionTitle: {
     paddingHorizontal: 18, fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK,
@@ -646,6 +676,9 @@ const styles = StyleSheet.create({
   cardInner: {
     flex: 1, paddingTop: 14, paddingHorizontal: 13, paddingBottom: 13, justifyContent: 'space-between',
   },
+  // Card de scan bloqueado (51a): contorno a 35% e sombra mais fraca (.06).
+  cardLocked: { shadowOpacity: 0.06 },
+  cardClipLocked: { borderColor: 'rgba(255,94,168,0.35)' },
   cardCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
   cardText: { fontSize: 16, fontWeight: '600', lineHeight: 19, letterSpacing: -0.4, color: INK },
 

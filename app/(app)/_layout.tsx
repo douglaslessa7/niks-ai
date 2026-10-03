@@ -95,9 +95,10 @@ function GlobalBottomBar() {
   const isDark = useAppStore((s) => s.tabBarTheme) === 'dark';
 
   // O alarme é parte da rotina: no design 44a a aba Rotina aparece ativa nele. A estante
-  // (48a) é parte de Produtos: lá o frasco aparece ativo.
+  // (48a) é parte de Produtos: lá o frasco aparece ativo. No progresso (43d) a Rotina
+  // também aparece ativa.
   const isActive = (route: string) => pathname === route || pathname.startsWith(`${route}/`)
-    || (route === '/protocolo' && pathname === '/alarme')
+    || (route === '/protocolo' && (pathname === '/alarme' || pathname === '/progresso'))
     || (route === '/recomendacao-produtos' && pathname === '/estante');
 
   const activeColor = isDark ? NAV_ACTIVE_DARK : NAV_ACTIVE;
@@ -347,6 +348,7 @@ export default function AppLayout() {
         <Tabs.Screen name="calendario" options={{ href: null }} />
         <Tabs.Screen name="alarme" options={{ href: null }} />
         <Tabs.Screen name="estante" options={{ href: null }} />
+        <Tabs.Screen name="progresso" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa

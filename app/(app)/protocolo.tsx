@@ -73,15 +73,11 @@ const FOCUS: Record<'am' | 'pm', string> = {
   pm: 'Reparação & barreira',
 };
 
-// Fundo do produto por categoria (cores do design por produto).
-const TINT: Record<string, string> = {
-  Limpeza: '#FDE4EE',
-  'Tônico': '#E2F1EF',
-  Tratamento: '#EEE5F6',
-  'Hidratação': '#E3EEF8',
-  Barreira: '#E2F1EF',
-  'Proteção': '#FFF1D6',
-};
+// Fundo da foto do produto: BRANCO para todos (pedido do usuário — só o produto, sem
+// a cor por categoria do design). O quadrado "+" de quem ainda não escolheu produto
+// segue rosado.
+const PRODUCT_BG = '#FFFFFF';
+const NO_PRODUCT_BG = '#FFF5F9';
 
 const DEFAULT_AM = 7 * 60;
 const DEFAULT_PM = 21 * 60;
@@ -562,7 +558,7 @@ export default function Protocolo() {
       i, name, ingredient, cat: c, instruction: howOf(raw),
       chosen, hasProd: !!chosen,
       img: cut?.url ?? chosen?.imageUrl ?? '', cut: !!cut, // recorte sem fundo quando pronto
-      tint: chosen ? (TINT[c] ?? '#FDE4EE') : '#FFF5F9',
+      tint: chosen ? PRODUCT_BG : NO_PRODUCT_BG,
       pline: chosen ? [chosen.brand, chosen.name].filter(Boolean).join(' · ') : 'Escolher produto',
     };
   });
@@ -1071,7 +1067,7 @@ export default function Protocolo() {
                       <View style={[styles.ckTile, { backgroundColor: s.tint, opacity: on ? 1 : 0.55 }]}>
                         {s.hasProd ? (
                           s.cut
-                            // Recorte sem fundo: o produto "flutua" sobre a cor do quadro (design 45a).
+                            // Recorte sem fundo: o produto "flutua" sobre o quadro branco.
                             ? <ExpoImage source={{ uri: s.img }} style={{ width: 46, height: 46 }} contentFit="contain" />
                             // Sem recorte ainda: a foto preenche o quadro (a original tem fundo branco,
                             // e "contain" deixava um quadrado branco dentro do quadro colorido).

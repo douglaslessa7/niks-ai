@@ -33,10 +33,17 @@ export async function getScanCutouts(scanIds: string[]): Promise<Record<string, 
 }
 
 // Pede o recorte de um scan antigo (feito antes do recorte automático). Uma vez por
-// scan por sessão do app.
+// scan por sessão do app, e no máximo SESSION_LIMIT pedidos por sessão — cota ÚNICA,
+// dividida entre Escaneados, Minha coleção e estante (cada pedido pode virar uma
+// chamada paga ao Replicate; sem lote no servidor, é o app que vai cobrindo aos poucos).
+// Devolve null quando não pediu (já pedido, cota esgotada ou erro).
+const SESSION_LIMIT = 40;
 const asked = new Set<string>();
+export function scanCutoutBudgetLeft(): number {
+  return Math.max(0, SESSION_LIMIT - asked.size);
+}
 export async function requestScanCutout(scanId: string): Promise<string | null> {
-  if (asked.has(scanId)) return null;
+  if (asked.has(scanId) || asked.size >= SESSION_LIMIT) return null;
   asked.add(scanId);
   try {
     const { data, error } = await supabase.functions.invoke('recortar-produto', { body: { scanId } });
@@ -44,6 +51,27 @@ export async function requestScanCutout(scanId: string): Promise<string | null> 
     return (data as any)?.status ?? null;
   } catch {
     return null;
+  }
+}
+
+// Pede, um por vez, o recorte dos scans da lista que ainda não têm (status nulo = scan
+// de antes do recorte automático; 'falhou' não é repetido). `onDone` roda após cada um
+// que voltou — quem chama recarrega a tela. Para quando a cota da sessão acaba.
+const running = new Set<string>();
+export async function requestMissingScanCutouts(
+  scans: { id: string; status: string | null | undefined }[],
+  onDone?: (scanId: string, status: string) => void,
+): Promise<void> {
+  const todo = scans.filter((s) => s.id && !s.status && !asked.has(s.id) && !running.has(s.id));
+  todo.forEach((s) => running.add(s.id));
+  try {
+    for (const s of todo) {
+      if (scanCutoutBudgetLeft() === 0) break;
+      const st = await requestScanCutout(s.id);
+      if (st) onDone?.(s.id, st);
+    }
+  } finally {
+    todo.forEach((s) => running.delete(s.id));
   }
 }
 

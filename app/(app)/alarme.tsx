@@ -22,12 +22,11 @@ import { supabase } from '../../lib/supabase';
 import { getUserId } from '../../lib/currentUser';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
 const PINK_TEXT = '#E8468F';
-const BG = ['#FFE3EF', '#FFD3E5', '#FFC6DC', '#FDDFEB', '#FBEEF3', '#F9F2F5'] as const;
-const BG_STOPS = [0, 0.28, 0.5, 0.64, 0.8, 1] as const;
 const SUN = 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4';
 const MOON = 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z';
 const BELL = 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0M2 4l2-2M22 4l-2-2';
@@ -228,12 +227,15 @@ export default function Alarme() {
     { k: 'pm' as const, label: 'Noite', d: MOON, t: fmt(pm) },
   ];
 
+  // Noturno a partir das 18h, como a home (38f).
+  const theme = homeTheme(isNightTheme(), 'rgba(255,226,236,0.40)');
+
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: theme.base }}>
       <StatusBar style="dark" />
-      <LinearGradient colors={BG} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <LinearGradient colors={theme.bg} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <View style={styles.circleWhite} pointerEvents="none" />
-      <View style={styles.circleBlob} pointerEvents="none" />
+      <View style={[styles.circleBlob, { backgroundColor: theme.blob }]} pointerEvents="none" />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -312,7 +314,7 @@ export default function Alarme() {
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, {
-            opacity: hdrAnim, backgroundColor: 'rgba(255,214,231,0.94)',
+            opacity: hdrAnim, backgroundColor: theme.header,
             borderBottomWidth: 1, borderBottomColor: 'rgba(192,32,106,0.10)',
           }]}
         />
@@ -414,7 +416,7 @@ const styles = StyleSheet.create({
   },
   circleBlob: {
     position: 'absolute', width: 560, height: 560, borderRadius: 280,
-    left: 190, top: -90, backgroundColor: 'rgba(255,226,236,0.40)',
+    left: 190, top: -90, // cor: `theme.blob` (dia/noite)
   },
 
   header: {

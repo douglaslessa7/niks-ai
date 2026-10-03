@@ -35,14 +35,16 @@ export default function ProductResult() {
   const col = useColecaoToggle(colecaoSrc);
 
   // Recorte sem fundo (Fase 3): o servidor faz em segundo plano depois da análise. A foto
-  // original aparece na hora; quando o recorte fica pronto (até ~20 s), troca por ele.
-  // Se falhar ou demorar, fica a original.
+  // original aparece na hora; quando o recorte fica pronto, troca por ele. Espera até 90 s:
+  // o normal é ~5 s, mas com a fila do Replicate cheia (429) o servidor tenta de novo por
+  // até ~3 min — com 20 s a tela desistia e ficava com a foto de fundo até ser reaberta.
+  // Se falhar, fica a original.
   const [cutoutUri, setCutoutUri] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     setCutoutUri(null);
     if (r?.status === 'ok' && r?.scan_id) {
-      waitScanCutout(r.scan_id).then((url) => { if (alive && url) setCutoutUri(url); }).catch(() => {});
+      waitScanCutout(r.scan_id, 90_000).then((url) => { if (alive && url) setCutoutUri(url); }).catch(() => {});
     }
     return () => { alive = false; };
   }, [r?.scan_id, r?.status]);

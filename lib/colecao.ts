@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
 import { getCutoutsByProductId } from './productCutouts';
-import { getScanCutouts } from './scanCutouts';
+import { getScanCutouts, requestMissingScanCutouts } from './scanCutouts';
 
 export type ShelfPos = { s: number; x: number }; // prateleira 0..2 + centro em pt (frame 393)
 
@@ -124,6 +124,19 @@ export async function listColecao(userId: string): Promise<ColecaoItem[]> {
       createdAt: r.created_at,
     };
   });
+}
+
+// Itens da coleção/estante vindos de SCAN sem recorte: pede o recorte do próprio scan
+// (product_scans — o mesmo que Escaneados usa), dentro da cota da sessão. Itens do
+// catálogo não entram: usam o recorte do catálogo (rotina diária `recortar-catalogo`).
+// `onDone` roda a cada recorte que voltou — quem chama recarrega a lista.
+export async function requestMissingColecaoCutouts(items: ColecaoItem[], onDone?: () => void): Promise<void> {
+  const scanIds = items
+    .filter((c) => c.origem === 'scan' && c.productScanId && !c.cutoutUrl)
+    .map((c) => c.productScanId!);
+  if (!scanIds.length) return;
+  const st = await getScanCutouts(scanIds);
+  await requestMissingScanCutouts(scanIds.map((id) => ({ id, status: st[id]?.status })), () => onDone?.());
 }
 
 // Pede o recorte à Edge Function (em segundo plano; ela é idempotente). Tentar de
