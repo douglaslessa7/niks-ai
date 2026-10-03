@@ -1,5 +1,6 @@
 import { createSupabaseClient, buildContext } from './context.ts'
 import { ANALISAR_PRODUTO_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
+import { ensureScanCutout } from '../_shared/scanCutout.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -316,6 +317,19 @@ Deno.serve(async (req) => {
     } catch (persistErr) {
       console.error('analisar-produto: falha ao persistir product_scan', persistErr)
       // Segue e devolve o resultado mesmo assim.
+    }
+
+    // Recorte SEM FUNDO da foto (Fase 3), em segundo plano — não atrasa a resposta.
+    // Catálogo → reuso da mesma usuária → BiRefNet (`_shared/scanCutout.ts`). O app
+    // mostra a foto original na hora e troca pela recortada quando o status vira 'ok'
+    // (ou mantém a original se falhar / demorar). Scan reaproveitado (idempotência) que
+    // já tem recorte não refaz nada.
+    if (scanId) {
+      const id = scanId
+      await supabase.from('product_scans').update({ recorte_status: 'pendente' }).eq('id', id).is('recorte_status', null)
+      EdgeRuntime.waitUntil(
+        ensureScanCutout(supabase, id).catch((e) => console.error('analisar-produto: recorte falhou', id, e)),
+      )
     }
 
     // Resposta ao app: análise + scan_id no topo (id da linha salva, ou null se
