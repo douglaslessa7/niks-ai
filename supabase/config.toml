@@ -52,3 +52,10 @@ enabled = true
 # verifica o JWT localmente (_shared/jwt.ts) — o user_id vem do token, nunca do corpo.
 verify_jwt = false
 entrypoint = "./functions/recortar-produto/index.ts"
+
+[functions.recortar-catalogo]
+enabled = true
+# Lote de recorte do catálogo — só administrador: a trava é o header x-admin-secret
+# (secret CATALOG_CUTOUT_SECRET). O app nunca chama.
+verify_jwt = false
+entrypoint = "./functions/recortar-catalogo/index.ts"
