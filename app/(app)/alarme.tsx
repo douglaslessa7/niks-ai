@@ -4,7 +4,8 @@
 // Abre pelo card "Alarme de rotina" da home.
 //   • "Seus horários": os horários REAIS da rotina (users.rotina_manha_horario /
 //     rotina_noite_horario, os mesmos do onboarding). Editar abre a folha com o
-//     seletor de hora (passo de 5 min) e "Salvar horário" grava no banco.
+//     seletor de hora (passo de 5 min) e "Salvar horário" grava no banco e reagenda
+//     o lembrete diário (lib/routineReminders.ts).
 //   • "Alarme Niks": liga/desliga guardado no aparelho (AsyncStorage).
 //   • "Testar Alarme Niks": abre a tela do alarme tocando (44b).
 // Fonte = SF Pro (sistema), rosa #FF5EA8. Medidas do frame 393×852 (topo 69 = 54 + 15).
@@ -21,6 +22,7 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
 import { getUserId } from '../../lib/currentUser';
 import { invalidateCache } from '../../lib/cache';
+import { syncRoutineReminders } from '../../lib/routineReminders';
 import { haptics } from '../../lib/haptics';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 
@@ -207,6 +209,8 @@ export default function Alarme() {
           // Home e Rotina mostram contagens a partir desses horários.
           invalidateCache(`home:${uid}`);
           invalidateCache(`rotina:${uid}`);
+          // O lembrete diário passa a tocar no horário novo.
+          syncRoutineReminders(uid);
           haptics.success();
         } else {
           haptics.error();

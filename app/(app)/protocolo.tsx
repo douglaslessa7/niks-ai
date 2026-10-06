@@ -38,6 +38,7 @@ import {
   sessionDate, dateKey, type RoutineHistory,
   getRoutineFlow, saveRoutineFlow, clearRoutineFlow, type RoutineFlowState,
 } from '../../lib/routineProgress';
+import { cancelLateReminder } from '../../lib/routineReminders';
 import { requestAppReview } from '../../lib/storeReview';
 import { getSavedProducts, normStepKey, type SavedProduct } from '../../lib/savedProducts';
 import { getCutoutsByImageUrl, type Cutout } from '../../lib/productCutouts';
@@ -578,6 +579,8 @@ export default function Protocolo() {
     rawList.forEach((_, i) => markStepCompleted(period, i));
     setDoneSteps((d) => ({ ...d, [period]: rawList.map((_, i) => i) }));
     markRoutineDone(period).then(() => getRoutineHistory().then(setHist));
+    // Já fez: o lembrete "ainda dá tempo" de hoje não vai mais.
+    cancelLateReminder(period);
     setPhotoUri(null);
     if (am) {
       getUserId().then((uid) => { if (uid) void getPhotoJourney(uid).then(setJourney); });

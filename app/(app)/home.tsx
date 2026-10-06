@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { useCachedQuery } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
+import { scheduleRoutineReminders } from '../../lib/routineReminders';
 import { onCoachPrepare, setCoachStageReady } from '../../lib/coachMarks';
 import {
   getRoutineHistory, routineStreak, routinesDoneOn, sessionDate,
@@ -324,6 +325,16 @@ export default function Home() {
   useEffect(() => {
     if (cached) setStoreSkinScore(cached.skinScore ?? null);
   }, [cached, setStoreSkinScore]);
+
+  // Lembretes diários da rotina no horário dela (notificação local; não reagenda se
+  // nada mudou). Ver lib/routineReminders.ts.
+  useEffect(() => {
+    if (!cached) return;
+    scheduleRoutineReminders({
+      am: { minutes: d.amTime, steps: d.amCount },
+      pm: { minutes: d.pmTime, steps: d.pmCount },
+    });
+  }, [cached]);
 
   // ── Tutorial de primeiro acesso: aplica o "já viu" do servidor e SÓ DEPOIS
   // libera o palco, no mesmo efeito (ver README → "Quem vê").

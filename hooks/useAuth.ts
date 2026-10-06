@@ -6,6 +6,7 @@ import * as AppleAuthentication from 'expo-apple-authentication'
 import * as Crypto from 'expo-crypto'
 import { clearAllCache } from '../lib/cache'
 import { resetUserId } from '../lib/currentUser'
+import { cancelRoutineReminders } from '../lib/routineReminders'
 import { useAppStore } from '../store/onboarding'
 
 // Client ID iOS gerado no Google Cloud Console
@@ -148,6 +149,8 @@ export function useAuth() {
     // faria quem sai e volta na MESMA conta rever o tutorial das 6 fotos.
     useAppStore.getState().clearHomeTutorialFlags()
     await clearAllCache()
+    // Os lembretes da rotina são desta conta (horários dela) — a próxima agenda os seus.
+    await cancelRoutineReminders()
   }
 
   const signOut = async () => {
