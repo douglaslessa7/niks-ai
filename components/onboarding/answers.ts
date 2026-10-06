@@ -1,26 +1,34 @@
-// Respostas do onboarding novo que mais de uma tela precisa ler: as opções da
-// tela 5 (com as frases reveladas do design) e os rótulos curtos que o loading
-// (tela 18) acende e o compromisso (tela 21) usa.
+// Respostas do onboarding que mais de uma tela precisa ler: as opções de "o que te
+// incomoda" (tela 4 do fluxo completo), os benefícios e etiquetas da tela 5
+// ("Entendi"), as frases do loading da rotina (23) e a do compromisso (28).
 import type { OnboardingData } from '../../store/onboarding';
 
-// Rótulos = valores gravados em `onboarding.concerns` (inalterados). Frases =
-// quadro "Frases reveladas · tela 5" do design.
-export const CONCERN_OPTIONS: { label: string; reveal: string }[] = [
-  { label: 'Acne/espinhas', reveal: 'Vamos priorizar ativos que acalmam e desobstruem, sem ressecar.' },
-  { label: 'Manchas', reveal: 'Sua rotina vai focar em uniformizar o tom e proteger do sol todos os dias.' },
-  { label: 'Cravos', reveal: 'Vamos incluir uma limpeza que ajuda a manter os poros livres.' },
-  { label: 'Oleosidade', reveal: 'Vamos equilibrar o brilho sem tirar a hidratação que sua pele precisa.' },
-  { label: 'Rugas', reveal: 'Vamos trazer ativos que estimulam firmeza e cuidam da pele a longo prazo.' },
-  { label: 'Poros dilatados', reveal: 'Vamos cuidar da textura e da oleosidade para os poros ficarem mais discretos.' },
-  { label: 'Olheiras', reveal: 'Vamos incluir um cuidado específico para a área dos olhos.' },
-  { label: 'Ressecamento', reveal: 'Vamos reforçar a hidratação e proteger a barreira da sua pele.' },
-  { label: 'Textura irregular', reveal: 'Vamos incluir uma renovação suave para a pele ficar mais lisa ao toque.' },
-  { label: 'Outro', reveal: 'Tudo bem. A análise da sua foto vai mostrar o que priorizar.' },
+// Rótulos = valores gravados em `onboarding.concerns` (inalterados).
+export const CONCERN_LABELS = [
+  'Acne/espinhas', 'Manchas', 'Cravos', 'Oleosidade', 'Rugas', 'Poros dilatados',
+  'Olheiras', 'Ressecamento', 'Textura irregular', 'Outro',
 ];
 
-// Etiqueta curta de cada preocupação (chips do loading). O design mostra "Acne"
-// para "Acne/espinhas"; as demais já são curtas.
-const CONCERN_CHIP: Record<string, string> = { 'Acne/espinhas': 'Acne' };
+// Frase revelada embaixo da opção marcada (modelo do Flo, a pedido do produto) —
+// as mesmas do quadro "Frases reveladas · tela 5" do design anterior.
+export const CONCERN_REVEAL: Record<string, string> = {
+  'Acne/espinhas': 'Vamos priorizar ativos que acalmam e desobstruem, sem ressecar.',
+  Manchas: 'Sua rotina vai focar em uniformizar o tom e proteger do sol todos os dias.',
+  Cravos: 'Vamos incluir uma limpeza que ajuda a manter os poros livres.',
+  Oleosidade: 'Vamos equilibrar o brilho sem tirar a hidratação que sua pele precisa.',
+  Rugas: 'Vamos trazer ativos que estimulam firmeza e cuidam da pele a longo prazo.',
+  'Poros dilatados': 'Vamos cuidar da textura e da oleosidade para os poros ficarem mais discretos.',
+  Olheiras: 'Vamos incluir um cuidado específico para a área dos olhos.',
+  Ressecamento: 'Vamos reforçar a hidratação e proteger a barreira da sua pele.',
+  'Textura irregular': 'Vamos incluir uma renovação suave para a pele ficar mais lisa ao toque.',
+  Outro: 'Tudo bem. A análise da sua foto vai mostrar o que priorizar.',
+};
+
+// Etiqueta curta de cada preocupação (etiquetas em volta da logo na tela 5 e
+// chips do loading antigo). Mapa do design: o resto já é curto.
+const CONCERN_CHIP: Record<string, string> = {
+  'Acne/espinhas': 'Acne', 'Poros dilatados': 'Poros', 'Textura irregular': 'Textura',
+};
 
 // Valores gravados pelas telas de tipo de pele / sol / hidratação e sono →
 // rótulo do chip, no formato dos exemplos do design ("Pele mista", "1–3 h de sol",
@@ -52,26 +60,25 @@ export function answerChips(o: OnboardingData): string[] {
   return chips;
 }
 
-// Tela "Entendi! Vamos te ajudar a:" (modelo 1f), logo depois da tela 5.
-// Acne e Manchas + o genérico são o texto do design; os demais foram escritos a
-// partir das frases reveladas da tela 5 (mesma promessa, em forma de benefício).
+// Tela 5 ("Entendi! Vamos te ajudar a:"), logo depois da tela 4. Texto do design
+// (mapa `BEN` do fluxo completo), um por preocupação.
 const CONCERN_BENEFIT: Record<string, string> = {
-  'Acne/espinhas': 'Acalmar a acne sem ressecar a sua pele',
-  Manchas: 'Uniformizar o tom e prevenir novas manchas',
-  Cravos: 'Manter os poros livres de cravos',
-  Oleosidade: 'Equilibrar o brilho sem tirar a hidratação',
-  Rugas: 'Estimular a firmeza e cuidar da pele a longo prazo',
-  'Poros dilatados': 'Deixar os poros mais discretos',
-  Olheiras: 'Cuidar da área dos olhos',
-  Ressecamento: 'Reforçar a hidratação e proteger a barreira da pele',
-  'Textura irregular': 'Deixar a pele mais lisa ao toque',
-  Outro: 'Descobrir pela análise da foto o que priorizar',
+  'Acne/espinhas': 'Acalmar a acne sem ressecar a pele',
+  Manchas: 'Clarear manchas e uniformizar o tom',
+  Cravos: 'Desobstruir os poros e reduzir cravos',
+  Oleosidade: 'Controlar o brilho sem agredir a pele',
+  Rugas: 'Suavizar linhas finas e firmar a pele',
+  'Poros dilatados': 'Refinar a aparência dos poros',
+  Olheiras: 'Clarear e desinchar a área dos olhos',
+  Ressecamento: 'Recuperar a hidratação da pele',
+  'Textura irregular': 'Deixar a textura mais lisa',
+  Outro: 'Montar uma rotina feita para você',
 };
 const GENERIC_BENEFIT = 'Seguir uma rotina simples que cabe no seu dia';
 
 /**
- * Benefícios da tela 1f: um por preocupação marcada, na ordem em que ela marcou,
- * completando com o genérico do design até 3 itens (o layout comporta 3).
+ * Benefícios da tela 5: um por preocupação marcada, na ordem em que ela marcou;
+ * com menos de 3, entra o genérico do design no fim (a lista tem no máx. 3).
  */
 export function concernBenefits(concerns: string[]): string[] {
   const list = concerns.map((c) => CONCERN_BENEFIT[c]).filter(Boolean) as string[];
@@ -79,12 +86,33 @@ export function concernBenefits(concerns: string[]): string[] {
   return list.slice(0, 3);
 }
 
-/** Etiquetas em volta da logo na tela 1f (o design tem 2 posições). */
+/** Etiquetas em volta da logo na tela 5 (o design tem 2 posições). */
 export function concernTags(concerns: string[]): string[] {
-  return concerns.filter((c) => c !== 'Outro').map((c) => CONCERN_CHIP[c] ?? c).slice(0, 2);
+  return concerns.map((c) => CONCERN_CHIP[c] ?? c).slice(0, 2);
 }
 
-// Compromisso (tela 21): o que ela quer resolver, a partir da tela 5.
+// Loading da rotina (tela 23): a frase troca a cada terço — "Escolhendo ativos
+// para [concern]…" → "Ajustando para pele [tipo]…" → "Deixando [ativo] de fora…".
+// A 3ª só existe se ela informou o que causou reação (tela 17). O tipo vem do
+// scan (`skin_type_detected`: seca/oleosa/mista/normal), já que o fluxo completo
+// não pergunta mais o tipo de pele.
+const CONCERN_LOADING: Record<string, string> = {
+  'Acne/espinhas': 'acne', Manchas: 'manchas', Cravos: 'cravos', Oleosidade: 'oleosidade',
+  Rugas: 'rugas', 'Poros dilatados': 'poros dilatados', Olheiras: 'olheiras',
+  Ressecamento: 'ressecamento', 'Textura irregular': 'textura irregular',
+};
+
+export function routineLoadingLines(o: OnboardingData, skinType: string | null | undefined): string[] {
+  const concern = o.concerns.map((c) => CONCERN_LOADING[c]).find(Boolean);
+  const lines = [concern ? `Escolhendo ativos para ${concern}…` : 'Escolhendo os ativos certos…'];
+  const tipo = (skinType ?? '').toLowerCase();
+  lines.push(['seca', 'oleosa', 'mista', 'normal'].includes(tipo) ? `Ajustando para pele ${tipo}…` : 'Ajustando para a sua pele…');
+  const reacao = o.allergy_description?.trim();
+  if (reacao) lines.push(`Deixando ${reacao.length > 32 ? `${reacao.slice(0, 32).trim()}…` : reacao} de fora…`);
+  return lines;
+}
+
+// Compromisso (tela 28): o que ela quer resolver, a partir de "o que te incomoda".
 const CONCERN_GOAL: Record<string, string> = {
   'Acne/espinhas': 'acalmar a acne',
   Manchas: 'clarear as manchas',

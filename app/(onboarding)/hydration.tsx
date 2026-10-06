@@ -5,7 +5,7 @@ import {
   OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount, useObName, withName,
 } from '../../components/onboarding/kit';
 
-// Tela 11a do onboarding novo — hidratação (escolha única, padrão da tela 10). Era a
+// Tela 13 do fluxo completo — hidratação (escolha única, padrão do sol). Era a
 // metade de cima da antiga `hydration-sleep`, que foi dividida em duas; o sono é a
 // tela 11b (`sleep.tsx`). Grava `onboarding.hydration` com os mesmos valores de antes.
 const OPTIONS: ObChoice<string>[] = ['Menos de 1L', '1–2L', '2–3L', '3L+'].map((v) => ({ label: v, value: v }));
@@ -23,7 +23,6 @@ export default function Hydration() {
 
   return (
     <ObChoiceScreen<string>
-      step={STEP}
       title={withName(name, 'quanta água você bebe por dia?')}
       subtitle="Sua pele se hidrata por dentro, e isso pesa mais do que qualquer produto."
       options={OPTIONS}

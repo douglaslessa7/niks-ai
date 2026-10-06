@@ -1,24 +1,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Kit do ONBOARDING NOVO (design "NIKS Onboarding Modelos", Claude Design —
-// padrão aprovado "réplica do Flo"). FONTE ÚNICA dos átomos das telas de
-// pergunta: fundo, header (voltar + barra), título/subtítulo, card de opção,
-// botão pílula e seletor de ano. Não duplicar estes estilos nas telas.
+// Kit do ONBOARDING NOVO (design "NIKS Onboarding - fluxo completo", Claude
+// Design — padrão "réplica do Flo"). FONTE ÚNICA dos átomos das telas de
+// pergunta: fundo, header (voltar), título/subtítulo, card de opção, botão
+// pílula e seletor de ano. Não duplicar estes estilos nas telas.
 //
 // O design é desenhado num frame de 393 × 852 pt com a status bar ocupando os
-// 54 pt de cima. As posições verticais do arquivo são convertidas por `oby()`:
-// `insets.top + (yDoDesign − 54)` — o que no design está a 112 pt do topo fica
-// 58 pt abaixo da safe area em qualquer iPhone.
+// 54 pt de cima. As posições verticais do arquivo são convertidas por `y()`:
+// `insets.top + (yDoDesign − 54)` — o que no design está a 118 pt do topo fica
+// 64 pt abaixo da safe area em qualquer iPhone.
+//
+// ⚠️ O fluxo completo (out/2026) NÃO tem barra de progresso em nenhuma tela — as
+// telas reaproveitadas do design anterior vieram "sem-barra". Só o voltar.
 //
 // Tipografia: SF Pro = fonte do sistema no iOS, por isso nenhum `fontFamily`.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, Animated,
+  View, Text, Image, TouchableOpacity, ScrollView, Animated,
   NativeSyntheticEvent, NativeScrollEvent, StyleProp, ViewStyle, TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 
@@ -34,39 +37,31 @@ export const OB = {
   divider: '#F0EDEB',     // divisórias / grade dos gráficos
   track: '#DCD5D6',       // trilho da barra
   radio: '#C4C4C4',       // radio das opções não selecionadas
+  wash: '#FFE3EF',        // fundo rosa claro (chip ativo, selo de intensidade)
   blush: ['#FBEDEF', '#FAF1F2'] as const, // fundo das telas de valor
 };
 
 // ── Contadores do funil ──────────────────────────────────────────────────────
-// Numeração ÚNICA do onboarding novo (Mixpanel `step_number`), na ordem nova.
-// A transição "Prazer, <nome>!" não conta como passo (não tem pergunta).
+// Numeração ÚNICA do onboarding (Mixpanel `step_number`) = o número da tela no
+// design "fluxo completo" + 1 (a apresentação 0.1 e os dados 0.2 contam como 1 e 2).
+// As telas condicionais (idade da pele, detalhe da alergia) mantêm o número mesmo
+// quando não aparecem — o funil mostra o pulo, não renumera.
 export const OB_STEPS = {
-  // 1 era o welcome antigo — SAIU (set/2026); o app abre direto no nome. A
-  // numeração segue a das telas do design (e a calibração da barra), por isso o
-  // funil do Mixpanel começa no passo 2.
-  nome: 2, idade: 3, gravidez: 4, incomoda: 5,
-  // Tela de valor "Entendi! Vamos te ajudar a:" (modelo 1f), entre a tela 5 e a
-  // preparação do scan — daqui em diante todos os passos andaram um.
-  entendi: 6, prepScan: 7, camera: 8, potencial: 9, tipoPele: 10, sol: 11,
-  // A antiga tela 11 (hidratação + sono) virou duas (11a/11b).
-  hidratacao: 12, sono: 13, rotinaAtual: 14,
-  horarioRotina: 15, avisoLembretes: 16, pedidoNotificacao: 17, alergias: 18,
-  alergiaDetalhe: 19, objetivo: 20, comSemNiks: 21, loading: 22, relatorio: 23,
-  rotinaPronta: 24, compromisso: 25,
-  // Depois do paywall e do cadastro: carrossel de apresentação (última antes da home).
-  apresentacao: 26,
+  ola: 1, seusDados: 2, nome: 3, prazer: 4, idade: 5, incomoda: 6, entendi: 7,
+  prepScan: 8, camera: 9, analisando: 10, resultadoScan: 11, idadePele: 12,
+  transicaoRotina: 13, sol: 15, hidratacao: 16, sono: 17,
+  gravidez: 18, alergias: 19, alergiaDetalhe: 20, objetivo: 21, empatia: 22,
+  horarioRotina: 23, avisoLembretes: 24, pedidoNotificacao: 25, loadingRotina: 26,
+  rotinaPronta: 27, compromisso: 28,
+  // Paywall (Superwall) entre o compromisso e a conta — não é tela nossa, não conta.
+  criarConta: 29,
+  // Telas FORA do fluxo desde o "fluxo completo" (out/2026). Os arquivos ficaram no
+  // repo; o 0 garante que nada delas entra no funil novo se alguém navegar até lá.
+  // `incomodaRotina` (14) = a 2ª "o que te incomoda", tirada a pedido do produto.
+  incomodaRotina: 0, potencial: 0, tipoPele: 0, rotinaAtual: 0, comSemNiks: 0, loading: 0,
+  relatorio: 0, apresentacao: 0,
 } as const;
-export const OB_STEP_TOTAL = 26;
-
-// Barra de progresso: `(passo − 1) / 19`. O 19 foi calibrado para bater com as
-// larguras do design (nome 5%, idade 10%, "o que te incomoda" 22%, sol 48%).
-// Mantido em 19 mesmo com os passos a mais (hidratação/sono e a tela "Entendi"),
-// por decisão do produto. Com isso as telas DEPOIS da tela 5 avançam um pouco mais
-// que no design (sol: 52,6% contra 48%) e o objetivo (passo 20) chega a 100%.
-const BAR_TOTAL = 19;
-export function obProgress(step: number) {
-  return Math.max(0, Math.min(1, (step - 1) / BAR_TOTAL));
-}
+export const OB_STEP_TOTAL = 29;
 
 /** Evento de Mixpanel no padrão do onboarding (`step_total` fixo do funil novo). */
 export function obStep(step: number, name: string) {
@@ -93,8 +88,9 @@ export function useObFrame() {
     insets,
     /** Converte uma coordenada Y do frame de 852 pt do design para a tela real. */
     y: (designY: number) => insets.top + designY - 54,
-    /** Distância do botão pílula até a base (a 55 pt da base no design). */
-    buttonBottom: insets.bottom + 21,
+    /** Distância do botão pílula até a base: topo a 757 pt no design (base do
+     *  botão a 47 pt da borda = indicador de 34 pt + 13). */
+    buttonBottom: insets.bottom + 13,
   };
 }
 
@@ -110,20 +106,20 @@ export function ObScreen({ variant = 'white', children }: { variant?: 'white' | 
   );
 }
 
-// ── Header: voltar + barra de progresso ─────────────────────────────────────
-// Voltar: chevron 13 × 22 a 17 pt da esquerda (topo a 58 pt). Barra: 267 × 3 pt
-// a 63 pt de cada lado (topo a 68 pt), trilho #DCD5D6, preenchimento #FF5EA8.
-// `step` ausente = tela de valor (o design mostra só o voltar, sem barra).
+// ── Header: voltar ───────────────────────────────────────────────────────────
+// Chevron 13 × 22 a 17 pt da esquerda, topo a 64 pt (traço 2,2). Sem barra de
+// progresso (ver o cabeçalho do arquivo). `backdrop` pinta a faixa do topo para a
+// lista rolar por baixo sem aparecer atrás do voltar.
 export function ObHeader({
-  step, onBack, backdrop,
-}: { step?: number; onBack?: () => void; backdrop?: string }) {
+  onBack, backdrop,
+}: { onBack?: () => void; backdrop?: string }) {
   const { insets, y } = useObFrame();
   return (
     <View
       pointerEvents="box-none"
       style={{
         position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-        height: y(90), backgroundColor: backdrop,
+        height: y(100), backgroundColor: backdrop,
       }}
     >
       {onBack && (
@@ -131,22 +127,12 @@ export function ObHeader({
           onPress={() => { haptics.tap(); onBack(); }}
           activeOpacity={0.6}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={{ position: 'absolute', left: 17, top: insets.top + 4, width: 13, height: 22 }}
+          style={{ position: 'absolute', left: 17, top: insets.top + 10, width: 13, height: 22 }}
         >
           <Svg width={13} height={22} viewBox="0 0 13 22">
-            <Path d="M11 2 L2 11 L11 20" fill="none" stroke={OB.ink} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M11 2 L2 11 L11 20" fill="none" stroke={OB.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
         </TouchableOpacity>
-      )}
-      {step != null && (
-        <View style={{
-          position: 'absolute', left: 63, right: 63, top: insets.top + 14,
-          height: 3, borderRadius: 2, backgroundColor: OB.track,
-        }}>
-          <View style={{
-            width: `${obProgress(step) * 100}%`, height: 3, borderRadius: 2, backgroundColor: OB.pink,
-          }} />
-        </View>
       )}
     </View>
   );
@@ -180,52 +166,45 @@ export function ObCheck({ size = 18, bg = OB.pink, fg = '#FFFFFF', stroke = 2.4 
   );
 }
 
-// ── Card de opção ────────────────────────────────────────────────────────────
-// Não selecionado: #F0F0F0, raio 12, mín. 67 pt, radio cinza 18 pt.
-// Selecionado: card inteiro #FF5EA8, texto branco peso 400, check branco com
-// visto rosa e — quando a opção tem — a frase revelada embaixo (15/21).
+// ── Card de opção (modelo do Flo) ────────────────────────────────────────────
+// Não selecionado: #F0F0F0, raio 12, mín. 65 pt, texto 17/23 ink, aro #C4C4C4 de
+// 20 pt. Selecionado (a pedido do produto, igual ao Flo — vale para escolha única E
+// múltipla em todo o onboarding): o card INTEIRO fica #FF5EA8, texto branco, círculo
+// branco com visto rosa e — quando a opção tem — a frase revelada embaixo, em
+// branco (15/21). Mesmo padding nos dois estados: o texto não pula ao selecionar.
+//
+// ⚠️ `key` por estado é OBRIGATÓRIO: o card muda de cor no meio do toque, e o
+// `TouchableOpacity` (Fabric) não devolvia a opacidade do toque — o card selecionado
+// ficava rosa CLARO até um 2º toque (bug visto no simulador). Com a `key`, cada
+// estado é um touchable novo, nascido com opacidade cheia.
 export function ObOptionCard({
   label, selected, reveal, onPress, disabled,
 }: { label: string; selected: boolean; reveal?: string; onPress: () => void; disabled?: boolean }) {
-  if (selected) {
-    return (
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={onPress}
-        style={{
-          backgroundColor: OB.pink, borderRadius: 12,
-          paddingTop: 22, paddingHorizontal: 21, paddingBottom: 21, gap: 16,
-        }}
-      >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-          <Text style={{ flex: 1, fontSize: 17, lineHeight: 25, fontWeight: '400', color: '#FFFFFF', paddingRight: 8 }}>
-            {label}
-          </Text>
-          <View style={{ marginTop: 3 }}>
-            <ObCheck size={18} bg="#FFFFFF" fg={OB.pink} stroke={2.6} />
-          </View>
-        </View>
-        {!!reveal && (
-          <Text style={{ fontSize: 15, lineHeight: 21, fontWeight: '400', color: '#FFFFFF', paddingRight: 34 }}>
-            {reveal}
-          </Text>
-        )}
-      </TouchableOpacity>
-    );
-  }
   return (
     <TouchableOpacity
-      activeOpacity={0.7}
+      key={selected ? 'on' : 'off'}
+      activeOpacity={selected ? 0.85 : 0.7}
       onPress={onPress}
       disabled={disabled}
       style={{
-        backgroundColor: OB.option, borderRadius: 12, minHeight: 67, paddingHorizontal: 21,
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+        backgroundColor: selected ? OB.pink : OB.option, borderRadius: 12, minHeight: 65,
+        paddingHorizontal: 19, paddingVertical: 21, justifyContent: 'center', gap: 12,
         opacity: disabled ? 0.5 : 1,
       }}
     >
-      <Text style={{ flex: 1, fontSize: 17, lineHeight: 25, fontWeight: '400', color: OB.ink }}>{label}</Text>
-      <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: OB.radio }} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <Text style={{ flex: 1, fontSize: 17, lineHeight: 23, fontWeight: '400', color: selected ? '#FFFFFF' : OB.ink }}>
+          {label}
+        </Text>
+        {selected ? (
+          <ObCheck size={20} bg="#FFFFFF" fg={OB.pink} stroke={2.4} />
+        ) : (
+          <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: OB.radio }} />
+        )}
+      </View>
+      {selected && !!reveal && (
+        <Text style={{ fontSize: 15, lineHeight: 21, color: '#FFFFFF', paddingRight: 36 }}>{reveal}</Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -235,8 +214,8 @@ export function ObOptionCard({
 // de opacidade (nota da tela 2 do design). `bottom` posiciona no frame; sem ele o
 // botão fica no fluxo (tela de nome, que centraliza o bloco acima do teclado).
 export function ObPillButton({
-  label = 'Continuar', onPress, disabled, bottom, style,
-}: { label?: string; onPress: () => void; disabled?: boolean; bottom?: number; style?: StyleProp<ViewStyle> }) {
+  label = 'Continuar', onPress, disabled, bottom, width = 172, style,
+}: { label?: string; onPress: () => void; disabled?: boolean; bottom?: number; width?: number; style?: StyleProp<ViewStyle> }) {
   const positioned: ViewStyle = bottom != null
     ? { position: 'absolute', bottom, alignSelf: 'center' }
     : { alignSelf: 'center' };
@@ -246,7 +225,7 @@ export function ObPillButton({
       disabled={disabled}
       activeOpacity={0.85}
       style={[positioned, {
-        width: 172, height: 48, borderRadius: 24, backgroundColor: OB.pink,
+        width, height: 48, borderRadius: 24, backgroundColor: OB.pink,
         alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1,
         shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 8,
       }, style]}
@@ -362,16 +341,15 @@ export function ObWheel({
   );
 }
 
-// ── Tela de escolha única (modelo 3i) ────────────────────────────────────────
-// Estrutura das perguntas de escolha única: título a 112 pt, subtítulo 11 pt
-// abaixo, opções 23 pt abaixo (gap 8), botão pílula fixo. A tela chamadora
+// ── Tela de escolha única ────────────────────────────────────────────────────
+// Estrutura das perguntas de escolha única: título a 118 pt, subtítulo 9 pt
+// abaixo, opções 22 pt abaixo (gap 8), botão pílula fixo. A tela chamadora
 // decide o que gravar (`onSelect`) e para onde ir (`onContinue`).
 export type ObChoice<V extends string> = { label: string; value: V; reveal?: string };
 
 export function ObChoiceScreen<V extends string>({
-  step, title, subtitle, options, initial = null, onSelect, onContinue, onBack,
+  title, subtitle, options, initial = null, onSelect, onContinue, onBack,
 }: {
-  step: number;
   title: string;
   subtitle?: string;
   options: ObChoice<V>[];
@@ -386,11 +364,11 @@ export function ObChoiceScreen<V extends string>({
     <ObScreen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: y(112), paddingBottom: buttonBottom + 48 + 24 }}
+        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 24 }}
       >
         <ObTitle>{title}</ObTitle>
-        {!!subtitle && <ObSubtitle style={{ marginTop: 11 }}>{subtitle}</ObSubtitle>}
-        <View style={{ marginTop: subtitle ? 23 : 34, marginHorizontal: 17, gap: 8 }}>
+        {!!subtitle && <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>{subtitle}</ObSubtitle>}
+        <View style={{ marginTop: subtitle ? 22 : 34, marginHorizontal: 17, gap: 8 }}>
           {options.map((opt) => (
             <ObOptionCard
               key={opt.value}
@@ -402,7 +380,7 @@ export function ObChoiceScreen<V extends string>({
           ))}
         </View>
       </ScrollView>
-      <ObHeader step={step} onBack={onBack} backdrop={OB.bg} />
+      <ObHeader onBack={onBack} backdrop={OB.bg} />
       <ObPillButton
         disabled={!selected}
         bottom={buttonBottom}
@@ -423,6 +401,46 @@ export function ageFromYear(year: number) {
 // equivalente (recolore mantendo o alpha). ⚠️ `tintColor` não repinta com
 // fast-refresh: mudou a cor, recarregue o app.
 export const NIKS_LOGO = require('../../assets/home/niks-logo.png');
+// PNG EXATO do design (`niks-logo-FF5EA8.png`, 196 × 199 — o "04 - Cores do Niks
+// score (chapada)/niks-logo-rosa-FF5EA8.png" dos logos oficiais), não o bloom tintado.
+export const NIKS_LOGO_PINK = require('../../assets/onboarding/niks-logo-FF5EA8.png');
+
+// ── Logo com halo (telas de valor: "Entendi" e "Sua análise está pronta") ───
+// Halo Ø320 (radial rgba(255,110,175) .30 → .12 → 0), anel Ø195 com traço
+// rgba(255,110,175,.30), disco branco Ø137 com sombra rosa e a logo 75 × 76, tudo
+// centrado. `top` = topo do halo no frame do design. `children` desenha por cima
+// (etiquetas, selo de check) com coordenadas relativas ao quadro de 320 pt.
+export function ObLogoHalo({ top, children }: { top: number; children?: React.ReactNode }) {
+  const { y } = useObFrame();
+  return (
+    <View pointerEvents="box-none" style={{ position: 'absolute', top: y(top), alignSelf: 'center', width: 320, height: 320 }}>
+      {/* No CSS o raio do `circle` vai até o canto (160·√2): os stops de 45% e 70%
+          caem em 0,636 e 0,99 do raio do círculo. */}
+      <Svg width={320} height={320} style={{ position: 'absolute' }}>
+        <Defs>
+          <RadialGradient id="obHalo" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="rgb(255,110,175)" stopOpacity={0.30} />
+            <Stop offset="0.636" stopColor="rgb(255,110,175)" stopOpacity={0.12} />
+            <Stop offset="0.99" stopColor="rgb(255,110,175)" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={160} cy={160} r={160} fill="url(#obHalo)" />
+      </Svg>
+      <View style={{
+        position: 'absolute', left: 62.5, top: 62.5, width: 195, height: 195, borderRadius: 97.5,
+        borderWidth: 1, borderColor: 'rgba(255,110,175,0.30)',
+      }} />
+      <View style={{
+        position: 'absolute', left: 91.5, top: 91.5, width: 137, height: 137, borderRadius: 68.5,
+        backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+        shadowColor: 'rgb(255,110,175)', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.30, shadowRadius: 20,
+      }}>
+        <Image source={NIKS_LOGO_PINK} style={{ width: 75, height: 76 }} />
+      </View>
+      {children}
+    </View>
+  );
+}
 
 // Hook utilitário: dispara `fn` uma vez no mount (evento de Mixpanel de "viu").
 export function useOnMount(fn: () => void) {

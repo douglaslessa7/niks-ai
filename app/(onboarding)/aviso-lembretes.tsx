@@ -9,12 +9,12 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 13a do onboarding novo — aviso de lembretes (modelo 7a do design). Tela de
-// valor: só o voltar, sem barra, fundo rosado. Prepara a usuária para o pedido
-// nativo de permissão, que vem na tela seguinte (13b).
+// Tela 21 do fluxo completo — aviso de lembretes. Tela de valor: só o voltar, fundo
+// rosado. Prepara a usuária para o pedido nativo de permissão, que vem na tela
+// seguinte (22).
 // Medidas do Flo: "iPhone" de 268 pt que some para baixo, sino Ø88 sobreposto ao
 // topo, notificação de 335 pt (mais larga que o iPhone) em y 205. O "21h" vem do
-// horário da noite escolhido na tela 13.
+// horário da noite escolhido na tela 20.
 const STEP = OB_STEPS.avisoLembretes;
 const STEP_NAME = 'Aviso de Lembretes';
 
@@ -89,7 +89,8 @@ export default function AvisoLembretes() {
         shadowColor: OB.ink, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 14,
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
+          {/* Ícone do app (fundo #FF7EB9 + flor branca) — o mesmo que aparece na notificação real */}
+          <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: '#FF7EB9', alignItems: 'center', justifyContent: 'center' }}>
             <Image source={NIKS_LOGO} style={{ width: 15, height: 15, tintColor: '#FFFFFF' }} />
           </View>
           <Text style={{ fontSize: 13, fontWeight: '500', letterSpacing: 0.3, color: OB.sub }}>NIKS</Text>

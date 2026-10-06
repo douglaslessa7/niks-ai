@@ -9,15 +9,15 @@ import {
   useObFrame, useObName, withName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 13 do onboarding novo — horário da rotina (NOVA). O design não tem modelo
-// próprio para ela: usa o seletor da tela 3 (1c) em duas rodas lado a lado, sobre
-// UMA faixa, como o seletor de hora do iOS.
+// Tela 20 do fluxo completo — horário da rotina: o seletor da tela 3 em duas rodas
+// lado a lado, sobre UMA faixa, como o seletor de hora do iOS. Vem DEPOIS do objetivo,
+// e a rotina pré-gerada não é refeita por isso (a chave dela ignora os horários).
 //
 // Grava em `onboarding.rotina_manha_horario` / `rotina_noite_horario` ('HH:MM') e o
 // fuso do aparelho em `rotina_fuso` (IANA). Vão para `users.rotina_*` no
 // `saveToSupabase` (signup). ⚠️ O agendamento das notificações do servidor AINDA
 // NÃO lê estes campos — o pg_cron segue em 7h/21h fixos.
-// O horário da noite alimenta o título da tela 13a ("…hoje às 21h").
+// O horário da noite alimenta o título da tela 21 ("…hoje às 21h").
 function halfHours(fromH: number, toH: number) {
   const out: string[] = [];
   for (let h = fromH; h <= toH; h++) {
@@ -77,9 +77,9 @@ export default function HorarioRotina() {
 
   return (
     <ObScreen>
-      <View style={{ position: 'absolute', left: 0, right: 0, top: y(112) }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, top: y(118) }}>
         <ObTitle>{withName(name, 'que horas você quer fazer sua rotina?')}</ObTitle>
-        <ObSubtitle style={{ marginTop: 11 }}>A gente te lembra na hora certa.</ObSubtitle>
+        <ObSubtitle style={{ marginTop: 9 }}>A gente te lembra na hora certa.</ObSubtitle>
       </View>
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(250) }}>
@@ -92,7 +92,7 @@ export default function HorarioRotina() {
         </View>
       </View>
 
-      <ObHeader step={STEP} onBack={() => router.back()} />
+      <ObHeader onBack={() => router.back()} />
       <ObPillButton onPress={handleContinue} bottom={buttonBottom} />
     </ObScreen>
   );

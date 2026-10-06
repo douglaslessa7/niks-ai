@@ -9,7 +9,8 @@ import {
   useObFrame, useObName, withName, obStep, useOnMount, ageFromYear,
 } from '../../components/onboarding/kit';
 
-// Tela 3 do onboarding novo — seletor de ANO de nascimento (modelo 1c).
+// Tela 3 do fluxo completo — seletor de ANO de nascimento. A idade gravada aqui é a
+// que a tela 9 ("Sua pele tem N anos. Você tem M.") compara com a idade da pele.
 //
 // ⚠️ O que é gravado continua sendo a IDADE em `onboarding.birthday` (string,
 // ex.: "27"), exatamente como a roda de idades antiga fazia: `saveToSupabase` e a
@@ -46,20 +47,20 @@ export default function Birthday() {
     haptics.action();
     setOnboardingField('birthday', String(ageFromYear(yearRef.current)));
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/pregnancy');
+    router.push('/(onboarding)/concerns');
   };
 
   return (
     <ObScreen>
-      <View style={{ position: 'absolute', left: 0, right: 0, top: y(112) }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, top: y(118) }}>
         <ObTitle>{withName(name, 'em que ano você nasceu?')}</ObTitle>
-        <ObSubtitle style={{ marginTop: 11, marginHorizontal: 30 }}>
-          Sua pele muda com a idade, e sua rotina muda junto.
+        <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>
+          Vamos comparar a idade da sua pele com a sua idade.
         </ObSubtitle>
       </View>
 
-      {/* Roda: topo a 274 pt no design (faixa central a 396 pt) */}
-      <View style={{ position: 'absolute', left: 0, right: 0, top: y(274) }}>
+      {/* Roda: faixa central a 397 pt no design (topo da roda = 397 − 122) */}
+      <View style={{ position: 'absolute', left: 0, right: 0, top: y(275) }}>
         <ObWheel
           labels={YEAR_LABELS}
           initialIndex={YEARS.indexOf(INITIAL_YEAR)}
@@ -67,7 +68,7 @@ export default function Birthday() {
         />
       </View>
 
-      <ObHeader step={STEP} onBack={() => router.back()} />
+      <ObHeader onBack={() => router.back()} />
       <ObPillButton onPress={handleContinue} bottom={buttonBottom} />
     </ObScreen>
   );

@@ -3,9 +3,9 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
 
-// Tela 4 do onboarding novo — gravidez/amamentação, agora para TODAS: a tela de
-// gênero saiu do fluxo e `genero` vai vazio (null). Escolha única no padrão 3i;
-// sem modelo próprio no design, o texto e as opções são os de antes.
+// Tela 15 do fluxo completo — gravidez/amamentação, para TODAS (a tela de gênero
+// saiu e `genero` vai vazio). Escolha única; mudou de lugar (vinha logo depois da
+// idade) e de título, os valores gravados são os de antes.
 type PregnancyStatus = 'none' | 'pregnant' | 'breastfeeding' | 'trying';
 
 const OPTIONS: ObChoice<PregnancyStatus>[] = [
@@ -27,15 +27,14 @@ export default function Pregnancy() {
 
   return (
     <ObChoiceScreen<PregnancyStatus>
-      step={STEP}
-      title="Alguns ativos do skincare precisam ser evitados em certas situações."
+      title="Para sua rotina ser segura."
       subtitle="Selecione a que se aplica a você."
       options={OPTIONS}
       onBack={() => router.back()}
       onSelect={(v) => setOnboardingField('pregnancy_status', v)}
       onContinue={() => {
         track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-        router.push('/(onboarding)/concerns');
+        router.push('/(onboarding)/allergies');
       }}
     />
   );

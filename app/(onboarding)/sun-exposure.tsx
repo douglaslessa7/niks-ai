@@ -5,7 +5,7 @@ import {
   OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount, useObName, withName,
 } from '../../components/onboarding/kit';
 
-// Tela 10 do onboarding novo — escolha única (modelo 3i do design).
+// Tela 12 do fluxo completo — escolha única.
 //
 // `value` é o texto que continua indo para `onboarding.sun_exposure` (e dali para
 // a `analyze-skin` e para `users.sun_exposure`): são os rótulos ANTIGOS da tela,
@@ -32,7 +32,6 @@ export default function SunExposure() {
 
   return (
     <ObChoiceScreen<string>
-      step={STEP}
       title={withName(name, 'quanto tempo você passa exposta ao sol por dia?')}
       subtitle="Isso define a proteção solar da sua rotina."
       options={OPTIONS}

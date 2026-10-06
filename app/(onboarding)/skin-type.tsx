@@ -1,3 +1,4 @@
+// ⚠️ FORA DO FLUXO desde o "fluxo completo" (out/2026): nada navega para cá.
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -26,7 +27,6 @@ export default function SkinType() {
 
   return (
     <ObChoiceScreen<string>
-      step={STEP}
       title="Como você descreveria sua pele?"
       subtitle="Se não tiver certeza, tudo bem — o scan vai confirmar depois."
       options={OPTIONS}

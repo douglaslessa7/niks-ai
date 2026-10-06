@@ -1,3 +1,4 @@
+// ⚠️ FORA DO FLUXO desde o "fluxo completo" (out/2026): nada navega para cá.
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -28,7 +29,6 @@ export default function SkincareRoutine() {
 
   return (
     <ObChoiceScreen<RoutineType>
-      step={STEP}
       title="Como está sua rotina de skincare hoje?"
       subtitle="Isso nos ajuda a criar o melhor protocolo para você."
       options={OPTIONS}

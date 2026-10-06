@@ -9,10 +9,11 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 15 do onboarding novo — detalhe da alergia (condicional: só para
-// `allergy_type === 'reaction'`). Campo de texto no padrão da tela 2 (campo
-// #F0F0F0, bloco centrado acima do teclado), com texto livre em várias linhas.
-// Lógica de antes: libera com 4+ caracteres e grava `allergy_description`.
+// Tela 17 do fluxo completo — detalhe da alergia (condicional: `allergy_type`
+// 'reaction' ou 'sensitive', nota do design). Campo #F0F0F0 no padrão do nome,
+// bloco centrado acima do teclado (título → 9 → subtítulo → 21 → campo → 39 →
+// botão), com texto livre. Libera com 4+ caracteres e grava `allergy_description`
+// — que também vira a 3ª frase do loading da rotina ("Deixando … de fora…").
 const STEP = OB_STEPS.alergiaDetalhe;
 const STEP_NAME = 'Detalhe da Alergia';
 
@@ -42,8 +43,8 @@ export default function AllergiesDetail() {
       >
         <View>
           <ObTitle>Qual ativo ou produto causou reação?</ObTitle>
-          <ObSubtitle style={{ marginTop: 11 }}>Pode ser um ingrediente, marca ou produto específico.</ObSubtitle>
-          <View style={{ marginTop: 25, marginHorizontal: 17, minHeight: 58, borderRadius: 12, backgroundColor: OB.option, justifyContent: 'center' }}>
+          <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>Pode ser um ingrediente, marca ou produto específico.</ObSubtitle>
+          <View style={{ marginTop: 21, marginHorizontal: 17, minHeight: 57, borderRadius: 12, backgroundColor: OB.option, justifyContent: 'center' }}>
             <TextInput
               value={description}
               onChangeText={(text) => {
@@ -60,11 +61,11 @@ export default function AllergiesDetail() {
               style={{ maxHeight: 120, fontSize: 17, lineHeight: 23, color: OB.ink, paddingHorizontal: 16, paddingTop: 17, paddingBottom: 17 }}
             />
           </View>
-          <ObPillButton onPress={handleContinue} disabled={!isActive} style={{ marginTop: 40 }} />
+          <ObPillButton onPress={handleContinue} disabled={!isActive} style={{ marginTop: 39 }} />
         </View>
       </KeyboardAvoidingView>
 
-      <ObHeader step={STEP} onBack={() => router.back()} />
+      <ObHeader onBack={() => router.back()} />
     </ObScreen>
   );
 }

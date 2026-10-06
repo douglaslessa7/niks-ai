@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Image, Pressable, Animated, Easing, useWindowDimensions } from 'react-native';
+import { Text, Image, Pressable, Animated, Easing, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import Svg, { Defs, RadialGradient, Stop, Circle } from 'react-native-svg';
@@ -7,43 +7,41 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, NIKS_LOGO, useObFrame, useObName, obStep, useOnMount,
+  OB, OB_STEPS, ObScreen, useObFrame, useObName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 import { commitmentPhrase } from '../../components/onboarding/answers';
 
-// Tela 21 do onboarding novo — compromisso (modelos 1h / 1i / 1j do design),
-// última tela antes do paywall.
+// Tela 28 do fluxo completo — compromisso, última tela antes do paywall.
 //
-// 21a (repouso): "Eu, <nome>, vou usar o NIKS para" + frase personalizada pelo
-//   que ela marcou na tela 5; círculo rosa Ø146 centrado em y 523 com aura Ø225;
-//   círculo e aura respiram (1 → 1,04, 2 s, loop).
-// 21b (segurando, 2 s): o círculo cresce continuamente até cobrir a tela, a aura
+// Repouso: "Eu, <nome>, vou usar a NIKS para" + frase personalizada pelo que ela
+//   marcou em "o que te incomoda"; círculo rosa Ø144 centrado em y 509 com a digital
+//   branca do design e aura Ø216; círculo e aura respiram (1 → 1,04, 2 s, loop).
+// Os estados de segurar/completo são os de antes (o fluxo completo só redesenhou o
+// repouso):
+// Segurando (2 s): o círculo cresce continuamente até cobrir a tela, a aura
 //   junto; "Continue segurando!" entra com fade quando o círculo passa de ~250 pt;
 //   vibração a cada 0,25 s ficando mais forte (leve → média → forte).
-//   Soltar antes → volta ao 21a com mola suave (~450 ms, sem overshoot).
-// 21c (completo): rosa na tela inteira, vibração de sucesso, "Bem-vinda ao NIKS!"
+//   Soltar antes → volta ao repouso com mola suave (~450 ms, sem overshoot).
+// Completo: rosa na tela inteira, vibração de sucesso, "Bem-vinda ao NIKS!"
 //   com fade de 300 ms; ~1 s depois, paywall.
 const STEP = OB_STEPS.compromisso;
 const STEP_NAME = 'Compromisso';
 
-const CIRCLE = 146;
-const AURA = 225;
-const CENTER_Y = 523;       // centro do círculo no frame do design
+const CIRCLE = 144;
+const AURA = 216;
+const CENTER_Y = 509;       // centro do círculo no frame do design
 const HOLD_MS = 2000;
 const TEXT_AT_D = 250;      // diâmetro em que "Continue segurando!" aparece
 
-const DIGITAL = require('../../assets/onboarding/digital-flo.png');
-
-// Ícone: a digital do Flo (80,7 pt, deslocada −4,05/−4,35) com a logo branca do
-// NIKS no centro (32,4 × 32,9 em 19,8/20,35), dentro de uma caixa de 72 pt.
-function FingerprintMark() {
-  return (
-    <View style={{ width: 72, height: 72 }}>
-      <Image source={DIGITAL} style={{ position: 'absolute', left: -4.05, top: -4.35, width: 80.7, height: 80.7 }} />
-      <Image source={NIKS_LOGO} style={{ position: 'absolute', left: 19.8, top: 20.35, width: 32.4, height: 32.9, tintColor: '#FFFFFF' }} />
-    </View>
-  );
-}
+// Digital branca do design (`digital-branca.png`, 61 × 85 no círculo).
+const DIGITAL = require('../../assets/onboarding/digital-branca.png');
+const ICON_W = 61;
+const ICON_H = 85;
+// "Continue segurando!" e "Bem-vinda ao NIKS!" ficam ACIMA da digital, com 24 pt de
+// respiro até o topo dela. (Eram posições fixas da digital antiga, de 72 pt; com a
+// de 85 pt as frases encostavam nela.) `textTop(lineHeight)` = topo da frase no frame.
+const TEXT_GAP = 24;
+const textTop = (lineHeight: number) => CENTER_Y - ICON_H / 2 - TEXT_GAP - lineHeight;
 
 export default function Compromisso() {
   const router = useRouter();
@@ -71,7 +69,7 @@ export default function Compromisso() {
     Math.hypot(width / 2, height - cy),
   );
   const coverScale = (farthest * 2) / CIRCLE;
-  // A aura acompanha: no quadro 21b (círculo Ø384) ela está em Ø720.
+  // A aura acompanha: segurando (círculo Ø384) ela está em Ø720.
   const auraCover = (coverScale * CIRCLE * (720 / 384)) / AURA;
   const textAt = (TEXT_AT_D / CIRCLE - 1) / (coverScale - 1);
 
@@ -135,33 +133,34 @@ export default function Compromisso() {
     outputRange: [0, 0, 1],
     extrapolate: 'clamp',
   });
-  const iconTop = cy - 36;
+  const iconTop = cy - ICON_H / 2;
 
   return (
     <ObScreen variant="blush">
       <StatusBar style={finished ? 'light' : 'dark'} />
 
-      {/* Textos do 21a — a aura cresce POR CIMA deles (cobertos, não desbotados) */}
+      {/* Textos do repouso — a aura cresce POR CIMA deles (cobertos, não desbotados) */}
       <Text numberOfLines={1} adjustsFontSizeToFit style={{
-        position: 'absolute', left: 17, right: 17, top: y(234), textAlign: 'center',
+        position: 'absolute', left: 17, right: 17, top: y(231), textAlign: 'center',
         fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, color: OB.ink,
       }}>
-        {name ? `Eu, ${name}, vou usar o NIKS para` : 'Eu vou usar o NIKS para'}
+        {name ? `Eu, ${name}, vou usar a NIKS para` : 'Eu vou usar a NIKS para'}
       </Text>
       <Text style={{
-        position: 'absolute', left: 36, right: 36, top: y(274), textAlign: 'center',
-        fontSize: 16, lineHeight: 22, fontWeight: '400', color: OB.ink,
+        position: 'absolute', left: 30, right: 30, top: y(267), textAlign: 'center',
+        fontSize: 17, lineHeight: 22, fontWeight: '400', color: OB.ink,
       }}>
         {commitmentPhrase(concerns)}
       </Text>
       <Text style={{
-        position: 'absolute', left: 17, right: 17, top: y(621), textAlign: 'center',
-        fontSize: 17, lineHeight: 22, fontWeight: '600', color: OB.pink,
+        position: 'absolute', left: 17, right: 17, top: y(604), textAlign: 'center',
+        fontSize: 17, lineHeight: 21, fontWeight: '600', color: OB.pink,
       }}>
         {'Segure a logo para\nse comprometer.'}
       </Text>
 
-      {/* Aura: radial closest-side, rgba(255,94,168,.35) até 65% → 0 em 100% */}
+      {/* Aura: radial-gradient(circle, .38 0%, .16 45%, 0 70%) — no CSS o raio vai até
+          o canto, então 45% e 70% caem em 0,636 e 0,99 do raio do círculo. */}
       <Animated.View pointerEvents="none" style={{
         position: 'absolute', left: width / 2 - AURA / 2, top: cy - AURA / 2, width: AURA, height: AURA,
         transform: [{ scale: auraScale }],
@@ -169,8 +168,9 @@ export default function Compromisso() {
         <Svg width={AURA} height={AURA}>
           <Defs>
             <RadialGradient id="aura" cx="50%" cy="50%" r="50%">
-              <Stop offset="0.65" stopColor={OB.pink} stopOpacity={0.35} />
-              <Stop offset="1" stopColor={OB.pink} stopOpacity={0} />
+              <Stop offset="0" stopColor={OB.pink} stopOpacity={0.38} />
+              <Stop offset="0.636" stopColor={OB.pink} stopOpacity={0.16} />
+              <Stop offset="0.99" stopColor={OB.pink} stopOpacity={0} />
             </RadialGradient>
           </Defs>
           <Circle cx={AURA / 2} cy={AURA / 2} r={AURA / 2} fill="url(#aura)" />
@@ -185,33 +185,33 @@ export default function Compromisso() {
       }} />
 
       <Animated.Text pointerEvents="none" style={{
-        position: 'absolute', left: 0, right: 0, top: y(454), textAlign: 'center',
+        position: 'absolute', left: 0, right: 0, top: y(textTop(22)), textAlign: 'center',
         fontSize: 17, lineHeight: 22, fontWeight: '600', color: '#FFFFFF', opacity: keepHolding,
       }}>
         Continue segurando!
       </Animated.Text>
 
-      {/* 21c — tela inteira rosa + "Bem-vinda ao NIKS!" */}
+      {/* Completo — tela inteira rosa + "Bem-vinda ao NIKS!" */}
       <Animated.View pointerEvents="none" style={{
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: OB.pink, opacity: done,
       }}>
         <Text style={{
-          position: 'absolute', left: 17, right: 17, top: y(441), textAlign: 'center',
+          position: 'absolute', left: 17, right: 17, top: y(textTop(28)), textAlign: 'center',
           fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, color: '#FFFFFF',
         }}>
           Bem-vinda ao NIKS!
         </Text>
       </Animated.View>
 
-      {/* Ícone: mesma posição nos três estados (centro em y 523) — é também o alvo do toque */}
+      {/* Digital: mesma posição nos três estados (centro em y 509) — é também o alvo do toque */}
       <Pressable
         onPressIn={onPressIn}
         onPressOut={onPressOut}
         pressRetentionOffset={{ top: 2000, bottom: 2000, left: 2000, right: 2000 }}
-        hitSlop={(CIRCLE - 72) / 2}
-        style={{ position: 'absolute', left: width / 2 - 36, top: iconTop }}
+        hitSlop={{ top: (CIRCLE - ICON_H) / 2, bottom: (CIRCLE - ICON_H) / 2, left: (CIRCLE - ICON_W) / 2, right: (CIRCLE - ICON_W) / 2 }}
+        style={{ position: 'absolute', left: width / 2 - ICON_W / 2, top: iconTop }}
       >
-        <FingerprintMark />
+        <Image source={DIGITAL} style={{ width: ICON_W, height: ICON_H }} />
       </Pressable>
     </ObScreen>
   );

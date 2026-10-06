@@ -3,13 +3,15 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
 
-// Tela 16 do onboarding novo — objetivo (padrão 3i). Grava `onboarding.goal_desire`.
+// Tela 18 do fluxo completo — objetivo (escolha única). Grava `onboarding.goal_desire`
+// (texto livre para a `generate-protocol`, as opções novas do design entram como estão).
+// É a última resposta que a rotina recebe: com ela, a rotina começa a ser gerada em
+// segundo plano (`lib/onboardingPrefetch.ts`).
 const OPTIONS: ObChoice<string>[] = [
-  'Me sentir mais bonita e confiante',
-  'Ter um glow up que as pessoas notem',
-  'Aumentar minha autoestima de vez',
-  'Me sentir bem comigo mesma de novo',
-  'Conquistar alguém especial',
+  'Me sentir bonita sem maquiagem',
+  'Tirar foto de perto sem medo',
+  'Parar de esconder manchas',
+  'Ter uma pele que as pessoas notem',
   'Outro',
 ].map((d) => ({ label: d, value: d }));
 
@@ -25,15 +27,14 @@ export default function GoalDesire() {
 
   return (
     <ObChoiceScreen<string>
-      step={STEP}
-      title="Qual é o seu verdadeiro objetivo?"
-      subtitle="Pode ser honesta — é só pra gente entender você melhor."
+      title="E o que você quer sentir quando se olhar no espelho?"
+      subtitle="Sua rotina vai ser montada pensando nisso."
       options={OPTIONS}
       onBack={() => router.back()}
       onSelect={(v) => setOnboardingField('goal_desire', v)}
       onContinue={(v) => {
         track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), desire: v });
-        router.push('/(onboarding)/social-proof');
+        router.push('/(onboarding)/empatia');
       }}
     />
   );

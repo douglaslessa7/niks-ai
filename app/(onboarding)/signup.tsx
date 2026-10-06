@@ -23,7 +23,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { saveOnboardingProtocol } from '../../lib/onboardingPrefetch';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { haptics } from '../../lib/haptics';
-import { useObFrame } from '../../components/onboarding/kit';
+import { useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
 import { SignupHeroText } from '../../components/onboarding/SignupHeroText';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -50,6 +50,19 @@ export default function Signup() {
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
   const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating } = useAppStore();
   const { track, identify } = useMixpanel();
+  const armHomeTutorial = useAppStore((s) => s.armHomeTutorial);
+
+  // Fim do onboarding: conta criada → HOME. O carrossel pós-cadastro (`apresentacao`)
+  // saiu do fluxo completo, então o tutorial de primeiro acesso é armado AQUI — este
+  // é agora o único caminho de usuária NOVA até a home (login, paywall de
+  // reengajamento e `index` com sessão são de conta existente). Conta existente que
+  // refaz o onboarding também passa, e quem barra é o servidor
+  // (`users.home_tutorial_seen_at`). Ver "Feature: Tutorial de primeiro acesso".
+  const finishOnboarding = () => {
+    track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
+    armHomeTutorial();
+    router.replace('/(app)/home');
+  };
 
   const startProtocolGeneration = (userId: string) => {
     if (!scanResult) return;
@@ -57,7 +70,7 @@ export default function Signup() {
     // o closure do render ainda teria o valor antigo (null).
     const freshSkinScanId = useAppStore.getState().skinScanId;
     setProtocolGenerating(true);
-    // A rotina costuma já estar pronta (gerada em segundo plano desde a tela 16):
+    // A rotina costuma já estar pronta (gerada em segundo plano desde o objetivo):
     // aqui ela só é gravada com o user_id. Se as respostas mudaram, falhou ou não
     // existe, gera como antes. Não bloqueia a navegação. Ver `lib/onboardingPrefetch.ts`.
     saveOnboardingProtocol({
@@ -71,7 +84,7 @@ export default function Signup() {
   };
 
   useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
+    track('onboarding_step_viewed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
   }, []);
 
   const [email, setEmail] = useState('');
@@ -138,8 +151,7 @@ export default function Signup() {
           attributeCouponIfAny(data.session.user.id);
           startProtocolGeneration(data.session.user.id);
         }
-        track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-        router.replace('/(onboarding)/apresentacao');
+        finishOnboarding();
       }
     } catch (error: any) {
       Alert.alert('Erro ao criar conta', error?.message ?? 'Tente novamente.');
@@ -183,8 +195,7 @@ export default function Signup() {
         attributeCouponIfAny(data.user.id);
         startProtocolGeneration(data.user.id);
       }
-      track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-      router.replace('/(onboarding)/apresentacao');
+      finishOnboarding();
     } catch (error: any) {
       Alert.alert('Erro', error?.message ?? 'Tente novamente.');
     }
@@ -207,8 +218,7 @@ export default function Signup() {
         attributeCouponIfAny(session.user.id);
         startProtocolGeneration(session.user.id);
       }
-      track('onboarding_step_completed', { step_number: 22, step_name: 'Criar Conta', step_total: 23 });
-      router.replace('/(onboarding)/apresentacao');
+      finishOnboarding();
     } catch (error: any) {
       Alert.alert('Erro', JSON.stringify(error));
     }
