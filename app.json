@@ -5,7 +5,7 @@
     "slug": "niks-ai",
     "version": "1.0.55",
     "orientation": "portrait",
-    "icon": "./assets/icon-niks.png",
+    "icon": "./assets/icon-niks-rosa.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/onboarding/splash-logo-FF5EA8.png",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "buildNumber": "1",
-      "icon": "./assets/icon-niks.png",
+      "icon": "./assets/icon-niks-rosa.png",
       "supportsTablet": false,
       "bundleIdentifier": "br.com.niksai.app",
       "usesAppleSignIn": true,
@@ -32,8 +32,8 @@
     "android": {
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundColor": "#FF9D9D"
+        "foregroundImage": "./assets/android-icon-foreground-rosa.png",
+        "backgroundColor": "#FF7EB9"
       },
       "package": "br.com.niksai.app",
       "versionCode": 1,
@@ -51,7 +51,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon-rosa.png"
     },
     "plugins": [
       "expo-router",
@@ -77,7 +77,9 @@
       [
         "expo-notifications",
         {
-          "iosDisplayInForeground": true
+          "iosDisplayInForeground": true,
+          "icon": "./assets/notification-icon.png",
+          "color": "#FF7EB9"
         }
       ],
       "expo-apple-authentication",
