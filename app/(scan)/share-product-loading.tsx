@@ -28,20 +28,19 @@ import { HiddenPageImageReader, type PageImageResult } from '../../components/sh
 import { useAppStore, type PendingShare } from '../../store/onboarding';
 import { clearShareResume, takeShareForLoadingScreen } from '../../lib/shareResume';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
+import { ScanLoadingView } from '../../components/scan/ScanLoadingView';
 import { useProductAnalysis } from '../../hooks/useProductAnalysis';
 import { getScoreTheme } from '../../lib/scoreTheme';
 
 // Tela de carregamento EXCLUSIVA da feature "Compartilhar com o NIKS".
 //
-// VISUAL = a MESMA casca das outras loadings do app (`product-loading.tsx` e
-// `loading-dentro-app.tsx`): véu rosa dissolvendo no branco, anel de progresso
-// grosso em gradiente rosa sobre trilho claro, disco branco central com sombra
-// rosa, frase rotativa + subtítulo abaixo do círculo. Tokens, tipografia e
-// medidas são os mesmos de propósito — as telas são irmãs, não invente estilo novo.
+// CARREGANDO = tela 50b do Claude Design (`components/scan/ScanLoadingView`), a MESMA
+// do scan de produto pela câmera (`product-loading.tsx`): anel rosa + %, etapa atual e
+// pontinhos. A busca da foto no link ocupa 0–14% da mesma tela.
 //
-// A ÚNICA diferença: dentro do disco central, no lugar do número, as fotos
-// alternam (rosto da usuária ↔ foto do produto) com crossfade + uma linha de
-// varredura (scanner) sincronizada; a % virou um número pequeno sob o subtítulo.
+// Depois da análise a tela vira a REVELAÇÃO (número da compatibilidade + "Ver análise
+// completa"), com as fotos alternando no disco (rosto da usuária ↔ produto) e uma
+// linha de varredura; e há os estados de falha (sem foto no link, sem conexão).
 //
 // A lógica da análise é a mesma da product-loading, via `useProductAnalysis`.
 // Só é aberta pelo (app)/_layout, depois do guard de assinatura, com o conteúdo em
@@ -71,13 +70,6 @@ const HOLD_MS = 1300;
 const URL_EXTRACT_CAP = 14;
 const URL_ANALYSIS_FLOOR = 15;
 
-const PHRASE_SEARCH = 'Buscando o produto…';
-const ANALYSIS_PHRASES = [
-  'Analisando os componentes do produto…',
-  'Comparando com a sua pele…',
-  'Vendo se o produto é compatível com você…',
-  'Montando o veredito…',
-];
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -273,22 +265,11 @@ export default function ShareProductLoading() {
 
   const displayPct = stage === 'extracting' || (isUrl && !analysisEnabled) ? extractPct : percentage;
 
-  let phrase: string;
-  if (isUrl && !analysisEnabled) {
-    phrase = PHRASE_SEARCH;
-  } else {
-    const floor = isUrl ? URL_ANALYSIS_FLOOR : 0;
-    const span = (100 - floor) / ANALYSIS_PHRASES.length;
-    const idx = Math.max(0, Math.min(ANALYSIS_PHRASES.length - 1, Math.floor((percentage - floor) / span)));
-    phrase = ANALYSIS_PHRASES[idx];
-  }
-
   // ── Animações ──────────────────────────────────────────────────────────────
   // Halo e anel de progresso: mesmo padrão da product-loading (RN Animated +
   // `strokeDashoffset` com `useNativeDriver: false` — decisão 22).
   const haloAnim = useRef(new Animated.Value(1)).current;
   const ringProgressAnim = useRef(new Animated.Value(0)).current;
-  const phraseFadeAnim = useRef(new Animated.Value(1)).current;
 
   const ringOffsetAnim = ringProgressAnim.interpolate({
     inputRange: [0, 100],
@@ -327,10 +308,6 @@ export default function ShareProductLoading() {
     }).start();
   }, [displayPct]);
 
-  useEffect(() => {
-    phraseFadeAnim.setValue(0);
-    Animated.timing(phraseFadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-  }, [phrase]);
 
   // Fotos e varredura (UI thread, reanimated).
   const showProduct = useSharedValue(1);
@@ -400,6 +377,28 @@ export default function ShareProductLoading() {
 
   if (!share) return null;
 
+  // CARREGANDO = tela 50b do Claude Design, a MESMA do scan de produto pela câmera
+  // (`product-loading`). Esta tela só tem visual próprio depois: a revelação da
+  // compatibilidade e os estados de falha.
+  if (!failed && !revealed) {
+    return (
+      <View style={{ flex: 1 }}>
+        <Stack.Screen options={{ gestureEnabled: false }} />
+        <ScanLoadingView
+          kind="product"
+          percentage={displayPct}
+          showDemandNotice={showDemandNotice}
+          countdown={countdown}
+          countdownPaused={countdownPaused}
+          showError={false}
+          onRetry={handleRetry}
+        />
+        {webviewUrl && <HiddenPageImageReader url={webviewUrl} onResult={handleWebviewResult} timeoutMs={12_000} />}
+        {consentGate}
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: CREAM }}>
       <Stack.Screen options={{ gestureEnabled: false }} />
@@ -449,40 +448,6 @@ export default function ShareProductLoading() {
                     Compatibilidade de pele
                   </Text>
                 </Reanimated.View>
-              )}
-
-              {/* Aviso de alta demanda — mesmo card da product-loading */}
-              {!revealed && showDemandNotice && (
-                <View style={{
-                  marginHorizontal: 24, marginTop: 4,
-                  backgroundColor: PINK,
-                  borderRadius: 16, padding: 13,
-                  flexDirection: 'row', alignItems: 'flex-start', gap: 9,
-                }}>
-                  <View style={{ marginTop: 1, flexShrink: 0 }}>
-                    <Svg width={16} height={16} viewBox="0 0 16 16">
-                      <Path d="M4 2h8v2.5C12 6.5 9.5 8 8 8C6.5 8 4 6.5 4 4.5V2z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
-                      <Path d="M4 14h8v-2.5C12 9.5 9.5 8 8 8C6.5 8 4 9.5 4 11.5V14z" stroke="white" strokeWidth={1.3} strokeLinejoin="round" fill="none" />
-                      <Line x1={3} y1={2} x2={13} y2={2} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
-                      <Line x1={3} y1={14} x2={13} y2={14} stroke="white" strokeWidth={1.3} strokeLinecap="round" />
-                    </Svg>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: fBold, fontSize: 13, color: '#FFFFFF', marginBottom: 3 }}>
-                      Estamos com alta demanda agora
-                    </Text>
-                    {countdownPaused ? (
-                      <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                        Por favor, aguarde só mais um pouco.
-                      </Text>
-                    ) : (
-                      <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                        A análise do produto está sendo finalizada. Por favor, aguarde só mais{' '}
-                        <Text style={{ fontFamily: fBold }}>{countdown}s</Text>.
-                      </Text>
-                    )}
-                  </View>
-                </View>
               )}
 
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -601,35 +566,7 @@ export default function ShareProductLoading() {
                   </View>
                 </View>
 
-                {!revealed ? (
-                  <Reanimated.View exiting={FadeOut.duration(220)} style={{ alignItems: 'center', width: '100%' }}>
-                    {/* Frase rotativa (fase atual) */}
-                    <Animated.View style={{ opacity: phraseFadeAnim, marginTop: 44, paddingHorizontal: 24 }}>
-                      <Text style={{
-                        fontFamily: fSemi, fontSize: 17, color: DEEP_SOFT,
-                        letterSpacing: -0.2, textAlign: 'center',
-                      }}>
-                        {phrase}
-                      </Text>
-                    </Animated.View>
-
-                    {/* Subtexto fixo tranquilizador */}
-                    <Text style={{
-                      fontFamily: fSemi, fontSize: 13.5, color: DEEP_FAINT,
-                      letterSpacing: -0.1, textAlign: 'center', marginTop: 10, paddingHorizontal: 32,
-                    }}>
-                      Isso leva só alguns segundos. Não feche o app.
-                    </Text>
-
-                    {/* Porcentagem — saiu do centro, virou número pequeno aqui */}
-                    <Text style={{
-                      fontFamily: fBold, fontSize: 15, color: DEEP_FAINT,
-                      letterSpacing: -0.1, textAlign: 'center', marginTop: 14,
-                    }}>
-                      {displayPct}%
-                    </Text>
-                  </Reanimated.View>
-                ) : (
+                {revealed && (
                   /* Revelado: só o CTA. A análise completa continua no product-result. */
                   <Reanimated.View
                     entering={FadeInDown.delay(160).duration(420)}

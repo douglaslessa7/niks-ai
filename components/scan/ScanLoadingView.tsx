@@ -6,8 +6,9 @@
 // texto troca a cada etapa, marcada pelos pontinhos embaixo."
 //
 // Só o VISUAL mora aqui. A lógica (chamada da IA, tentativas, aviso de alta
-// demanda, erro) continua em cada tela: `loading-dentro-app.tsx` (rosto) e
-// `product-loading.tsx` → `hooks/useProductAnalysis` (produto).
+// demanda, erro) continua em cada tela: `loading-dentro-app.tsx` e `analisando-foto.tsx`
+// (rosto, dentro do app e no onboarding), `product-loading.tsx` e
+// `share-product-loading.tsx` → `hooks/useProductAnalysis` (produto).
 //
 // Frame do design 393 × 852 pt; posições verticais convertidas por
 // `useObFrame().y()` (mesma régua do onboarding novo). Tipografia SF Pro = fonte
@@ -79,11 +80,11 @@ export function ScanLoadingView({
   const copy = COPY[kind];
   const stepIdx = Math.min(steps.length - 1, Math.floor((percentage / 100) * steps.length));
 
-  // O arco segue a porcentagem com uma transição curta (a % sobe em saltos de 1).
+  // O arco segue a porcentagem com a transição do design (`stroke-dasharray .12s linear`).
   const ringAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(ringAnim, {
-      toValue: percentage, duration: 300, easing: Easing.linear, useNativeDriver: false,
+      toValue: percentage, duration: 120, easing: Easing.linear, useNativeDriver: false,
     }).start();
   }, [percentage]);
   const ringOffset = ringAnim.interpolate({ inputRange: [0, 100], outputRange: [RING_C, 0] });
@@ -294,4 +295,50 @@ function ErrorState({ copy, onRetry }: { copy: (typeof COPY)[ScanLoadingKind]; o
       <ObPillButton label="Tentar novamente" style={{ width: 210 }} onPress={() => { haptics.action(); onRetry(); }} />
     </View>
   );
+}
+
+/**
+ * Aviso de "alta demanda" do loading: aparece 3 s depois de a % travar em 99 (sem
+ * erro) e conta 60 s em loop, com 3 s de "aguarde só mais um pouco" entre as voltas —
+ * a mesma regra que `loading-dentro-app.tsx` e `useProductAnalysis` implementam. Usado
+ * pelo loading do ONBOARDING (`analisando-foto.tsx`).
+ */
+export function useDemandNotice(percentage: number, showError: boolean) {
+  const [showDemandNotice, setShowDemandNotice] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+  const [countdownPaused, setCountdownPaused] = useState(false);
+  const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (percentage < 99 || showError) { setShowDemandNotice(false); return; }
+    const t = setTimeout(() => setShowDemandNotice(true), 3000);
+    return () => clearTimeout(t);
+  }, [percentage >= 99, showError]);
+
+  useEffect(() => {
+    if (!showDemandNotice) {
+      if (countdownRef.current) clearTimeout(countdownRef.current);
+      setCountdown(60);
+      setCountdownPaused(false);
+      return;
+    }
+    const tick = (current: number) => {
+      if (current <= 1) {
+        setCountdownPaused(true);
+        setCountdown(0);
+        countdownRef.current = setTimeout(() => {
+          setCountdown(60);
+          setCountdownPaused(false);
+          countdownRef.current = setTimeout(() => tick(60), 1000);
+        }, 3000);
+        return;
+      }
+      setCountdown(current - 1);
+      countdownRef.current = setTimeout(() => tick(current - 1), 1000);
+    };
+    countdownRef.current = setTimeout(() => tick(60), 1000);
+    return () => { if (countdownRef.current) clearTimeout(countdownRef.current); };
+  }, [showDemandNotice]);
+
+  return { showDemandNotice, countdown, countdownPaused };
 }
