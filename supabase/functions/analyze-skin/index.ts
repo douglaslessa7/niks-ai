@@ -442,6 +442,21 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
 
 ---
 
+## ETAPA 9 — PONTOS DO ROSTO NA FOTO (face_landmarks)
+
+O app desenha uma máscara de scan por cima do rosto na foto e precisa saber ONDE estão os traços. Dê a posição de 6 pontos em coordenadas NORMALIZADAS da imagem como ela foi enviada: x de 0 (borda esquerda da imagem) a 1 (borda direita); y de 0 (topo da imagem) a 1 (base). Use até 3 casas decimais e seja o mais preciso possível — meça na imagem, não estime pelo "rosto típico".
+
+- eye_left: centro da pupila do olho que aparece do lado ESQUERDO da imagem (não é o olho esquerdo da pessoa — é o da esquerda de quem olha a foto)
+- eye_right: centro da pupila do olho que aparece do lado DIREITO da imagem
+- nose_tip: ponta do nariz
+- mouth_center: centro da boca (meio da linha entre os lábios)
+- chin: ponta do queixo (borda inferior do rosto, no meio)
+- forehead: centro da testa, no meio entre a linha das sobrancelhas e a linha do cabelo
+
+Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria. Se não houver um rosto inteiro visível, retorne "face_landmarks": null.
+
+---
+
 ## RETORNE EXATAMENTE ESTE JSON — sem texto antes, sem texto depois, sem markdown:
 
 {
@@ -547,6 +562,14 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
     "alinhamento": <"confirmado"|"parcial"|"divergente">,
     "regioes_afetadas": <array de strings>,
     "mensagem": <string>
+  },
+  "face_landmarks": {
+    "eye_left": { "x": <0-1>, "y": <0-1> },
+    "eye_right": { "x": <0-1>, "y": <0-1> },
+    "nose_tip": { "x": <0-1>, "y": <0-1> },
+    "mouth_center": { "x": <0-1>, "y": <0-1> },
+    "chin": { "x": <0-1>, "y": <0-1> },
+    "forehead": { "x": <0-1>, "y": <0-1> }
   },
   "disclaimer": "Esta é uma análise estética por IA, não substitui consulta dermatológica."
 }`
@@ -703,6 +726,23 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
       for (const k of ['qualidade_pele', 'atratividade', 'juventude', 'oleosidade', 'acne', 'linhas_expressao']) {
         result.metricas[k] = clampMetric(result.metricas[k])
       }
+    }
+
+    // Pontos do rosto (ETAPA 9) para a máscara do resultado do scan no app. Opcional:
+    // qualquer ponto ausente/fora de 0–1, ou olhos trocados de lado → o campo inteiro
+    // vira null e o app cai no enquadramento pelo oval da câmera. Não entra no
+    // REQUIRED_KEYS (não vale uma retentativa).
+    {
+      const lm = result.face_landmarks
+      const keys = ['eye_left', 'eye_right', 'nose_tip', 'mouth_center', 'chin', 'forehead']
+      const ok = lm && typeof lm === 'object' && keys.every((k) => {
+        const p = lm[k]
+        return p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))
+          && Number(p.x) >= 0 && Number(p.x) <= 1 && Number(p.y) >= 0 && Number(p.y) <= 1
+      }) && Number(lm.eye_left.x) < Number(lm.eye_right.x)
+      result.face_landmarks = ok
+        ? Object.fromEntries(keys.map((k) => [k, { x: Number(lm[k].x), y: Number(lm[k].y) }]))
+        : null
     }
 
     if (!result.disclaimer) {

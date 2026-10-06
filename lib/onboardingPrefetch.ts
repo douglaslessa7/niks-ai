@@ -1,23 +1,28 @@
 import { useAppStore, ScanResult, ProtocolResult, OnboardingData } from '../store/onboarding';
 import { fetchProtocol, saveProtocol, generateAndSaveProtocol } from './generateProtocol';
 
-// Pré-carregamento das 3 chamadas de IA do ONBOARDING, sem esperar a tela 18:
+// Pré-carregamento das 3 chamadas de IA do ONBOARDING (fluxo completo, out/2026):
 //   • antes/depois (`generate-skin-preview`) → assim que a foto chega (tela 7);
-//   • relatório (`analyze-skin`)             → assim que o sono é respondido (11b),
-//     a última resposta que a função recebe;
-//   • rotina (`generate-protocol`)           → quando há relatório E o objetivo (16)
-//     foi respondido — a função recebe o `onboarding` INTEIRO, e o objetivo é a
-//     última resposta dele. Sem conta ainda: o resultado fica no store
-//     (`prefetchedProtocol`) e só é gravado em `protocolos` no signup, com o user_id.
+//   • relatório (`analyze-skin`)             → TAMBÉM assim que a foto chega: o
+//     resultado do scan (tela 8) vem logo depois da câmera, ANTES das perguntas de
+//     sol/água/sono. A função recebe o que já foi respondido (idade + o que te
+//     incomoda); sol/água/sono passam a alimentar só a rotina;
+//   • rotina (`generate-protocol`)           → quando há relatório E o objetivo (18)
+//     foi respondido — a função recebe o `onboarding` INTEIRO. Sem conta ainda: o
+//     resultado fica no store (`prefetchedProtocol`) e só é gravado em `protocolos`
+//     no signup, com o user_id.
 //
 // Função de MÓDULO (padrão do `regenerateProtocolInApp`): as chamadas sobrevivem à troca
-// de tela. Cada job tem uma CHAVE montada com exatamente o que a função recebe:
+// de tela. Cada job tem uma CHAVE:
 //   • mesma chave → devolve o job existente (guarda contra chamada dupla);
-//   • chave mudou (ela voltou e trocou uma resposta ou a foto) → descarta o job e
-//     dispara de novo. Resultado de job descartado nunca é escrito (`job === atual`).
-// Falha não se repete sozinha: quem precisa do resultado (tela 18, signup) dispara de
-// novo, com as mesmas tentativas de sempre. As Edge Functions e o que vai ao banco não
-// mudam — só o momento das chamadas.
+//   • chave mudou → descarta o job e dispara de novo. Resultado de job descartado
+//     nunca é escrito (`job === atual`).
+// ⚠️ A chave do RELATÓRIO é só a foto: depois que o resultado da tela 8 foi mostrado,
+// mudar uma resposta (ex.: voltar à tela 4) não pode refazer a análise por baixo — a tela 8 e o signup leriam relatórios diferentes. Foto nova (retake) →
+// análise nova. As respostas mudadas chegam à ROTINA, cuja chave é o relatório + o
+// onboarding (menos os horários da tela 20, que a função não lê).
+// Falha não se repete sozinha: quem precisa do resultado (loading da foto, loading
+// da rotina, signup) dispara de novo, com as mesmas tentativas de sempre.
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
@@ -72,12 +77,15 @@ function photoOf() {
   return skinImageBase64 && skinImageUri ? { base64: skinImageBase64, uri: skinImageUri } : null;
 }
 
-function reportKeyOf(photoUri: string, o: OnboardingData) {
-  return `${photoUri}|${JSON.stringify(skinProfileOf(o))}`;
+function reportKeyOf(photoUri: string) {
+  return photoUri;
 }
 
+// Os horários (tela 20) vêm DEPOIS do objetivo e a `generate-protocol` não os lê:
+// fora da chave, senão escolher o horário jogaria fora a rotina já pronta.
 function protocolKeyOf(scanResult: ScanResult, o: OnboardingData) {
-  return `${scanId(scanResult)}|${JSON.stringify(o)}`;
+  const { rotina_manha_horario, rotina_noite_horario, rotina_fuso, ...rest } = o;
+  return `${scanId(scanResult)}|${JSON.stringify(rest)}`;
 }
 
 // ── Chamadas (mesmas tentativas das telas de antes) ──────────────────────────
@@ -207,8 +215,8 @@ function sync() {
   }
   if (photo && !previewJob) startPreview(photo.uri, photo.base64);
 
-  // Relatório — depois que o sono foi respondido.
-  const reportKey = photo && s.onboarding.sleep != null ? reportKeyOf(photo.uri, s.onboarding) : null;
+  // Relatório — assim que há foto (as respostas de então vão junto, ver o topo).
+  const reportKey = photo ? reportKeyOf(photo.uri) : null;
   if (reportJob && reportJob.key !== reportKey) reportJob = null;
   if (photo && reportKey && !reportJob) startReport(reportKey, photo.base64, s.onboarding);
 
@@ -235,7 +243,7 @@ useAppStore.subscribe((s, prev) => {
 
 // ── Consumidores ─────────────────────────────────────────────────────────────
 
-// Tela 18: garante o antes/depois (se o de fundo falhou, dispara de novo).
+// Garante o antes/depois (se o de fundo falhou, dispara de novo).
 export function ensureSkinPreview() {
   const photo = photoOf();
   if (!photo) return;
@@ -244,15 +252,16 @@ export function ensureSkinPreview() {
   }
 }
 
-// Tela 18: aguarda o relatório já em andamento (sem chamar de novo). Se não há job
-// para as respostas atuais, ou o de fundo falhou, dispara com as tentativas completas.
-// Se um job de FUNDO falhar enquanto ela espera, dispara mais uma vez — as tentativas
-// dele não eram as da tela. `error` = motivo da última falha (Mixpanel `scan_failed`).
+// Loading da foto (tela 7 → 8): aguarda o relatório já em andamento (sem chamar de
+// novo). Se não há job para a foto atual, ou o de fundo falhou, dispara com as
+// tentativas completas. Se um job de FUNDO falhar enquanto ela espera, dispara mais
+// uma vez — as tentativas dele não eram as da tela. `error` = motivo da última falha
+// (Mixpanel `scan_failed`).
 export async function awaitSkinReport(): Promise<{ result: ScanResult | null; error: string }> {
   const photo = photoOf();
   if (!photo) return { result: null, error: 'sem foto' };
   const { onboarding } = useAppStore.getState();
-  const key = reportKeyOf(photo.uri, onboarding);
+  const key = reportKeyOf(photo.uri);
 
   let job = reportJob && reportJob.key === key && reportJob.status !== 'failed' ? reportJob : null;
   const inherited = !!job;
@@ -263,6 +272,19 @@ export async function awaitSkinReport(): Promise<{ result: ScanResult | null; er
     result = await startReport(key, photo.base64, onboarding).promise;
   }
   return { result, error: lastReportError };
+}
+
+// Loading da rotina (tela 23): aguarda a rotina pré-gerada para o relatório e as
+// respostas de AGORA. Sem job (ou o de fundo falhou) → dispara. Devolve null se falhar:
+// a tela segue mesmo assim e o signup gera de novo (`saveOnboardingProtocol`).
+export async function awaitRoutine(): Promise<ProtocolResult | null> {
+  const { scanResult, onboarding, prefetchedProtocol } = useAppStore.getState();
+  if (!scanResult) return null;
+  const key = protocolKeyOf(scanResult, onboarding);
+  if (prefetchedProtocol?.key === key) return prefetchedProtocol.result;
+  let job = protocolJob && protocolJob.key === key && protocolJob.status !== 'failed' ? protocolJob : null;
+  if (!job) job = startProtocol(key, scanResult, onboarding);
+  return job.promise;
 }
 
 // Signup: grava a rotina e encadeia `recomendar-produtos`, agora com o user_id.
