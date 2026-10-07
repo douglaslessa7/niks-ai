@@ -1,6 +1,6 @@
 import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Image, StyleSheet, Platform } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
@@ -13,6 +13,7 @@ import { isNativePresentationOpen, waitForNativePresentationToClose } from '../.
 import { useCoachMark, useCoachStageReady } from '../../lib/coachMarks';
 import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
+import { reportAndroidNavBarHeight } from '../../lib/androidNavBarHeight';
 
 // ── Bottom navbar — réplica do design "Fixed bottom bar" (navbar-design/Navbar.dc.html) ──
 // Ícones line/stroke SVG idênticos ao design. Cores/estados do design:
@@ -131,7 +132,12 @@ function GlobalBottomBar() {
   return (
     // Barra flush na borda inferior, full-width. padding do design: 14 topo / 20 lados.
     // padding inferior = safe area (home indicator) com mínimo de 26 do design.
-    <View style={[
+    // onLayout SÓ no Android: publica a altura real p/ o chat (3 botões × gestos
+    // mudam o inset). No iOS a prop é `undefined` — nenhum handler, estado ou
+    // re-render novo. Ver lib/androidNavBarHeight.ts.
+    <View
+      onLayout={Platform.OS === 'android' ? reportAndroidNavBarHeight : undefined}
+      style={[
       styles.navbar,
       {
         paddingTop: 14,

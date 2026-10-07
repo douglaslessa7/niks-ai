@@ -26,6 +26,13 @@ import { useAppStore } from '../../store/onboarding';
 import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
+import { useAndroidNavBarHeight } from '../../lib/androidNavBarHeight';
+
+// SÓ ANDROID: altura real da navbar (varia entre barra de 3 botões e gestos).
+// Escolhido UMA vez, no carregamento do módulo — no iOS o "hook" é uma função
+// vazia que devolve null: não cria estado, efeito nem inscrição.
+const useNavBarHeightOnAndroid: () => number | null =
+  Platform.OS === 'android' ? useAndroidNavBarHeight : () => null;
 
 // ── Color tokens (novo design system NIKS — home/protocolo/recomendação) ──────
 const INK        = '#121212';
@@ -445,7 +452,16 @@ function ChatInputBar({
 }) {
   // Navbar global = 80px fixos (cobre o home indicator). Ancorar a ~20px acima dela,
   // sem somar a safe area (evita o vão grande e o risco de colar no menu).
-  const paddingBottom = keyboardOpen ? 8 : 100;
+  // ANDROID: a navbar não tem altura fixa (inset ~48 na barra de 3 botões → ~104pt,
+  // maior que os 100 e cobria a caixa). Usa a altura MEDIDA + 10 (o mesmo vão do
+  // iPhone: 100 − ~90); antes da 1ª medida, a conta pelo inset real (56 = conteúdo
+  // da navbar: 14 topo + 29 glifo + 4 + 9 slot do ponto). iOS: 100, como sempre.
+  const androidNavH = useNavBarHeightOnAndroid();
+  const paddingBottom = keyboardOpen
+    ? 8
+    : Platform.OS === 'android'
+      ? (androidNavH ?? 56 + Math.max(bottomInset, 26)) + 10
+      : 100;
 
   const LINE_HEIGHT = 20;
   const MAX_INPUT_HEIGHT = LINE_HEIGHT * 4;
@@ -857,10 +873,23 @@ export default function NiksChat() {
   const [conversationTime,     setConversationTime]     = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
+  // SÓ ANDROID: altura do teclado ACIMA da barra de navegação (vem no `keyboardDidShow`).
+  // Ref, não estado: quem redesenha é o `setKeyboardOpen(true)` logo em seguida.
+  const androidKbHeight = useRef(0);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardOpen(true));
     const hide  = Keyboard.addListener('keyboardWillHide', () => setKeyboardOpen(false));
+    // ANDROID não emite os eventos `Will*` — só os `Did*`. Sem isto o chat achava
+    // que o teclado estava sempre fechado e a caixa ficava ~100pt acima dele.
+    if (Platform.OS === 'android') {
+      const didShow = Keyboard.addListener('keyboardDidShow', (e) => {
+        androidKbHeight.current = e.endCoordinates.height;
+        setKeyboardOpen(true);
+      });
+      const didHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+      return () => { show.remove(); hide.remove(); didShow.remove(); didHide.remove(); };
+    }
     return () => { show.remove(); hide.remove(); };
   }, []);
 
@@ -1317,9 +1346,18 @@ export default function NiksChat() {
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
 
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: 'transparent' }}>
+        {/* ANDROID: sem `behavior` — o KAV do RN trata o `keyboardDidHide` como mais
+            uma mudança e, com edge-to-edge, calcula uma sobreposição falsa (status bar +
+            navbar) ao fechar: a caixa ficava presa no meio. Aqui o recuo é nosso: altura
+            do teclado + inset da navbar enquanto aberto, ZERO ao fechar (toque ou voltar).
+            iOS: exatamente como antes. */}
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={
+            Platform.OS === 'android'
+              ? { flex: 1, paddingBottom: keyboardOpen ? androidKbHeight.current + insets.bottom : 0 }
+              : { flex: 1 }
+          }
         >
           <ChatHeader
             showBack={mode === 'active'}
