@@ -169,7 +169,7 @@ xcrun simctl uninstall booted br.com.niksai.app && xcrun simctl install booted /
   - **Exceção — auth (identidade Nunito + `#FF9D9D` de jul/2026):** `login` e `signup` seguem inline styles + Nunito + `#FF9D9D` + ink, fundo branco. O `NameCapture` (`components/onboarding/NameCapture.tsx`) serve **só** ao guard de nome do `(app)/_layout.tsx` (usuária logada sem nome) — a etapa de nome do onboarding é a `nome.tsx`, no kit novo. ⚠️ O botão **"Entrar com Apple"** continua **preto** (diretriz da Apple). `paywall-soft` é só o gateway do Superwall (sem UI própria).
   - **Exceção — tela `niks-chat.tsx`:** **redesenhada para o "Novo design app NIKS"** (Nunito, tema claro), em harmonia com `home`/`protocolo`/`recomendacao-produtos`. Inline styles + tokens locais (não `Colors`, não NativeWind, **não mais Playfair**): `INK='#121212'`, `INK_SOFT='#515151'`, `INK_MUTE='#818181'`, `INK_FAINT='#B5B5B5'`, `CORAL='#FF9D9D'` (**rosa da Rotina** — era `#F86B79`), `CARD_BD='#E3E3E6'`, `BUBBLE_BG='#F3EEEE'` (balão da usuária), `WHITE`/`PILL_BG='#FFFFFF'`, `RED_GRAD=['#FF9D9D','#FF9D9D']` (botão enviar — rosa da Rotina, era o vermelho `#FF6661→#C02225`). Fontes **Nunito** (`@expo-google-fonts/nunito`). **Fundo branco puro `#FFFFFF`** — sem gradiente (o usuário pediu para remover a mescla rosa/branco). O avatar da NIKS, o hero e a logo do header são a **logo `niks-logo.png`** (sparkle) **tintada `#FF9D9D`** (como o herói de `protocolo`); o `MiniOrb` coral antigo foi **removido**. Dois estados (`empty`/`active`) — o visual de cada um está na seção **"Tela NIKS Chat"** (Design System). **O design serif antigo (`design_handoff_chat_screen/`, Playfair, tokens creme) foi aposentado.**
     - **Sem modo noturno:** o antigo tema noturno (`isDark`/`debugMode`/`autoNight`/`NightSky`/crateras de lua do `MiniOrb`) foi **removido** neste redesign — a tela é sempre clara, como as demais telas do novo design. O `useFocusEffect` apenas chama `setTabBarTheme('light')`. (`NightSky` continua existindo e em uso só no `protocolo.tsx`.)
-    - **`ChatInputBar` é `position: 'absolute'`** (não in-flow) dentro de um `View style={{ flex: 1 }}` que vive dentro do `KeyboardAvoidingView`. Isso é obrigatório: a tab bar customizada de `_layout.tsx` também é absoluta e cobre qualquer input in-flow. O KAV ainda levanta o input corretamente quando o teclado abre porque o View pai encolhe. **Nunca mover o ChatInputBar para o fluxo normal.** O `paddingBottom` em repouso é **fixo (`100` = navbar de 80px + ~20 de folga), sem somar `insets.bottom`** — a navbar já cobre o home indicator, então somar a safe area criava um vão grande sobre o menu; com o teclado aberto cai para `8`. Pill de input **branca** (`#FFFFFF`), container transparente (o fundo branco da tela aparece por trás sem emenda).
+    - **`ChatInputBar` é `position: 'absolute'`** (não in-flow) dentro de um `View style={{ flex: 1 }}` que vive dentro do `KeyboardAvoidingView`. Isso é obrigatório: a tab bar customizada de `_layout.tsx` também é absoluta e cobre qualquer input in-flow. O KAV ainda levanta o input corretamente quando o teclado abre porque o View pai encolhe (no **iOS**; no **Android** o KAV fica sem `behavior` e o recuo é nosso — ver "Android: espaço inferior e medidas"). **Nunca mover o ChatInputBar para o fluxo normal.** O `paddingBottom` em repouso é **fixo (`100` = navbar de 80px + ~20 de folga), sem somar `insets.bottom`** — a navbar já cobre o home indicator, então somar a safe area criava um vão grande sobre o menu; com o teclado aberto cai para `8`. Pill de input **branca** (`#FFFFFF`), container transparente (o fundo branco da tela aparece por trás sem emenda).
     - **Campo de texto do `ChatInputBar` é `multiline`** e cresce linha a linha até o máximo de 4 linhas (estilo WhatsApp) usando apenas `maxHeight`. Não tem `height` explícito — ver decisão técnica 17.
     - **Dois estados: `mode: 'empty' | 'active'`.** No estado `active`, renderizar o array `messages[]` carregado do banco (tabela `coach_messages`, via `coach_conversations` do dia). Cada item do array é `{ id, role, content, isStreaming?, imageUris?: string[] }`. Suporta até 5 fotos por mensagem. Regras de render: `role === 'user'` → `UserBubble` (+ um `UserPhotoBubble` por item em `imageUris`, se houver); `role === 'assistant' && content === '' && isStreaming` → `TypingDots`; `role === 'assistant' && content !== ''` → `NiksMessage`. **Nunca hardcodar mensagens de conversa** — o design prototype tinha mensagens ilustrativas que foram implementadas como definitivas por engano; esse erro já foi corrigido.
     - **Persistência de modo entre navegações:** `niksChatMode: 'empty' | 'active'` no `useAppStore` controla o que o `useFocusEffect` faz ao ganhar foco. Default `'empty'` → cold start (app fechado/reaberto) sempre mostra a tela inicial. App backgroundado preserva o valor em memória → conversa ativa é restaurada ao voltar. `sendMessage`, `handleSuggestionPress` e `loadConversation` chamam `setNiksChatMode('active')`; o botão voltar chama `setNiksChatMode('empty')`. Esse estado está no store (não em `useRef` local) precisamente para sobreviver ao ciclo de vida do componente sem ser resetado por remounts, mas ser descartado no cold start junto com todo o store in-memory.
@@ -1371,6 +1371,10 @@ Antes de qualquer scan (rosto ou produto), o app exibe um modal de consentimento
 - `hooks/useAIConsent.ts` — `requestConsent(onGranted)`: verifica AsyncStorage; se já aceitou, chama `onGranted()` direto; se não, abre o modal e guarda a ação pendente em `pendingAction`
 - `components/ui/AIConsentModal.tsx` — o backdrop **não fecha** o modal (consentimento explícito obrigatório); "Cancelar" fecha sem prosseguir para o scan
 
+**Texto do consentimento (`CONSENT_BODY`) — NÃO nomeia os fornecedores de IA (decisão do Douglas, out/2026).** Diz "serviços de inteligência artificial de parceiros"; os nomes (OpenAI e Google Gemini) ficam na Política de Privacidade e na declaração de privacidade enviada à Apple. Trocou de fornecedor? Atualize a **política**, não o modal.
+- ⚠️ **Risco aceito:** a regra 5.1.2(i) da Apple pede dizer *quais dados* vão *para quem* antes de enviar a uma IA de terceiros. Se uma revisão rejeitar por isso, a correção é **acrescentar uma linha pequena** no modal ("Parceiros de IA: OpenAI e Google") — não reescrever o texto.
+- ⚠️ **Não reintroduzir "os dados não são retidos".** A frase saiu de propósito: a API da OpenAI guarda os dados por até 30 dias (monitoramento de abuso) salvo contrato de retenção zero, que não temos confirmado. O texto atual promete só "usados exclusivamente para produzir o seu resultado".
+
 **Ao criar uma tela de câmera nova:** `const { consentGate } = useScanConsentGate()` e renderize `{consentGate}` na raiz. Não replique a lógica à mão.
 
 **Exceção — `share-product-loading` ("Compartilhar com o NIKS"):** não é câmera, mas dispara a IA sozinha. Usa `const { consentGate, granted } = useScanConsentGate({ onDecline })` e só prepara a imagem/chama a IA com `granted === true`; `onDecline` volta pra home (a tela pode ser a 1ª da pilha, onde `router.back()` não faz nada).
@@ -1968,7 +1972,8 @@ Aplicados automaticamente pelo `postinstall` (`"postinstall": "patch-package"`, 
 | `react-native+0.83.4.patch` | `#include <thread>` em `ReactCommon/hermes/executor/HermesExecutorFactory.cpp` — ver abaixo |
 | `expo-share-intent+6.1.1.patch` | opção `iosShareExtensionDisplayName` (não existe no pacote) + dedupe do App Group nos entitlements. Ver "Feature: Compartilhar com o NIKS" |
 | `@virex-tech+paywallo-sdk+2.9.0.patch` | SDK do paywall |
-| `@expo+cli+55.0.21.patch` | troca `debug(\`startSession: ${pairRecord}\`)` por `debug('startSession: %o', pairRecord)` no `LockdowndClient` (instalação no device). Cosmético, sem efeito no build |
+
+> **`@expo+cli+55.0.21.patch` foi APAGADO (out/2026)** — ao subir para o `@expo/cli` 55.0.36 o alarme disparou, e o upstream já tinha corrigido a mesma linha do `LockdowndClient` (`debug('startSession')`, sem interpolar o `pairRecord`). Não recriar.
 
 ### `plugins/withFmtCxx17.js` — o pod `fmt` compilado em C++17
 
@@ -2051,17 +2056,26 @@ Depois, `launchctl list | grep -i coresimulator` não deve ter nenhum código ne
 
 ### Caso real: Release falha com "The resource `…/node_modules/expo-router/entry` was not found"
 
-**Sintoma:** `npx expo run:ios --configuration Release` compila o nativo e falha no fim com *"Error loading assets JSON from Metro … The resource `…/node_modules/expo-router/entry` was not found"*. O Debug passa, e `npx expo export:embed --platform ios --dev false` isolado **também passa** — não é o `metro.config.js`, nem o `main` do `package.json`, nem o watchman.
+**Sintoma (iOS e Android):** o build Release falha com *"Error loading assets JSON from Metro … The resource `…/node_modules/expo-router/entry` was not found"* — **o entry aparece sem `.js`**. No iOS, em `[CP-User] Generate updates resources for expo-updates` (`npx expo run:ios --configuration Release`); no Android/EAS, em **`:app:createReleaseUpdatesResources`**. O Debug passa, e `expo export` / `expo export:embed` isolados **também passam** — não é o `metro.config.js`, nem o `main` do `package.json`, nem o watchman.
 
-**Causa:** o erro não vem do bundle do React Native, e sim da fase do **`expo-updates`** que gera o `app.manifest` (`createManifestForBuildAsync`), que roda num target **dos Pods** e **só em Release** (em Debug ela fica em `only-fingerprint`, sem Metro). Ali o `ENTRY_FILE` chega vazio, e o fallback `resolveRelativeEntryPoint` do `@expo/config` 55.0.21 **corta o `.js`** (`convertEntryPointToRelative(…, extname = '.js')`) — o Metro recebe `node_modules/expo-router/entry` sem extensão e não acha. Versões no momento: `expo@55.0.11`, `expo-updates@55.0.19`, `@expo/config@55.0.21`.
+**Onde quebra:** na fase do **`expo-updates`** que gera o `app.manifest` (`createManifestForBuildAsync`), que **só roda em Release** (em Debug fica em `only-fingerprint`, sem Metro). Ela converte o entry para caminho relativo com `convertEntryPointToRelative` do `@expo/config`, que **corta o `.js` de propósito** ("trivialmente resolvível pelo Metro"). No Android isso acontece sempre (o Gradle passa o entry **absoluto**); no iOS, quando o `ENTRY_FILE` chega vazio ou absoluto.
 
-**Contorno em uso (local, fora do código):** `ios/.xcode.env.local` tem
+**Causa real (out/2026) — o `@expo/cli` velho, NÃO o `@expo/config`.** A 1ª suspeita (Sessão 73) foi o `@expo/config` 55.0.21, mas ele é **a mesma versão que o SDK 55 mais recente usa** — o corte do `.js` é o comportamento atual. Quem não aguentava o entry cortado era o **`@expo/cli` 55.0.21**, que veio com o `expo@55.0.11`; o 55.0.36 trocou exatamente esse trecho (`exportEmbedAsync.js` → `mainModuleName: convertEntryPointToRelative(…, null)`). **Correção aplicada:** `expo` → **55.0.31** (`~55.0.31` no `package.json`), que traz o `@expo/cli` 55.0.36. Com isso o `app.manifest` do Android passou a ser gerado.
+
+**Reproduzir em segundos, sem gastar build no EAS** — é o mesmo comando que o Gradle roda (para iOS, troque `android` por `ios`):
+```bash
+ENTRY=$(node -e "require('expo/scripts/resolveAppEntry')" "$PWD" android absolute)
+mkdir -p /tmp/upd && node node_modules/expo-updates/utils/build/createUpdatesResources.js android "$PWD" /tmp/upd all "$ENTRY"
+# sucesso = exit 0 e /tmp/upd/app.manifest gerado
+```
+
+**Contorno que continua no iOS (local, fora do código):** `ios/.xcode.env.local` tem
 ```bash
 export ENTRY_FILE=node_modules/expo-router/entry.js
 ```
-⚠️ **Relativo e COM `.js`** — um caminho absoluto passa pela mesma conversão e perde a extensão de novo. O `with-node.sh` do `expo-updates` e a fase de bundle do app leem esse arquivo. Numa máquina nova (ou se o `.xcode.env.local` for apagado), o Release volta a quebrar.
+⚠️ **Relativo e COM `.js`** — um caminho absoluto passa pela mesma conversão e perde a extensão de novo (já aconteceu: a linha foi escrita com o caminho absoluto e o erro continuou). No Android **não existe** contorno equivalente — lá a única saída foi o `@expo/cli` novo. Com o CLI novo, a linha do iOS **provavelmente** virou desnecessária, mas **não foi testado**: só apague depois de um Release no iPhone passar sem ela.
 
-🚧 **Correção de raiz pendente:** alinhar as versões do SDK (`npx expo install --check` para ver, `--fix` para aplicar) e conferir se o descompasso `expo-updates` × `@expo/config` some. Se sumir, apagar a linha do `ENTRY_FILE`.
+🚧 **Alinhamento do SDK ficou PARCIAL — de propósito.** Só o `expo` subiu. O `npx expo install --check` ainda lista ~23 pacotes atrás (`expo-updates` 55.0.19→~55.0.33, `expo-router`, `react-native` 0.83.4→0.83.10, `react-native-worklets`…). O `--fix` completo **sobe o React Native**, o que obriga a refazer o teste do patch do Hermes e do `withFmtCxx17` (ver "Patches de `node_modules`") — merece sessão própria, com teste no iPhone. ⚠️ **Antes do próximo build iOS:** o `expo` mudou de versão, então rode `pod install` (o `Podfile.lock` ainda aponta para as versões antigas).
 
 ---
 
@@ -2170,6 +2184,8 @@ Avança tocando em **qualquer lugar**; na última parada o toque fecha. **Não e
 > ⚠️ **O overlay é renderizado no `(app)/_layout.tsx`, irmão da `GlobalBottomBar` e DEPOIS dela — nunca dentro da `home.tsx`.** No React Native `zIndex` só vale **entre irmãos do mesmo pai**: a navbar mora no layout (pai) e a home é filha do `<Tabs>`, então um overlay dentro da home fica **abaixo da navbar** por mais zIndex que leve — e os passos 3–5 seriam impossíveis. É a mesma lição da decisão 18 (o FAB que precisava ficar acima da navbar).
 
 > ⚠️ **O toque NÃO chega ao elemento destacado, de propósito.** O `Pressable` raiz cobre a tela inteira, buraco incluído — o recorte é só um desenho (`pointerEvents: 'none'` no SVG). Um toque que também abrisse a câmera tiraria a usuária do tutorial logo no passo 1.
+
+> ⚠️ **No Android o buraco NÃO usa os números do `measureInWindow` direto** — o overlay se mede e desenha na diferença. Ver "Android: espaço inferior e medidas".
 
 #### Quem vê: a regra é UMA VEZ POR CONTA (servidor manda, aparelho é cache)
 
@@ -2618,6 +2634,8 @@ Chat com a NIKS AI (4ª aba "niks" do menu inferior). Redesenhada para o novo de
 
 **Estilo:** inline styles + tokens locais do novo design. Não usa `Colors` constants nem NativeWind.
 
+**Espaço embaixo da caixa de texto:** `8` com teclado aberto; sem teclado, **`100` fixo no iOS** e **altura medida da navbar + 10 no Android**. O teclado é detectado por `keyboardWill*` no iOS e `keyboardDid*` no Android. Ver "Android: espaço inferior e medidas".
+
 ---
 
 ### Tab Bar / Navbar (`app/(app)/_layout.tsx` — `GlobalBottomBar`)
@@ -2647,6 +2665,30 @@ Réplica do design **"Fixed bottom bar"** (`navbar-design/Navbar.dc.html`). **Su
   - Quem seta dark: **só** `protocolo.tsx` (período Noite) via `useFocusEffect` resetando para light no blur (`niks-chat.tsx` perdeu o modo noturno e chama sempre `light`). (o `isDark` do `ScanModal` era controlado aqui também, mas o modal saiu do fluxo.)
 - Visibilidade: `{tabBarVisible && <GlobalBottomBar />}`. Telas ocultas do `<Tabs>` (`href: null`): `set-name`, `skin-result`.
 - **Alvos do tutorial de primeiro acesso:** os ícones de Rotina, Produtos e Chat registram a posição da **View do glifo** (~29×29) em `lib/coachMarks` — não a do `TouchableOpacity`, que é `flex: 1` (uma coluna inteira). ⚠️ Lembre da armadilha de nome: glyph `beauty` = tela **Rotina**, glyph `rotina` = tela **Produtos**. Ver "Feature: Tutorial de primeiro acesso da home".
+- **A altura da navbar NÃO é fixa:** ~56pt de conteúdo + `max(insets.bottom, 26)` → **~90 no iPhone**, **~104 no Android com barra de 3 botões** (inset ~48), **~82 no Android com gestos**. Nada pode assumir um número fixo — ver a seção abaixo.
+
+### Android: espaço inferior e medidas (out/2026)
+
+O app estava certo no iPhone e errado num Samsung com **barra de 3 botões**: o círculo do tutorial não caía em cima dos ícones da navbar, e a navbar cobria a caixa "pergunte algo…" do chat. **Regra do usuário para estas correções: o iPhone não pode mudar em NADA** — tudo fica atrás de `Platform.OS === 'android'`.
+
+**As 4 armadilhas (todas só aparecem no Android):**
+
+| Onde | O que estava errado | Correção (só Android) |
+|---|---|---|
+| Tutorial (`HomeCoachMarks.tsx`) | Os alvos vêm de `measureInWindow`, e o overlay desenhava o buraco nesses números supondo que ele próprio começa no topo da janela e tem a altura de `useWindowDimensions()`. No iPhone é verdade; no Android edge-to-edge a origem/altura podem não coincidir | O overlay **se mede com a mesma API** e desenha o buraco na **diferença** (alvo − overlay); o véu usa o tamanho medido. O deslocamento se cancela nos dois modos de navegação. Antes da 1ª medida renderiza uma `View` invisível (sem toque) só para medir |
+| Chat — caixa de texto (`ChatInputBar`) | `paddingBottom` **fixo de 100** — cabe na navbar de ~90 do iPhone, não na de ~104 do Android 3 botões | Altura **medida** da navbar + 10 (o mesmo vão do iPhone). Antes da 1ª medida: `56 + max(inset, 26) + 10`. iOS segue `100` |
+| Chat — teclado | O chat só escutava `keyboardWillShow/Hide`, que **não existem no Android** → lá o teclado era sempre "fechado" e a caixa ficava ~100pt acima dele | Escuta também `keyboardDidShow/Hide`, dentro de `if (Platform.OS === 'android')` |
+| Chat — teclado **fechando** | Ao fechar o teclado (toque na tela ou botão voltar), a caixa ficava presa no meio com um vão sobre a navbar. Defeito do **`KeyboardAvoidingView` do RN no Android**: ele trata o `keyboardDidHide` como mais uma mudança (no iOS zera) e, com edge-to-edge, calcula uma sobreposição falsa do tamanho da barra de status + navbar — e nunca volta a zero. Acontece com `behavior` `'height'` **e** `'padding'` | KAV **sem `behavior`** no Android; o recuo é um `paddingBottom` nosso: `altura do teclado (keyboardDidShow → e.endCoordinates.height, guardada num useRef) + insets.bottom` enquanto aberto, **`0` ao fechar**. O `+ insets.bottom` é porque a altura que o RN informa já desconta a navbar do sistema. iOS segue `behavior: 'padding'` e `style: { flex: 1 }` |
+
+**A altura medida vem de `lib/androidNavBarHeight.ts`** — a navbar recebe `onLayout={Platform.OS === 'android' ? reportAndroidNavBarHeight : undefined}` e grava num registro de **módulo** (mesmo padrão do `lib/coachMarks.ts`): a navbar não ganha estado nem re-render. ⚠️ **Esse arquivo só pode ser usado dentro de ramos Android.**
+
+**Padrão para hook só-Android sem tocar no iOS** (usado no chat e no tutorial): escolher o hook **uma vez, no carregamento do módulo** —
+```ts
+const useNavBarHeightOnAndroid = Platform.OS === 'android' ? useAndroidNavBarHeight : () => null;
+```
+`Platform.OS` nunca muda em execução, então a ordem dos hooks é estável; no iOS é uma função vazia, sem estado, efeito ou inscrição. Props só-Android vão como `{...props}` que no iOS é `{}`, ou `prop={android ? x : undefined}`.
+
+🚧 **Teste em aparelho — parcial.** Num Samsung com **barra de 3 botões**: tutorial ✅, caixa do chat acima da navbar ✅, caixa encostando no teclado ao digitar ✅. A correção do **teclado fechando** (4ª linha) foi feita depois e **ainda não foi retestada** — conferir fechando pelo toque e pelo botão voltar. **Modo gestos ainda não testado** (Configurações → Tela → Barra de navegação). Se a caixa ficar com folga ou entrar embaixo do teclado aberto, o suspeito é a soma `e.endCoordinates.height + insets.bottom`. Limitação conhecida (igual à de antes): se o teclado mudar de altura já aberto (ex.: painel de emoji), a caixa não acompanha — o Android só avisa ao abrir e fechar.
 
 ### Tela de Perfil (`app/(app)/perfil.tsx`)
 
@@ -3067,6 +3109,10 @@ O Claude Design renderiza no Chrome com o **SF Pro variável**, que usa o peso p
 4. Extraia os contornos com `Font.draw_glyph` e grave cada texto como `{ x, y: linhaDeBase, d }` no componente.
 
 ---
+
+*Sessão 75 — Outubro 2026 — **Consentimento de IA sem nomear fornecedores + teclado do chat no Android.** (1) `CONSENT_BODY` passou a falar em "parceiros" (nomes ficam na Política de Privacidade) e perdeu o "não são retidos" — ver seção 14 "Consentimento de uso de IA". (2) No Samsung (3 botões) a caixa do chat ficava presa no meio ao fechar o teclado: defeito do `KeyboardAvoidingView` no Android com edge-to-edge; lá o KAV ficou sem `behavior` e o recuo virou nosso. iPhone intocado. Ver "Android: espaço inferior e medidas".*
+
+*Sessão 74 — Outubro 2026 — **Android: build do EAS + tela.** (1) O EAS falhava em `:app:createReleaseUpdatesResources` com o mesmo "entry sem `.js`" do iOS; a causa real era o **`@expo/cli` 55.0.21** (não o `@expo/config`, como se supôs na Sessão 73). `expo` → 55.0.31 (traz o CLI 55.0.36), `@expo+cli` patch apagado (o upstream corrigiu); alinhamento do SDK ficou parcial — ver "QUANDO O BUILD FALHA → Caso real". (2) Correções **só-Android** (iPhone intocado): círculo do tutorial fora dos ícones da navbar, navbar cobrindo a caixa do chat, e teclado não detectado no Android (`keyboardWill*` não existe lá). Novo `lib/androidNavBarHeight.ts`. **Não testado em aparelho Android ainda.** Ver "Android: espaço inferior e medidas".*
 
 *Sessão 73 — Setembro 2026 — **Downsell no cancelamento da Apple passou a funcionar + descoberta de que o `CustomPurchaseController` nunca esteve ativo.** Testando em Release no simulador, cancelar a folha da Apple deixava o paywall parado. Com logs temporários, o `onPurchase` do controller **nem era chamado**: o `SuperwallProvider` (`expo-superwall` 1.0.9) só liga `manualPurchaseManagement` se o `CustomPurchaseControllerProvider` estiver **acima** dele, e aqui está abaixo — o SDK sobrescreve o `true` com `false` e compra direto pela StoreKit (em produção também). **Inverter os providers ficou como pendência de propósito** (muda o caminho de compra que funciona hoje; exige testar compra normal, cupom, downsell e restore com Sandbox Tester). **Correção aplicada:** o cancelamento passou a ser detectado pelo **evento** `transactionAbandon` (gratuito, diferente do placement pago) no `onSuperwallEvent` de `paywall-soft.tsx`, com a mesma sequência e o mesmo flag de antes; o bloco `userCancelled` do `app/_layout.tsx` ficou comentado como inativo. **Validado no simulador em Release:** cancelar abre o downsell; cancelar dentro dele não faz nada. **Também:** o build Release local quebrava por um descompasso `expo-updates` × `@expo/config` (entry sem `.js`), contornado com `ENTRY_FILE` no `ios/.xcode.env.local` — ver "QUANDO O BUILD FALHA". Ver "Guard de assinatura → `CustomPurchaseControllerProvider` — INATIVO" e "Downsell".*
 
