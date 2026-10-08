@@ -37,7 +37,7 @@ const PAYWALLO_CONFIG = {
   appKey: process.env.EXPO_PUBLIC_PAYWALLO_APP_KEY ?? '',
   appVersion: Application.nativeApplicationVersion ?? undefined,
   debug: __DEV__,
-  environment: 'Production' as const,
+  environment: __DEV__ ? ('Sandbox' as const) : ('Production' as const),
   skan: true,
 };
 
