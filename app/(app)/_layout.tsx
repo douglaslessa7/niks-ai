@@ -12,6 +12,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { isNativePresentationOpen, waitForNativePresentationToClose } from '../../lib/nativePresentation';
 import { useCoachMark, useCoachStageReady } from '../../lib/coachMarks';
 import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
+import AvisoLote from '../../components/rotina/AvisoLote';
 import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
 // ── Bottom navbar — réplica da `nav` do design 38e (Claude Design, NiksHomeFlo
@@ -94,12 +95,11 @@ function GlobalBottomBar() {
   // Tema da tab bar — escurece junto com telas em modo noturno (protocolo)
   const isDark = useAppStore((s) => s.tabBarTheme) === 'dark';
 
-  // O alarme é parte da rotina: no design 44a a aba Rotina aparece ativa nele. A estante
-  // (48a) é parte de Produtos: lá o frasco aparece ativo. No progresso (43d) a Rotina
-  // também aparece ativa.
+  // O alarme é parte da rotina: no design 44a a aba Rotina aparece ativa nele. No
+  // progresso (43d) a Rotina também aparece ativa. (A estante deixou de ser tela própria:
+  // é o topo da aba Produtos.)
   const isActive = (route: string) => pathname === route || pathname.startsWith(`${route}/`)
-    || (route === '/protocolo' && (pathname === '/alarme' || pathname === '/progresso'))
-    || (route === '/recomendacao-produtos' && pathname === '/estante');
+    || (route === '/protocolo' && (pathname === '/alarme' || pathname === '/progresso'));
 
   const activeColor = isDark ? NAV_ACTIVE_DARK : NAV_ACTIVE;
   const inactiveColor = isDark ? NAV_INACTIVE_DARK : NAV_INACTIVE;
@@ -347,7 +347,6 @@ export default function AppLayout() {
         <Tabs.Screen name="skin-result" options={{ href: null }} />
         <Tabs.Screen name="calendario" options={{ href: null }} />
         <Tabs.Screen name="alarme" options={{ href: null }} />
-        <Tabs.Screen name="estante" options={{ href: null }} />
         <Tabs.Screen name="progresso" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
@@ -357,6 +356,9 @@ export default function AppLayout() {
           (zIndex só vale entre irmãos; a navbar é do layout, a home é filha do
           <Tabs>). Ver "Feature: Tutorial de primeiro acesso" no README. */}
       {showCoachMarks && <HomeCoachMarks onFinish={handleCoachFinish} />}
+      {/* Aviso "Sua rotina está pronta" do lote "Montar minha rotina" (Fase 6) + toque
+          no push dele. Irmão da navbar pelo mesmo motivo: fica por cima de qualquer aba. */}
+      {!showCoachMarks && <AvisoLote />}
     </View>
   );
 }

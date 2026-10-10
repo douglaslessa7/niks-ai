@@ -242,11 +242,17 @@ type AppStore = {
   // produto_id cujo detalhe deve abrir ao entrar em recomendacao-produtos (deep-link da home)
   productDetailTarget: string | null
   setProductDetailTarget: (id: string | null) => void
-  // Passo da rotina cujo produto recomendado deve abrir ao entrar em recomendacao-produtos
-  // (deep-link do "Ver produto recomendado" da tela de Rotina). A Rotina não conhece o
-  // produto_id — só o NOME do passo (= `passo` da recomendação) e o período do toggle.
-  productDetailStep: { passo: string; periodo: 'am' | 'pm' } | null
-  setProductDetailStep: (v: { passo: string; periodo: 'am' | 'pm' } | null) => void
+  // Passo da Minha rotina que espera o produto do "Escanear produto" da folha "Escolher
+  // produto" (Fase 2): o resultado do scan (product-result) põe o produto na estante e
+  // neste passo. Em memória; `em` = quando foi pedido (vale por poucos minutos) e a
+  // Rotina limpa ao voltar ao foco — um scan avulso depois nunca cai num passo.
+  rotinaPassoAlvo: { passoId: string; nome: string; periodo: 'am' | 'pm'; em: number } | null
+  setRotinaPassoAlvo: (v: { passoId: string; nome: string; periodo: 'am' | 'pm'; em: number } | null) => void
+  // "Ver todos" da folha "Escolher produto" (estante, escaneados ou recomendados): abre a
+  // lista completa na aba Produtos em MODO ESCOLHA — tocar num produto põe no passo e
+  // volta à Rotina. Em memória; a aba Produtos limpa ao perder o foco.
+  escolhaParaPasso: { passoId: string; nome: string; periodo: 'am' | 'pm'; lista: 'estante' | 'escaneados' | 'recomendados' } | null
+  setEscolhaParaPasso: (v: { passoId: string; nome: string; periodo: 'am' | 'pm'; lista: 'estante' | 'escaneados' | 'recomendados' } | null) => void
   subscriptionVerified: boolean
   setSubscriptionVerified: (v: boolean) => void
 
@@ -438,8 +444,10 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   productDetailTarget: null,
   setProductDetailTarget: (id) => set({ productDetailTarget: id }),
-  productDetailStep: null,
-  setProductDetailStep: (v) => set({ productDetailStep: v }),
+  rotinaPassoAlvo: null,
+  setRotinaPassoAlvo: (v) => set({ rotinaPassoAlvo: v }),
+  escolhaParaPasso: null,
+  setEscolhaParaPasso: (v) => set({ escolhaParaPasso: v }),
   subscriptionVerified: false,
   setSubscriptionVerified: (v) => set({ subscriptionVerified: v }),
 
@@ -632,7 +640,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanSideUris: [], skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanSideUris: [], skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null, rotinaPassoAlvo: null, escolhaParaPasso: null }),
 }), {
   // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
   // O store era 100% em memória, então TODO cache dele morria ao fechar o app —

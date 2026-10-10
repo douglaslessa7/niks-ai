@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
-  View, Text, ScrollView, Image, Pressable, useWindowDimensions, Animated,
+  View, Text, ScrollView, Image, Pressable, useWindowDimensions, Animated, StyleSheet,
+  TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react-native';
 import { getScoreTheme } from '../../lib/scoreTheme';
 import { haptics } from '../../lib/haptics';
+import { diasDoPasso } from '../../lib/frequencia';
+import { ShelfAddButton, ShelfRemoveLink } from './ShelfStatus';
 
 // Análise de um produto escaneado — réplica do Figma "Novo design app NIKS" (node 136:126).
 //
@@ -79,11 +82,15 @@ type Props = {
   onRescan?: () => void;
   /** Rótulo do botão de escanear. */
   rescanLabel?: string;
-  /** "Tenho em casa" (Minha coleção, design 47a/48a). Sem ela, o botão não aparece. */
+  /** Estante (= Minha coleção, design 47a/48a). Sem ela, o botão não aparece. `onToggle`
+   *  adiciona quando não está e remove quando está (a remoção passa pela confirmação). */
   colecao?: { owned: boolean; busy?: boolean; onToggle: () => void };
+  /** "Adicionar à minha rotina" (Rotina, Fase 8): só quando a sugestão é adicionar ou
+   *  substituir. Sem ela, o card "Sobre a sua rotina" fica só informativo. */
+  rotina?: { estado: 'livre' | 'fazendo' | 'feito'; onAdd: () => void };
 };
 
-export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClose, onRescan, rescanLabel = 'Escanear outro produto', colecao }: Props) {
+export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClose, onRescan, rescanLabel = 'Escanear outro produto', colecao, rotina }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const S = width / 393;
@@ -172,7 +179,7 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
           onRescan();
         }}
         style={{
-          marginTop: colecao ? 10 : s(28), marginHorizontal: s(10),
+          marginTop: s(28), marginHorizontal: s(10),
           height: 50, borderRadius: 100, flexDirection: 'row', gap: 8,
           backgroundColor: WHITE,
           alignItems: 'center', justifyContent: 'center',
@@ -188,30 +195,37 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
       </Pressable>
     ) : null;
 
-  // "Adicionar à coleção" (design 47c): cápsula rosa cheia; marcado = check + "Está na
-  // sua coleção" (põe o produto na Minha coleção e na estante); tocar de novo tira.
-  const ColecaoButton = () =>
+  // Estante (design 47c) FIXA no rodapé, sempre à vista enquanto a usuária rola:
+  // "Adicionar à estante" (cápsula rosa) ou o selo "Na sua estante ✓" — visual em
+  // `ShelfStatus` (fonte única com o detalhe dos Recomendados). Atrás, um degradê do
+  // fundo da página para o botão não brigar com o conteúdo. O "Escanear outro produto"
+  // e o link "Remover da estante" continuam no fim da página.
+  const FOOTER_FADE = 28;                              // altura do degradê acima do botão
+  const footerBottom = Math.max(insets.bottom, 16);
+  const FOOTER_H = FOOTER_FADE + 50 + 12 + footerBottom; // degradê + cápsula + folga + safe area
+  const ShelfFooter = () =>
     colecao ? (
-      <Pressable
-        disabled={colecao.busy}
-        onPress={() => { haptics.tap(); colecao.onToggle(); }}
-        style={{
-          marginTop: s(28), marginHorizontal: s(10), height: 50, borderRadius: 100,
-          flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: '#FF5EA8',
-          shadowColor: 'rgb(255,94,168)', shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.28, shadowRadius: 8, elevation: 6,
-          opacity: colecao.busy ? 0.6 : 1,
-        }}
-      >
-        <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke={WHITE} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round">
-          <Path d={colecao.owned ? 'M5 12.5l4.5 4.5L19 7.5' : 'M12 5v14M5 12h14'} />
-        </Svg>
-        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: WHITE }}>
-          {colecao.owned ? 'Está na sua coleção' : 'Adicionar à coleção'}
-        </Text>
-      </Pressable>
+      <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 10 }}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={[hexToRgba(PAGE_BG, 0), hexToRgba(PAGE_BG, 0.94), PAGE_BG]}
+          locations={[0, 0.3, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={{ paddingTop: FOOTER_FADE, paddingBottom: footerBottom + 12, paddingHorizontal: s(20) }}>
+          <ShelfAddButton owned={colecao.owned} busy={colecao.busy} onAdd={colecao.onToggle} />
+        </View>
+      </View>
     ) : null;
+
+  // Fundo atrás do relógio e da ilha da câmera: sem ele o conteúdo passava por baixo
+  // deles ao rolar. Branco (a cor do topo da página) + uma borda que esmaece.
+  const TopScrim = () => (
+    <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9 }}>
+      <View style={{ height: insets.top, backgroundColor: WHITE }} />
+      <LinearGradient colors={['#FFFFFF', 'rgba(255,255,255,0)']} style={{ height: 14 }} />
+    </View>
+  );
 
   // Card do design (374×auto, radius 16, borda #E3E3E6) — título e ícone na COR DO TEMA
   // (faixa da compatibilidade), sombra suave e entrada animada. `header` entra ANTES do
@@ -304,12 +318,18 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
   const avisos: string[] = Array.isArray(r.avisos) ? r.avisos : [];
   const ativos: string[] = Array.isArray(produto.ativos_detectados) ? produto.ativos_detectados : [];
   const isEvitaria = r.veredito === 'evitaria';
+  // Frequência sugerida (adicionar/substituir): null = uso diário. Análise feita antes
+  // de a função devolver `dias` não tem o campo → sem chip (não dá para afirmar "todo dia").
+  const temFrequencia = 'dias' in decisao;
+  const diasSugeridos = diasDoPasso(Array.isArray(decisao.dias) ? decisao.dias : null);
   const periodoLabel = decisao.periodo === 'am' ? 'Manhã' : decisao.periodo === 'pm' ? 'Noite' : decisao.periodo === 'am+pm' ? 'Manhã e noite' : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: PAGE_BG }}>
+      <TopScrim />
       <CloseButton />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(48) }} showsVerticalScrollIndicator={false}>
+      {/* Com o rodapé fixo, o fim da página ganha a altura dele: nada fica escondido atrás. */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: s(48) + (colecao ? FOOTER_H : 0) }} showsVerticalScrollIndicator={false}>
         {/* Fundo gradiente branco → tom da faixa de compatibilidade (igual à home) */}
         <LinearGradient
           colors={['#FFFFFF', '#FFFFFF', theme.heroSoft, theme.heroMed, PAGE_BG]}
@@ -414,12 +434,34 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: s(7), marginTop: s(10) }}>
                   {!!decisao.passo && <Chip label={decisao.passo} fg={ACCENT} bg={WHITE} />}
                   {!!periodoLabel && <Chip label={periodoLabel} fg={ACCENT} bg={WHITE} />}
+                  {!!periodoLabel && temFrequencia && <Chip label={diasSugeridos ? `${diasSugeridos.length}x por semana · ${diasSugeridos.join(', ')}` : 'Todo dia'} fg={ACCENT} bg={WHITE} />}
                 </View>
               )}
               {!!decisao.produto_substituivel && (
                 <Text style={{ fontFamily: f5, fontSize: s(12.5), color: INK_MUTE, marginTop: s(8) }}>No lugar de: {decisao.produto_substituivel}</Text>
               )}
               {!!decisao.justificativa && <Body top={8}>{decisao.justificativa}</Body>}
+              {/* "Adicionar à minha rotina" (Fase 8): entra onde a análise sugeriu. */}
+              {!!rotina && (decisao.tipo === 'adicionar' || decisao.tipo === 'substituir') && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={rotina.onAdd}
+                  disabled={rotina.estado !== 'livre'}
+                  style={{
+                    marginTop: s(14), height: s(46), borderRadius: 100, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: rotina.estado === 'feito' ? WHITE : ACCENT,
+                    borderWidth: rotina.estado === 'feito' ? 1.5 : 0, borderColor: ACCENT,
+                  }}
+                >
+                  {rotina.estado === 'fazendo'
+                    ? <ActivityIndicator color={WHITE} />
+                    : (
+                      <Text style={{ fontFamily: f8, fontSize: s(15.5), color: rotina.estado === 'feito' ? ACCENT : WHITE }}>
+                        {rotina.estado === 'feito' ? '✓ Na sua rotina' : decisao.tipo === 'substituir' ? 'Trocar na minha rotina' : 'Adicionar à minha rotina'}
+                      </Text>
+                    )}
+                </TouchableOpacity>
+              )}
             </Card>
           )}
 
@@ -459,10 +501,13 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
             <Text style={{ fontFamily: f4, fontSize: s(12.5), lineHeight: s(12.5) * 1.55, color: INK_MUTE, marginTop: s(18), marginHorizontal: s(21), fontStyle: 'italic' }}>{r.nota}</Text>
           )}
 
-          <ColecaoButton />
           <RescanButton />
+          {colecao && (
+            <ShelfRemoveLink owned={colecao.owned} busy={colecao.busy} name={produto.nome} onRemove={colecao.onToggle} style={{ marginTop: 16 }} />
+          )}
         </View>
       </ScrollView>
+      <ShelfFooter />
     </View>
   );
 }

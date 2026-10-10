@@ -18,7 +18,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import {
-  getRoutineHistory, routineStreak, routinesDoneOn, sessionDate, dateKey, type RoutineHistory,
+  getRoutineHistory, routineDayStreak, routinesDoneOn, sessionDate, dateKey, type RoutineHistory,
 } from '../../lib/routineProgress';
 
 const INK = '#121212';
@@ -76,7 +76,9 @@ export default function Calendario() {
 
   const today = sessionDate(now);
   const todayKey = dateKey(today);
-  const streak = routineStreak(hist, now);
+  // Só os DIAS SEGUIDOS (dias com alguma rotina) — o streak em pontos fica no selo
+  // da chama da home e da Rotina.
+  const dayStreak = routineDayStreak(hist, now);
 
   const months = [];
   for (let i = MONTHS_BACK; i >= -1; i--) {
@@ -120,7 +122,7 @@ export default function Calendario() {
             <Svg width={19} height={19} viewBox="0 0 24 24">
               <Path d={FLAME} fill={PINK} stroke={PINK} strokeWidth={1.4} strokeLinejoin="round" />
             </Svg>
-            <Text style={styles.streakText}>{`${streak} dias seguidos`}</Text>
+            <Text style={styles.streakText}>{`${dayStreak} ${dayStreak === 1 ? 'dia seguido' : 'dias seguidos'}`}</Text>
           </View>
         </View>
         <View style={styles.letters}>

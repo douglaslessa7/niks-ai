@@ -44,24 +44,29 @@ function keyFor(period: RoutinePeriod, now: Date = new Date()): string {
   return `routine_done:${sessionDateStr(now)}:${period}`;
 }
 
-// Índices de passos concluídos na sessão atual do período.
-export async function getCompletedSteps(period: RoutinePeriod): Promise<number[]> {
+// Passos concluídos na sessão atual do período. Desde a "Minha rotina" (out/2026) a
+// chave é o CÓDIGO do passo (`minha_rotina_passos.id`), não a posição — a rotina passa
+// a ser reordenável. Registros antigos (posições numéricas) continuam sendo lidos, mas
+// não batem com os códigos: no dia da atualização o checklist recomeça.
+export type StepKey = number | string;
+
+export async function getCompletedSteps(period: RoutinePeriod): Promise<StepKey[]> {
   try {
     const raw = await AsyncStorage.getItem(keyFor(period));
     if (!raw) return [];
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr.filter((n) => typeof n === 'number') : [];
+    return Array.isArray(arr) ? arr.filter((n) => typeof n === 'number' || typeof n === 'string') : [];
   } catch {
     return [];
   }
 }
 
-// Marca um passo (por índice) como concluído. Idempotente.
-export async function markStepCompleted(period: RoutinePeriod, index: number): Promise<void> {
+// Marca um passo (pelo código) como concluído. Idempotente.
+export async function markStepCompleted(period: RoutinePeriod, key: StepKey): Promise<void> {
   try {
     const cur = await getCompletedSteps(period);
-    if (!cur.includes(index)) {
-      await AsyncStorage.setItem(keyFor(period), JSON.stringify([...cur, index]));
+    if (!cur.includes(key)) {
+      await AsyncStorage.setItem(keyFor(period), JSON.stringify([...cur, key]));
     }
   } catch {
     // silencioso — progresso é best-effort, nunca deve quebrar a UI
@@ -163,22 +168,39 @@ export function routinesDoneOn(hist: RoutineHistory, d: Date): number {
   return (day?.am ? 1 : 0) + (day?.pm ? 1 : 0);
 }
 
-// Um dia vale ponto na sequência quando a usuária conclui QUALQUER uma das rotinas
+// Um dia CONTA para os dias seguidos quando a usuária conclui QUALQUER uma das rotinas
 // (manhã ou noite) na sessão-do-dia — não precisa das duas.
 export function dayEarnsStreak(hist: RoutineHistory, d: Date): boolean {
   const day = hist[dateKey(d)];
   return !!day?.am || !!day?.pm;
 }
 
-// Sequência = dias seguidos que valeram ponto. Hoje só entra depois de ganhar o ponto;
-// enquanto não, a sequência vem até ontem (não zera no meio do dia).
-export function routineStreak(hist: RoutineHistory, now: Date = new Date()): number {
+// Dois números (out/2026):
+// - DIAS SEGUIDOS (`routineDayStreak`) = dias seguidos com pelo menos uma rotina. Hoje só
+//   entra depois da 1ª rotina; enquanto não, conta até ontem (não zera no meio do dia).
+//   Zera só quando passa um dia inteiro sem nenhuma rotina.
+// - STREAK (`routineStreak`, os pontos) = 1 ponto por ROTINA concluída (manhã e noite =
+//   2 pontos no dia), somados dentro desses mesmos dias seguidos — zera junto com eles.
+//   Ex.: seg manhã + noite, ter só manhã → 3 de streak, 2 dias seguidos.
+// O selo da chama (home, Rotina) mostra o streak; o Calendário, só os dias seguidos.
+function streakRun(hist: RoutineHistory, now: Date): { days: number; points: number } {
   const d = sessionDate(now);
   if (!dayEarnsStreak(hist, d)) d.setDate(d.getDate() - 1);
-  let n = 0;
+  let days = 0, points = 0;
   while (dayEarnsStreak(hist, d)) {
-    n += 1;
+    days += 1;
+    points += routinesDoneOn(hist, d);
     d.setDate(d.getDate() - 1);
   }
-  return n;
+  return { days, points };
+}
+
+/** Streak em PONTOS: 1 por rotina concluída, dentro dos dias seguidos. */
+export function routineStreak(hist: RoutineHistory, now: Date = new Date()): number {
+  return streakRun(hist, now).points;
+}
+
+/** Dias seguidos com pelo menos uma rotina. */
+export function routineDayStreak(hist: RoutineHistory, now: Date = new Date()): number {
+  return streakRun(hist, now).days;
 }

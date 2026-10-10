@@ -4,16 +4,19 @@
 // com foto + "Sua rotina" + sequência, seletor Manhã/Noite, herói com "Iniciar
 // rotina", passos em linha do tempo com o produto escolhido, "O que esperar" (cards
 // que viram), "Como introduzir os ativos" e a rotina passo a passo (com a tela de
-// concluída). "Escolher/Ver produto" leva para a tela de Produtos (não para a folha
-// do design), no produto daquele passo.
+// concluída). "Escolher/Trocar produto" abre a folha "Escolher produto" (Fase 2 do
+// plano da Rotina — components/rotina/EscolherProdutoSheet).
 // Fonte = SF Pro (sistema), rosa #FF5EA8. Medidas do frame 393×852: o topo do
 // conteúdo (69) = barra de status do frame (54) + 15 → `insets.top + 15`.
-// Os DADOS continuam reais: tabela `protocolos` (fonte de verdade) + store como
-// fallback do vão + geração sob demanda para usuária legada — lógica intacta.
+// DADOS: os PASSOS vêm da "Minha rotina" (`minha_rotina_passos`, lib/minhaRotina — a
+// rotina que ela faz; nasce como cópia da ideal). A ROTINA IDEAL (`protocolos`) segue
+// carregada como antes: dá os textos de "O que esperar"/"Como introduzir", cobre o vão
+// antes de a Minha rotina existir (store como fallback) e a geração sob demanda para
+// usuária legada — lógica intacta. A ideal nunca é alterada por esta tela.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, ScrollView, Image, TouchableOpacity, Animated, Easing, Modal,
+  View, Text, ScrollView, Image, TouchableOpacity, Animated, Easing, Modal, Alert, useWindowDimensions,
   ActivityIndicator, StyleSheet, LayoutAnimation, Platform, UIManager,
   type StyleProp, type TextStyle,
 } from 'react-native';
@@ -34,17 +37,30 @@ import { supabase } from '../../lib/supabase';
 import { generateAndSaveProtocol } from '../../lib/generateProtocol';
 import { buildOnboardingDataFromUserRow } from '../../lib/buildOnboardingDataFromUserRow';
 import {
-  markStepCompleted, markRoutineDone, getCompletedSteps, getRoutineHistory, routineStreak,
-  sessionDate, dateKey, type RoutineHistory,
+  markStepCompleted, markRoutineDone, getCompletedSteps, getRoutineHistory, routineStreak, routineDayStreak,
+  sessionDate, dateKey, type RoutineHistory, type StepKey,
   getRoutineFlow, saveRoutineFlow, clearRoutineFlow, type RoutineFlowState,
 } from '../../lib/routineProgress';
 import { cancelLateReminder } from '../../lib/routineReminders';
 import { requestAppReview } from '../../lib/storeReview';
-import { getSavedProducts, normStepKey, type SavedProduct } from '../../lib/savedProducts';
-import { getCutoutsByImageUrl, type Cutout } from '../../lib/productCutouts';
+import {
+  listarMinhaRotina, garantirMinhaRotina, temProdutosNoCelular, diaDaSemana, passoValeNoDia,
+  reordenarPassos, removerPasso, nomeDoPasso, type MinhaRotina, type PassoRotina,
+} from '../../lib/minhaRotina';
+import EscolherProdutoSheet from '../../components/rotina/EscolherProdutoSheet';
+import StepIcon from '../../components/rotina/StepIcon';
+import RotinaIdealSheet from '../../components/rotina/RotinaIdealSheet';
+import IntroRotina, { type EscolhaIntro } from '../../components/rotina/IntroRotina';
+import { tipoDoPasso, ROTULO_TIPO } from '../../lib/tipoPasso';
+import { diasDoPasso, seloFrequencia, fraseFrequencia } from '../../lib/frequencia';
+import { useLote } from '../../lib/loteProdutos';
+import { loteDeHoje } from '../../lib/rotinaLotes';
+import { carregarRotinaIdeal, marcarIdealVista, calcularCobertura, type RotinaIdeal } from '../../lib/rotinaIdeal';
+import ListaEditavel, { type ItemEditavel } from '../../components/rotina/ListaEditavel';
+import PassoSheet, { type PassoSheetModo } from '../../components/rotina/PassoSheet';
 import { getFacePhotoUrl } from '../../lib/facePhoto';
 import { getPhotoJourney, saveRoutinePhoto } from '../../lib/routinePhotos';
-import { useCachedQuery } from '../../lib/cache';
+import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 
@@ -79,6 +95,9 @@ const FOCUS: Record<'am' | 'pm', string> = {
 // segue rosado.
 const PRODUCT_BG = '#FFFFFF';
 const NO_PRODUCT_BG = '#FFF5F9';
+// Card da rotina ideal recolhido: o quanto ele fica deslocado para a direita (a borda
+// esquerda vai de 18 a 104 pt da tela).
+const IDEAL_RECOLHIDO_X = 86;
 
 const DEFAULT_AM = 7 * 60;
 const DEFAULT_PM = 21 * 60;
@@ -90,16 +109,9 @@ type RawStep = {
   steps?: string[]; color?: string; waitTime?: string | null; product_suggestions?: string[];
 };
 
-// Categoria do passo — função `cat()` do design (palavras-chave do nome + ingrediente).
-function cat(name: string, ing: string): string {
-  const t = `${name} ${ing}`.toLowerCase();
-  const has = (...k: string[]) => k.some((x) => t.includes(x));
-  if (has('protetor', 'fps')) return 'Proteção';
-  if (has('limpeza', 'demaquilante')) return 'Limpeza';
-  if (has('tônico')) return 'Tônico';
-  if (has('barreira')) return 'Barreira';
-  if (has('hidratante', 'gel-creme')) return 'Hidratação';
-  return 'Tratamento';
+// "A, B e C".
+function juntarNomes(n: string[]): string {
+  return n.length <= 1 ? (n[0] ?? '') : `${n.slice(0, -1).join(', ')} e ${n[n.length - 1]}`;
 }
 
 // "Como fazer": prioriza a instruction clínica; se ausente, junta os steps.
@@ -186,15 +198,6 @@ function DottedLine({ color, hidden }: { color: string; hidden: boolean }) {
         </Svg>
       )}
     </View>
-  );
-}
-
-// Quadradinho tracejado do passo SEM produto (`1.5px dashed #F4B5CF`).
-function DashedTile({ size, radius }: { size: number; radius: number }) {
-  return (
-    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-      <Rect x={0.75} y={0.75} width={size - 1.5} height={size - 1.5} rx={radius - 0.75} fill="none" stroke="#F4B5CF" strokeWidth={1.5} strokeDasharray={[4, 3]} />
-    </Svg>
   );
 }
 
@@ -463,24 +466,149 @@ export default function Protocolo() {
     { enabled: Boolean(userId) },
   );
 
-  // Produtos escolhidos (AsyncStorage, por nome do passo) + progresso do dia + sequência.
-  const [savedProducts, setSavedProducts] = useState<Record<string, SavedProduct>>({});
-  // Recorte sem fundo (catálogo, Fase 2) de cada produto escolhido — chave = URL da foto original.
-  const [cutouts, setCutouts] = useState<Record<string, Cutout>>({});
-  const [doneSteps, setDoneSteps] = useState<{ am: number[]; pm: number[] }>({ am: [], pm: [] });
+  // ── Minha rotina (os passos que ela faz) ───────────────────────────────────
+  // Revalidada a cada foco. Se ainda não existe (1ª abertura depois da atualização, ou
+  // logo depois do cadastro), cria a cópia da ideal no servidor; se ainda não há ideal
+  // salva, devolve vazia e a tela mostra a ideal até lá. Produtos salvos no celular
+  // (antigo savedProducts) migram na mesma hora.
+  const fetchMinhaRotina = useCallback(async (): Promise<MinhaRotina> => {
+    const uid = await getUserId();
+    if (!uid) return { am: [], pm: [] };
+    let r = await listarMinhaRotina(uid);
+    if ((!r.am.length && !r.pm.length) || (await temProdutosNoCelular())) {
+      if ((await garantirMinhaRotina(uid)) === 'ok') r = await listarMinhaRotina(uid);
+    }
+    return r;
+  }, []);
+  const { data: minha, refresh: refreshMinha } = useCachedQuery(
+    userId ? `minharotina:${userId}` : null,
+    fetchMinhaRotina,
+    { enabled: Boolean(userId), staleMs: 0 },
+  );
+  // A ideal acabou de ser salva (geração sob demanda / cadastro): tenta criar a Minha
+  // rotina de novo, sem esperar o próximo foco.
+  const temIdeal = Boolean((saved?.rotina_am as unknown[])?.length || (saved?.rotina_pm as unknown[])?.length);
+  const temMinha = Boolean(minha?.am.length || minha?.pm.length);
+  useEffect(() => {
+    if (temIdeal && minha && !temMinha) void refreshMinha();
+  }, [temIdeal, temMinha, minha, refreshMinha]);
+
+  // ── Rotina ideal visível (Fase 4): card "Faltam N passos" + folha da ideal ──
+  // Revalidada a cada foco: um scan de pele novo pode ter trocado a ideal.
+  const fetchIdeal = useCallback(async (): Promise<RotinaIdeal | null> => {
+    const uid = await getUserId();
+    return uid ? carregarRotinaIdeal(uid) : null;
+  }, []);
+  const { data: ideal, refresh: refreshIdeal } = useCachedQuery(
+    userId ? `rotinaideal:${userId}` : null,
+    fetchIdeal,
+    { enabled: Boolean(userId), staleMs: 0 },
+  );
+  const [idealAberta, setIdealAberta] = useState(false);
+  const [idealMudanca, setIdealMudanca] = useState(false);
+  const abrirIdeal = (mudanca: boolean) => {
+    setIdealMudanca(mudanca);
+    setIdealAberta(true);
+    // Abriu a ideal: o aviso "mudou" some.
+    if (ideal?.mudou) void getUserId().then((uid) => { if (uid) void marcarIdealVista(uid); });
+  };
+  // O card fica encostado na borda direita. No toque, ele sai do canto: desliza para a
+  // esquerda, se expande até o meio da tela e, em seguida, abre a folha da ideal. Ao
+  // fechar a folha, volta para o canto. Sair da aba também recolhe.
+  // Lote "Montar minha rotina" de hoje (Fase 6) — o link provisório segue o estado dele.
+  const fetchLoteHoje = useCallback(async () => {
+    const uid = await getUserId();
+    return uid ? loteDeHoje(uid) : null;
+  }, []);
+  const { data: loteHoje } = useCachedQuery(
+    userId ? `lotehoje:${userId}` : null,
+    fetchLoteHoje,
+    { enabled: Boolean(userId), staleMs: 0 },
+  );
+  // Intro de 3 telas (Fase 7): uma vez por conta (`users.rotina_intro_status` null).
+  const fetchIntro = useCallback(async () => {
+    const uid = await getUserId();
+    if (!uid) return null;
+    const { data, error } = await supabase.from('users').select('rotina_intro_status').eq('id', uid).maybeSingle();
+    if (error) throw error;
+    return { status: (data?.rotina_intro_status ?? null) as EscolhaIntro | null };
+  }, []);
+  const { data: introDb } = useCachedQuery(
+    userId ? `rotinaintro:${userId}` : null,
+    fetchIntro,
+    { enabled: Boolean(userId), staleMs: 0 },
+  );
+  const [introEscolhida, setIntroEscolhida] = useState<EscolhaIntro | null>(null);
+  const introStatus = introEscolhida ?? introDb?.status ?? null;
+  const escolherIntro = async (e: EscolhaIntro) => {
+    setIntroEscolhida(e);
+    const uid = await getUserId();
+    if (uid) {
+      const { error } = await supabase.from('users').update({ rotina_intro_status: e }).eq('id', uid);
+      if (error) console.warn('[rotina] gravar intro falhou:', error.message);
+      invalidateCache(`rotinaintro:${uid}`);
+    }
+    if (e === 'escanear') {
+      if (loteHoje) Alert.alert('Você já montou uma rotina hoje', 'Dá para montar uma por dia. Tente de novo amanhã.');
+      else { useLote.getState().limpar(); router.push('/(scan)/lote-camera' as any); }
+    }
+  };
+
+  const tocarLoteLink = () => {
+    haptics.select();
+    if (loteHoje?.status === 'processando') {
+      router.push({ pathname: '/(scan)/lote-montando', params: { id: loteHoje.id } } as any);
+    } else if (loteHoje?.status === 'pronto' && !loteHoje.visto_em) {
+      router.push({ pathname: '/(scan)/lote-resultado', params: { id: loteHoje.id } } as any);
+    } else if (loteHoje) {
+      Alert.alert('Você já montou uma rotina hoje', 'Dá para montar uma por dia. Tente de novo amanhã.');
+    } else {
+      useLote.getState().limpar();
+      router.push('/(scan)/lote-camera' as any);
+    }
+  };
+
+  // Fluidez: o card tem SEMPRE a largura de expandido (margens 18) e, recolhido, fica
+  // deslocado para a direita (translateX) com um pedaço além da borda da tela. Só o
+  // transform anima → roda no driver nativo, sem recalcular layout a cada quadro, e o
+  // texto não muda de quebra no meio do movimento (largura do texto fixa = a do
+  // recolhido). A folha começa a subir enquanto o card ainda desliza (um movimento só).
+  const { width: winW } = useWindowDimensions();
+  const idealAnim = useRef(new Animated.Value(0)).current;
+  const idealAnimando = useRef(false);
+  useFocusEffect(useCallback(() => () => { idealAnim.setValue(0); idealAnimando.current = false; }, [idealAnim]));
+  const tocarCardIdeal = (mudanca: boolean) => {
+    if (idealAnimando.current) return;
+    idealAnimando.current = true;
+    haptics.tap(); // (abrirIdeal não repete o haptic)
+    Animated.spring(idealAnim, { toValue: 1, damping: 20, stiffness: 190, mass: 1, useNativeDriver: true })
+      .start(() => { idealAnimando.current = false; });
+    setTimeout(() => abrirIdeal(mudanca), 110);
+  };
+  const fecharIdeal = () => {
+    setIdealAberta(false);
+    void refreshIdeal();
+    // Volta para o canto enquanto a folha desce, com a mesma mola.
+    Animated.sequence([
+      Animated.delay(90),
+      Animated.spring(idealAnim, { toValue: 0, damping: 22, stiffness: 160, mass: 1, useNativeDriver: true }),
+    ]).start();
+  };
+
+  // Progresso do dia (por CÓDIGO do passo) + sequência.
+  const [doneSteps, setDoneSteps] = useState<{ am: StepKey[]; pm: StepKey[] }>({ am: [], pm: [] });
   const [hist, setHist] = useState<RoutineHistory>({});
   const [now, setNow] = useState(() => new Date());
   const reloadLocal = useCallback(() => {
-    getSavedProducts().then((sp) => {
-      setSavedProducts(sp);
-      getCutoutsByImageUrl(Object.values(sp).map((p) => p.imageUrl)).then(setCutouts).catch(() => {});
-    });
     Promise.all([getCompletedSteps('am'), getCompletedSteps('pm')]).then(([a, p]) => setDoneSteps({ am: a, pm: p }));
     getRoutineHistory().then(setHist);
     setNow(new Date());
   }, []);
   useFocusEffect(useCallback(() => {
     reloadLocal();
+    // Voltou para a Rotina: um "Escanear produto" pedido pela folha e não concluído não
+    // pode ficar pendurado — o próximo scan avulso cairia num passo.
+    useAppStore.getState().setRotinaPassoAlvo(null);
     const id = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(id);
   }, [reloadLocal]));
@@ -500,7 +628,16 @@ export default function Protocolo() {
   const [camPermission, requestCamPermission] = useCameraPermissions();
   const [openStep, setOpenStep] = useState(-1);
   const [cronOpen, setCronOpen] = useState(false);
-  const setProductDetailStep = useAppStore((st) => st.setProductDetailStep);
+  // Folha "Escolher produto" (passo aberto nela; null = fechada).
+  const [escolherPasso, setEscolherPasso] = useState<PassoRotina | null>(null);
+  // Modo "Editar rotina" (Fase 3) + folha "Novo/Editar passo" + rolagem travada no arraste.
+  const [editando, setEditando] = useState(false);
+  const [passoModo, setPassoModo] = useState<PassoSheetModo | null>(null);
+  const [scrollOn, setScrollOn] = useState(true);
+  // Passo NOVO criado sem nome para escolher o produto: se ela fechar a folha sem
+  // escolher, o passo (sem nome e sem produto) é desfeito — o passo precisa de um dos dois.
+  const passoNovoSemNome = useRef<string | null>(null);
+  useFocusEffect(useCallback(() => () => { setEditando(false); setScrollOn(true); }, []));
   const player = useAudioPlayer(require('../../assets/sounds/check.mp3'));
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
@@ -538,46 +675,78 @@ export default function Protocolo() {
     else if (flow === 'cam') void clearRoutineFlow(period);
   };
 
-  const rawList = am ? amRaw : pmRaw;
-  const n = rawList.length;
+  // Passos exibidos: os da MINHA ROTINA; enquanto ela não existe, os da ideal (com
+  // código sintético e sem produto — é só o vão até a cópia ser criada).
+  const minhaList = minha ? (am ? minha.am : minha.pm) : [];
+  const usandoMinha = minhaList.length > 0;
+  const rawList: RawStep[] = usandoMinha
+    ? minhaList.map((p) => ({ name: p.nome ?? '', ingredient: p.ingrediente ?? '', instruction: p.instrucao ?? '', steps: p.comoUsar ?? undefined }))
+    : (am ? amRaw : pmRaw);
+  const stepKey = (i: number): StepKey => (usandoMinha ? minhaList[i].id : `ideal:${period}:${i}`);
   const done = doneSteps[period];
-  const k = done.length;
-  const ft = rawList.findIndex((_, i) => !done.includes(i));
+  // Dia da semana da SESSÃO (até 04:00 ainda é ontem): passo que não vale hoje sai do
+  // checklist/guia/contagem e aparece apagado na lista (decisão 4).
+  const hojeDia = diaDaSemana(sessionDate(now));
   const finAt = hist[dateKey(sessionDate(now))]?.[period];
   const finToday = !!finAt;
   // "Feita às 7:18" (design 41f) — horário real em que a cerimônia gravou a rotina.
   const finLabel = finAt ? `Feita às ${new Date(finAt).getHours()}:${String(new Date(finAt).getMinutes()).padStart(2, '0')}` : '';
   const streak = routineStreak(hist, now);
 
-  const steps = rawList.map((raw, i) => {
+  const stepsAll = rawList.map((raw, i) => {
     const name = (raw?.name ?? '').trim();
     const ingredient = (raw?.ingredient ?? '').trim();
-    const c = cat(name, ingredient);
-    const chosen = savedProducts[normStepKey(name)];
-    const cut = chosen ? cutouts[chosen.imageUrl] : undefined;
+    // Produto do passo vem da Minha rotina (servidor), já com o recorte sem fundo.
+    const prod = usandoMinha ? minhaList[i].produto : null;
+    const chosen = prod && (prod.recorteUrl || prod.imagemUrl) ? prod : null;
     return {
-      i, name, ingredient, cat: c, instruction: howOf(raw),
+      i, key: stepKey(i), name, ingredient, instruction: howOf(raw),
       chosen, hasProd: !!chosen,
-      img: cut?.url ?? chosen?.imageUrl ?? '', cut: !!cut, // recorte sem fundo quando pronto
+      img: chosen ? (chosen.recorteUrl ?? chosen.imagemUrl ?? '') : '', cut: !!chosen?.recorteUrl, // recorte sem fundo quando pronto
       tint: chosen ? PRODUCT_BG : NO_PRODUCT_BG,
-      pline: chosen ? [chosen.brand, chosen.name].filter(Boolean).join(' · ') : 'Escolher produto',
+      pline: chosen ? [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Escolher produto',
+      // Ícone da categoria (sem produto) e o nome para mostrar onde cabe um só (nome
+      // do passo; sem ele, o do produto) — o nome do passo é opcional (Fase 3).
+      tipo: tipoDoPasso(name, ingredient),
+      titulo: name || (chosen ? [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Passo'),
+      // Aviso do produto pra pele dela (Fase 2): texto pequeno embaixo do produto.
+      // (`?.`: o cache da tela pode trazer um passo salvo antes do campo existir.)
+      aviso: usandoMinha && chosen && minhaList[i].aviso && minhaList[i].aviso.nivel !== 'nenhum' ? minhaList[i].aviso : null,
+      // Passo não diário: dias na ordem da semana (null = todo dia → sem selo).
+      dias: usandoMinha ? diasDoPasso(minhaList[i].dias) : null,
+      hoje: usandoMinha ? passoValeNoDia(minhaList[i], hojeDia) : true,
     };
   });
+  // Card da ideal (Fase 4): passos da ideal deste período que nenhum passo dela cobre.
+  const idealDoPeriodo = ideal ? ideal[period] : [];
+  const cardIdeal = ideal && idealDoPeriodo.length
+    ? (() => {
+      const cob = calcularCobertura(idealDoPeriodo, minhaList);
+      return { mudou: ideal.mudou, faltam: idealDoPeriodo.filter((p) => !cob.has(p.indice)).map((p) => p.nome) };
+    })()
+    : null;
+
+  // Os passos DE HOJE — checklist, guia, contagem e "concluir" usam só estes.
+  const steps = stepsAll.filter((st) => st.hoje);
+  const n = steps.length;
+  const k = steps.filter((st) => done.includes(st.key)).length;
+  const ft = steps.find((st) => !done.includes(st.key))?.i ?? -1; // índice na lista inteira
 
   // Toque em "Próximo passo": haptic + som + grava o passo (e a rotina no último).
-  const completeStep = (index: number) => {
+  const completeStep = (key: StepKey) => {
     haptics.action();
     try { player.seekTo(0); player.play(); } catch {}
-    markStepCompleted(period, index);
-    setDoneSteps((d) => ({ ...d, [period]: d[period].includes(index) ? d[period] : [...d[period], index] }));
+    markStepCompleted(period, key);
+    setDoneSteps((d) => ({ ...d, [period]: d[period].includes(key) ? d[period] : [...d[period], key] }));
   };
   // Rotina concluída (pelo checklist ou pelo guia): todos os passos ficam feitos, a
   // rotina entra no histórico (sequência/semana) e — só na MANHÃ — vem a foto do dia.
   const finishRoutine = () => {
     haptics.success();
     try { player.seekTo(0); player.play(); } catch {}
-    rawList.forEach((_, i) => markStepCompleted(period, i));
-    setDoneSteps((d) => ({ ...d, [period]: rawList.map((_, i) => i) }));
+    const keys = steps.map((st) => st.key);
+    keys.forEach((key) => markStepCompleted(period, key));
+    setDoneSteps((d) => ({ ...d, [period]: [...new Set([...d[period], ...keys])] }));
     markRoutineDone(period).then(() => getRoutineHistory().then(setHist));
     // Já fez: o lembrete "ainda dá tempo" de hoje não vai mais.
     cancelLateReminder(period);
@@ -591,7 +760,7 @@ export default function Protocolo() {
     }
   };
   const nextStep = () => {
-    completeStep(run);
+    if (steps[run]) completeStep(steps[run].key);
     if (run + 1 >= n) finishRoutine();
     else setRun(run + 1);
   };
@@ -668,7 +837,7 @@ export default function Protocolo() {
       ];
       for (const [p, s] of cands) {
         if (!s?.open) continue;
-        const len = (p === 'am' ? amRaw : pmRaw).length;
+        const len = (minha?.[p]?.length || (p === 'am' ? amRaw : pmRaw).length);
         const ok = s.step === 'cam' ? p === 'am' && !!today.am : !today[p] && windowOpen(p) && len > 0;
         if (!ok) continue;
         if (p !== period) setPeriod(p);
@@ -703,14 +872,59 @@ export default function Protocolo() {
   const cron = parseCronograma(dicas[4]);
   const alert = (dicas[0] ?? '').trim();
 
-  // "Escolher/Ver produto": abre a tela de Produtos já no produto deste passo — o
-  // casamento passo↔produto é pelo NOME do passo (normStepKey), igual a antes.
-  const openProducts = (stepName: string) => {
+  // "Escolher/Trocar produto": abre a folha para o passo `i` da Minha rotina. Com o
+  // checklist/guia aberto, guarda o progresso e fecha antes (dois Modais ao mesmo tempo
+  // falham no iOS) — como antes, quando o toque levava à tela de Produtos.
+  const abrirEscolher = (i: number) => {
     haptics.tap();
+    if (!usandoMinha || !minhaList[i]) return; // vão antes da cópia existir: nada a escolher
+    const passo = minhaList[i];
+    const tinhaFluxo = flow != null;
     parkFlow();
-    closeFlow('openProducts (escolher produto)');
-    setProductDetailStep({ passo: stepName, periodo: period });
-    router.push('/recomendacao-produtos' as any);
+    closeFlow('escolher produto');
+    setTimeout(() => setEscolherPasso(passo), tinhaFluxo ? 350 : 0);
+  };
+
+  // ── Modo "Editar rotina" (Fase 3) ────────────────────────────────────────────
+  const itensEdicao: ItemEditavel[] = minhaList.map((p) => ({
+    id: p.id,
+    nome: nomeDoPasso(p),
+    sub: [
+      p.produto ? [p.produto.marca, p.produto.nome].filter(Boolean).join(' · ') : 'Sem produto',
+      p.dias?.length ? p.dias.join(' · ') : null,
+    ].filter(Boolean).join('  ·  '),
+    img: p.produto ? (p.produto.recorteUrl ?? p.produto.imagemUrl) : null,
+  }));
+  const reordenar = async (ids: string[]) => {
+    try {
+      await reordenarPassos(ids);
+    } catch (e) {
+      console.warn('[rotina] reordenar falhou:', e);
+      haptics.error();
+      Alert.alert('Não deu pra salvar a nova ordem', 'Tente de novo em instantes.');
+    } finally {
+      void refreshMinha();
+    }
+  };
+  const confirmarRemover = (id: string) => {
+    haptics.warning();
+    Alert.alert('Remover esse passo da sua rotina?', undefined, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Remover', style: 'destructive', onPress: async () => {
+          try {
+            await removerPasso(id);
+            haptics.success();
+          } catch (e) {
+            console.warn('[rotina] remover falhou:', e);
+            haptics.error();
+            Alert.alert('Não deu pra remover o passo', 'Tente de novo em instantes.');
+          } finally {
+            void refreshMinha();
+          }
+        },
+      },
+    ]);
   };
 
   // "Iniciar rotina" abre o checklist (45a) — ou retoma onde parou hoje (produtos
@@ -753,7 +967,8 @@ export default function Protocolo() {
     ...hist,
     [todayKey]: { ...hist[todayKey], [period]: hist[todayKey]?.[period] ?? Date.now() },
   };
-  const doneStreak = routineStreak(histNow, now);
+  // "N dias seguidos" conta DIAS (routineDayStreak), não os pontos do streak.
+  const doneStreak = routineDayStreak(histNow, now);
   const doneStreakLine = `${doneStreak} ${doneStreak === 1 ? 'dia seguido' : 'dias seguidos'}`;
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -789,7 +1004,7 @@ export default function Protocolo() {
       <View style={styles.circleWhite} pointerEvents="none" />
       <View style={styles.circleBlob} pointerEvents="none" />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 112 }}>
+      <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={scrollOn} contentContainerStyle={{ paddingBottom: 112 }}>
         <View style={{ height: insets.top + 15 }} />
 
         {/* ── Cabeçalho: foto + "Sua rotina" · sequência ─────────────────── */}
@@ -865,12 +1080,51 @@ export default function Protocolo() {
             )}
 
             {/* ── Seus passos (linha do tempo) ─────────────────────────────── */}
+            {/* "Fazer isso depois" na intro (Fase 7): caminho VISÍVEL para escanear
+                depois, no topo dos passos, enquanto ela não montar a rotina. */}
+            {introStatus === 'depois' && !loteHoje && usandoMinha && !editando && (
+              <TouchableOpacity activeOpacity={0.85} onPress={tocarLoteLink} style={styles.cardEscanear}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF0F6', alignItems: 'center', justifyContent: 'center' }}>
+                  <StepIcon tipo={null} size={22} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', letterSpacing: -0.3, color: INK }}>Monte sua rotina com o que você tem</Text>
+                  <Text style={{ marginTop: 2, fontSize: 14, lineHeight: 19, color: SOFT }}>Me mostra seus produtos e eu monto uma rotina eficaz com eles.</Text>
+                  <Text style={{ marginTop: 6, fontSize: 15, fontWeight: '600', color: PINK_TEXT }}>Escanear meus produtos ›</Text>
+                </View>
+              </TouchableOpacity>
+            )}
             <View style={styles.listHead}>
               <Text style={styles.sectionTitle}>{am ? 'Seus passos · Manhã' : 'Seus passos · Noite'}</Text>
-              <Text style={{ fontSize: 15, color: MUTED }}>{`${finToday ? n : k}/${n}`}</Text>
+              {editando ? (
+                <TouchableOpacity onPress={() => { haptics.select(); setEditando(false); }} hitSlop={10} accessibilityLabel="Concluir edição da rotina">
+                  <Text style={styles.okTxt}>OK</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={{ fontSize: 15, color: MUTED }}>{`${finToday ? n : k}/${n}`}</Text>
+              )}
             </View>
             <View style={{ marginTop: 12, paddingLeft: 14, paddingRight: 18 }}>
-              {steps.map((s) => {
+              {editando ? (
+                <>
+                  <ListaEditavel
+                    itens={itensEdicao}
+                    onReordenar={(ids) => { void reordenar(ids); }}
+                    onArrastando={(ativo) => setScrollOn(!ativo)}
+                    onRemover={confirmarRemover}
+                    onAbrir={(id) => { const p = minhaList.find((x) => x.id === id); if (p) { haptics.tap(); setPassoModo({ tipo: 'editar', passo: p }); } }}
+                  />
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => { haptics.tap(); setPassoModo({ tipo: 'novo', periodo: period }); }}
+                    style={styles.novoPasso}
+                    accessibilityLabel="Novo passo"
+                  >
+                    <PlusIcon size={16} />
+                    <Text style={{ fontSize: 16, fontWeight: '600', letterSpacing: -0.3, color: PINK_TEXT }}>Novo passo</Text>
+                  </TouchableOpacity>
+                </>
+              ) : stepsAll.map((s) => {
                 const open = openStep === s.i;
                 return (
                   <View key={`${period}-${s.i}`} style={{ flexDirection: 'row', gap: 10 }}>
@@ -887,9 +1141,9 @@ export default function Protocolo() {
                           <Text style={{ fontSize: 15, fontWeight: '600', color: PINK_TEXT }}>{s.i + 1}</Text>
                         </View>
                       )}
-                      <DottedLine color={done.includes(s.i) ? PINK : 'rgba(192,32,106,0.28)'} hidden={s.i === n - 1} />
+                      <DottedLine color={done.includes(s.key) ? PINK : 'rgba(192,32,106,0.28)'} hidden={s.i === stepsAll.length - 1} />
                     </View>
-                    <View style={[styles.stepCard, open ? styles.stepCardOpen : styles.stepCardClosed]}>
+                    <View style={[styles.stepCard, open ? styles.stepCardOpen : styles.stepCardClosed, !s.hoje && { opacity: 0.5 }]}>
                       <TouchableOpacity
                         activeOpacity={0.85}
                         onPress={() => { haptics.tap(); setOpenStep(open ? -1 : s.i); }}
@@ -904,39 +1158,83 @@ export default function Protocolo() {
                           // escolher o produto. O resto do card continua abrindo/fechando.
                           <TouchableOpacity
                             activeOpacity={0.7}
-                            onPress={() => openProducts(s.name)}
-                            accessibilityLabel={`Escolher produto para ${s.name}`}
+                            onPress={() => abrirEscolher(s.i)}
+                            accessibilityLabel={`Escolher produto para ${s.titulo}`}
                             style={[styles.tile, { backgroundColor: s.tint }, finToday && { opacity: 0.55 }]}
                           >
-                            <DashedTile size={52} radius={11} />
-                            <PlusIcon size={18} />
+                            <StepIcon tipo={s.tipo} size={24} />
                           </TouchableOpacity>
                         )}
                         <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
                           {/* Card mais limpo (pedido do usuário): sem a categoria. O nome do passo
                               vira o texto pequeno de cima e o produto sobe para o centro — ou
                               "Escolher produto" em rosa, se ainda não houver produto. */}
-                          <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }} numberOfLines={1}>{s.name}</Text>
-                          <Text
-                            style={[styles.stepName, !s.hasProd ? { color: PINK_TEXT } : finToday && styles.stepNameDone]}
-                            numberOfLines={2}
-                            lineBreakStrategyIOS="push-out"
-                          >
-                            {s.pline}
-                          </Text>
+                          {/* Nome do passo + produto: nome pequeno em cima, produto grande.
+                              Só produto: só ele, grande. Só nome: nome grande + "Escolher
+                              produto". Nenhum dos dois: "Escolher produto" grande. */}
+                          {s.hasProd && !!s.name && (
+                            <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }} numberOfLines={1}>{s.name}</Text>
+                          )}
+                          {/* O "Escolher produto" rosa é um botão próprio: abre direto a folha,
+                              sem expandir o card. O resto do card continua abrindo/fechando. */}
+                          {!s.hasProd && !s.name ? (
+                            <TouchableOpacity
+                              activeOpacity={0.6}
+                              onPress={() => abrirEscolher(s.i)}
+                              hitSlop={{ top: 8, bottom: 8 }}
+                              accessibilityLabel={`Escolher produto para ${s.titulo}`}
+                              style={{ alignSelf: 'flex-start' }}
+                            >
+                              <Text style={[styles.stepName, { color: PINK_TEXT }]} numberOfLines={2}>Escolher produto</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <Text
+                              style={[styles.stepName, finToday && styles.stepNameDone]}
+                              numberOfLines={2}
+                              lineBreakStrategyIOS="push-out"
+                            >
+                              {s.hasProd ? s.pline : s.name}
+                            </Text>
+                          )}
+                          {!s.hasProd && !!s.name && (
+                            <TouchableOpacity
+                              activeOpacity={0.6}
+                              onPress={() => abrirEscolher(s.i)}
+                              hitSlop={{ top: 8, bottom: 8 }}
+                              accessibilityLabel={`Escolher produto para ${s.titulo}`}
+                              style={{ alignSelf: 'flex-start' }}
+                            >
+                              <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Escolher produto</Text>
+                            </TouchableOpacity>
+                          )}
+                          {/* Frequência do passo não diário: selo rosa com calendário. */}
+                          {!!s.dias && (
+                            <View style={styles.seloDias}>
+                              <Svg width={12} height={12} viewBox="0 0 24 24">
+                                <Path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" fill="none" stroke={PINK_DEEP} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                              </Svg>
+                              <Text style={styles.seloDiasTxt}>{seloFrequencia(s.dias, s.hoje)}</Text>
+                            </View>
+                          )}
+                          {!!s.aviso && (
+                            <Text style={[styles.stepAviso, s.aviso.nivel === 'forte' && { color: '#B42318' }]} numberOfLines={2}>
+                              {s.aviso.texto}
+                            </Text>
+                          )}
                         </View>
                         <Chevron open={open} />
                       </TouchableOpacity>
                       {open && (
                         <View style={styles.stepBody}>
-                          <Text style={styles.stepInstruction} lineBreakStrategyIOS="push-out">{s.instruction}</Text>
+                          {!!s.dias && <Text style={[styles.stepInstruction, { fontWeight: '700', color: INK }]}>{fraseFrequencia(s.dias)}</Text>}
+                          <Text style={[styles.stepInstruction, !!s.dias && { paddingTop: 0, marginTop: -6 }]} lineBreakStrategyIOS="push-out">{s.instruction}</Text>
                           <TouchableOpacity
                             activeOpacity={0.7}
-                            onPress={() => openProducts(s.name)}
+                            onPress={() => abrirEscolher(s.i)}
                             style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}
                           >
                             <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>
-                              {s.hasProd ? 'Ver produto' : 'Escolher produto'}
+                              {s.hasProd ? 'Trocar produto' : 'Escolher produto'}
                             </Text>
                             <Svg width={14} height={14} viewBox="0 0 24 24">
                               <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
@@ -948,14 +1246,65 @@ export default function Protocolo() {
                   </View>
                 );
               })}
-              {/* "Editar rotina": a rotina muda pela NIKS (ela propõe, você aprova). */}
-              <TouchableOpacity
+              {/* "Editar rotina" (Fase 3): liga o modo Editar — reordenar, remover, novo
+                  passo, dias. (Antes abria o chat; a mudança pela NIKS volta na Fase 8.) */}
+              {!editando && usandoMinha && <TouchableOpacity
                 activeOpacity={0.6}
-                onPress={() => { haptics.tap(); router.push('/niks-chat' as any); }}
+                onPress={() => { haptics.select(); setOpenStep(-1); setEditando(true); }}
                 style={{ marginTop: 10, marginLeft: -14, marginRight: -18, height: 44, alignItems: 'center', justifyContent: 'center' }}
               >
                 <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Editar rotina</Text>
-              </TouchableOpacity>
+              </TouchableOpacity>}
+              {/* Scan em lote "Montar minha rotina com meus produtos": entrada permanente
+                  abaixo da lista (a intro da Fase 7 é a primeira; quem escolheu "Fazer
+                  isso depois" vê o card no topo em vez deste link). */}
+              {/* Segue o lote de hoje (Fase 6): montando → acompanhar; pronto e ainda não
+                  visto → "Sua rotina está pronta"; depois → o teto de 1 por dia. */}
+              {!editando && usandoMinha && !(introStatus === 'depois' && !loteHoje) && <TouchableOpacity
+                activeOpacity={0.6}
+                onPress={tocarLoteLink}
+                style={{ marginLeft: -14, marginRight: -18, height: 40, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>
+                  {loteHoje?.status === 'processando'
+                    ? 'Montando sua rotina…'
+                    : loteHoje?.status === 'pronto' && !loteHoje.visto_em
+                      ? 'Ver a rotina montada com seus produtos'
+                      : 'Escanear meus produtos'}
+                </Text>
+              </TouchableOpacity>}
+              {/* Card da rotina ideal (Fase 4): o que falta da ideal neste período, ou
+                  "cobre tudo", ou o aviso de que a ideal mudou com o scan novo. */}
+              {!editando && usandoMinha && !!cardIdeal && (
+                <Animated.View style={[styles.idealCard, {
+                  transform: [{ translateX: idealAnim.interpolate({ inputRange: [0, 1], outputRange: [IDEAL_RECOLHIDO_X, 0] }) }],
+                }]}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => tocarCardIdeal(cardIdeal.mudou)}
+                  style={{ padding: 16 }}
+                >
+                <View style={{ width: winW - 18 - IDEAL_RECOLHIDO_X - 32 }}>
+                  {cardIdeal.mudou ? (
+                    <Text style={styles.idealTitulo}>Sua rotina ideal mudou com o novo scan</Text>
+                  ) : cardIdeal.faltam.length ? (
+                    <Text style={styles.idealTitulo}>
+                      {cardIdeal.faltam.length === 1 ? 'Falta 1 passo pra sua pele: ' : `Faltam ${cardIdeal.faltam.length} passos pra sua pele: `}
+                      <Text style={styles.idealNomes}>{juntarNomes(cardIdeal.faltam)}</Text>
+                    </Text>
+                  ) : (
+                    <Text style={styles.idealTitulo}>{'Sua rotina cobre tudo o que sua pele precisa\u00A0✓'}</Text>
+                  )}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
+                    <Text style={styles.idealLink}>{cardIdeal.mudou ? 'Ver o que mudou' : 'Ver rotina ideal'}</Text>
+                    <Svg width={14} height={14} viewBox="0 0 24 24">
+                      <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </View>
+                </View>
+                </TouchableOpacity>
+                </Animated.View>
+              )}
             </View>
 
             {/* ── O que esperar ───────────────────────────────────────────── */}
@@ -1076,12 +1425,12 @@ export default function Protocolo() {
                             // e "contain" deixava um quadrado branco dentro do quadro colorido).
                             : <ExpoImage source={{ uri: s.img }} style={StyleSheet.absoluteFill} contentFit="cover" />
                         ) : (
-                          <PlusIcon size={18} />
+                          <StepIcon tipo={s.tipo} size={24} />
                         )}
                       </View>
                       <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>{`Passo ${s.i + 1} · ${s.cat}`}</Text>
-                        <Text style={styles.ckName} numberOfLines={1}>{s.name}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>{s.tipo ? `Passo ${s.i + 1} · ${ROTULO_TIPO[s.tipo]}` : `Passo ${s.i + 1}`}</Text>
+                        <Text style={styles.ckName} numberOfLines={1}>{s.titulo}</Text>
                       </View>
                       <View style={[styles.ckCheck, on ? { backgroundColor: PINK } : { borderWidth: 1.5, borderColor: '#D6CCD1', backgroundColor: '#FFFFFF' }]}>
                         {on && (
@@ -1129,23 +1478,23 @@ export default function Protocolo() {
                 <View style={{ width: 36 }} />
               </View>
               <View style={{ marginTop: 16, flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
-                {rawList.map((_, i) => (
+                {steps.map((_, i) => (
                   <View key={i} style={{ width: 30, height: 4, borderRadius: 2, backgroundColor: i <= run ? PINK : 'rgba(255,255,255,0.85)' }} />
                 ))}
               </View>
               <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 16 }} showsVerticalScrollIndicator={false}>
-                <TouchableOpacity activeOpacity={0.9} onPress={() => openProducts(rs.name)} style={styles.runCircle}>
+                <TouchableOpacity activeOpacity={0.9} onPress={() => abrirEscolher(rs.i)} style={styles.runCircle}>
                   {rs.hasProd ? (
                     <ExpoImage source={{ uri: rs.img }} style={{ width: 120, height: 124 }} contentFit="contain" />
                   ) : (
                     <View style={{ alignItems: 'center', gap: 6 }}>
-                      <PlusIcon size={28} sw={2} />
+                      <StepIcon tipo={rs.tipo} size={36} />
                       <Text style={{ color: PINK_TEXT, fontSize: 15, fontWeight: '500' }}>Escolher produto</Text>
                     </View>
                   )}
                 </TouchableOpacity>
-                <Text style={{ marginTop: 24, fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: SOFT }}>{rs.cat}</Text>
-                <Text style={styles.runName}>{rs.name}</Text>
+                {!!rs.tipo && <Text style={{ marginTop: 24, fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: SOFT }}>{ROTULO_TIPO[rs.tipo]}</Text>}
+                <Text style={[styles.runName, !rs.tipo && { marginTop: 24 }]}>{rs.titulo}</Text>
                 <Text style={{ marginTop: 6, fontSize: 15, letterSpacing: -0.2, color: rs.hasProd ? MUTED : PINK_TEXT, textAlign: 'center' }}>{rs.pline}</Text>
                 <Text style={styles.runInstruction} lineBreakStrategyIOS="push-out">{rs.instruction}</Text>
               </ScrollView>
@@ -1256,6 +1605,46 @@ export default function Protocolo() {
           </View>
         )}
       </Modal>
+
+      {/* Folha "Novo passo" / "Editar passo" (Fase 3). */}
+      <PassoSheet
+        modo={passoModo}
+        onClose={() => setPassoModo(null)}
+        onSalvo={() => { void refreshMinha(); }}
+        onEscolherProduto={(p) => {
+          passoNovoSemNome.current = !p.nome && !p.produto ? p.id : null;
+          setEscolherPasso(p);
+        }}
+      />
+
+      {/* Folha "Escolher produto" (Fase 2). Ao escolher, recarrega a Minha rotina. */}
+      <IntroRotina
+        visivel={introDb !== undefined && introDb !== null && introStatus === null && usandoMinha && !!ideal && (ideal.am.length + ideal.pm.length) > 0}
+        ideal={ideal ?? null}
+        onEscolha={escolherIntro}
+      />
+      <RotinaIdealSheet
+        aberta={idealAberta}
+        periodoInicial={period}
+        ideal={ideal ?? null}
+        minha={minha ?? null}
+        mostrarMudanca={idealMudanca}
+        onClose={fecharIdeal}
+        onAdicionado={() => refreshMinha()}
+      />
+      <EscolherProdutoSheet
+        passo={escolherPasso}
+        onClose={() => {
+          setEscolherPasso(null);
+          const semNome = passoNovoSemNome.current;
+          passoNovoSemNome.current = null;
+          // Foi escanear ou abriu "Ver todos" para este passo → o produto ainda vem; não desfaz.
+          const st = useAppStore.getState();
+          const seguiu = st.rotinaPassoAlvo?.passoId === semNome || st.escolhaParaPasso?.passoId === semNome;
+          if (semNome && !seguiu) void removerPasso(semNome).catch(() => {}).finally(() => { void refreshMinha(); });
+        }}
+        onEscolhido={() => { passoNovoSemNome.current = null; void refreshMinha(); }}
+      />
     </View>
   );
 }
@@ -1323,10 +1712,41 @@ const styles = StyleSheet.create({
     shadowColor: PINK, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 5,
   },
   stepCard: { flex: 1, minWidth: 0, marginBottom: 10, backgroundColor: '#FFFFFF', borderRadius: 13 },
+  // Card "Monte sua rotina com o que você tem" (Fase 7, quem escolheu "Fazer isso depois").
+  cardEscanear: {
+    marginHorizontal: 18, marginTop: 22, flexDirection: 'row', gap: 12, padding: 14, borderRadius: 16,
+    backgroundColor: '#FFFFFF', shadowColor: '#783C48', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6,
+  },
+  // Card da rotina ideal (Fase 4), abaixo dos passos.
+  idealCard: {
+    // Geometria do EXPANDIDO (margens 18 dos dois lados: marginLeft 4 + paddingLeft 14
+    // da lista). Recolhido = o mesmo card deslocado IDEAL_RECOLHIDO_X para a direita,
+    // com a ponta direita (e os cantos dela) além da borda da tela.
+    marginTop: 14, marginLeft: 4, borderRadius: 13, backgroundColor: '#FFFFFF',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 1,
+  },
+  idealTitulo: { fontSize: 16, fontWeight: '600', lineHeight: 21, letterSpacing: -0.3, color: INK },
+  idealNomes: { fontWeight: '400', color: SOFT },
+  idealLink: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: PINK_TEXT },
   stepCardOpen: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 9 },
   stepCardClosed: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 1 },
   tile: { width: 52, height: 52, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   stepName: { fontSize: 17, fontWeight: '600', lineHeight: 21, letterSpacing: -0.4, color: INK },
+  // Dias da semana do passo (Fase 3) — "Ter · Qui · Sáb" / "Hoje não · …".
+  // Selo da frequência (passo não diário): "3x por semana · Seg, Qua, Sex".
+  seloDias: {
+    // Quebra em 2 linhas quando não cabe (nunca corta os dias).
+    marginTop: 6, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingVertical: 4, paddingHorizontal: 8, borderRadius: 10, backgroundColor: '#FFE8F2', maxWidth: '100%',
+  },
+  seloDiasTxt: { flexShrink: 1, fontSize: 12, lineHeight: 16, fontWeight: '600', letterSpacing: -0.1, color: PINK_DEEP },
+  okTxt: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3, color: PINK_TEXT },
+  novoPasso: {
+    marginTop: 14, height: 56, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(232,70,143,0.45)',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  // Aviso do produto pra pele dela (Fase 2): leve em rosa escuro, forte em vermelho.
+  stepAviso: { marginTop: 3, fontSize: 13, fontWeight: '500', lineHeight: 17, letterSpacing: -0.1, color: PINK_DEEP },
   stepNameDone: { color: MUTED, textDecorationLine: 'line-through' },
   stepBody: { paddingTop: 2, paddingHorizontal: 14, paddingBottom: 14, gap: 12, borderTopWidth: 1, borderTopColor: '#F3EDF0' },
   stepInstruction: { paddingTop: 12, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, color: BODY },

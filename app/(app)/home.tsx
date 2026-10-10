@@ -12,6 +12,7 @@ import { useFaceScan } from '../../hooks/useFaceScan';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { useCachedQuery } from '../../lib/cache';
+import { contarPassosMinhaRotina } from '../../lib/minhaRotina';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { scheduleRoutineReminders } from '../../lib/routineReminders';
 import { onCoachPrepare, setCoachStageReady } from '../../lib/coachMarks';
@@ -220,7 +221,7 @@ export default function Home() {
     const uid = await getUserId();
     if (!uid) throw new Error('sem sessão');
 
-    const [scanRes, userRes, protoRes, recRes] = await Promise.all([
+    const [scanRes, userRes, protoRes, recRes, minhaCount] = await Promise.all([
       supabase
         .from('skin_scans')
         .select('foto_url, full_result, created_at')
@@ -247,6 +248,8 @@ export default function Home() {
         .select('recomendacao')
         .eq('user_id', uid)
         .maybeSingle(),
+      // Nº de passos = os da MINHA ROTINA (a que ela faz); antes de ela existir, os da ideal.
+      contarPassosMinhaRotina(uid).catch(() => null),
     ]);
 
     const scan = scanRes.data;
@@ -293,8 +296,8 @@ export default function Home() {
       firstName: String(user?.nome ?? '').trim().split(/\s+/)[0] ?? '',
       amTime: parseTime(user?.rotina_manha_horario, DEFAULT_AM),
       pmTime: parseTime(user?.rotina_noite_horario, DEFAULT_PM),
-      amCount: Array.isArray(proto?.rotina_am) ? proto!.rotina_am.length : 0,
-      pmCount: Array.isArray(proto?.rotina_pm) ? proto!.rotina_pm.length : 0,
+      amCount: minhaCount?.am ?? (Array.isArray(proto?.rotina_am) ? proto!.rotina_am.length : 0),
+      pmCount: minhaCount?.pm ?? (Array.isArray(proto?.rotina_pm) ? proto!.rotina_pm.length : 0),
       products: { am: resolve(raw.am), pm: resolve(raw.pm) },
       homeTutorialSeenAt: (user?.home_tutorial_seen_at ?? null) as string | null,
       lastScanAt: (scan?.created_at ?? null) as string | null,
@@ -331,8 +334,8 @@ export default function Home() {
   useEffect(() => {
     if (!cached) return;
     scheduleRoutineReminders({
-      am: { minutes: d.amTime, steps: d.amCount },
-      pm: { minutes: d.pmTime, steps: d.pmCount },
+      am: { minutes: d.amTime },
+      pm: { minutes: d.pmTime },
     });
   }, [cached]);
 
@@ -413,8 +416,9 @@ export default function Home() {
             const sz = day.today ? 50 : 34;
             const fullToday = day.today && day.kind === 'full';
             const bg = fullToday ? PINK : day.today ? '#FFFFFF' : day.kind === 'full' ? PINK : 'transparent';
-            // Número sempre preto (hoje e dias com uma rotina também); branco só sobre o círculo rosa cheio.
-            const nc = day.kind === 'full' ? '#FFFFFF' : INK;
+            // Número: branco sobre o círculo rosa cheio (manhã + noite); rosa escuro no dia com
+            // só uma rotina (anel rosa) — o mesmo tom do calendário 42b; preto nos demais.
+            const nc = day.kind === 'full' ? '#FFFFFF' : day.kind === 'half' ? PINK_DEEP : INK;
             return (
               // Tocar em qualquer dia abre o calendário (42b).
               <TouchableOpacity key={i} activeOpacity={0.7} onPress={() => go('/calendario')} style={styles.dayCol}>
@@ -480,7 +484,7 @@ export default function Home() {
                     </Svg>
                   </View>
                   <View style={{ gap: 2 }}>
-                    <Text style={[styles.cardText, { color: 'rgba(18,18,18,0.55)' }]}>Fazer scan</Text>
+                    <Text style={[styles.cardText, { color: 'rgba(18,18,18,0.55)' }]}>Analisar minha pele</Text>
                     <Text style={{ fontSize: 13, fontWeight: '600', color: PINK_DEEP }}>
                       {scanDays === 1 ? 'Falta 1 dia' : `Faltam ${scanDays} dias`}
                     </Text>
@@ -498,7 +502,7 @@ export default function Home() {
                       <Path d={CARD_ICONS.scan} fill="none" stroke="#fff" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
                     </Svg>
                   </View>
-                  <Text style={styles.cardText}>Fazer scan</Text>
+                  <Text style={styles.cardText}>Analisar minha pele</Text>
                 </View>
               </View>
             </TouchableOpacity>

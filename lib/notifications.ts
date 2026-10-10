@@ -22,15 +22,20 @@ export async function setupAndroidNotificationChannel(): Promise<void> {
   });
 }
 
-// Configura como as notificações aparecem quando o app está aberto
+// Configura como as notificações aparecem quando o app está aberto. O push do lote
+// "Montar minha rotina" (type 'rotina_lote') não vira banner com o app aberto: quem
+// avisa é o próprio app (components/rotina/AvisoLote) — senão ela recebe dois avisos.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (n) => {
+    const doLote = n.request.content.data?.type === 'rotina_lote';
+    return {
+      shouldShowAlert: !doLote,
+      shouldPlaySound: !doLote,
+      shouldSetBadge: false,
+      shouldShowBanner: !doLote,
+      shouldShowList: true,
+    };
+  },
 });
 
 /**
