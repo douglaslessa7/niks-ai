@@ -79,6 +79,7 @@ export function VideoClip({
           source={poster as any}
           style={[StyleSheet.absoluteFillObject, { opacity: posterOpacity }]}
           resizeMode="contain"
+          // @ts-expect-error o tipo de Image não declara pointerEvents, mas o nativo repassa (o pôster não pode bloquear toque)
           pointerEvents="none"
         />
       )}

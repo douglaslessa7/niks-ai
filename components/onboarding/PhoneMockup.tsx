@@ -20,7 +20,7 @@ function VideoScreen({ source, style }: { source: number | string; style: object
       style={style}
       contentFit="cover"
       nativeControls={false}
-      allowsFullscreen={false}
+      fullscreenOptions={{ enable: false }}
     />
   );
 }
