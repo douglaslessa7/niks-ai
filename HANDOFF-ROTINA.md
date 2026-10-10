@@ -1,6 +1,6 @@
 # Handoff: "Minha rotina" feita com os produtos dela
 
-Atualizado em 09/10/2026 (fim do dia). Branch: `newdesign2`. **Nada foi commitado.**
+Atualizado em 09/10/2026 (fim do dia). Branch: `newdesign2`. **Todo o trabalho foi commitado na `newdesign2` em 10/10/2026** (commits `744f38b` a `0d1d779`).
 
 A ideia: além da **rotina ideal** (gerada pela IA, tabela `protocolos`), cada usuária tem a **Minha rotina** (tabela `minha_rotina_passos`), que é a que ela faz de verdade. Ela pode editar os passos, escolher produtos da estante, de escaneados ou de recomendados, e um dia vai poder montar a rotina fotografando os produtos que tem em casa.
 
@@ -378,7 +378,7 @@ Mais duas decisões:
 
 As migrações foram aplicadas direto no banco de produção e registradas no histórico de migrações. A versão do app nas lojas não usa nada disso.
 
-### 💻 Só local (não publicado, não commitado)
+### 💻 Só no app/repositório (commitado, mas não publicado)
 
 
 - **`_shared/scanCutout.ts`:** `sameBrand`/`sameName` passaram a ser exportados (usados pela função acima). Não muda o comportamento de quem já usa.
@@ -417,7 +417,7 @@ As migrações foram aplicadas direto no banco de produção e registradas no hi
    6. estante normal intacta.
 8. **Rotinas ideais antigas de gestantes** continuam com retinoide salvo em `protocolos`. Isso foi decidido: a ideal não é alterada. A Minha rotina pula esses passos.
 9. **Erro "Maximum update depth exceeded"** no `app/(app)/_layout.tsx`, visto durante a compra pela Superwall. É anterior a este trabalho, mas vale investigar separado.
-10. **Commit:** todo o trabalho acima está sem commit, aguardando o ok do Douglas.
+10. ~~**Commit:** todo o trabalho acima está sem commit~~ **Feito:** commitado na `newdesign2` em 10/10/2026.
 
 ---
 

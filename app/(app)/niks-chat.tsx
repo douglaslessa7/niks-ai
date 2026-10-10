@@ -421,10 +421,23 @@ export default function NiksChat() {
   const [conversationTime,     setConversationTime]     = useState<string | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
+  // SÓ ANDROID: altura do teclado ACIMA da barra de navegação (vem no `keyboardDidShow`).
+  // Ref, não estado: quem redesenha é o `setKeyboardOpen(true)` logo em seguida.
+  const androidKbHeight = useRef(0);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardOpen(true));
     const hide  = Keyboard.addListener('keyboardWillHide', () => setKeyboardOpen(false));
+    // ANDROID não emite os eventos `Will*` — só os `Did*`. Sem isto o chat achava
+    // que o teclado estava sempre fechado.
+    if (Platform.OS === 'android') {
+      const didShow = Keyboard.addListener('keyboardDidShow', (e) => {
+        androidKbHeight.current = e.endCoordinates.height;
+        setKeyboardOpen(true);
+      });
+      const didHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+      return () => { show.remove(); hide.remove(); didShow.remove(); didHide.remove(); };
+    }
     return () => { show.remove(); hide.remove(); };
   }, []);
 
@@ -1213,7 +1226,19 @@ export default function NiksChat() {
         </View>
       </LinearGradient>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      {/* ANDROID: sem `behavior` — o KAV do RN trata o `keyboardDidHide` como mais
+          uma mudança e, com edge-to-edge, calcula uma sobreposição falsa (status bar +
+          navbar) ao fechar: a caixa ficava presa no meio. Aqui o recuo é nosso: altura
+          do teclado + inset da navbar enquanto aberto, ZERO ao fechar (toque ou voltar).
+          iOS: exatamente como antes. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={
+          Platform.OS === 'android'
+            ? { flex: 1, paddingBottom: keyboardOpen ? androidKbHeight.current + insets.bottom : 0 }
+            : { flex: 1 }
+        }
+      >
         {/* ── Conversa ───────────────────────────────────────────────────── */}
         <ScrollView
           ref={scrollRef}

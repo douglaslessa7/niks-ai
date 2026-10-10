@@ -20,8 +20,8 @@
 // home e pela navbar) — ver o cabeçalho de lá para o porquê dos dois canais de
 // medição.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Defs, Mask, Rect } from 'react-native-svg';
@@ -60,6 +60,51 @@ const STEPS: { key: CoachTargetKey; text: string }[] = [
 
 type Hole = { x: number; y: number; w: number; h: number; r: number };
 
+// ── SÓ ANDROID: medida real do próprio overlay ────────────────────────────────
+// Os alvos são medidos com `measureInWindow`. No iPhone a origem dessa medida
+// coincide com o canto do overlay e a janela tem a altura da tela — por isso o
+// buraco cai certo usando os números direto. No Android (edge-to-edge, barra de
+// 3 botões ou gestos) a origem e a altura podem não coincidir, e o círculo saía
+// de cima do ícone da navbar. A correção: o overlay se mede com a MESMA API e o
+// buraco usa a DIFERENÇA (alvo − overlay) — qualquer deslocamento se cancela,
+// seja qual for o modo de navegação. O tamanho do véu também vem dessa medida.
+//
+// O "hook" é escolhido UMA vez no carregamento do módulo: no iOS é uma função
+// que devolve uma constante — sem ref, estado, efeito ou prop nova.
+type OverlayFrame = { x: number; y: number; width: number; height: number };
+type AndroidOverlay = {
+  frame: OverlayFrame | null;
+  measureProps: { ref?: RefObject<View | null>; onLayout?: () => void };
+};
+
+function useAndroidOverlayFrameImpl(): AndroidOverlay {
+  const ref = useRef<View | null>(null);
+  const [frame, setFrame] = useState<OverlayFrame | null>(null);
+  const onLayout = useCallback(() => {
+    ref.current?.measureInWindow?.((x, y, width, height) => {
+      if (!width || !height) return;
+      setFrame((prev) =>
+        prev &&
+        Math.abs(prev.x - x) < 0.5 && Math.abs(prev.y - y) < 0.5 &&
+        Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5
+          ? prev
+          : { x, y, width, height });
+    });
+  }, []);
+  const measureProps = useMemo(() => ({ ref, onLayout }), [onLayout]);
+  return { frame, measureProps };
+}
+
+const NO_ANDROID_OVERLAY: AndroidOverlay = { frame: null, measureProps: {} };
+const useAndroidOverlayFrame: () => AndroidOverlay =
+  Platform.OS === 'android' ? useAndroidOverlayFrameImpl : () => NO_ANDROID_OVERLAY;
+
+/** Android: coordenadas de janela → coordenadas do overlay. Sem medida do overlay, nada. */
+function toOverlayAndroid(rect: CoachRect | undefined, frame: OverlayFrame | null): CoachRect | undefined {
+  if (!rect || !frame) return undefined;
+  return { ...rect, x: rect.x - frame.x, y: rect.y - frame.y };
+}
+
 /**
  * Infla o retângulo medido e resolve o raio pelo FORMATO do elemento: pílula no
  * botão Escanear, retângulo arredondado no card, círculo nos ícones da navbar.
@@ -86,8 +131,15 @@ function holeFor(rect: CoachRect): Hole {
 
 export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {
   const targets = useCoachTargets();
-  const { width: screenW, height: screenH } = useWindowDimensions();
+  let { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { frame: androidFrame, measureProps: androidMeasureProps } = useAndroidOverlayFrame();
+  // Android: o véu tem o tamanho MEDIDO do overlay (a janela pode não incluir a
+  // barra de navegação do sistema). No iOS `androidFrame` é sempre null.
+  if (Platform.OS === 'android' && androidFrame) {
+    screenW = androidFrame.width;
+    screenH = androidFrame.height;
+  }
   const reduceMotion = useReducedMotion();
 
   const [fontsLoaded] = useFonts({ Nunito_800ExtraBold, Nunito_600SemiBold });
@@ -136,10 +188,14 @@ export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {
   // O buraco da vez. Mantém o último válido: se uma remedição atrasada apagar o
   // alvo por um instante, o recorte não pisca.
   const lastHole = useRef<Hole | null>(null);
+  // Android: o alvo é convertido para coordenadas do overlay (ver
+  // `toOverlayAndroid`). No iOS `androidFrame` é a constante null — a dependência
+  // nunca muda e o memo se comporta exatamente como antes.
   const hole = useMemo(() => {
-    if (rect) lastHole.current = holeFor(rect);
+    const r = Platform.OS === 'android' ? toOverlayAndroid(rect, androidFrame) : rect;
+    if (r) lastHole.current = holeFor(r);
     return lastHole.current;
-  }, [rect]);
+  }, [rect, androidFrame]);
 
   // ── Animação do recorte + do texto ────────────────────────────────────────
   const hx = useRef(new Animated.Value(0)).current;
@@ -195,6 +251,13 @@ export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {
     }).start();
   }, [started, reduceMotion]);
 
+  // Android: antes de desenhar, o overlay precisa da própria medida — renderiza
+  // uma View invisível do mesmo tamanho (absoluteFill), que não captura toque,
+  // só para medir. Nunca roda no iOS.
+  if (Platform.OS === 'android' && !androidFrame) {
+    return <View style={StyleSheet.absoluteFill} pointerEvents="none" {...androidMeasureProps} />;
+  }
+
   if (!started || !step || !hole) return null;
 
   const isLast = index === steps.length - 1;
@@ -227,7 +290,9 @@ export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {
     : { top: Math.max(hole.y + hole.h + GAP, insets.top + 24) };
 
   return (
-    <View style={StyleSheet.absoluteFill} accessibilityViewIsModal pointerEvents="box-none">
+    // `androidMeasureProps` é `{}` no iOS (nenhuma prop nova); no Android remede
+    // o overlay se o layout mudar.
+    <View style={StyleSheet.absoluteFill} accessibilityViewIsModal pointerEvents="box-none" {...androidMeasureProps}>
       <StatusBar style="light" />
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: scrimIn }]} pointerEvents="box-none">
         {/* Véu + recorte. O buraco é feito por MÁSCARA (branco = véu, preto =

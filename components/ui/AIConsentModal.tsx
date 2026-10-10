@@ -15,15 +15,13 @@ import { haptics } from '../../lib/haptics';
 // FONTE ÚNICA do texto legal do consentimento de IA — usada também pela folha do
 // onboarding novo (`components/onboarding/ConsentSheet.tsx`, modelo 8b). Mudou aqui,
 // muda nas duas.
-// ⚠️ Os fornecedores citados têm de bater com as Edge Functions: pele
-// (`analyze-skin`/`analyze-skin-app`) e produto (`analisar-produto`) usam OpenAI;
-// só a refeição (`analyze-food`) usa Google Gemini. Trocou o modelo de uma função?
-// Atualize esta frase. (Até set/2026 o texto citava só o Gemini, o que estava errado.)
+// ⚠️ Desde out/2026 o texto NÃO nomeia os fornecedores (decisão do Douglas): fala em
+// "parceiros" e os nomes (OpenAI e Google Gemini) ficam na Política de Privacidade e
+// na declaração à Apple. Trocou de fornecedor de IA? Atualize a política, não este texto.
 export const CONSENT_BODY =
-  'Para gerar sua análise, o NIKS AI processa a foto capturada, seu perfil de pele e ' +
-  'preocupações do onboarding por meio de serviços de inteligência artificial: a OpenAI, ' +
-  'nas análises de pele e de produto, e o Google Gemini, na análise de refeição. ' +
-  'Os dados são usados exclusivamente para produzir o resultado e não são retidos ou utilizados para outros fins.';
+  'Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e ' +
+  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros. ' +
+  'Esses dados são usados exclusivamente para produzir o seu resultado.';
 export const CONSENT_AUTH_PREFIX = 'Ao continuar, você autoriza esse processamento conforme nossa ';
 export const PRIVACY_URL =
   'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
