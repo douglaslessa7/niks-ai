@@ -1,3 +1,4 @@
+import { temMinhaRotina, lerMinhaRotina } from '../_shared/minha-rotina.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 export type UserContext = {
@@ -17,6 +18,9 @@ export type UserContext = {
   history: Array<{ id: string; role: string; content: string; image_url: string | null; created_at: string }>
   memories: Array<Record<string, unknown>>
   pendingSuggestion: Record<string, unknown> | null
+  // A última sugestão já resolvida (até 3 dias): aplicada, recusada, não aplicada… — para
+  // a NIKS contar a verdade ("atualizei?") em vez de supor pela própria fala anterior.
+  ultimaMudanca: Record<string, unknown> | null
 }
 
 export function createSupabaseClient() {
@@ -55,7 +59,13 @@ async function getScanHistory(supabase: ReturnType<typeof createSupabaseClient>,
   return data
 }
 
+// Rotina do contexto: a MINHA ROTINA (a que ela faz) para quem já tem — build nova,
+// `users.minha_rotina_criada_em` — e a IDEAL (`protocolos`) para os demais, como antes.
 async function getProtocol(supabase: ReturnType<typeof createSupabaseClient>, userId: string) {
+  if (await temMinhaRotina(supabase, userId)) {
+    const minha = await lerMinhaRotina(supabase, userId)
+    return { ...minha, _fonte: 'minha_rotina' }
+  }
   const { data } = await supabase
     .from('protocolos')
     .select('*')
@@ -111,22 +121,35 @@ async function getMemories(supabase: ReturnType<typeof createSupabaseClient>, us
   return data ?? []
 }
 
-async function getPendingSuggestion(supabase: ReturnType<typeof createSupabaseClient>, userId: string, conversationId: string) {
-  // Escopada à conversa (uma pendente não vaza para outra) E com validade de 24h na
-  // LEITURA. A regra 8 só expira no apply, que nunca roda para uma pendente fora de
-  // alcance (conversas do Coach são diárias); sem esta janela, uma pendente de conversa
-  // antiga ficaria presa e — com o guard de criação global — travaria a usuária.
+async function getPendingSuggestion(supabase: ReturnType<typeof createSupabaseClient>, userId: string, _conversationId: string) {
+  // Por USUÁRIA (out/2026): o app novo mostra a pendente num card fixo em qualquer
+  // conversa, e uma proposta nova substitui a anterior. Pendente com +24h é marcada como
+  // expirada DE VERDADE (antes só era ignorada na leitura e podia travar a conversa).
   const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  await supabase.from('coach_protocol_suggestions')
+    .update({ status: 'expired' }).eq('user_id', userId).eq('status', 'pending').lt('created_at', cutoffIso)
   const { data } = await supabase
     .from('coach_protocol_suggestions')
     .select('*')
     .eq('user_id', userId)
-    .eq('conversation_id', conversationId)
     .eq('status', 'pending')
-    .gte('created_at', cutoffIso)
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
+  return data
+}
+
+async function getUltimaMudanca(supabase: ReturnType<typeof createSupabaseClient>, userId: string) {
+  const desde = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+  const { data } = await supabase
+    .from('coach_protocol_suggestions')
+    .select('status, proposed_changes, created_at, applied_at')
+    .eq('user_id', userId)
+    .neq('status', 'pending')
+    .gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
   return data
 }
 
@@ -145,6 +168,7 @@ export async function buildContext(
     getHistory(supabase, userId),
     getMemories(supabase, userId),
     getPendingSuggestion(supabase, userId, conversationId),
+    getUltimaMudanca(supabase, userId),
   ]
 
   const results = await Promise.allSettled(promises)
@@ -161,5 +185,6 @@ export async function buildContext(
     history: (getValue(results[5]) ?? []) as UserContext['history'],
     memories: (getValue(results[6]) ?? []) as UserContext['memories'],
     pendingSuggestion: getValue(results[7]) as UserContext['pendingSuggestion'],
+    ultimaMudanca: getValue(results[8]) as UserContext['ultimaMudanca'],
   }
 }

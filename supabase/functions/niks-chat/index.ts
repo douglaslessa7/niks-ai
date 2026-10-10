@@ -4,7 +4,8 @@ import { NIKS_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
 import { geminiModel } from './model.ts'
 import { detectEvolutionIntent } from './safety.ts'
 import { extractAndSave } from './memory.ts'
-import { checkForSuggestion, checkApprovalIntent } from './protocol-actions.ts'
+import { checkApprovalIntent, extractJSON } from './protocol-actions.ts'
+import { ferramentaProposta, registrarProposta, motivoSimples, descreverProposta, type ResultadoProposta } from './proposta.ts'
 import { verifyJWT } from '../_shared/jwt.ts'
 
 const corsHeaders = {
@@ -76,12 +77,16 @@ Deno.serve(async (req) => {
       clientMessageId,
       images,
       supportsProtocolCard,
+      rotinaV2,
     } = body as {
       conversationId?: string
       message?: string
       clientMessageId?: string
       images?: Array<{ base64: string; mimeType: string }>
       supportsProtocolCard?: boolean
+      // App novo (out/2026): recebe o id da sugestão no fim do stream, mostra o card fixo
+      // e entende "trocar a rotina inteira de um período" (replace_period).
+      rotinaV2?: boolean
     }
 
     if (!conversationId || (!message && (!images || images.length === 0))) {
@@ -153,11 +158,13 @@ Deno.serve(async (req) => {
     }
 
     // Montar context pack e iniciar stream
-    const contextPack = buildContextPack(context, message, (images?.length ?? 0) > 0, supportsProtocolCard === true)
-    const geminiStream = await geminiModel.stream(
+    const v2 = rotinaV2 === true
+    const contextPack = buildContextPack(context, message, (images?.length ?? 0) > 0, supportsProtocolCard === true, v2)
+    const { stream: geminiStream, ferramentas } = await geminiModel.stream(
       NIKS_SYSTEM_PROMPT,
       contextPack,
-      images
+      images,
+      ferramentaProposta(v2),
     )
 
     // Intercepta chunks inline (sem tee) e CORTA o bloco [[PROTOCOL_PATCH]]…[[/PROTOCOL_PATCH]]
@@ -231,9 +238,49 @@ Deno.serve(async (req) => {
         holdBuffer += decoder.decode(chunk, { stream: true })
         process(controller, false)
       },
-      flush(controller) {
+      // No fim da resposta, ANTES de fechar o stream: registra a proposta (ferramenta; ou o
+      // bloco antigo, se o modelo ainda escrever um) e corrige o texto visível:
+      //  · proposta registrada + app antigo → garante a frase-gatilho (o app antigo só
+      //    procura o card quando a vê);
+      //  · proposta registrada + texto vazio → linha padrão (nunca balão em branco);
+      //  · proposta recusada → conta a verdade, em linguagem simples;
+      //  · nada e texto vazio → "me perdi" (nunca balão em branco).
+      // App novo recebe, por último, `[[SUGESTAO:<id>]]` (fora do texto salvo).
+      async flush(controller) {
         holdBuffer += decoder.decode()
         process(controller, true)
+        let resultado: ResultadoProposta | null = null
+        let propostaRaw: unknown = null
+        try {
+          const chamadas = await ferramentas
+          const ch = chamadas.find((c) => c.name === 'propor_mudanca_rotina')
+          let raw: unknown = null
+          if (ch) raw = JSON.parse(ch.arguments || '{}')
+          else if (blocks.length === 1) raw = JSON.parse(extractJSON(blocks[0]))
+          propostaRaw = raw
+          if (raw) {
+            resultado = await registrarProposta(supabase, userId, conversationId, raw, {
+              periodoInteiro: v2,
+              pregnancyStatus: ((context.profile as Record<string, unknown> | null)?.pregnancy_status as string) ?? null,
+            })
+          }
+        } catch (e) {
+          console.error('niks-chat: proposta falhou', e)
+        }
+        const temTexto = !!visibleText.trim()
+        const lower = visibleText.toLowerCase()
+        if (resultado?.ok) {
+          const frase = resultado.action === 'remove' ? 'Posso remover isso do seu protocolo?' : 'Posso incluir isso no seu protocolo?'
+          // Chamou a ferramenta sem escrever nada: descreve a proposta (ela precisa saber o que aprova).
+          if (!temTexto) emit(controller, descreverProposta(propostaRaw))
+          if (!v2 && !lower.includes(frase.toLowerCase())) emit(controller, `\n\n${frase}`)
+          else if (v2 && !temTexto) emit(controller, '\n\nConfere no cartão abaixo e toca em Aprovar se estiver tudo certo.')
+        } else if (resultado && !resultado.ok) {
+          emit(controller, `${temTexto ? '\n\n' : ''}Não consegui preparar essa mudança: ${motivoSimples(resultado.reason, resultado.period)}. Me conta de novo o que você quer mudar?`)
+        } else if (!temTexto) {
+          emit(controller, 'Me perdi aqui. Pode repetir, por favor?')
+        }
+        if (resultado?.ok && v2) controller.enqueue(encoder.encode(`\n[[SUGESTAO:${resultado.id}]]`))
         resolveResult({ visible: visibleText, blocks })
       },
     })
@@ -258,15 +305,15 @@ Deno.serve(async (req) => {
       })
 
       await extractAndSave(supabase, userId, message, cleanText)
-      if (context.pendingSuggestion) {
-        // Cliente novo (card): a aprovação é pelo botão → NÃO roda a aprovação por texto.
-        // Cliente antigo (sem a flag): comportamento atual preservado integralmente.
-        if (supportsProtocolCard !== true) {
-          await checkApprovalIntent(supabase, userId, message, context.pendingSuggestion)
-        }
-      } else {
-        await checkForSuggestion(supabase, userId, conversationId, cleanText, capturedBlocks)
+      // A proposta já foi registrada no fim do stream (flush). Aprovação por TEXTO só no
+      // cliente sem card, e só de uma sugestão FRESCA (até 30 min) — uma pendente antiga
+      // (ex.: da manhã) não pode ser aprovada por um "pode" sobre outra coisa (noite).
+      const ps = context.pendingSuggestion as Record<string, unknown> | null
+      const fresca = !!ps?.created_at && Date.now() - Date.parse(String(ps.created_at)) < 30 * 60 * 1000
+      if (ps && fresca && supportsProtocolCard !== true) {
+        await checkApprovalIntent(supabase, userId, message, context.pendingSuggestion)
       }
+      void capturedBlocks
     })())
 
     return new Response(interceptor.readable, {

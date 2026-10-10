@@ -1,6 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { validateProposal, applyProposal, logRefusal } from '../_shared/protocol-write.ts'
+import { validateProposal, applyProposal, logRefusal, semCamposInternos } from '../_shared/protocol-write.ts'
 import { verifyJWT } from '../_shared/jwt.ts'
+import { temMinhaRotina, lerMinhaRotina, gravarMudanca } from '../_shared/minha-rotina.ts'
+import { motivoSimples } from '../niks-chat/proposta.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,7 +18,7 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const logReject = (reason: string, ctx: Record<string, unknown> = {}) =>
   console.warn('APPROVE_ENDPOINT_REJECTED', JSON.stringify({ reason, ...ctx }))
 
-Deno.serve(async (req) => {
+const tratar = async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -114,6 +116,29 @@ Deno.serve(async (req) => {
       return json({ success: true, action: 'not_applied', reason: validation.reason }, 200)
     }
 
+    // Fase 8 (plano da Rotina): quem já tem Minha rotina → a mudança vai para ELA, com as
+    // mesmas travas (applyProposal). Os demais seguem na rotina ideal, como antes.
+    if (await temMinhaRotina(supabase, user_id)) {
+      const antes = await lerMinhaRotina(supabase, user_id)
+      const res = applyProposal(antes as any, validation.value)
+      if (!res.ok) {
+        logRefusal('apply-endpoint', res.reason, { user_id, suggestionId: suggestion_id, payload: validation.value })
+        await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+        return json({ success: true, action: 'not_applied', reason: res.reason }, 200)
+      }
+      try {
+        await gravarMudanca(supabase, user_id, antes, res.next as any, validation.value)
+      } catch (e) {
+        console.error('MINHA_ROTINA_WRITE_FAILED', JSON.stringify({ scope: 'apply-endpoint', user_id, suggestionId: suggestion_id, error: String((e as Error)?.message ?? e) }))
+        await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
+        return json({ error: 'Falha ao gravar a rotina' }, 500)
+      }
+      const agora = new Date().toISOString()
+      await supabase.from('coach_protocol_suggestions')
+        .update({ status: 'applied', approved_at: agora, applied_at: agora }).eq('id', suggestion_id)
+      return json({ success: true, action: 'applied', rotina: 'minha_rotina' }, 200)
+    }
+
     // Buscar protocolo atual
     const { data: protocol, error: protocolError } = await supabase
       .from('protocolos')
@@ -144,7 +169,7 @@ Deno.serve(async (req) => {
     // Captura de erro de escrita: não marca 'applied' se a gravação falhar.
     const { error: updateProtocolError } = await supabase
       .from('protocolos')
-      .update({ rotina_am: result.next.rotina_am, rotina_pm: result.next.rotina_pm, updated_at: now })
+      .update({ rotina_am: semCamposInternos(result.next.rotina_am), rotina_pm: semCamposInternos(result.next.rotina_pm), updated_at: now })
       .eq('id', protocol.id)
 
     if (updateProtocolError) {
@@ -173,5 +198,39 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('approve-coach-protocol-change: erro não tratado', error)
     return json({ error: 'Erro interno' }, 500)
+  }
+}
+
+// Depois da decisão, a CONFIRMAÇÃO VERDADEIRA vai para a conversa (e volta para o app em
+// `mensagem`): "Pronto, sua rotina da manhã foi atualizada ✓" só quando a rotina mudou;
+// senão, o motivo em linguagem simples. Assim a NIKS nunca precisa "dizer que alterou".
+Deno.serve(async (req) => {
+  if (req.method !== 'POST') return tratar(req)
+  const corpo = await req.clone().json().catch(() => null) as { suggestion_id?: string; approved?: boolean } | null
+  const res = await tratar(req)
+  if (res.status !== 200 || !corpo?.suggestion_id || corpo.approved !== true) return res
+  try {
+    const dados = await res.clone().json()
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
+    const { data: sug } = await supabase.from('coach_protocol_suggestions')
+      .select('user_id, conversation_id, proposed_changes').eq('id', corpo.suggestion_id).maybeSingle()
+    if (!sug) return res
+    const pc = (sug.proposed_changes ?? {}) as Record<string, unknown>
+    const periodo: 'am' | 'pm' = pc.period === 'am' ? 'am' : 'pm'
+    const quando = periodo === 'am' ? 'da manhã' : 'da noite'
+    let texto: string | null = null
+    if (dados.action === 'applied') texto = `Pronto, sua rotina ${quando} foi atualizada ✓`
+    else if (dados.action === 'not_applied') texto = `Não consegui aplicar essa mudança: ${motivoSimples(String(dados.reason ?? ''), periodo)}. Se quiser, me conta de novo o que você quer mudar.`
+    else if (dados.action === 'expired') texto = 'Essa sugestão expirou. Me conta de novo o que você quer mudar que eu preparo outra.'
+    if (!texto) return res
+    if (sug.conversation_id) {
+      await supabase.from('coach_messages').insert({
+        conversation_id: sug.conversation_id, user_id: sug.user_id, role: 'assistant', content: texto,
+      })
+    }
+    return new Response(JSON.stringify({ ...dados, mensagem: texto }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  } catch (e) {
+    console.error('approve-coach-protocol-change: confirmação falhou', e)
+    return res
   }
 })

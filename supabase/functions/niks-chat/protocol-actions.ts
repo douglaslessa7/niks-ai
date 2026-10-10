@@ -1,5 +1,6 @@
+import { temMinhaRotina, lerMinhaRotina, gravarMudanca } from '../_shared/minha-rotina.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { validateProposal, applyProposal, logRefusal } from '../_shared/protocol-write.ts'
+import { validateProposal, applyProposal, logRefusal, semCamposInternos } from '../_shared/protocol-write.ts'
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
@@ -11,7 +12,7 @@ const REMOVE_PHRASE = 'posso remover isso do seu protocolo?'  // remove
 
 // Extracts the outermost JSON object from a string, handling any preamble
 // the model may have added before the JSON.
-function extractJSON(text: string): string {
+export function extractJSON(text: string): string {
   const start = text.indexOf('{')
   const end   = text.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) return text
@@ -140,8 +141,11 @@ Mensagem da usuária: ${userMessage}`
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        max_tokens: 128,
+        // gpt-5.4-mini (out/2026): `max_completion_tokens` (o `max_tokens` dá erro 400). O
+        // teto inclui o raciocínio: com 128 o modelo gastaria tudo pensando e devolveria
+        // resposta vazia — 1024 sobra para o JSON curto ({ intent }).
+        model: 'gpt-5.4-mini',
+        max_completion_tokens: 1024,
         stream: false,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }],
@@ -207,6 +211,29 @@ Mensagem da usuária: ${userMessage}`
       return
     }
 
+    // Fase 8 (plano da Rotina): quem já tem Minha rotina → a mudança vai para ELA, com as
+    // mesmas travas (applyProposal). Os demais seguem na rotina ideal, como antes.
+    if (await temMinhaRotina(supabase, userId)) {
+      const antes = await lerMinhaRotina(supabase, userId)
+      const res = applyProposal(antes as any, validation.value)
+      if (!res.ok) {
+        logRefusal('apply-coach', res.reason, { userId, suggestionId: pendingSuggestion.id, payload: validation.value })
+        await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
+        return
+      }
+      try {
+        await gravarMudanca(supabase, userId, antes, res.next as any, validation.value)
+      } catch (e) {
+        console.error('MINHA_ROTINA_WRITE_FAILED', JSON.stringify({ scope: 'apply-coach', userId, suggestionId: pendingSuggestion.id, error: String((e as Error)?.message ?? e) }))
+        await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', pendingSuggestion.id)
+        return
+      }
+      const agora = new Date().toISOString()
+      await supabase.from('coach_protocol_suggestions')
+        .update({ status: 'applied', approved_at: agora, applied_at: agora }).eq('id', pendingSuggestion.id)
+      return
+    }
+
     const { data: protocol } = await supabase
       .from('protocolos')
       .select('id, rotina_am, rotina_pm')
@@ -236,7 +263,7 @@ Mensagem da usuária: ${userMessage}`
     // Captura de erro de escrita: não marca 'applied' se a gravação falhar.
     const { error: writeError } = await supabase
       .from('protocolos')
-      .update({ rotina_am: result.next.rotina_am, rotina_pm: result.next.rotina_pm, updated_at: now })
+      .update({ rotina_am: semCamposInternos(result.next.rotina_am), rotina_pm: semCamposInternos(result.next.rotina_pm), updated_at: now })
       .eq('id', protocol.id)
 
     if (writeError) {

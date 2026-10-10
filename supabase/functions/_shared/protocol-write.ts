@@ -18,14 +18,28 @@ export type ProtocolStep = {
   [key: string]: unknown
 }
 
+// Um passo de uma proposta (passo único ou cada passo de 'replace_period').
+export type PassoProposto = {
+  step_name: string
+  ingredient: string
+  instruction: string | null
+  schedule_days: string[] | null
+}
+
 export type ProposedChanges = {
-  action: 'add' | 'remove' | 'replace'
+  // replace_period (out/2026): troca a rotina INTEIRA de um período pela lista `steps`,
+  // na ordem — cada passo separado (antes a IA espremia vários produtos num passo só).
+  action: 'add' | 'remove' | 'replace' | 'replace_period'
   period: 'am' | 'pm'
   step_name: string
   ingredient: string
   instruction: string | null
   schedule_days: string[] | null
   replaces: string | null
+  // Código do passo que sai (remove/replace) — `_rowId` da Minha rotina. Quando vem,
+  // manda sobre a busca por ativo/categoria (que errava o período).
+  target_id?: string | null
+  steps?: PassoProposto[]
 }
 
 // ── norm / classifyStep / detectTargetActive — FONTE ÚNICA (das duas functions do Coach) ──
@@ -116,6 +130,39 @@ export function logRefusal(scope: string, reason: string, ctx: Record<string, un
   console.warn('PROTOCOL_REFUSED', JSON.stringify({ scope, reason, ...ctx }))
 }
 
+// Vários produtos espremidos num passo só ("Água micelar…, Creme…, Protetor…"): partes
+// separadas por vírgula/+/; que caem em 2+ categorias diferentes. Um passo = um produto.
+export function pareceVariosProdutos(texto: string): boolean {
+  const partes = String(texto ?? '').split(/,|\+|;/).map((x) => x.trim()).filter(Boolean)
+  if (partes.length < 2) return false
+  const cats = new Set(partes.map((x) => classifyStep(x, '').category).filter((c) => c !== 'Cuidado'))
+  return cats.size >= 2
+}
+
+function validarDias(v: unknown): { ok: true; value: string[] | null } | { ok: false } {
+  if (v == null) return { ok: true, value: null }
+  if (!Array.isArray(v)) return { ok: false }
+  const canon: string[] = []
+  for (const d of v) {
+    const c = CANON_DAY_BY_NORM[norm(String(d))]
+    if (!c) return { ok: false } // dia inexistente: recusa mantida
+    canon.push(c)
+  }
+  return { ok: true, value: canon.length ? canon : null }
+}
+
+function validarPasso(r: Record<string, unknown>): { ok: true; value: PassoProposto } | { ok: false; reason: string } {
+  const step_name = typeof r.step_name === 'string' ? r.step_name.trim() : ''
+  if (!step_name) return { ok: false, reason: 'missing-step_name' }
+  const ingredient = typeof r.ingredient === 'string' ? r.ingredient.trim() : ''
+  if (!ingredient) return { ok: false, reason: 'missing-ingredient' }
+  if (pareceVariosProdutos(ingredient) || pareceVariosProdutos(step_name)) return { ok: false, reason: 'multiple-products-in-one-step' }
+  const dias = validarDias(r.schedule_days)
+  if (!dias.ok) return { ok: false, reason: 'invalid-schedule_days' }
+  const instruction = typeof r.instruction === 'string' && r.instruction.trim() ? r.instruction.trim() : null
+  return { ok: true, value: { step_name, ingredient, instruction, schedule_days: dias.value } }
+}
+
 // ── Rule 1 — validação de schema em runtime ───────────────────────────────────
 export function validateProposal(raw: unknown):
   | { ok: true; value: ProposedChanges }
@@ -124,17 +171,39 @@ export function validateProposal(raw: unknown):
   const r = raw as Record<string, unknown>
 
   const action = r.action
-  if (action !== 'add' && action !== 'remove' && action !== 'replace') {
+  if (action !== 'add' && action !== 'remove' && action !== 'replace' && action !== 'replace_period') {
     return { ok: false, reason: `invalid-action:${String(action)}` }
   }
   const period = r.period
   if (period !== 'am' && period !== 'pm') {
     return { ok: false, reason: `invalid-period:${String(period)}` }
   }
+  const target_id = typeof r.target_id === 'string' && r.target_id.trim() ? r.target_id.trim() : null
+
+  // Rotina inteira do período: lista de 1 a 10 passos, cada um validado.
+  if (action === 'replace_period') {
+    if (!Array.isArray(r.steps) || r.steps.length < 1 || r.steps.length > 10) return { ok: false, reason: 'invalid-steps' }
+    const steps: PassoProposto[] = []
+    for (const x of r.steps) {
+      if (!x || typeof x !== 'object') return { ok: false, reason: 'invalid-steps' }
+      const v = validarPasso(x as Record<string, unknown>)
+      if (!v.ok) return { ok: false, reason: `step-${v.reason}` }
+      steps.push(v.value)
+    }
+    return { ok: true, value: {
+      action, period, steps, target_id: null,
+      step_name: '', ingredient: '', instruction: null, schedule_days: null, replaces: null,
+    } }
+  }
+
   const step_name = typeof r.step_name === 'string' ? r.step_name.trim() : ''
   if (!step_name) return { ok: false, reason: 'missing-step_name' }
-  const ingredient = typeof r.ingredient === 'string' ? r.ingredient.trim() : ''
+  // Remoção: o passo que sai já está identificado (nome e/ou código) — o ingrediente é opcional.
+  const ingredient = (typeof r.ingredient === 'string' ? r.ingredient.trim() : '') || (action === 'remove' ? step_name : '')
   if (!ingredient) return { ok: false, reason: 'missing-ingredient' }
+  if (action !== 'remove' && (pareceVariosProdutos(ingredient) || pareceVariosProdutos(step_name))) {
+    return { ok: false, reason: 'multiple-products-in-one-step' }
+  }
 
   let schedule_days: string[] | null = null
   if (r.schedule_days != null) {
@@ -150,7 +219,12 @@ export function validateProposal(raw: unknown):
   const instruction = typeof r.instruction === 'string' && r.instruction.trim() ? r.instruction.trim() : null
   const replaces = typeof r.replaces === 'string' && r.replaces.trim() ? r.replaces.trim() : null
 
-  return { ok: true, value: { action, period, step_name, ingredient, instruction, schedule_days, replaces } }
+  return { ok: true, value: { action, period, step_name, ingredient, instruction, schedule_days, replaces, target_id } }
+}
+
+/** Tira os campos internos (`_rowId`, `_raw`…) antes de gravar em `protocolos`. */
+export function semCamposInternos(steps: ProtocolStep[]): ProtocolStep[] {
+  return steps.map((st) => Object.fromEntries(Object.entries(st).filter(([k]) => !k.startsWith('_'))) as ProtocolStep)
 }
 
 // ── Helpers de item ───────────────────────────────────────────────────────────
@@ -165,7 +239,7 @@ export function buildIngredientWithDays(ingredient: string, days?: string[] | nu
   return `${base} (${days.join('/')})`
 }
 
-function makeCoachStep(changes: ProposedChanges, id: number): ProtocolStep {
+function makeCoachStep(changes: PassoProposto, id: number): ProtocolStep {
   const ingredient = buildIngredientWithDays(changes.ingredient, changes.schedule_days)
   const { category } = classifyStep(changes.step_name, ingredient)
   const active = detectTargetActive(changes.step_name, ingredient)
@@ -181,6 +255,8 @@ function makeCoachStep(changes: ProposedChanges, id: number): ProtocolStep {
     color,
     waitTime: null,
     origem: 'coach',
+    // Para quem grava na Minha rotina: ingrediente e dias SEM o sufixo "(Seg/Qua)".
+    _raw: { ingredient: changes.ingredient, schedule_days: changes.schedule_days },
   }
 }
 
@@ -229,6 +305,63 @@ export function applyProposal(
       changes.period === 'am' &&
       newActive.kind === 'known' && newActive.label && AM_FORBIDDEN_ACTIVES.includes(newActive.label)) {
     return { ok: false, reason: `clinical-am-forbidden:${newActive.label}` }
+  }
+
+  // ── REPLACE_PERIOD ── a rotina inteira do período vira a lista, cada passo separado.
+  if (changes.action === 'replace_period') {
+    const lista = changes.steps ?? []
+    const novos = lista.map((p, i) => makeCoachStep(p, i + 1))
+    // Mesmas travas, sobre a lista inteira.
+    const vistos = new Set<string>()
+    for (const st of novos) {
+      const a = detectTargetActive(String(st.name), String(st.ingredient))
+      if (changes.period === 'am' && a.kind === 'known' && a.label && AM_FORBIDDEN_ACTIVES.includes(a.label)) {
+        return { ok: false, reason: `clinical-am-forbidden:${a.label}` }
+      }
+      if (a.kind === 'known' && a.label) {
+        if (vistos.has(a.label)) return { ok: false, reason: `period-duplicate:${a.label}` }
+        vistos.add(a.label)
+      }
+    }
+    // Limpeza / hidratação / protetor que o período tinha não podem sumir.
+    const catsNovas = new Set(novos.map((st) => classifyStep(String(st.name), String(st.ingredient)).category))
+    for (const st of period) {
+      const c = classifyStep(String(st.name ?? ''), String(st.ingredient ?? '')).category
+      if (PROTECTED_CATEGORIES.includes(c) && !catsNovas.has(c)) return { ok: false, reason: `period-missing-protected:${c}` }
+    }
+    // De manhã, o protetor é sempre o último.
+    const ordenados = changes.period === 'am'
+      ? [...novos.filter((st) => classifyStep(String(st.name), String(st.ingredient)).category !== 'Proteção'),
+         ...novos.filter((st) => classifyStep(String(st.name), String(st.ingredient)).category === 'Proteção')]
+      : novos
+    return { ok: true, next: assemble(changes.period, ordenados, am, pm) }
+  }
+
+  // ── Alvo por CÓDIGO (remove/replace) ── manda sobre a busca por ativo/categoria.
+  if ((changes.action === 'remove' || changes.action === 'replace') && changes.target_id) {
+    const outro = changes.period === 'am' ? pm : am
+    const target = period.find((st) => st._rowId === changes.target_id)
+    if (!target) {
+      if (outro.some((st) => st._rowId === changes.target_id)) return { ok: false, reason: 'target-other-period' }
+    } else {
+      const cat = classifyStep(String(target.name ?? ''), String(target.ingredient ?? '')).category
+      if (PROTECTED_CATEGORIES.includes(cat)) {
+        if (changes.action === 'remove') return { ok: false, reason: `protected-step:${cat}` }
+        const newCat = classifyStep(changes.step_name, changes.ingredient).category
+        if (newCat !== cat) return { ok: false, reason: `protected-replace-category-mismatch:${cat}->${newCat}` }
+        if (newActive.kind === 'known' && newActive.label && STRONG_ACTIVES.includes(newActive.label)) {
+          return { ok: false, reason: `protected-replace-strong-active:${newActive.label}` }
+        }
+      }
+      const sem = period.filter((st) => st !== target)
+      if (changes.action === 'remove') return { ok: true, next: assemble(changes.period, sem, am, pm) }
+      if (newActive.kind === 'known' && newActive.label && sem.some((st) => {
+        const a = detectTargetActive(String(st.name ?? ''), String(st.ingredient ?? ''))
+        return a.kind === 'known' && a.label === newActive.label
+      })) return { ok: false, reason: `replace-would-duplicate:${newActive.label}` }
+      const step = makeCoachStep(changes, nextId(period))
+      return { ok: true, next: assemble(changes.period, insertClinically(sem, step), am, pm) }
+    }
   }
 
   // ── ADD ──

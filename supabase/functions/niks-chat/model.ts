@@ -1,20 +1,27 @@
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
+// Ferramenta que a NIKS chama para PROPOR uma mudança de rotina (out/2026). Substitui o
+// bloco escondido [[PROTOCOL_PATCH]] no texto, que o gpt-5.4-mini parou de emitir
+// ("phrase-without-block"). Os argumentos chegam em pedaços no stream e são juntados.
+export type ChamadaFerramenta = { name: string; arguments: string }
+
 export interface ChatModel {
   stream(
     systemPrompt: string,
     userMessage: string,
-    images?: Array<{ base64: string; mimeType: string }>
-  ): Promise<ReadableStream<Uint8Array>>
+    images?: Array<{ base64: string; mimeType: string }>,
+    tools?: unknown[],
+  ): Promise<{ stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> }>
 }
 
 export class OpenAIModel implements ChatModel {
   async stream(
     systemPrompt: string,
     userMessage: string,
-    images?: Array<{ base64: string; mimeType: string }>
-  ): Promise<ReadableStream<Uint8Array>> {
+    images?: Array<{ base64: string; mimeType: string }>,
+    tools?: unknown[],
+  ): Promise<{ stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> }> {
     let userContent: unknown
     if (images && images.length > 0) {
       userContent = [
@@ -29,13 +36,17 @@ export class OpenAIModel implements ChatModel {
     }
 
     const openaiBody = JSON.stringify({
-      model: 'gpt-4.1-mini',
-      max_tokens: 2048,
+      // gpt-5.4-mini (out/2026, era gpt-4.1-mini). Família GPT-5: `max_completion_tokens`
+      // (o `max_tokens` dá erro 400) e o teto inclui o raciocínio, que não aparece no
+      // stream — 2048 de resposta visível + folga para pensar.
+      model: 'gpt-5.4-mini',
+      max_completion_tokens: 6000,
       stream: true,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
       ],
+      ...(tools && tools.length ? { tools, tool_choice: 'auto', parallel_tool_calls: false } : {}),
     })
 
     let openaiResponse: Response | null = null
@@ -74,7 +85,22 @@ export class OpenAIModel implements ChatModel {
     const decoder = new TextDecoder()
     const encoder = new TextEncoder()
 
-    return new ReadableStream<Uint8Array>({
+    // Chamadas de ferramenta, juntadas por `index` (nome + argumentos em pedaços).
+    const chamadas: { name: string; arguments: string }[] = []
+    let resolverFerramentas!: (c: ChamadaFerramenta[]) => void
+    const ferramentas = new Promise<ChamadaFerramenta[]>((r) => { resolverFerramentas = r })
+    const lerDelta = (parsed: any) => {
+      const tcs = parsed?.choices?.[0]?.delta?.tool_calls
+      if (!Array.isArray(tcs)) return
+      for (const tc of tcs) {
+        const i = typeof tc?.index === 'number' ? tc.index : 0
+        chamadas[i] = chamadas[i] ?? { name: '', arguments: '' }
+        if (tc?.function?.name) chamadas[i].name += tc.function.name
+        if (tc?.function?.arguments) chamadas[i].arguments += tc.function.arguments
+      }
+    }
+
+    const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const reader = openaiResponse!.body!.getReader()
         let sseBuffer = ''
@@ -92,6 +118,7 @@ export class OpenAIModel implements ChatModel {
                 if (!payload || payload === '[DONE]') continue
                 try {
                   const parsed = JSON.parse(payload)
+                  lerDelta(parsed)
                   const text = parsed?.choices?.[0]?.delta?.content ?? ''
                   if (text) controller.enqueue(encoder.encode(text))
                 } catch { /* chunk malformado */ }
@@ -110,6 +137,7 @@ export class OpenAIModel implements ChatModel {
 
               try {
                 const parsed = JSON.parse(payload)
+                lerDelta(parsed)
                 const text = parsed?.choices?.[0]?.delta?.content ?? ''
                 if (text) controller.enqueue(encoder.encode(text))
               } catch {
@@ -122,9 +150,11 @@ export class OpenAIModel implements ChatModel {
           controller.error(err)
         } finally {
           reader.releaseLock()
+          resolverFerramentas(chamadas.filter(Boolean))
         }
       },
     })
+    return { stream, ferramentas }
   }
 }
 

@@ -151,6 +151,7 @@ type HistoryConversation = {
 }
 
 // ── Coach protocol suggestion (card de aprovação — Bloco 3) ───────────────────
+type PassoProposto = { step_name?: string; ingredient?: string; instruction?: string | null; schedule_days?: string[] | null }
 type ProposedChanges = {
   action?: string
   period?: string
@@ -159,12 +160,20 @@ type ProposedChanges = {
   instruction?: string | null
   schedule_days?: string[] | null
   replaces?: string | null
+  steps?: PassoProposto[] | null   // replace_period: a rotina nova do período, na ordem
 }
 type CoachSuggestion = {
   id: string
   reason: string
   proposed_changes: ProposedChanges
-  status: 'pending' | 'applied' | 'rejected' | 'expired' | 'approved'
+  status: 'pending' | 'applied' | 'rejected' | 'expired' | 'approved' | 'superseded'
+}
+
+// O servidor (app novo, `rotinaV2`) manda `[[SUGESTAO:<id>]]` no fim da resposta: o card
+// aparece na hora, sem a corrida de antes. O marcador nunca aparece na tela.
+const MARCADOR_SUGESTAO = /\n?\[\[SUGESTAO:([0-9a-f-]+)\]\]\s*$/
+function semMarcador(t: string): string {
+  return t.replace(MARCADOR_SUGESTAO, '').replace(/\n?\[\[[^\]]*$/, '')
 }
 
 // ── Message type ──────────────────────────────────────────────────────────────
@@ -190,15 +199,29 @@ const TRIGGER_PHRASES = [
 ]
 const APPROVE_URL = 'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/approve-coach-protocol-change'
 
-// Lê a sugestão pendente da conversa (escopada + 24h no servidor → sempre 0 ou 1).
-async function fetchPendingSuggestion(conversationId: string): Promise<CoachSuggestion | null> {
+// A sugestão pendente DELA (qualquer conversa; o servidor garante no máximo 1 — uma
+// nova substitui a anterior — e expira as de +24h). Aparece num card fixo no fim da conversa.
+async function fetchPendingSuggestion(_conversationId?: string): Promise<CoachSuggestion | null> {
+  const uid = await getUserId()
+  if (!uid) return null
+  const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { data } = await supabase
     .from('coach_protocol_suggestions')
     .select('id, reason, proposed_changes, status')
-    .eq('conversation_id', conversationId)
+    .eq('user_id', uid)
     .eq('status', 'pending')
+    .gte('created_at', desde)
     .order('created_at', { ascending: false })
     .limit(1)
+    .maybeSingle()
+  return (data as CoachSuggestion | null) ?? null
+}
+
+async function fetchSuggestionById(id: string): Promise<CoachSuggestion | null> {
+  const { data } = await supabase
+    .from('coach_protocol_suggestions')
+    .select('id, reason, proposed_changes, status')
+    .eq('id', id)
     .maybeSingle()
   return (data as CoachSuggestion | null) ?? null
 }
@@ -223,7 +246,7 @@ async function getAccessToken(): Promise<string | null> {
 async function approveProtocolChange(
   suggestionId: string,
   approved: boolean,
-): Promise<{ ok: boolean; action?: string; protocol?: any }> {
+): Promise<{ ok: boolean; action?: string; protocol?: any; mensagem?: string }> {
   const token = await getAccessToken()
   if (!token) return { ok: false }
   try {
@@ -241,7 +264,7 @@ async function approveProtocolChange(
       console.warn('approveProtocolChange: falhou', resp.status, JSON.stringify(data))
       return { ok: false, action: data?.action }
     }
-    return { ok: true, action: data?.action, protocol: data?.protocol }
+    return { ok: true, action: data?.action, protocol: data?.protocol, mensagem: data?.mensagem }
   } catch {
     return { ok: false }
   }
@@ -250,10 +273,11 @@ async function approveProtocolChange(
 // Resumo legível do proposed_changes para o card.
 function formatChangeSummary(pc: ProposedChanges): string {
   const verbo = pc.action === 'add' ? 'Incluir' : pc.action === 'remove' ? 'Remover' : pc.action === 'replace' ? 'Trocar por' : 'Ajustar'
-  const periodo = pc.period === 'am' ? 'rotina da manhã' : pc.period === 'pm' ? 'rotina da noite' : 'sua rotina'
-  const item = (pc.ingredient || pc.step_name || 'passo').trim()
-  const dias = Array.isArray(pc.schedule_days) && pc.schedule_days.length ? ` (${pc.schedule_days.join('/')})` : ''
-  return `${verbo} ${item}${dias} — ${periodo}`
+  const item = (pc.step_name || pc.ingredient || 'passo').trim()
+  const extra = pc.ingredient && pc.step_name && pc.ingredient.trim().toLowerCase() !== pc.step_name.trim().toLowerCase() ? ` (${pc.ingredient.trim()})` : ''
+  const dias = Array.isArray(pc.schedule_days) && pc.schedule_days.length ? ` · ${pc.schedule_days.join(', ')}` : ''
+  const sai = pc.action === 'replace' && pc.replaces ? `\nSai: ${pc.replaces}` : ''
+  return `${verbo} ${item}${extra}${dias}${sai}`
 }
 
 // ── ProtocolApprovalCard ──────────────────────────────────────────────────────
@@ -281,6 +305,7 @@ function ProtocolApprovalCard({
     const label = suggestion.status === 'applied' ? 'Aprovado ✓'
       : suggestion.status === 'rejected' ? 'Recusado'
       : suggestion.status === 'expired' ? 'Essa sugestão expirou'
+      : suggestion.status === 'superseded' ? 'Substituída por uma sugestão mais nova'
       : 'Resolvido'
     return (
       <View style={[styles.card, { marginTop: 8 }]}>
@@ -291,8 +316,25 @@ function ProtocolApprovalCard({
 
   return (
     <View style={[styles.card, { marginTop: 8 }]}>
-      <Text style={styles.cardTitle}>Sugestão para o seu protocolo</Text>
-      <Text style={[styles.aboutText, { marginTop: 8 }]}>{formatChangeSummary(suggestion.proposed_changes)}</Text>
+      {/* O PERÍODO em destaque: a mudança é na manhã OU na noite. */}
+      <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 0.3, color: '#E8468F', textTransform: 'uppercase' }}>
+        {suggestion.proposed_changes.period === 'am' ? 'Rotina da manhã' : 'Rotina da noite'}
+      </Text>
+      <Text style={[styles.cardTitle, { marginTop: 4 }]}>
+        {suggestion.proposed_changes.action === 'replace_period' ? 'Sua rotina passa a ser' : 'Sugestão de mudança'}
+      </Text>
+      {suggestion.proposed_changes.action === 'replace_period' && Array.isArray(suggestion.proposed_changes.steps) ? (
+        <View style={{ marginTop: 8, gap: 4 }}>
+          {suggestion.proposed_changes.steps.map((st, i) => (
+            <Text key={i} style={styles.aboutText}>
+              {`${i + 1}. ${st.step_name ?? ''}`}
+              {Array.isArray(st.schedule_days) && st.schedule_days.length ? <Text style={{ color: MUTED }}>{` · ${st.schedule_days.join(', ')}`}</Text> : null}
+            </Text>
+          ))}
+        </View>
+      ) : (
+        <Text style={[styles.aboutText, { marginTop: 8 }]}>{formatChangeSummary(suggestion.proposed_changes)}</Text>
+      )}
       {!!suggestion.reason && (
         <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: MUTED }}>{suggestion.reason}</Text>
       )}
@@ -523,41 +565,64 @@ export default function NiksChat() {
     void runIntro()
   }
 
-  // Anexa a sugestão pendente da conversa à última mensagem da NIKS (ao recarregar /
-  // trocar de aba) — senão o card some. Escopado por conversa → 0 ou 1.
-  const attachPendingToLast = async (convId: string) => {
-    const sug = await fetchPendingSuggestion(convId)
-    if (!sug) return
-    setMessages(prev => {
-      for (let i = prev.length - 1; i >= 0; i--) {
-        if (prev[i].role === 'assistant') {
-          const copy = [...prev]
-          copy[i] = { ...copy[i], suggestion: sug }
-          return copy
-        }
-      }
-      return prev
-    })
+  // A sugestão pendente dela aparece num CARD FIXO no fim da conversa (não preso a uma
+  // bolha — antes, presa à última resposta, sumia quando essa resposta vinha vazia).
+  const [pendente, setPendente] = useState<CoachSuggestion | null>(null)
+  // Conversa vazia (sem bolhas na tela): a confirmação fica no lugar do card.
+  const [confirmacao, setConfirmacao] = useState<string | null>(null)
+  const attachPendingToLast = async (_convId?: string) => {
+    setPendente(await fetchPendingSuggestion())
   }
 
-  // Corrida: a sugestão nasce no waitUntil do servidor, que pode terminar DEPOIS do
-  // onload. Poll curto até aparecer; se esgotar, não há card (recusa legítima do
-  // gate duplo / bloco inválido) — comportamento correto.
-  const hydrateSuggestion = async (convId: string, messageId: string) => {
-    for (let i = 0; i < 6; i++) {
-      const sug = await fetchPendingSuggestion(convId)
-      if (sug) {
-        setMessages(prev => prev.map(m => (m.id === messageId ? { ...m, suggestion: sug } : m)))
-        return
-      }
-      await new Promise(r => setTimeout(r, 700))
+  // Toda vez que o chat ganha foco: a pendente dela aparece, inclusive com a conversa vazia.
+  useFocusEffect(useCallback(() => { void attachPendingToLast() }, []))
+
+  // Sem o marcador (servidor antigo): procura a pendente por até ~10 s.
+  const hydrateSuggestion = async (_convId?: string, _messageId?: string) => {
+    for (let i = 0; i < 10; i++) {
+      const sug = await fetchPendingSuggestion()
+      if (sug) { setPendente(sug); return }
+      await new Promise(r => setTimeout(r, 1000))
     }
+  }
+
+  // Decisão no card fixo: o card some e entra a confirmação VERDADEIRA do servidor
+  // ("Pronto, sua rotina da manhã foi atualizada ✓" ou o motivo de não ter aplicado).
+  const decidirPendente = async (approved: boolean): Promise<{ ok: boolean; action?: string }> => {
+    if (!pendente) return { ok: false }
+    const res = await approveProtocolChange(pendente.id, approved)
+    if (res.ok && approved && cachedUserId) {
+      invalidateCache(`minharotina:${cachedUserId}`)
+      invalidateCache(`protocolo:${cachedUserId}`)
+      invalidateCache(`rotinaideal:${cachedUserId}`)
+    }
+    if (res.ok || res.action === 'expired') {
+      setPendente(null)
+      const texto = res.mensagem ?? (approved ? null : 'Combinado, deixei sua rotina como estava.')
+      if (texto) {
+        if (mode === 'active') setMessages(prev => [...prev, { id: `conf-${Date.now()}`, role: 'assistant', content: texto, live: true }])
+        else setConfirmacao(texto)
+      }
+      if (cachedUserId) invalidateCache(`chat:${cachedUserId}`)
+    } else {
+      // Ela já foi substituída/expirada no servidor: mostra a pendente de verdade (ou nenhuma).
+      const atual = await fetchPendingSuggestion()
+      if (atual?.id !== pendente.id) setPendente(atual)
+    }
+    return { ok: res.ok, action: res.action }
   }
 
   const handleSuggestionDecision = async (
     messageId: string, suggestionId: string, approved: boolean,
   ): Promise<{ ok: boolean; action?: string }> => {
     const res = await approveProtocolChange(suggestionId, approved)
+    // Aplicada: a rotina mudou no servidor (Minha rotina, ou a ideal p/ quem não tem) —
+    // a aba Rotina e os cards que dependem dela precisam reler.
+    if (res.ok && approved && cachedUserId) {
+      invalidateCache(`minharotina:${cachedUserId}`)
+      invalidateCache(`protocolo:${cachedUserId}`)
+      invalidateCache(`rotinaideal:${cachedUserId}`)
+    }
     setMessages(prev => prev.map(m => {
       if (m.id !== messageId || !m.suggestion) return m
       let status = m.suggestion.status
@@ -573,6 +638,7 @@ export default function NiksChat() {
 
   const sendMessage = async (text: string, images?: Array<{ base64: string; mimeType: string; uri: string }>) => {
     setNiksChatMode('active')
+    setConfirmacao(null)
     if (!userId) return
 
     let activeConvId = conversationId
@@ -647,8 +713,10 @@ export default function NiksChat() {
       const chunk = xhr.responseText.slice(lastLength)
       lastLength = xhr.responseText.length
       if (!chunk) return
+      // Texto inteiro sem o marcador da sugestão (nem um pedaço dele no fim).
+      const visivel = semMarcador(xhr.responseText)
       setMessages(prev => prev.map(m =>
-        m.id === assistantMsgId ? { ...m, content: m.content + chunk } : m
+        m.id === assistantMsgId ? { ...m, content: visivel } : m
       ))
     }
 
@@ -662,17 +730,20 @@ export default function NiksChat() {
         return
       }
       // Sempre o responseText inteiro — garante que nada fica truncado.
+      const idSugestao = xhr.responseText.match(MARCADOR_SUGESTAO)?.[1] ?? null
+      const visivel = semMarcador(xhr.responseText)
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
-          ? { ...m, content: xhr.responseText, isStreaming: false }
+          ? { ...m, content: visivel, isStreaming: false }
           : m
       ))
       // A conversa cresceu no banco — marca o cache como velho.
       if (cachedUserId) invalidateCache(`chat:${cachedUserId}`)
-      // Se a NIKS propôs (frase-gatilho no texto visível), busca a sugestão que o
-      // servidor acabou de criar e ancora o card à mensagem dela.
-      const loweredResp = xhr.responseText.toLowerCase()
-      if (activeConvId && TRIGGER_PHRASES.some(p => loweredResp.includes(p))) {
+      // A NIKS propôs: o servidor já gravou a sugestão e mandou o id → card na hora.
+      // Sem id (servidor antigo) mas com a frase-gatilho → procura a pendente.
+      if (idSugestao) {
+        void fetchSuggestionById(idSugestao).then((sug) => { if (sug?.status === 'pending') setPendente(sug) })
+      } else if (activeConvId && TRIGGER_PHRASES.some(p => visivel.toLowerCase().includes(p))) {
         void hydrateSuggestion(activeConvId, assistantMsgId)
       }
     }
@@ -703,6 +774,9 @@ export default function NiksChat() {
       clientMessageId,
       images: images?.map(i => ({ base64: i.base64, mimeType: i.mimeType })),
       supportsProtocolCard: true,
+      // App novo: recebe o id da sugestão no fim da resposta e entende "trocar a rotina
+      // inteira de um período" (replace_period).
+      rotinaV2: true,
     }))
   }
 
@@ -921,6 +995,7 @@ export default function NiksChat() {
     | { kind: 'me'; key: string; text: string; images?: string[]; anim?: boolean }
     | { kind: 'card'; key: string }
     | { kind: 'typing'; key: string }
+    | { kind: 'sugestao'; key: string }
   const intro: Row[] = [
     { kind: 'bot', key: 'hi', text: firstName ? `oi, ${firstName}! 👋` : 'oi! 👋' },
     { kind: 'bot', key: 'help', text: 'me conta, como posso te ajudar hoje?' },
@@ -950,6 +1025,12 @@ export default function NiksChat() {
       if (!finished) rows.push({ kind: 'typing', key: `${m.id}-typing` })
     }
   }
+  // Card FIXO da sugestão pendente, no fim da conversa (também com a conversa vazia, depois
+  // das boas-vindas) — e só depois que a resposta terminou de aparecer (a NIKS explica
+  // primeiro, o card vem em seguida).
+  const respondendo = messages.some(m =>
+    m.role === 'assistant' && (m.isStreaming || (m.live && (revealed[m.id] ?? 0) < splitBubbles(m.content).length)))
+  if ((pendente || confirmacao) && !respondendo && (done || introShown >= intro.length)) rows.push({ kind: 'sugestao', key: pendente ? `sug-${pendente.id}` : 'sug-conf' })
   const isBot = (r?: Row) => r?.kind === 'bot' || r?.kind === 'typing'
 
   const renderRow = (r: Row, i: number) => {
@@ -957,6 +1038,21 @@ export default function NiksChat() {
     const next = rows[i + 1]
     const sameAsPrev = !!prev && prev.kind !== 'card' && r.kind !== 'card' && isBot(prev) === isBot(r)
     const mt = i === 0 ? 14 : sameAsPrev ? 5 : r.kind === 'card' ? 8 : 21
+
+    if (r.kind === 'sugestao') {
+      if (pendente) {
+        return (
+          <View key={r.key} style={{ marginTop: 8 }}>
+            <ProtocolApprovalCard key={pendente.id} suggestion={pendente} onDecide={decidirPendente} />
+          </View>
+        )
+      }
+      return confirmacao ? (
+        <View key={r.key} style={[styles.card, { marginTop: 8 }]}>
+          <Text style={styles.aboutText}>{confirmacao}</Text>
+        </View>
+      ) : null
+    }
 
     if (r.kind === 'card') {
       return (
