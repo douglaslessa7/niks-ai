@@ -9,6 +9,7 @@
 import { supabase } from './supabase';
 import { getCutoutsByProductId } from './productCutouts';
 import { getScanCutouts, requestMissingScanCutouts } from './scanCutouts';
+import { sameProduct } from './productMatch';
 
 export type ShelfPos = { s: number; x: number }; // prateleira 0..2 + centro em pt (frame 393)
 
@@ -70,7 +71,8 @@ async function compatFallback(userId: string, prodIds: string[], scanIds: string
   return { byProd, byScan, verdictByScan };
 }
 
-// Coleção da usuária, mais antiga primeiro (a ordem do "Fora da estante" segue a de entrada).
+// Coleção da usuária, mais antiga primeiro (quem ainda não tem posição ganha a vaga livre
+// nessa ordem — ver `firstFree` em components/product/Shelf.tsx).
 export async function listColecao(userId: string): Promise<ColecaoItem[]> {
   const { data: rows, error } = await supabase
     .from('colecao_produtos')
@@ -205,15 +207,26 @@ export async function removeFromColecao(id: string): Promise<void> {
 }
 
 // Id do item da coleção que corresponde a um scan / produto do catálogo (ou null).
-export async function findInColecao(userId: string, by: { productScanId?: string | null; produtoId?: string | null }): Promise<string | null> {
+// Sem o mesmo id, procura o MESMO PRODUTO pela marca + nome (lib/productMatch — o
+// critério do "um card por produto" dos Escaneados): o mesmo produto escaneado de novo,
+// ou um recomendado que ela pôs na estante por um scan, aparece como "Na sua estante" em
+// vez de oferecer adicionar de novo. Só leitura.
+export async function findInColecao(userId: string, by: {
+  productScanId?: string | null; produtoId?: string | null; nome?: string | null; marca?: string | null;
+}): Promise<string | null> {
   const key = by.productScanId ? 'product_scan_id' : 'produto_id';
   const val = by.productScanId ?? by.produtoId;
-  if (!val) return null;
-  const { data } = await supabase.from('colecao_produtos').select('id').eq('user_id', userId).eq(key, val).maybeSingle();
-  return data?.id ?? null;
+  if (val) {
+    const { data } = await supabase.from('colecao_produtos').select('id').eq('user_id', userId).eq(key, val).maybeSingle();
+    if (data?.id) return data.id;
+  }
+  if (!by.nome || !by.marca) return null;
+  const { data: rows } = await supabase.from('colecao_produtos').select('id, nome, marca').eq('user_id', userId);
+  const hit = (rows ?? []).find((r: any) => sameProduct({ marca: r.marca, nome: r.nome }, { marca: by.marca, nome: by.nome }));
+  return hit?.id ?? null;
 }
 
-// Move na estante (null = "Fora da estante").
+// Grava a posição na estante. (null = sem posição: a estante coloca no 1º espaço livre.)
 export async function setShelfPos(id: string, pos: ShelfPos | null): Promise<void> {
   const { error } = await supabase.from('colecao_produtos').update({ estante: pos }).eq('id', id);
   if (error) console.warn('[estante] falha ao salvar posição', error.message);

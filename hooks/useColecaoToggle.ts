@@ -23,6 +23,9 @@ export function useColecaoToggle(src: Source | null, onChange?: () => void) {
   const [itemId, setItemId] = useState<string | null>(null);
   const [owned, setOwned] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  // `recheck()` relê se o produto está na coleção (ex.: outro caminho acabou de pô-lo lá).
+  const [versao, setVersao] = useState(0);
+  const recheck = useCallback(() => setVersao((v) => v + 1), []);
 
   useEffect(() => {
     let alive = true;
@@ -30,12 +33,12 @@ export function useColecaoToggle(src: Source | null, onChange?: () => void) {
     if (!src || !key) return;
     getUserId().then(async (uid) => {
       if (!uid) return;
-      const id = await findInColecao(uid, { productScanId: src.productScanId, produtoId: src.produtoId });
+      const id = await findInColecao(uid, { productScanId: src.productScanId, produtoId: src.produtoId, nome: src.nome, marca: src.marca });
       if (alive) { setItemId(id); setOwned(!!id); }
     }).catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, versao]);
 
   const toggle = useCallback(async () => {
     if (!src || busy || owned === null) return;
@@ -57,7 +60,7 @@ export function useColecaoToggle(src: Source | null, onChange?: () => void) {
       haptics.error();
       // Antes a falha era silenciosa (só vibrava) e o produto simplesmente não aparecia.
       Alert.alert(
-        owned ? 'Não deu pra tirar da sua coleção' : 'Não deu pra adicionar à sua coleção',
+        owned ? 'Não deu pra remover da sua estante' : 'Não deu pra adicionar à sua estante',
         'Tente de novo em instantes.',
       );
     } finally {
@@ -65,5 +68,5 @@ export function useColecaoToggle(src: Source | null, onChange?: () => void) {
     }
   }, [src, busy, owned, itemId, onChange]);
 
-  return { owned, busy, toggle };
+  return { owned, busy, toggle, recheck };
 }
