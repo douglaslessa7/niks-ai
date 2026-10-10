@@ -98,7 +98,7 @@ export default function AvisoLembretes() {
         </View>
         <View style={{ gap: 2 }}>
           <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '600', color: OB.ink }}>Hora da sua rotina da noite 🌙</Text>
-          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '400', color: OB.ink }}>Seus 5 passos te esperam. Leva só 10 minutos ✨</Text>
+          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '400', color: OB.ink }}>Seu skincare noturno está te esperando</Text>
         </View>
       </View>
 

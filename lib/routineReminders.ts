@@ -19,7 +19,8 @@ import { dateKey, getRoutineHistory, sessionDate, type RoutinePeriod } from './r
 // tira o de hoje quando ela conclui a rotina (protocolo.tsx). O dia é a
 // "sessão-do-dia" de lib/routineProgress (a noite que passa da meia-noite conta para
 // o dia em que começou) — a mesma chave do histórico.
-// N = passos da rotina daquele período (`protocolos.rotina_am/pm`); sem rotina, 5.
+// O texto NÃO mostra o número de passos (out/2026): "Seu skincare da manhã/noturno
+// está te esperando".
 //
 // Quem chama: a home (a cada carga dos dados, que já trazem horários e passos) e o
 // Alarme (ao salvar um horário, via `syncRoutineReminders`). O logout cancela. Só
@@ -36,7 +37,6 @@ type Kind = 'hora' | 'depois';
 
 const ID_PREFIX = 'niks-rotina-';
 const PERIOD_ID: Record<RoutinePeriod, string> = { am: 'manha', pm: 'noite' };
-const DEFAULT_STEPS = 5;
 const LATE_OFFSET_MIN = 60;
 const DAYS_AHEAD = 7;
 
@@ -45,21 +45,19 @@ const lateId = (period: RoutinePeriod, day: string) => `${ID_PREFIX}${PERIOD_ID[
 // "1 hora antes" agendado por versões anteriores (diário, repetia para sempre).
 const LEGACY_IDS = [`${ID_PREFIX}manha-antes`, `${ID_PREFIX}noite-antes`];
 
-export function routineReminderContent(period: RoutinePeriod, steps: number, kind: Kind = 'hora') {
-  const n = steps > 0 ? steps : DEFAULT_STEPS;
+export function routineReminderContent(period: RoutinePeriod, kind: Kind = 'hora') {
   const name = period === 'am' ? 'da manhã' : 'da noite';
   const emoji = period === 'am' ? '☀️' : '🌙';
-  const passos = n === 1 ? 'seu passo te espera' : `seus ${n} passos te esperam`;
   if (kind === 'depois') {
     return { title: 'Ainda dá tempo! 🔥', body: `Faça sua rotina ${name} agora e não perca sua sequência ${emoji}` };
   }
   return {
     title: `Hora da sua rotina ${name} ${emoji}`,
-    body: `${passos.charAt(0).toUpperCase()}${passos.slice(1)}. Leva só 10 minutos ✨`,
+    body: period === 'am' ? 'Seu skincare da manhã está te esperando' : 'Seu skincare noturno está te esperando',
   };
 }
 
-type Slot = { minutes: number; steps: number };
+type Slot = { minutes: number };
 type Scheduled = Awaited<ReturnType<typeof Notifications.getAllScheduledNotificationsAsync>>;
 
 async function upsert(scheduled: Scheduled, identifier: string, content: { title: string; body: string }, data: Record<string, unknown>, trigger: Notifications.NotificationTriggerInput) {
@@ -92,12 +90,12 @@ export async function scheduleRoutineReminders(slots: Record<RoutinePeriod, Slot
     const now = new Date();
 
     for (const period of ['am', 'pm'] as const) {
-      const { minutes, steps } = slots[period];
+      const { minutes } = slots[period];
 
       // "hora": diário.
       wanted.add(dailyId(period));
       await upsert(
-        scheduled, dailyId(period), routineReminderContent(period, steps, 'hora'), { period, kind: 'hora' },
+        scheduled, dailyId(period), routineReminderContent(period, 'hora'), { period, kind: 'hora' },
         { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: Math.floor(minutes / 60) % 24, minute: minutes % 60, channelId: ANDROID_CHANNEL_ID },
       );
 
@@ -110,7 +108,7 @@ export async function scheduleRoutineReminders(slots: Record<RoutinePeriod, Slot
         const id = lateId(period, day);
         wanted.add(id);
         await upsert(
-          scheduled, id, routineReminderContent(period, steps, 'depois'), { period, kind: 'depois', day },
+          scheduled, id, routineReminderContent(period, 'depois'), { period, kind: 'depois', day },
           { type: Notifications.SchedulableTriggerInputTypes.DATE, date: fire, channelId: ANDROID_CHANNEL_ID },
         );
       }
@@ -141,19 +139,14 @@ function toMinutes(v: unknown, fallback: number): number {
   return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
 }
 
-/** Lê horários e passos do banco e reagenda — para quem não tem esses dados à mão (Alarme). */
+/** Lê os horários do banco e reagenda — para quem não os tem à mão (Alarme). */
 export async function syncRoutineReminders(uid: string): Promise<void> {
-  const [userRes, protoRes] = await Promise.all([
-    supabase.from('users').select('rotina_manha_horario, rotina_noite_horario').eq('id', uid).maybeSingle(),
-    supabase.from('protocolos').select('rotina_am, rotina_pm').eq('user_id', uid)
-      .order('updated_at', { ascending: false }).limit(1).maybeSingle(),
-  ]);
-  if (userRes.error) return;
-  const u = userRes.data;
-  const p = protoRes.data;
+  const { data: u, error } = await supabase
+    .from('users').select('rotina_manha_horario, rotina_noite_horario').eq('id', uid).maybeSingle();
+  if (error) return;
   await scheduleRoutineReminders({
-    am: { minutes: toMinutes(u?.rotina_manha_horario, DEFAULT_MINUTES.am), steps: Array.isArray(p?.rotina_am) ? p!.rotina_am.length : 0 },
-    pm: { minutes: toMinutes(u?.rotina_noite_horario, DEFAULT_MINUTES.pm), steps: Array.isArray(p?.rotina_pm) ? p!.rotina_pm.length : 0 },
+    am: { minutes: toMinutes(u?.rotina_manha_horario, DEFAULT_MINUTES.am) },
+    pm: { minutes: toMinutes(u?.rotina_noite_horario, DEFAULT_MINUTES.pm) },
   });
 }
 
