@@ -265,7 +265,7 @@ function stepIntent(name: string, ingredient: string): { codes: string[]; light:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OpenAI (mesmo padrão do generate-protocol: gpt-4.1-mini, json_object, retry 3x)
+// OpenAI (mesmo padrão do generate-protocol: gpt-5.4-mini, json_object, retry 3x)
 // ─────────────────────────────────────────────────────────────────────────────
 async function callOpenAI(systemPrompt: string, userPrompt: string): Promise<any> {
   let lastErr: unknown = null
@@ -277,8 +277,10 @@ async function callOpenAI(systemPrompt: string, userPrompt: string): Promise<any
         'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        max_completion_tokens: 4096,
+        model: 'gpt-5.4-mini',
+        // gpt-5.4-mini (out/2026, era gpt-4.1-mini): o teto inclui o raciocínio — com
+        // 4096 a escolha podia voltar cortada. NÃO baixar.
+        max_completion_tokens: 16000,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },

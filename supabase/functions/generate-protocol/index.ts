@@ -15,8 +15,51 @@ type Violation =
   | { kind: 'CHECK1_CLASS_IGNORED'; molecule: string; klass: string }
   | { kind: 'CHECK1_MOLECULE_SUBSTITUTED'; molecule: string; klass: string; substitute: string; period: 'AM' | 'PM' }
   | { kind: 'CHECK2_CLASS_COLLISION'; klass: string; period: 'AM' | 'PM'; steps: string[] }
+  | { kind: 'CHECK3_PREGNANCY_RETINOID'; period: 'AM' | 'PM'; steps: string[] }
 
 type VLog = (reason: string, ctx?: Record<string, unknown>) => void
+
+// ── Trava de GRAVIDEZ (out/2026) ───────────────────────────────────────────────
+// Grávida, amamentando ou tentando engravidar → NENHUM retinoide na rotina ideal
+// (os mesmos 3 estados em que o analisar-produto corta retinoide). Antes a regra vivia só no prompt e a IA
+// chegou a pôr adapaleno na rotina de uma gestante. Duas camadas, como as checagens
+// acima: (1) CHECK3 entra na retentativa corretiva pedindo uma alternativa segura;
+// (2) `enforcePregnancyLock` remove no código o passo que ainda sobrar — esta segunda
+// camada é a garantia (nunca depende da IA). Vale para `pregnancy_status` pregnant,
+// breastfeeding e trying.
+// Detector PRÓPRIO, mais largo que o detectTargetActive: lá um creme de olhos com
+// retinol cai em `eye` antes de ser checado, e faltam tazaroteno/trifaroteno/retinil.
+const RETINOID_RE = /(retinol|retinal|retinaldeido|tretinoina|isotretinoina|retinoide|retinoid|retinil|retinyl|adapalen|tazaroten|trifaroten|hidroxipinacolona|hydroxypinacolone|granactive|\bhpr\b)/
+
+const RETINOID_BLOCKED_STATUS = ['pregnant', 'breastfeeding', 'trying']
+function isPregnant(onboardingData: any): boolean {
+  return RETINOID_BLOCKED_STATUS.includes(String(onboardingData?.pregnancy_status ?? ''))
+}
+
+function isRetinoidStep(s: any): boolean {
+  let t = `${s?.name ?? ''} ${s?.ingredient ?? ''}`.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  // Bakuchiol é a alternativa SEGURA: "bakuchiol (alternativa ao retinol)" não é retinoide.
+  if (t.includes('bakuchiol')) t = t.replace(/(alternativa|substitut\w*|similar|parecid\w*)[^,.;()]*?retin\w*/g, ' ')
+  return RETINOID_RE.test(t)
+}
+
+function enforcePregnancyLock(text: string, onboardingData: any, vlog: VLog): string {
+  if (!isPregnant(onboardingData)) return text
+  let proto: any
+  try { proto = JSON.parse(text) } catch { return text }
+  const removed: string[] = []
+  for (const k of ['morning', 'night'] as const) {
+    if (!Array.isArray(proto?.[k])) continue
+    proto[k] = proto[k].filter((s: any) => {
+      if (!isRetinoidStep(s)) return true
+      removed.push(`${k}: ${s?.name ?? ''} — ${s?.ingredient ?? ''}`)
+      return false
+    })
+  }
+  if (!removed.length) return text
+  vlog('PREGNANCY_RETINOID_REMOVED', { removed })
+  return JSON.stringify(proto)
+}
 
 // Enumera TODOS os ativos reconhecíveis na descrição (instrumentação), reusando
 // detectTargetActive num laço que remove a molécula já casada antes de repetir.
@@ -45,7 +88,7 @@ function stepActives(steps: unknown): { label: string; molecule: string; name: s
 }
 
 // Roda as duas checagens. logInstr=false na revalidação, para não duplicar instrumentação.
-function collectViolations(proto: any, type: unknown, desc: unknown, vlog: VLog, logInstr: boolean): Violation[] {
+function collectViolations(proto: any, type: unknown, desc: unknown, vlog: VLog, logInstr: boolean, pregnant = false): Violation[] {
   const violations: Violation[] = []
   const amAct = stepActives(proto?.morning)
   const pmAct = stepActives(proto?.night)
@@ -85,6 +128,14 @@ function collectViolations(proto: any, type: unknown, desc: unknown, vlog: VLog,
     }
   }
 
+  // Checagem 3 — grávida/amamentando/tentando: nenhum retinoide (ver "Trava de GRAVIDEZ").
+  if (pregnant) {
+    for (const [period, steps] of [['AM', proto?.morning], ['PM', proto?.night]] as const) {
+      const hits = (Array.isArray(steps) ? steps : []).filter(isRetinoidStep).map((s: any) => String(s?.name ?? ''))
+      if (hits.length) violations.push({ kind: 'CHECK3_PREGNANCY_RETINOID', period, steps: hits })
+    }
+  }
+
   return violations
 }
 
@@ -92,6 +143,8 @@ function correctiveMessage(vs: Violation[]): string {
   const lines = vs.map((v) =>
     v.kind === 'CHECK1_MOLECULE_SUBSTITUTED'
       ? `- A usuária JÁ USA ${v.molecule} (classe ${v.klass}). O protocolo trouxe ${v.substitute} no período ${v.period}, da MESMA classe — isso NÃO substitui o que ela já usa, DOBRA o ativo. Inclua ${v.molecule} como passo e não prescreva um segundo ${v.klass}.`
+      : v.kind === 'CHECK3_PREGNANCY_RETINOID'
+      ? `- A usuária está GRÁVIDA, AMAMENTANDO ou TENTANDO ENGRAVIDAR e o protocolo tem retinoide no período ${v.period} (${v.steps.join(', ')}). Retinoides (retinol, retinal, tretinoína, adapaleno etc.) são PROIBIDOS nessa fase. Remova esse(s) passo(s); se o objetivo era acne, textura ou manchas, use uma alternativa segura (ex.: ácido azelaico ou bakuchiol). Tire também qualquer menção a retinoide do introduction_schedule e dos introduction_warnings.`
       : v.kind === 'CHECK1_CLASS_IGNORED'
       ? `- A usuária declarou usar ${v.molecule} e ele NÃO aparece como passo. Inclua ${v.molecule} como um passo do protocolo (não só citado na instrução).`
       : `- Dois ativos da classe ${v.klass} no período ${v.period} (${v.steps.join(', ')}). Mantenha só UM ativo dessa classe por período; se ambos forem necessários, alterne por dias (sufixo de dias no campo ingredient).`
@@ -111,8 +164,11 @@ async function correctiveCall(systemPrompt: string, userMessage: string, firstTe
         'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        max_completion_tokens: 8192,
+        model: 'gpt-5.4-mini',
+        // gpt-5.4-mini (out/2026, era gpt-4.1-mini). O teto de SAÍDA inclui os tokens de
+        // raciocínio — com 8192 o JSON da rotina podia voltar cortado (mesma lição do
+        // analyze-skin, que perdia ~5% das análises com 4096). NÃO baixar.
+        max_completion_tokens: 16000,
         stream: false,
         response_format: { type: 'json_object' },
         messages: [
@@ -148,7 +204,7 @@ async function validateAndMaybeFix(text: string, onboardingData: any, systemProm
 
   let violations: Violation[]
   try {
-    violations = collectViolations(proto, type, desc, vlog, true)
+    violations = collectViolations(proto, type, desc, vlog, true, isPregnant(onboardingData))
   } catch (e) {
     vlog('VALIDATION_ERROR', { error: String(e) })
     return text
@@ -164,7 +220,7 @@ async function validateAndMaybeFix(text: string, onboardingData: any, systemProm
   }
 
   try {
-    const remaining = collectViolations(JSON.parse(fixed), type, desc, vlog, false)
+    const remaining = collectViolations(JSON.parse(fixed), type, desc, vlog, false, isPregnant(onboardingData))
     vlog(remaining.length === 0 ? 'RETRY_RECOVERED' : 'RETRY_STILL_FAILING', remaining.length ? { violations: remaining } : {})
     return fixed // grava a 2ª mesmo se ainda imperfeita
   } catch {
@@ -505,8 +561,11 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
         'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        max_completion_tokens: 8192,
+        model: 'gpt-5.4-mini',
+        // gpt-5.4-mini (out/2026, era gpt-4.1-mini). O teto de SAÍDA inclui os tokens de
+        // raciocínio — com 8192 o JSON da rotina podia voltar cortado (mesma lição do
+        // analyze-skin, que perdia ~5% das análises com 4096). NÃO baixar.
+        max_completion_tokens: 16000,
         stream: false,
         response_format: { type: 'json_object' },
         messages: [
@@ -547,7 +606,11 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
     // e que não haja dois ativos da mesma classe no mesmo período. Nunca deixa sem protocolo.
     const vlog = (reason: string, ctx: Record<string, unknown> = {}) =>
       console.warn('PROTOCOL_VALIDATION', JSON.stringify({ reason, ...ctx }))
-    const finalText = await validateAndMaybeFix(text, onboardingData, systemPrompt, userMessage, vlog)
+    // Trava de gravidez por último: o que a retentativa não corrigiu, o código remove.
+    const finalText = enforcePregnancyLock(
+      await validateAndMaybeFix(text, onboardingData, systemPrompt, userMessage, vlog),
+      onboardingData, vlog,
+    )
 
     return new Response(finalText, {
       headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },

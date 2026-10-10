@@ -52,8 +52,10 @@ Resposta da NIKS: ${assistantResponse}`
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        max_tokens: 512,
+        // gpt-5.4-mini (out/2026): `max_completion_tokens` (o `max_tokens` dá erro 400) e
+        // folga para o raciocínio — com 512 o JSON podia sair vazio.
+        model: 'gpt-5.4-mini',
+        max_completion_tokens: 2048,
         stream: false,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }],
