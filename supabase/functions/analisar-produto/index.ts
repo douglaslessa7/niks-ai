@@ -84,6 +84,15 @@ async function verifyJWT(token: string): Promise<{ sub: string } | null> {
 
 // Parse defensivo: localiza o primeiro `{` e o último `}` para tolerar qualquer
 // preâmbulo/markdown que o modelo eventualmente adicione.
+const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
+function normalizarDias(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null
+  const chave = (x: unknown) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().slice(0, 3)
+  const pedidos = new Set(v.map(chave))
+  const ok = DIAS.filter((d) => pedidos.has(chave(d)))
+  return ok.length && ok.length < 7 ? ok : null
+}
+
 function extractJSON(text: string): any {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
@@ -240,6 +249,24 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'Erro interno ao analisar o produto' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
+    }
+
+    // Frequência da sugestão de rotina: só as abreviações do app, na ordem da semana;
+    // vazio ou os 7 dias = uso diário (null). Fora de adicionar/substituir, sempre null.
+    if (result?.decisao_rotina && typeof result.decisao_rotina === 'object') {
+      const tipo = result.decisao_rotina.tipo
+      result.decisao_rotina.dias = tipo === 'adicionar' || tipo === 'substituir'
+        ? normalizarDias(result.decisao_rotina.dias)
+        : null
+      // Códigos de passo: só os da Minha rotina dela que foram para o contexto.
+      const validos = new Set(
+        [...(((context.protocol as any)?.rotina_am ?? []) as any[]), ...(((context.protocol as any)?.rotina_pm ?? []) as any[])]
+          .map((s: any) => s?._rowId).filter(Boolean),
+      )
+      for (const k of ['depois_do_passo_id', 'substitui_passo_id']) {
+        const v = result.decisao_rotina[k]
+        result.decisao_rotina[k] = typeof v === 'string' && validos.has(v) ? v : null
+      }
     }
 
     // status "precisa_foto" → NÃO persiste nada. Só devolve o JSON pro app.

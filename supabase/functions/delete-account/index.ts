@@ -12,46 +12,59 @@ const corsHeaders = {
 //   product-scans → foto de produto
 //   coach-images  → fotos enviadas no chat com a NIKS
 //   routine-photos → "foto do dia" ao concluir a rotina da manhã ({user_id}/{AAAA-MM-DD}.jpg)
+//   rotina-lotes   → fotos do scan em lote "Montar minha rotina" ({user_id}/{lote_id}/{n}.jpg)
 //   colecao       → recortes sem fundo dos produtos da "Minha coleção" ({user_id}/{id}.png)
 //
 // `skin-previews` NÃO entra: os arquivos lá são 'preview_{timestamp}.jpg', sem o
 // user id no caminho, e a URL nunca é gravada em tabela — não há como saber de
 // quem é cada um. Quem cuida deles é a `cleanup-skin-previews`, por idade (2h).
-const USER_BUCKETS = ['scans', 'product-scans', 'coach-images', 'routine-photos', 'colecao'] as const
+const USER_BUCKETS = ['scans', 'product-scans', 'coach-images', 'routine-photos', 'colecao', 'rotina-lotes'] as const
 
 const LIST_PAGE_SIZE = 1000
 const DELETE_BATCH_SIZE = 100
+const MAX_NIVEL = 3 // subpastas abaixo de {userId}/ (rotina-lotes usa 1)
 
-/** Lista tudo dentro de `{userId}/` num bucket, paginando. */
+/**
+ * Lista tudo dentro de `{userId}/` num bucket, paginando — INCLUSIVE subpastas
+ * (`rotina-lotes` guarda `{userId}/{lote_id}/{n}.jpg`; os outros buckets são planos).
+ * Sem pasta da usuária no bucket → lista vazia (o Storage devolve [] sem erro).
+ */
 async function listUserFiles(
   supabase: ReturnType<typeof createClient>,
   bucket: string,
   userId: string,
 ): Promise<string[]> {
   const paths: string[] = []
-  let offset = 0
 
-  while (true) {
-    const { data: files, error } = await supabase.storage
-      .from(bucket)
-      .list(userId, { limit: LIST_PAGE_SIZE, offset })
+  async function listar(prefix: string, nivel: number): Promise<void> {
+    let offset = 0
+    while (true) {
+      const { data: files, error } = await supabase.storage
+        .from(bucket)
+        .list(prefix, { limit: LIST_PAGE_SIZE, offset })
 
-    // Um erro aqui NÃO pode virar "não havia arquivos": isso apagaria a conta e
-    // deixaria as fotos para trás em silêncio — o bug que esta função existe para
-    // corrigir. Propaga para o chamador abortar antes de tocar em auth.users.
-    if (error) throw new Error(`list ${bucket}/${userId}: ${error.message}`)
-    if (!files || files.length === 0) break
+      // Um erro aqui NÃO pode virar "não havia arquivos": isso apagaria a conta e
+      // deixaria as fotos para trás em silêncio — o bug que esta função existe para
+      // corrigir. Propaga para o chamador abortar antes de tocar em auth.users.
+      if (error) throw new Error(`list ${bucket}/${prefix}: ${error.message}`)
+      if (!files || files.length === 0) break
 
-    for (const f of files) {
-      if (f.name === '.emptyFolderPlaceholder') continue
-      if (!f.id) continue   // pasta, não arquivo
-      paths.push(`${userId}/${f.name}`)
+      for (const f of files) {
+        if (f.name === '.emptyFolderPlaceholder') continue
+        if (!f.id) {
+          // Pasta: desce (com limite, por segurança contra estrutura inesperada).
+          if (nivel < MAX_NIVEL) await listar(`${prefix}/${f.name}`, nivel + 1)
+          continue
+        }
+        paths.push(`${prefix}/${f.name}`)
+      }
+
+      if (files.length < LIST_PAGE_SIZE) break
+      offset += LIST_PAGE_SIZE
     }
-
-    if (files.length < LIST_PAGE_SIZE) break
-    offset += LIST_PAGE_SIZE
   }
 
+  await listar(userId, 0)
   return paths
 }
 

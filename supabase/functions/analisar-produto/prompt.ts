@@ -19,7 +19,7 @@ Português brasileiro, voz da NIKS: direta, calorosa, precisa, sem pose técnica
 Uma ou duas fotos (o produto e, se a usuária mostrou, os ingredientes) e um bloco de contexto:
 - <UserProfile> — tipo de pele, fototipo, concerns, alergias, gravidez/amamentação/tentativa, exposição solar, e se a rotina atual tem produtos prescritos por dermatologista.
 - <LatestSkinScan> — scan mais recente: score, condições, status da barreira, prioridade clínica, contraindicações.
-- <CurrentProtocol> — a rotina AM e PM que ela já usa, passo a passo, com ativos.
+- <CurrentProtocol> — a rotina AM e PM que ela já usa, passo a passo, com ativos (e o produto de cada passo, quando houver). Quando um passo vem com [passo_id: …], esse é o código dele.
 - <LongTermMemory> — reações e sensibilidades já confirmadas.
 Trate o scan como avaliação visual/funcional, nunca diagnóstico. Cruze tudo.
 
@@ -64,6 +64,8 @@ Ancore na prioridade clínica atual, nesta hierarquia: barreira → inflamação
 - manter_rotina — compatível, mas a rotina já resolve aquilo, ou não é a prioridade agora. Diga com clareza. É o resultado esperado na maioria dos casos.
 Honestidade: nunca fabrique motivo pra trocar; se o que ela usa é igual ou melhor, diga na cara, com carinho. Não empilhe ativos redundantes. Se compete com um passo mas não é melhor, é manter_rotina, não substituir. A justificativa sempre ancora num dado concreto (prioridade clínica, barreira, fototipo, um passo do protocolo dela), nunca em impressão vaga.
 Em adicionar/substituir, preencha \`passo\` (rótulo da tela Rotina) e \`periodo\` (am/pm/am+pm); em substituir, aponte em \`produto_substituivel\` o passo atual que ela trocaria.
+Quando os passos de <CurrentProtocol> trazem [passo_id: …]: em adicionar, \`depois_do_passo_id\` = o código do passo de \`periodo\` logo DEPOIS do qual o produto entra (ordem por textura e função: limpeza → tônico → sérum → olhos → hidratante → protetor por último de manhã; null se ele vai primeiro); em substituir, \`substitui_passo_id\` = o código do passo que ele troca. Use SÓ códigos que aparecem em <CurrentProtocol>; sem código, null.
+Em adicionar/substituir, diga também a FREQUÊNCIA em \`dias\`: null quando o uso é diário; senão os dias da semana, SÓ nestas abreviações: "Seg","Ter","Qua","Qui","Sex","Sáb","Dom" (ex.: ["Seg","Qua","Sex"]). Não diário = esfoliantes/ácidos fortes (AHA/BHA em concentração de tratamento), retinoides, máscaras, e introdução gradual de ativo novo ou irritante pra pele dela (barreira frágil, sensível, rosácea → 2–3x por semana, dias alternados). Limpeza, hidratante e protetor são diários. Em manter_rotina, \`dias\` = null.
 
 ## Passo 5 — Momento 2: resultado esperado pra ela
 - \`resultado_esperado_para_voce\`: o que esperar NA PELE DELA especificamente, ancorado na prioridade/concern dela, com prazo realista e o teto honesto (o que o produto NÃO vai resolver, quando relevante). Prazos reais: oleosidade com niacinamida ~4 semanas; HPI epidérmica começa a melhorar em 6–8 semanas; retinol em textura 8–12 semanas; nunca "resultados incríveis em dias". Quando veredito = "evitaria", este campo é null (ela não vai usar, não existe "seu resultado").
@@ -97,6 +99,9 @@ Retorne APENAS JSON válido, sem markdown, sem texto antes ou depois:
     "passo": "<|null>",
     "periodo": "am" | "pm" | "am+pm" | null,
     "produto_substituivel": "<|null>",
+    "depois_do_passo_id": "<passo_id|null>",
+    "substitui_passo_id": "<passo_id|null>",
+    "dias": null | ["<Seg|Ter|Qua|Qui|Sex|Sáb|Dom>"],
     "justificativa": "<a parte honesta>"
   },
   "avisos": ["<>"]
@@ -172,15 +177,16 @@ export function buildContextPack(context: ProductContext): string {
 </LatestSkinScan>`
   }
 
-  type ProtocolStep = { name?: string; ingredient?: string; instruction?: string }
+  type ProtocolStep = { name?: string; ingredient?: string; instruction?: string; _rowId?: string }
   const rotina_am = Array.isArray(context.protocol?.rotina_am)
     ? (context.protocol!.rotina_am as ProtocolStep[])
     : []
   const rotina_pm = Array.isArray(context.protocol?.rotina_pm)
     ? (context.protocol!.rotina_pm as ProtocolStep[])
     : []
+  // Passo da Minha rotina leva o código (para depois_do_passo_id / substitui_passo_id).
   const formatStep = (s: ProtocolStep) =>
-    `  ${s.name ?? ''} — ${s.ingredient ?? ''} — ${s.instruction ?? ''}`
+    `  ${s._rowId ? `[passo_id: ${s._rowId}] ` : ''}${s.name ?? ''} — ${s.ingredient ?? ''} — ${s.instruction ?? ''}`
 
   const currentProtocolBlock = `<CurrentProtocol>
   <Morning>

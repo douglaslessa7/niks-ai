@@ -59,3 +59,10 @@ enabled = true
 # (secret CATALOG_CUTOUT_SECRET). O app nunca chama.
 verify_jwt = false
 entrypoint = "./functions/recortar-catalogo/index.ts"
+
+[functions.montar-rotina-com-produtos]
+enabled = true
+# Mesmo padrão do analisar-produto: o gateway não barra, e a função verifica o JWT
+# localmente (_shared/jwt.ts) — o user_id vem do token, nunca do corpo.
+verify_jwt = false
+entrypoint = "./functions/montar-rotina-com-produtos/index.ts"

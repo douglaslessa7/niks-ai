@@ -1,3 +1,4 @@
+import { temMinhaRotina, lerMinhaRotina } from '../_shared/minha-rotina.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Context pack para a análise de produto — mesma lógica de montagem do niks-chat
@@ -42,7 +43,14 @@ async function getLastScan(supabase: ReturnType<typeof createSupabaseClient>, us
   return data
 }
 
-async function getProtocol(supabase: ReturnType<typeof createSupabaseClient>, userId: string) {
+// Rotina do contexto: a MINHA ROTINA (a que ela faz) para quem já tem — build nova,
+// `users.minha_rotina_criada_em` — e a IDEAL (`protocolos`) para os demais, como antes.
+// `montar-rotina-com-produtos` pede sempre a ideal (`fonte: 'ideal'`).
+async function getProtocol(supabase: ReturnType<typeof createSupabaseClient>, userId: string, fonte: 'auto' | 'ideal') {
+  if (fonte === 'auto' && await temMinhaRotina(supabase, userId)) {
+    const minha = await lerMinhaRotina(supabase, userId)
+    return { ...minha, _fonte: 'minha_rotina' }
+  }
   const { data } = await supabase
     .from('protocolos')
     .select('*')
@@ -65,13 +73,14 @@ async function getMemories(supabase: ReturnType<typeof createSupabaseClient>, us
 export async function buildContext(
   supabase: ReturnType<typeof createSupabaseClient>,
   userId: string,
+  opts: { rotina?: 'auto' | 'ideal' } = {},
 ): Promise<ProductContext> {
   // Promise.allSettled → se qualquer busca falhar (ex.: usuária sem scan ainda),
   // degrada graciosamente em vez de quebrar a função.
   const results = await Promise.allSettled([
     getProfile(supabase, userId),
     getLastScan(supabase, userId),
-    getProtocol(supabase, userId),
+    getProtocol(supabase, userId, opts.rotina ?? 'auto'),
     getMemories(supabase, userId),
   ])
 

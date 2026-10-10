@@ -30,12 +30,12 @@ export function norm(s?: string | null): string {
 function tokens(s: string): Set<string> {
   return new Set(s.split(' ').filter((t) => t.length > 1))
 }
-function sameBrand(a: string, b: string): boolean {
+export function sameBrand(a: string, b: string): boolean {
   if (!a || !b) return false
   return a === b || a.includes(b) || b.includes(a)
 }
 // Estrito de propósito: casar o produto errado mostraria a foto de OUTRO produto.
-function sameName(a: string, b: string): boolean {
+export function sameName(a: string, b: string): boolean {
   if (!a || !b) return false
   if (a === b) return true
   const A = tokens(a), B = tokens(b)
