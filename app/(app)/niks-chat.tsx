@@ -16,6 +16,8 @@ import { useAppStore } from '../../store/onboarding';
 import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
+import { loteDeHoje } from '../../lib/rotinaLotes';
+import { abrirMontarRotina } from '../../lib/abrirMontarRotina';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NIKS Chat — réplica dos designs 39a (início) e 39b (conversa em andamento) do
@@ -105,6 +107,9 @@ function FadeIn({ children, enabled }: { children: React.ReactNode; enabled: boo
 }
 
 // ── Conteúdo do design ──────────────────────────────────────────────────────
+// 1ª opção da folha: não vira conversa — abre direto a câmera do lote (montar a
+// rotina com os produtos de casa), com o mesmo teto de 1 por dia da aba Rotina.
+const OPCAO_LOTE = 'Monte uma rotina para mim com os produtos que eu tenho em casa.';
 const SUGS = [
   'Apareceu uma espinha no meu rosto. Preciso de ajuda.',
   'Estou vendo o resultado com o meu protocolo?',
@@ -966,6 +971,22 @@ export default function NiksChat() {
   }
 
   // Folha do início (39a): opção marcada OU texto livre (OU foto) + "Enviar".
+  // "Monte uma rotina…": confere o lote de hoje NA HORA do toque (pode ter mudado).
+  const abrindoLote = useRef(false);
+  const tocarOpcaoLote = async () => {
+    if (abrindoLote.current) return;
+    abrindoLote.current = true;
+    haptics.select();
+    try {
+      const uid = await getUserId();
+      if (!uid) return;
+      const hoje = await loteDeHoje(uid).catch(() => null);
+      abrirMontarRotina(router, hoje);
+    } finally {
+      abrindoLote.current = false;
+    }
+  };
+
   const canSubmit = pick !== null || !!freeText.trim() || pendingImages.length > 0
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -1266,6 +1287,23 @@ export default function NiksChat() {
               transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
             }]}
           >
+            {/* 1ª opção: ação direta (sem rádio) — abre a câmera do lote. */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => { void tocarOpcaoLote() }}
+              style={styles.opt}
+              accessibilityRole="button"
+            >
+              <View style={styles.optAcao}>
+                <Svg width={13} height={13} viewBox="0 0 24 24">
+                  <Path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" fill={PINK} />
+                </Svg>
+              </View>
+              <Text style={[styles.optText, { flex: 1, fontWeight: '600' }]} lineBreakStrategyIOS="push-out">{OPCAO_LOTE}</Text>
+              <Svg width={14} height={14} viewBox="0 0 24 24">
+                <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+            </TouchableOpacity>
             {SUGS.map((q, i) => {
               const on = pick === i
               return (
@@ -1273,7 +1311,7 @@ export default function NiksChat() {
                   key={q}
                   activeOpacity={0.85}
                   onPress={() => { haptics.select(); setPick(i); setFreeText('') }}
-                  style={[styles.opt, i > 0 && { borderTopWidth: 1, borderTopColor: HAIR }]}
+                  style={[styles.opt, { borderTopWidth: 1, borderTopColor: HAIR }]}
                 >
                   <View style={[styles.radio, on ? { borderWidth: 2, borderColor: PINK } : { borderWidth: 1.5, borderColor: '#A39A9F' }]}>
                     <View style={[styles.radioDot, { backgroundColor: on ? PINK : 'transparent' }]} />
@@ -1464,6 +1502,7 @@ const styles = StyleSheet.create({
   },
   radio: { width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 8, height: 8, borderRadius: 4 },
+  optAcao: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFE3F0', alignItems: 'center', justifyContent: 'center', marginLeft: -2 },
   optText: { flex: 1, fontSize: 17, lineHeight: 22, letterSpacing: -0.35, color: INK },
   freeField: {
     height: 44, borderRadius: 100, backgroundColor: '#FFFFFF',
