@@ -1,6 +1,8 @@
 # Handoff: "Minha rotina" feita com os produtos dela
 
-Atualizado em 09/10/2026 (fim do dia). Branch: `newdesign2`. **Todo o trabalho foi commitado na `newdesign2` em 10/10/2026** (commits `744f38b` a `0d1d779`).
+Atualizado em 10/10/2026 (noite). Branch: `newdesign2`. **Todo o trabalho está commitado na `newdesign2`** (Fases 1–8: `744f38b` a `0d1d779`; junção com a `douglas-local`: `90b0336`; rodada de 10/10 — tutorial, rotina ideal, fluxo do lote, chat e home: commits seguintes).
+
+**Rodada de 10/10 (resumo):** tutorial da Rotina = réplica do Claude Design 54a/54b (substitui a intro de telas); card e folha da rotina ideal = design 53n/53o; fluxo do lote = design 55a–55j; a 1ª opção do NIKS Chat ("Monte uma rotina para mim com os produtos que eu tenho em casa.") é a ÚNICA entrada permanente do lote (o card "Monte sua rotina com o que você tem" e o link "Escanear meus produtos" saíram da Rotina); observação da IA só no card aberto; anel de progresso no cadeado do scan da home.
 
 A ideia: além da **rotina ideal** (gerada pela IA, tabela `protocolos`), cada usuária tem a **Minha rotina** (tabela `minha_rotina_passos`), que é a que ela faz de verdade. Ela pode editar os passos, escolher produtos da estante, de escaneados ou de recomendados, e um dia vai poder montar a rotina fotografando os produtos que tem em casa.
 
@@ -238,14 +240,14 @@ Mais duas decisões:
 
 **Fase 7 (intro de 3 telas):**
 - **Quando aparece:** na primeira abertura da aba Rotina, **uma vez por conta**, inclusive para quem já usava o app. É controlada por `users.rotina_intro_status` (null = ainda não viu). Só aparece com a Minha rotina e a ideal carregadas.
-- **Componente** [IntroRotina.tsx](components/rotina/IntroRotina.tsx): tela cheia, com as duas telas deslizando e pontinhos de página.
+- **Componente** ~~IntroRotina.tsx (tela cheia, duas telas deslizando)~~ → **substituído em 10/10/2026** pelo tutorial em cima da própria Rotina, [RotinaTutorial.tsx](components/rotina/RotinaTutorial.tsx) — réplica do Claude Design 54a/54b (tela cheia, rotina dela alternando manhã/noite, produtos indo para a moldura de scan). Mesma regra e mesmas 3 opções; ver README, "7 · Intro → tutorial".
   - **Tela 1:** "Essa é a rotina ideal pra sua pele" / "Montada pela IA a partir da sua análise de pele.", com os passos da ideal de manhã e de noite (ícones de categoria) e "Continuar". Para gestantes, os passos com retinoide não aparecem (mesma regra de `lib/rotinaIdeal`).
   - **Tela 2:** "Você não precisa comprar nada pra começar" / "Me mostra os produtos que você tem em casa e eu monto uma rotina eficaz com eles.", com **Escanear meus produtos** / **Não tenho produtos** / **Fazer isso depois** e a seta para voltar.
   - **Tela 3:** é a "Sua rotina está pronta" da Fase 6 (rotina, o que falta da ideal, "Você pode mudar quando quiser").
 - **Escolhas** (gravadas em `rotina_intro_status`):
   - `escanear`: abre a câmera do lote; se já montou hoje, mostra o aviso do teto;
   - `sem_produtos`: fica na rotina ideal com os passos vazios;
-  - `depois`: também fica na rotina ideal, e a Rotina mostra no topo dos passos o card **"Monte sua rotina com o que você tem · Escanear meus produtos ›"**, enquanto ela não montar a rotina no dia. Esse é o caminho visível para escanear depois.
+  - `depois`: também fica na rotina ideal. ~~A Rotina mostrava o card "Monte sua rotina com o que você tem"~~ **Mudou em 10/10/2026: o card saiu da Rotina de vez, em qualquer situação ("Fazer isso depois", "Não tenho produtos" ou desistir no meio do lote). A única entrada permanente para montar a rotina com os produtos de casa é a 1ª opção do NIKS Chat ("Monte uma rotina para mim com os produtos que eu tenho em casa."). As 3 opções do tutorial continuam iguais; o "Escanear meus produtos" do tutorial abre o lote pela mesma função do chat (`lib/abrirMontarRotina.ts`, com o teto de 1 por dia).**
 - **Link "Escanear meus produtos"** abaixo da lista: deixou de ser provisório e virou a entrada permanente. Some quando o card do "depois" está na tela.
 - **Banco:** migração [20261009200000_users_rotina_intro_status.sql](supabase/migrations/20261009200000_users_rotina_intro_status.sql), **aplicada e registrada**: coluna `users.rotina_intro_status` (`escanear` / `sem_produtos` / `depois`, ou null).
 - **Testado no simulador:**
@@ -399,7 +401,7 @@ As migrações foram aplicadas direto no banco de produção e registradas no hi
 
 - ~~Notificação conta todos os passos~~ **Resolvido de outro jeito:** a notificação não mostra mais o número de passos.
 1. **Teste do Douglas da Fase 8 e do chat novo:** pedir uma mudança à NIKS, ver o cartão fixo, aprovar e ver a confirmação e a Rotina mudar; pedir para reorganizar a manhã ou a noite inteira; responder "sim" por texto. E o "Adicionar à minha rotina" num scan cuja análise sugira adicionar.
-2. **Emoji aparecendo como "?"** no chat ("oi, Amanda! 👋") e em outros textos com a fonte do app: já acontecia antes; a fonte não traz emoji e o iPhone não está usando a reserva. Vale investigar.
+2. **Emoji aparecendo como "?"** ("oi, Amanda! 👋" no chat): **diagnosticado em 10/10/2026: é do SIMULADOR (iOS 26.3), não do app.** O texto do app está certo (U+1F44B inteiro), sem fonte própria, e tirar `letterSpacing`/`lineBreakStrategyIOS` não muda nada; o próprio Safari do simulador mostra o 👋 como "?". Falta só conferir num iPhone de verdade (TestFlight); se lá aparecer certo, não há nada a corrigir.
 3. **App muito antigo, sem cartão** (`supportsProtocolCard` ausente): a regra "toque em Aprovar" vale para todos, mas nesse app não existe botão (a aprovação é por texto). Provavelmente ninguém mais usa; conferir antes de remover o caminho.
 4. **Push do lote num iPhone de verdade** (no simulador não chega push) e o caminho de erro ("Tentar de novo") da Fase 6.
 5. **Publicar o `generate-protocol` de novo quando a build nova sair:** a versão do repositório (com a mudança do onboarding) precisa ir ao ar junto com a build nova. A mudança traz:
