@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, ScrollView, Image, TouchableOpacity, Animated, Easing, Modal, Alert, useWindowDimensions,
+  View, Text, ScrollView, Image, TouchableOpacity, Animated, Easing, Modal, Alert,
   ActivityIndicator, StyleSheet, LayoutAnimation, Platform, UIManager,
   type StyleProp, type TextStyle,
 } from 'react-native';
@@ -50,11 +50,11 @@ import {
 import EscolherProdutoSheet from '../../components/rotina/EscolherProdutoSheet';
 import StepIcon from '../../components/rotina/StepIcon';
 import RotinaIdealSheet from '../../components/rotina/RotinaIdealSheet';
-import IntroRotina, { type EscolhaIntro } from '../../components/rotina/IntroRotina';
+import RotinaTutorial, { type EscolhaIntro } from '../../components/rotina/RotinaTutorial';
 import { tipoDoPasso, ROTULO_TIPO } from '../../lib/tipoPasso';
 import { diasDoPasso, seloFrequencia, fraseFrequencia } from '../../lib/frequencia';
-import { useLote } from '../../lib/loteProdutos';
 import { loteDeHoje } from '../../lib/rotinaLotes';
+import { abrirMontarRotina } from '../../lib/abrirMontarRotina';
 import { carregarRotinaIdeal, marcarIdealVista, calcularCobertura, type RotinaIdeal } from '../../lib/rotinaIdeal';
 import ListaEditavel, { type ItemEditavel } from '../../components/rotina/ListaEditavel';
 import PassoSheet, { type PassoSheetModo } from '../../components/rotina/PassoSheet';
@@ -97,7 +97,6 @@ const PRODUCT_BG = '#FFFFFF';
 const NO_PRODUCT_BG = '#FFF5F9';
 // Card da rotina ideal recolhido: o quanto ele fica deslocado para a direita (a borda
 // esquerda vai de 18 a 104 pt da tela).
-const IDEAL_RECOLHIDO_X = 86;
 
 const DEFAULT_AM = 7 * 60;
 const DEFAULT_PM = 21 * 60;
@@ -108,11 +107,6 @@ type RawStep = {
   id?: number; name?: string; ingredient?: string; instruction?: string;
   steps?: string[]; color?: string; waitTime?: string | null; product_suggestions?: string[];
 };
-
-// "A, B e C".
-function juntarNomes(n: string[]): string {
-  return n.length <= 1 ? (n[0] ?? '') : `${n.slice(0, -1).join(', ')} e ${n[n.length - 1]}`;
-}
 
 // "Como fazer": prioriza a instruction clínica; se ausente, junta os steps.
 function howOf(raw: RawStep): string {
@@ -512,10 +506,7 @@ export default function Protocolo() {
     // Abriu a ideal: o aviso "mudou" some.
     if (ideal?.mudou) void getUserId().then((uid) => { if (uid) void marcarIdealVista(uid); });
   };
-  // O card fica encostado na borda direita. No toque, ele sai do canto: desliza para a
-  // esquerda, se expande até o meio da tela e, em seguida, abre a folha da ideal. Ao
-  // fechar a folha, volta para o canto. Sair da aba também recolhe.
-  // Lote "Montar minha rotina" de hoje (Fase 6) — o link provisório segue o estado dele.
+  // Lote "Montar minha rotina" de hoje (Fase 6) — o teto de 1 por dia do "Escanear meus produtos" do tutorial.
   const fetchLoteHoje = useCallback(async () => {
     const uid = await getUserId();
     return uid ? loteDeHoje(uid) : null;
@@ -548,51 +539,19 @@ export default function Protocolo() {
       if (error) console.warn('[rotina] gravar intro falhou:', error.message);
       invalidateCache(`rotinaintro:${uid}`);
     }
-    if (e === 'escanear') {
-      if (loteHoje) Alert.alert('Você já montou uma rotina hoje', 'Dá para montar uma por dia. Tente de novo amanhã.');
-      else { useLote.getState().limpar(); router.push('/(scan)/lote-camera' as any); }
-    }
+    // "Escanear meus produtos": a mesma entrada da opção do NIKS Chat (teto de 1 por dia).
+    if (e === 'escanear') abrirMontarRotina(router, loteHoje);
   };
 
-  const tocarLoteLink = () => {
-    haptics.select();
-    if (loteHoje?.status === 'processando') {
-      router.push({ pathname: '/(scan)/lote-montando', params: { id: loteHoje.id } } as any);
-    } else if (loteHoje?.status === 'pronto' && !loteHoje.visto_em) {
-      router.push({ pathname: '/(scan)/lote-resultado', params: { id: loteHoje.id } } as any);
-    } else if (loteHoje) {
-      Alert.alert('Você já montou uma rotina hoje', 'Dá para montar uma por dia. Tente de novo amanhã.');
-    } else {
-      useLote.getState().limpar();
-      router.push('/(scan)/lote-camera' as any);
-    }
-  };
 
-  // Fluidez: o card tem SEMPRE a largura de expandido (margens 18) e, recolhido, fica
-  // deslocado para a direita (translateX) com um pedaço além da borda da tela. Só o
-  // transform anima → roda no driver nativo, sem recalcular layout a cada quadro, e o
-  // texto não muda de quebra no meio do movimento (largura do texto fixa = a do
-  // recolhido). A folha começa a subir enquanto o card ainda desliza (um movimento só).
-  const { width: winW } = useWindowDimensions();
-  const idealAnim = useRef(new Animated.Value(0)).current;
-  const idealAnimando = useRef(false);
-  useFocusEffect(useCallback(() => () => { idealAnim.setValue(0); idealAnimando.current = false; }, [idealAnim]));
+  // Card da ideal (design 53n/53o): o toque abre a folha direto, sem deslizar.
   const tocarCardIdeal = (mudanca: boolean) => {
-    if (idealAnimando.current) return;
-    idealAnimando.current = true;
     haptics.tap(); // (abrirIdeal não repete o haptic)
-    Animated.spring(idealAnim, { toValue: 1, damping: 20, stiffness: 190, mass: 1, useNativeDriver: true })
-      .start(() => { idealAnimando.current = false; });
-    setTimeout(() => abrirIdeal(mudanca), 110);
+    abrirIdeal(mudanca);
   };
   const fecharIdeal = () => {
     setIdealAberta(false);
     void refreshIdeal();
-    // Volta para o canto enquanto a folha desce, com a mesma mola.
-    Animated.sequence([
-      Animated.delay(90),
-      Animated.spring(idealAnim, { toValue: 0, damping: 22, stiffness: 160, mass: 1, useNativeDriver: true }),
-    ]).start();
   };
 
   // Progresso do dia (por CÓDIGO do passo) + sequência.
@@ -679,6 +638,18 @@ export default function Protocolo() {
   // código sintético e sem produto — é só o vão até a cópia ser criada).
   const minhaList = minha ? (am ? minha.am : minha.pm) : [];
   const usandoMinha = minhaList.length > 0;
+
+  // ── Tutorial de primeiro acesso (réplica do Claude Design 54a/54b) ──────────
+  // Mesma regra da intro antiga: uma vez por conta (`users.rotina_intro_status` null),
+  // com a Minha rotina e a ideal carregadas. As 3 opções gravam pelo `escolherIntro`.
+  const tutorialVisivel = introDb !== undefined && introDb !== null && introStatus === null
+    && usandoMinha && !!ideal && (ideal.am.length + ideal.pm.length) > 0
+    && loadState === 'ready' && !editando;
+  // O tutorial cobre a tela inteira; a navbar (no `_layout`) ficaria por cima: some enquanto ele está aberto.
+  useFocusEffect(useCallback(() => {
+    setTabBarVisible(!tutorialVisivel);
+  }, [tutorialVisivel, setTabBarVisible]));
+
   const rawList: RawStep[] = usandoMinha
     ? minhaList.map((p) => ({ name: p.nome ?? '', ingredient: p.ingrediente ?? '', instruction: p.instrucao ?? '', steps: p.comoUsar ?? undefined }))
     : (am ? amRaw : pmRaw);
@@ -722,7 +693,7 @@ export default function Protocolo() {
   const cardIdeal = ideal && idealDoPeriodo.length
     ? (() => {
       const cob = calcularCobertura(idealDoPeriodo, minhaList);
-      return { mudou: ideal.mudou, faltam: idealDoPeriodo.filter((p) => !cob.has(p.indice)).map((p) => p.nome) };
+      return { mudou: ideal.mudou, total: idealDoPeriodo.length, faltam: idealDoPeriodo.filter((p) => !cob.has(p.indice)).map((p) => p.nome) };
     })()
     : null;
 
@@ -1080,20 +1051,6 @@ export default function Protocolo() {
             )}
 
             {/* ── Seus passos (linha do tempo) ─────────────────────────────── */}
-            {/* "Fazer isso depois" na intro (Fase 7): caminho VISÍVEL para escanear
-                depois, no topo dos passos, enquanto ela não montar a rotina. */}
-            {introStatus === 'depois' && !loteHoje && usandoMinha && !editando && (
-              <TouchableOpacity activeOpacity={0.85} onPress={tocarLoteLink} style={styles.cardEscanear}>
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF0F6', alignItems: 'center', justifyContent: 'center' }}>
-                  <StepIcon tipo={null} size={22} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', letterSpacing: -0.3, color: INK }}>Monte sua rotina com o que você tem</Text>
-                  <Text style={{ marginTop: 2, fontSize: 14, lineHeight: 19, color: SOFT }}>Me mostra seus produtos e eu monto uma rotina eficaz com eles.</Text>
-                  <Text style={{ marginTop: 6, fontSize: 15, fontWeight: '600', color: PINK_TEXT }}>Escanear meus produtos ›</Text>
-                </View>
-              </TouchableOpacity>
-            )}
             <View style={styles.listHead}>
               <Text style={styles.sectionTitle}>{am ? 'Seus passos · Manhã' : 'Seus passos · Noite'}</Text>
               {editando ? (
@@ -1216,11 +1173,6 @@ export default function Protocolo() {
                               <Text style={styles.seloDiasTxt}>{seloFrequencia(s.dias, s.hoje)}</Text>
                             </View>
                           )}
-                          {!!s.aviso && (
-                            <Text style={[styles.stepAviso, s.aviso.nivel === 'forte' && { color: '#B42318' }]} numberOfLines={2}>
-                              {s.aviso.texto}
-                            </Text>
-                          )}
                         </View>
                         <Chevron open={open} />
                       </TouchableOpacity>
@@ -1228,6 +1180,12 @@ export default function Protocolo() {
                         <View style={styles.stepBody}>
                           {!!s.dias && <Text style={[styles.stepInstruction, { fontWeight: '700', color: INK }]}>{fraseFrequencia(s.dias)}</Text>}
                           <Text style={[styles.stepInstruction, !!s.dias && { paddingTop: 0, marginTop: -6 }]} lineBreakStrategyIOS="push-out">{s.instruction}</Text>
+                          {/* Observação da IA sobre o produto dela: só com o card aberto (pedido do usuário). */}
+                          {!!s.aviso && (
+                            <Text style={[styles.stepAviso, s.aviso.nivel === 'forte' && { color: '#B42318' }]}>
+                              {s.aviso.texto}
+                            </Text>
+                          )}
                           <TouchableOpacity
                             activeOpacity={0.7}
                             onPress={() => abrirEscolher(s.i)}
@@ -1258,52 +1216,29 @@ export default function Protocolo() {
               {/* Scan em lote "Montar minha rotina com meus produtos": entrada permanente
                   abaixo da lista (a intro da Fase 7 é a primeira; quem escolheu "Fazer
                   isso depois" vê o card no topo em vez deste link). */}
-              {/* Segue o lote de hoje (Fase 6): montando → acompanhar; pronto e ainda não
-                  visto → "Sua rotina está pronta"; depois → o teto de 1 por dia. */}
-              {!editando && usandoMinha && !(introStatus === 'depois' && !loteHoje) && <TouchableOpacity
-                activeOpacity={0.6}
-                onPress={tocarLoteLink}
-                style={{ marginLeft: -14, marginRight: -18, height: 40, alignItems: 'center', justifyContent: 'center' }}
-              >
-                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>
-                  {loteHoje?.status === 'processando'
-                    ? 'Montando sua rotina…'
-                    : loteHoje?.status === 'pronto' && !loteHoje.visto_em
-                      ? 'Ver a rotina montada com seus produtos'
-                      : 'Escanear meus produtos'}
-                </Text>
-              </TouchableOpacity>}
-              {/* Card da rotina ideal (Fase 4): o que falta da ideal neste período, ou
-                  "cobre tudo", ou o aviso de que a ideal mudou com o scan novo. */}
+              {/* Card da rotina ideal — réplica do Claude Design (NiksIdealFlo 53n/53o, card
+                  "simples"): encostado à direita (sai 24 além da borda), abre a folha no toque.
+                  Margens do design (102 / -24 da tela) descontando o padding da lista (14 / 18). */}
               {!editando && usandoMinha && !!cardIdeal && (
-                <Animated.View style={[styles.idealCard, {
-                  transform: [{ translateX: idealAnim.interpolate({ inputRange: [0, 1], outputRange: [IDEAL_RECOLHIDO_X, 0] }) }],
-                }]}>
                 <TouchableOpacity
                   activeOpacity={0.85}
                   onPress={() => tocarCardIdeal(cardIdeal.mudou)}
-                  style={{ padding: 16 }}
+                  style={styles.idealCard}
                 >
-                <View style={{ width: winW - 18 - IDEAL_RECOLHIDO_X - 32 }}>
-                  {cardIdeal.mudou ? (
-                    <Text style={styles.idealTitulo}>Sua rotina ideal mudou com o novo scan</Text>
-                  ) : cardIdeal.faltam.length ? (
-                    <Text style={styles.idealTitulo}>
-                      {cardIdeal.faltam.length === 1 ? 'Falta 1 passo pra sua pele: ' : `Faltam ${cardIdeal.faltam.length} passos pra sua pele: `}
-                      <Text style={styles.idealNomes}>{juntarNomes(cardIdeal.faltam)}</Text>
-                    </Text>
-                  ) : (
-                    <Text style={styles.idealTitulo}>{'Sua rotina cobre tudo o que sua pele precisa\u00A0✓'}</Text>
-                  )}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
+                  <Text style={styles.idealTitulo}>
+                    {cardIdeal.mudou
+                      ? 'Sua rotina ideal mudou com o novo scan'
+                      : cardIdeal.faltam.length
+                        ? `Sua rotina já tem ${cardIdeal.total - cardIdeal.faltam.length} dos ${cardIdeal.total} passos ideais para você\u00A0✓`
+                        : 'Sua rotina cobre tudo que a sua pele precisa\u00A0✓'}
+                  </Text>
+                  <View style={{ height: 24, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={styles.idealLink}>{cardIdeal.mudou ? 'Ver o que mudou' : 'Ver rotina ideal'}</Text>
-                    <Svg width={14} height={14} viewBox="0 0 24 24">
-                      <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                    <Svg width={13} height={13} viewBox="0 0 24 24">
+                      <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK_TEXT} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
                     </Svg>
                   </View>
-                </View>
                 </TouchableOpacity>
-                </Animated.View>
               )}
             </View>
 
@@ -1618,11 +1553,8 @@ export default function Protocolo() {
       />
 
       {/* Folha "Escolher produto" (Fase 2). Ao escolher, recarrega a Minha rotina. */}
-      <IntroRotina
-        visivel={introDb !== undefined && introDb !== null && introStatus === null && usandoMinha && !!ideal && (ideal.am.length + ideal.pm.length) > 0}
-        ideal={ideal ?? null}
-        onEscolha={escolherIntro}
-      />
+      {/* Tutorial de primeiro acesso (réplica do Claude Design 54a/54b; substitui a intro de telas). */}
+      {tutorialVisivel && !!minha && <RotinaTutorial minha={minha} onEscolha={escolherIntro} />}
       <RotinaIdealSheet
         aberta={idealAberta}
         periodoInicial={period}
@@ -1712,22 +1644,15 @@ const styles = StyleSheet.create({
     shadowColor: PINK, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 5,
   },
   stepCard: { flex: 1, minWidth: 0, marginBottom: 10, backgroundColor: '#FFFFFF', borderRadius: 13 },
-  // Card "Monte sua rotina com o que você tem" (Fase 7, quem escolheu "Fazer isso depois").
-  cardEscanear: {
-    marginHorizontal: 18, marginTop: 22, flexDirection: 'row', gap: 12, padding: 14, borderRadius: 16,
-    backgroundColor: '#FFFFFF', shadowColor: '#783C48', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6,
-  },
-  // Card da rotina ideal (Fase 4), abaixo dos passos.
+  // Card da rotina ideal (design 53n/53o, card "simples"), abaixo dos passos.
   idealCard: {
-    // Geometria do EXPANDIDO (margens 18 dos dois lados: marginLeft 4 + paddingLeft 14
-    // da lista). Recolhido = o mesmo card deslocado IDEAL_RECOLHIDO_X para a direita,
-    // com a ponta direita (e os cantos dela) além da borda da tela.
-    marginTop: 14, marginLeft: 4, borderRadius: 13, backgroundColor: '#FFFFFF',
+    marginTop: 26, marginLeft: 102 - 14, marginRight: -24 - 18,
+    paddingTop: 16, paddingBottom: 16, paddingLeft: 16, paddingRight: 40, gap: 8,
+    borderRadius: 13, backgroundColor: '#FFFFFF',
     shadowColor: '#783C48', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 1,
   },
-  idealTitulo: { fontSize: 16, fontWeight: '600', lineHeight: 21, letterSpacing: -0.3, color: INK },
-  idealNomes: { fontWeight: '400', color: SOFT },
-  idealLink: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: PINK_TEXT },
+  idealTitulo: { fontSize: 17, fontWeight: '500', lineHeight: 21, letterSpacing: -0.4, color: INK },
+  idealLink: { fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT },
   stepCardOpen: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 9 },
   stepCardClosed: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 1 },
   tile: { width: 52, height: 52, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
@@ -1746,7 +1671,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.5)',
   },
   // Aviso do produto pra pele dela (Fase 2): leve em rosa escuro, forte em vermelho.
-  stepAviso: { marginTop: 3, fontSize: 13, fontWeight: '500', lineHeight: 17, letterSpacing: -0.1, color: PINK_DEEP },
+  stepAviso: { fontSize: 13, fontWeight: '500', lineHeight: 17, letterSpacing: -0.1, color: PINK_DEEP },
   stepNameDone: { color: MUTED, textDecorationLine: 'line-through' },
   stepBody: { paddingTop: 2, paddingHorizontal: 14, paddingBottom: 14, gap: 12, borderTopWidth: 1, borderTopColor: '#F3EDF0' },
   stepInstruction: { paddingTop: 12, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, color: BODY },
