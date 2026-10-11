@@ -1,34 +1,34 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Aviso dentro do app do "Montar minha rotina com meus produtos" (plano da Rotina,
 // Fase 6). Vive no layout do (app) — por cima de qualquer aba, como irmão da navbar.
-//   · Lote que terminou e ela ainda não viu → cartão no topo: "Sua rotina está pronta
-//     · Ver" (ou "Não deu para montar sua rotina · Ver"). Tocar abre o resultado / a
-//     tela de erro; o x dispensa (marca como visto). A Minha rotina já foi trocada no
-//     servidor — o aviso só conta que ficou pronta.
+//   · Lote que terminou e ela ainda não viu → o aviso do Claude Design (55g) desce do
+//     topo: "NIKS · agora", as fotos dos produtos usados, "Sua rotina está pronta ·
+//     Montei com K dos seus N produtos" + "Ver" (ou "Não deu para montar sua rotina ·
+//     Tentar"). "Ver" abre o resultado / a tela de erro; deslizar para cima dispensa
+//     (marca como visto). A Minha rotina já foi trocada no servidor.
 //   · Enquanto há lote processando, confere a cada 5 s; fora isso, ao abrir o app e ao
 //     voltar para ele.
 //   · Toque no PUSH do lote (`data.type === 'rotina_lote'`), com o app aberto, em
 //     segundo plano ou fechado → abre o resultado (ou a tela de erro / "Montando…").
 // ─────────────────────────────────────────────────────────────────────────────
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Animated, Easing, AppState } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, Animated, Easing, AppState, PanResponder, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image as ExpoImage } from 'expo-image';
 import * as Notifications from 'expo-notifications';
-import Svg, { Path } from 'react-native-svg';
 import { useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 import { invalidateCache } from '../../lib/cache';
-import { buscarLote, lotePendente, marcarVisto, type Lote } from '../../lib/rotinaLotes';
+import { buscarLote, fotosDoLote, lotePendente, marcarVisto, type Lote } from '../../lib/rotinaLotes';
+import { usePalco } from '../../lib/palco';
 
 const INK = '#121212';
-const PINK_TEXT = '#E8468F';
 const SOFT = '#6E6468';
 const INTERVALO_MS = 5000;
 
 export default function AvisoLote() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const palco = usePalco();
   const userId = useUserId();
   const [lote, setLote] = useState<Lote | null>(null);
   const anim = useRef(new Animated.Value(0)).current;
@@ -80,55 +80,104 @@ export default function AvisoLote() {
   }, [abrir]);
 
   const visivel = !!lote && lote.status !== 'processando' && !lote.visto_em;
+
+  // Fotos dos produtos que entraram na rotina (até 3, empilhadas como no design).
+  const [fotos, setFotos] = useState<Record<number, string>>({});
+  const fotosDe = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lote || lote.status !== 'pronto' || fotosDe.current === lote.id) return;
+    fotosDe.current = lote.id;
+    void fotosDoLote(lote).then(setFotos).catch(() => {});
+  }, [lote]);
+
+  // Entrada: desce do topo (.6s, cubic-bezier(.2,.9,.25,1.12) — passa um pouco e volta).
   useEffect(() => {
     if (visivel) haptics.action();
-    Animated.timing(anim, { toValue: visivel ? 1 : 0, duration: visivel ? 380 : 220, easing: Easing.bezier(0.2, 0.8, 0.2, 1), useNativeDriver: true }).start();
+    Animated.timing(anim, {
+      toValue: visivel ? 1 : 0, duration: visivel ? 600 : 300,
+      easing: visivel ? Easing.bezier(0.2, 0.9, 0.25, 1.12) : Easing.in(Easing.quad), useNativeDriver: true,
+    }).start();
   }, [visivel, anim]);
+
+  // Deslizar para cima dispensa (marca como visto) — o design não tem X.
+  const arraste = useRef(new Animated.Value(0)).current;
+  const dispensar = useCallback(() => {
+    const l = lote;
+    if (!l) return;
+    Animated.timing(arraste, { toValue: -220, duration: 200, useNativeDriver: true }).start(() => {
+      setLote(null);
+      arraste.setValue(0);
+    });
+    void marcarVisto(l.id);
+  }, [lote, arraste]);
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => g.dy < -6 && Math.abs(g.dy) > Math.abs(g.dx),
+    onPanResponderMove: (_, g) => arraste.setValue(Math.min(0, g.dy)),
+    onPanResponderRelease: (_, g) => {
+      if (g.dy < -40 || g.vy < -0.5) { haptics.tap(); dispensar(); }
+      else Animated.spring(arraste, { toValue: 0, useNativeDriver: true }).start();
+    },
+  }), [arraste, dispensar]);
 
   if (!lote || lote.status === 'processando') return null;
   const ok = lote.status === 'pronto';
+  const r = lote.resultado;
+  const naRotina = r ? [...new Set([...r.rotina.am, ...r.rotina.pm].map((p) => p.produto_indice))] : [];
+  const total = lote.caminhos.length;
+  const usados = naRotina.slice(0, 3);
 
   return (
-    <Animated.View
-      pointerEvents={visivel ? 'box-none' : 'none'}
-      style={{
-        position: 'absolute', top: insets.top + 8, left: 14, right: 14,
-        opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-24, 0] }) }],
-      }}
-    >
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={() => { haptics.tap(); setLote(null); abrir(lote); }}
-        style={{
-          flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, backgroundColor: '#FFFFFF',
-          shadowColor: '#783C48', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.16, shadowRadius: 16, elevation: 8,
-        }}
+    <View pointerEvents="box-none" style={palco.style}>
+      <Animated.View
+        {...pan.panHandlers}
+        pointerEvents={visivel ? 'box-none' : 'none'}
+        style={[st.toast, { transform: [{ translateY: Animated.add(anim.interpolate({ inputRange: [0, 1], outputRange: [-170, 0] }), arraste) }] }]}
       >
-        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF0F6', alignItems: 'center', justifyContent: 'center' }}>
-          <Svg width={20} height={20} viewBox="0 0 24 24">
-            {ok
-              ? <Path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" fill="none" stroke={PINK_TEXT} strokeWidth={1.8} strokeLinejoin="round" />
-              : <Path d="M12 8v5M12 16.5v.01M10.3 3.9L2.6 17.3A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.7L13.7 3.9a2 2 0 0 0-3.4 0z" fill="none" stroke={PINK_TEXT} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />}
-          </Svg>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Image source={LOGO} style={{ width: 16, height: 16 }} resizeMode="contain" />
+          <Text style={st.origem}>NIKS · agora</Text>
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', letterSpacing: -0.3, color: INK }}>
-            {ok ? 'Sua rotina está pronta' : 'Não deu para montar sua rotina'}
-          </Text>
-          <Text style={{ marginTop: 1, fontSize: 14, color: SOFT }} numberOfLines={1}>
-            {ok ? 'Montei com seus produtos.' : 'Suas fotos estão guardadas.'}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          {ok && usados.length > 0 && (
+            <View style={{ flexDirection: 'row' }}>
+              {usados.map((n, i) => (
+                <View key={n} style={[st.bolinha, { marginLeft: i ? -12 : 0, backgroundColor: TINT[i % TINT.length] }]}>
+                  {!!fotos[n] && <ExpoImage source={{ uri: fotos[n] }} style={{ width: 24, height: 24 }} contentFit="contain" />}
+                </View>
+              ))}
+            </View>
+          )}
+          <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+            <Text style={st.titulo}>{ok ? 'Sua rotina está pronta' : 'Não deu para montar sua rotina'}</Text>
+            <Text style={st.sub}>
+              {ok
+                ? (naRotina.length ? `Montei com ${naRotina.length} dos seus ${total} produtos.` : 'Veja o que achei dos seus produtos.')
+                : 'Suas fotos estão guardadas.'}
+            </Text>
+          </View>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setLote(null); abrir(lote); }} style={st.ver}>
+            <Text style={st.verTxt}>{ok ? 'Ver' : 'Tentar'}</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={{ fontSize: 15, fontWeight: '700', color: PINK_TEXT }}>{ok ? 'Ver' : 'Tentar'}</Text>
-        <TouchableOpacity
-          onPress={() => { haptics.tap(); const l = lote; setLote(null); void marcarVisto(l.id); }}
-          hitSlop={10}
-          accessibilityLabel="Dispensar"
-          style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={SOFT} strokeWidth={2.6} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
+
+// Fundo das bolinhas dos produtos, na ordem do design.
+const TINT = ['#E2F1EF', '#E3EEF8', '#FFF1D6'];
+const LOGO = require('../../assets/home/score-logo-pink.png');
+
+const st = {
+  toast: {
+    position: 'absolute' as const, left: 10, right: 10, top: 50, zIndex: 60, backgroundColor: '#FFFFFF', borderRadius: 22,
+    paddingTop: 12, paddingBottom: 12, paddingRight: 12, paddingLeft: 14, gap: 8,
+    shadowColor: '#781E46', shadowOffset: { width: 0, height: 18 }, shadowOpacity: 0.22, shadowRadius: 20, elevation: 12,
+  },
+  origem: { fontSize: 12, fontWeight: '600' as const, letterSpacing: 0.2, color: '#8A8387' },
+  bolinha: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: '#FFFFFF', alignItems: 'center' as const, justifyContent: 'center' as const, overflow: 'hidden' as const },
+  titulo: { fontSize: 16, fontWeight: '600' as const, letterSpacing: -0.35, color: INK },
+  sub: { fontSize: 14, letterSpacing: -0.2, color: SOFT },
+  ver: { height: 34, paddingHorizontal: 16, borderRadius: 100, backgroundColor: '#FF5EA8', alignItems: 'center' as const, justifyContent: 'center' as const },
+  verTxt: { fontSize: 15, fontWeight: '600' as const, letterSpacing: -0.25, color: '#FFFFFF' },
+};

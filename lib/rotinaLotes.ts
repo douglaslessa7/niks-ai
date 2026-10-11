@@ -12,6 +12,7 @@
 // Teto: 1 lote por dia (fuso de Brasília); lote com erro não conta.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
+import { getScanCutouts } from './scanCutouts';
 
 export type StatusLote = 'processando' | 'pronto' | 'erro';
 
@@ -111,4 +112,35 @@ export async function tentarDeNovo(lote: Lote): Promise<string> {
 
 export async function marcarVisto(id: string): Promise<void> {
   await supabase.from('rotina_lotes').update({ visto_em: new Date().toISOString() }).eq('id', id).is('visto_em', null);
+}
+
+/**
+ * Foto de cada produto do lote (por índice, 1…): o RECORTE sem fundo do scan que a
+ * função grava para cada produto (`product_scans.client_scan_id = lote:{id}:{n}`),
+ * quando existir; senão, a foto só da frente (`{n}-frente.jpg`) ou a combinada.
+ */
+export async function fotosDoLote(lote: Lote): Promise<Record<number, string>> {
+  const out: Record<number, string> = {};
+  // Fotos do bucket (privado → URL assinada): frente sozinha; sem ela, a combinada.
+  const frentes = lote.caminhos.map((c) => c.replace(/\.jpg$/, '-frente.jpg'));
+  const [{ data: f }, { data: c }] = await Promise.all([
+    supabase.storage.from('rotina-lotes').createSignedUrls(frentes, 3600),
+    supabase.storage.from('rotina-lotes').createSignedUrls(lote.caminhos, 3600),
+  ]);
+  lote.caminhos.forEach((_, i) => {
+    const url = (f ?? [])[i]?.signedUrl ?? (c ?? [])[i]?.signedUrl ?? null;
+    if (url) out[i + 1] = url;
+  });
+  // Recortes (por cima das fotos, quando prontos).
+  const { data: scans } = await supabase
+    .from('product_scans').select('id, client_scan_id').like('client_scan_id', `lote:${lote.id}:%`);
+  if (scans?.length) {
+    const rec = await getScanCutouts(scans.map((s: any) => s.id));
+    scans.forEach((s: any) => {
+      const n = Number(String(s.client_scan_id).split(':')[2]);
+      const url = rec[s.id]?.url;
+      if (n && url) out[n] = url;
+    });
+  }
+  return out;
 }

@@ -1,18 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Revisão do scan em lote (plano da Rotina, Fase 5 — decisão 4). Mostra as imagens
-// combinadas que vão para a IA (tocar abre em tela cheia), com:
-//   · produto sem rótulo → "Precisão baixa" + "Sem a lista de ingredientes, essa
-//     análise é menos exata" + "Adicionar foto do rótulo";
-//   · remover produto; "Adicionar outro produto" (até 7; no limite: "Você pode
-//     adicionar mais depois pela estante");
-//   · "Pronto, montar minha rotina" → envia as imagens para o bucket `rotina-lotes` e
-//     começa o lote no servidor (lib/rotinaLotes) → "Montando sua rotina…".
-//     Teto do dia atingido → aviso, e as fotos enviadas são apagadas.
+// Revisão do scan em lote — réplica do Claude Design (`NiksLoteFlo`, tela 55e).
+// "Seus produtos · N de 7 · ainda cabem X": cards em 2 colunas (foto da frente),
+//   · com rótulo → "✓ Frente e rótulo";
+//   · sem rótulo → selo "Sem rótulo" + "A análise fica menos precisa." + "Adicionar
+//     rótulo" (abre a câmera direto no rótulo daquele produto);
+//   · X remove na hora; "Adicionar produto" (tracejado) volta à câmera (até 7).
+// "Montar minha rotina" → envia as imagens para o bucket `rotina-lotes` e começa o lote
+// no servidor (lib/rotinaLotes) → "Montando sua rotina". Teto do dia → aviso, e as
+// fotos enviadas são apagadas. A seta pergunta "Sair do scan?" (é a saída do fluxo).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Modal, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage } from 'expo-image';
 import Svg, { Path } from 'react-native-svg';
 import { getUserId } from '../../lib/currentUser';
@@ -24,40 +25,46 @@ import { supabase } from '../../lib/supabase';
 const INK = '#121212';
 const PINK = '#FF5EA8';
 const PINK_TEXT = '#E8468F';
-const MUTED = '#8A8385';
+const MUTED = '#8A8387';
 const SOFT = '#6E6468';
+// Fundo do quadradinho de cada produto, na ordem do design.
+const TINT = ['#E2F1EF', '#E3EEF8', '#FFF1D6', '#EEE5F6', '#E3EEF8', '#FDE4EE', '#FFEFD9'];
 
 export default function LoteRevisao() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const produtos = useLote((s) => s.produtos);
   const remover = useLote((s) => s.remover);
   const limpar = useLote((s) => s.limpar);
-  const [ampliada, setAmpliada] = useState<string | null>(null);
   const [envio, setEnvio] = useState(false);
 
-  const cardW = Math.floor((width - 20 * 2 - 12) / 2);
-  const cheio = produtos.length >= MAX_PRODUTOS_LOTE;
+  const count = produtos.length;
+  // Arredondado para baixo: folga zero no flexWrap quebra a linha (Fabric — README, decisão 29).
+  const colW = Math.floor((width - 18 * 2 - 10) / 2);
 
   const voltarParaCamera = () => {
     haptics.tap();
-    // Veio da câmera → volta para ela; veio direto (7º produto) → abre de novo.
     if (router.canGoBack()) router.back();
     else router.replace('/(scan)/lote-camera' as any);
   };
 
-  const tirar = (id: string, n: number) => {
+  // A seta é a saída do fluxo (o X da câmera traz para cá).
+  const sair = () => {
     haptics.tap();
-    Alert.alert(`Remover o produto ${n}?`, undefined, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Remover', style: 'destructive', onPress: () => remover(id) },
-    ]);
+    if (!count) { router.dismissAll(); return; }
+    Alert.alert(
+      'Sair do scan?',
+      `Você vai perder ${count === 1 ? 'o produto fotografado' : `os ${count} produtos fotografados`}.`,
+      [
+        { text: 'Continuar', style: 'cancel' },
+        { text: 'Sair', style: 'destructive', onPress: () => { limpar(); router.dismissAll(); } },
+      ],
+    );
   };
 
   const montar = async () => {
     const uid = await getUserId();
-    if (!uid || !produtos.length || envio) return;
+    if (!uid || !count || envio) return;
     haptics.action();
     setEnvio(true);
     let enviados: string[] = [];
@@ -83,88 +90,118 @@ export default function LoteRevisao() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      {/* Cabeçalho */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' }}>
-        <TouchableOpacity onPress={voltarParaCamera} hitSlop={10} accessibilityLabel="Voltar" style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><Path d="M15 6l-6 6 6 6" /></Svg>
-        </TouchableOpacity>
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: INK }}>Seus produtos</Text>
-          <Text style={{ fontSize: 14, color: MUTED }}>{produtos.length} de {MAX_PRODUTOS_LOTE}</Text>
+    <View style={{ flex: 1 }}>
+      <StatusBar style="dark" />
+      <LinearGradient
+        colors={['#FFE3EF', '#FFD3E5', '#FDDFEB', '#FBEEF3', '#F9F2F5']}
+        locations={[0, 0.28, 0.6, 0.8, 1]}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+      />
+      <ScrollView contentContainerStyle={{ paddingTop: 54, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
+        <View style={{ height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={sair} activeOpacity={0.85} accessibilityLabel="Voltar" style={st.voltar}>
+            <Svg width={16} height={16} viewBox="0 0 24 24"><Path d="M15 6l-6 6 6 6" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+          </TouchableOpacity>
         </View>
-        <View style={{ width: 40 }} />
-      </View>
+        <View style={{ marginTop: 12, paddingHorizontal: 20, gap: 4 }}>
+          <Text style={st.titulo}>Seus produtos</Text>
+          <Text style={st.sub}>
+            {count >= MAX_PRODUTOS_LOTE ? `${MAX_PRODUTOS_LOTE} de ${MAX_PRODUTOS_LOTE} · você chegou no limite` : `${count} de ${MAX_PRODUTOS_LOTE} · ainda cabem ${MAX_PRODUTOS_LOTE - count}`}
+          </Text>
+        </View>
 
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: insets.bottom + 170 }} showsVerticalScrollIndicator={false}>
-        {produtos.length === 0 ? (
-          <Text style={{ marginTop: 40, fontSize: 16, color: SOFT, textAlign: 'center' }}>Nenhum produto ainda.</Text>
-        ) : (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-            {produtos.map((p, i) => (
-              <View key={p.id} style={{ width: cardW }}>
-                <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setAmpliada(p.combinadaUri); }}>
-                  <ExpoImage
-                    source={{ uri: p.combinadaUri }}
-                    style={{ width: cardW, height: cardW * 1.5, borderRadius: 13, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F0E6EA' }}
-                    contentFit="contain"
-                  />
-                </TouchableOpacity>
+        {/* Grade de 2 colunas (alinhada no topo, como no design) */}
+        <View style={{ marginTop: 18, paddingHorizontal: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
+          {produtos.map((p, i) => (
+            <View key={p.id} style={[st.card, { width: colW }]}>
+              <View style={[st.fotoBox, { backgroundColor: TINT[i % TINT.length] }]}>
+                <ExpoImage source={{ uri: p.frenteUri }} style={{ height: 70, width: 100, borderRadius: 8 }} contentFit="contain" />
                 <TouchableOpacity
-                  onPress={() => tirar(p.id, i + 1)}
+                  onPress={() => { haptics.tap(); remover(p.id); }}
+                  activeOpacity={0.85}
                   accessibilityLabel={`Remover o produto ${i + 1}`}
-                  style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(18,18,18,0.55)', alignItems: 'center', justifyContent: 'center' }}
+                  style={st.remover}
                 >
-                  <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
+                  <Svg width={11} height={11} viewBox="0 0 24 24"><Path d="M6 6l12 12M18 6L6 18" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" /></Svg>
                 </TouchableOpacity>
-                <Text style={{ marginTop: 8, fontSize: 15, fontWeight: '600', color: INK }}>Produto {i + 1}</Text>
-                {!p.rotuloUri && (
-                  <View style={{ marginTop: 4, gap: 4 }}>
-                    <View style={{ alignSelf: 'flex-start', paddingHorizontal: 8, height: 22, borderRadius: 11, backgroundColor: '#FFF4E5', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#B54708' }}>Precisão baixa</Text>
-                    </View>
-                    <Text style={{ fontSize: 13, lineHeight: 17, color: SOFT }}>Sem a lista de ingredientes, essa análise é menos exata</Text>
+              </View>
+              <View style={{ paddingHorizontal: 4, paddingBottom: 4, gap: 4 }}>
+                <Text style={st.produtoN}>Produto {i + 1}</Text>
+                {p.rotuloUri ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Svg width={13} height={13} viewBox="0 0 24 24"><Path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke={PINK} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+                    <Text style={{ fontSize: 13, color: MUTED }}>Frente e rótulo</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={st.semRotulo}><Text style={st.semRotuloTxt}>Sem rótulo</Text></View>
+                    <Text style={{ fontSize: 13, lineHeight: 17, color: MUTED }}>A análise fica menos precisa.</Text>
                     <TouchableOpacity
                       onPress={() => { haptics.tap(); router.push({ pathname: '/(scan)/lote-camera', params: { rotuloDe: p.id } } as any); }}
-                      style={{ paddingVertical: 2 }}
+                      activeOpacity={0.85}
                     >
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: PINK_TEXT }}>Adicionar foto do rótulo</Text>
+                      <Text style={st.addRotulo}>Adicionar rótulo</Text>
                     </TouchableOpacity>
-                  </View>
+                  </>
                 )}
               </View>
-            ))}
-          </View>
-        )}
+            </View>
+          ))}
+          {count < MAX_PRODUTOS_LOTE && (
+            <TouchableOpacity onPress={voltarParaCamera} activeOpacity={0.85} style={[st.adicionar, { width: colW }]}>
+              <View style={st.adicionarCirculo}>
+                <Svg width={18} height={18} viewBox="0 0 24 24"><Path d="M12 5v14M5 12h14" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" /></Svg>
+              </View>
+              <Text style={st.adicionarTxt}>Adicionar produto</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </ScrollView>
 
-      {/* Rodapé fixo */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 12, backgroundColor: 'rgba(255,255,255,0.97)', gap: 10 }}>
-        {cheio ? (
-          <Text style={{ fontSize: 14, color: MUTED, textAlign: 'center' }}>Você pode adicionar mais depois pela estante.</Text>
-        ) : (
-          <TouchableOpacity onPress={voltarParaCamera} disabled={envio} style={{ height: 48, borderRadius: 100, backgroundColor: '#FFF0F6', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 16, fontWeight: '600', color: PINK_TEXT }}>Adicionar outro produto</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          onPress={montar}
-          disabled={!produtos.length || envio}
-          style={{ height: 52, borderRadius: 100, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center', opacity: produtos.length ? 1 : 0.4 }}
-        >
-          {envio
-            ? <ActivityIndicator color="#FFFFFF" />
-            : <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>Pronto, montar minha rotina</Text>}
-        </TouchableOpacity>
-      </View>
-
-      {/* Imagem combinada em tela cheia */}
-      <Modal visible={!!ampliada} transparent animationType="fade" onRequestClose={() => setAmpliada(null)}>
-        <TouchableOpacity activeOpacity={1} onPress={() => setAmpliada(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}>
-          {!!ampliada && <ExpoImage source={{ uri: ampliada }} style={{ width: width - 24, height: (width - 24) * 1.5 }} contentFit="contain" />}
-          <Text style={{ marginTop: 14, color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>É assim que a IA vai ver esse produto. Toque para fechar.</Text>
-        </TouchableOpacity>
-      </Modal>
+      {/* Rodapé: degradê + "Montar minha rotina" */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(249,242,245,0)', '#F9F2F5']}
+        locations={[0, 0.3]}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 104 }}
+      />
+      <TouchableOpacity onPress={montar} disabled={!count || envio} activeOpacity={0.85} style={[st.montar, { opacity: count ? 1 : 0.4 }]}>
+        {envio ? <ActivityIndicator color="#FFFFFF" /> : <Text style={st.montarTxt}>Montar minha rotina</Text>}
+      </TouchableOpacity>
     </View>
   );
 }
+
+const st = {
+  voltar: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center' as const, justifyContent: 'center' as const,
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
+  },
+  titulo: { fontSize: 28, fontWeight: '700' as const, lineHeight: 33, letterSpacing: -0.8, color: INK },
+  sub: { fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: SOFT },
+  card: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 8, gap: 8,
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 1,
+  },
+  fotoBox: { height: 84, borderRadius: 11, alignItems: 'center' as const, justifyContent: 'center' as const },
+  remover: { position: 'absolute' as const, top: 6, right: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(18,18,18,0.38)', alignItems: 'center' as const, justifyContent: 'center' as const },
+  produtoN: { fontSize: 15, fontWeight: '600' as const, letterSpacing: -0.3, color: INK },
+  semRotulo: { alignSelf: 'flex-start' as const, height: 22, justifyContent: 'center' as const, paddingHorizontal: 9, borderRadius: 100, backgroundColor: '#FFF1DC' },
+  semRotuloTxt: { fontSize: 12, fontWeight: '600' as const, color: '#9A5300' },
+  addRotulo: { fontSize: 14, fontWeight: '600' as const, letterSpacing: -0.2, color: PINK_TEXT },
+  adicionar: {
+    height: 134, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed' as const, borderColor: '#F4B5CF', backgroundColor: 'rgba(255,255,255,0.5)',
+    alignItems: 'center' as const, justifyContent: 'center' as const, gap: 8,
+  },
+  adicionarCirculo: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFFFFF', alignItems: 'center' as const, justifyContent: 'center' as const,
+    shadowColor: '#C0206A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 6,
+  },
+  adicionarTxt: { fontSize: 15, fontWeight: '600' as const, letterSpacing: -0.3, color: PINK_TEXT },
+  montar: {
+    position: 'absolute' as const, left: 20, right: 20, bottom: 34, height: 52, borderRadius: 100, backgroundColor: PINK,
+    alignItems: 'center' as const, justifyContent: 'center' as const,
+    shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
+  },
+  montarTxt: { fontSize: 17, fontWeight: '600' as const, letterSpacing: -0.3, color: '#FFFFFF' },
+};
