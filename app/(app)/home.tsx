@@ -173,8 +173,30 @@ const CARD_ICONS = {
 
 type CardIcon = keyof typeof CARD_ICONS;
 
-// Cadeado do card de scan bloqueado (51a), em #C0206A sobre o círculo #F6D3E3.
+// Cadeado do card de scan bloqueado (51a), em #C0206A sobre círculo branco com o anel de progresso (ScanRing).
 const LOCK_PATH = 'M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5';
+
+// Anel de progresso em volta do cadeado do card de scan bloqueado: enche do topo, no
+// sentido horário, com os dias que já passaram desde o último scan (de 7). Trilho rosa
+// claro + arco rosa, como na referência enviada pelo Douglas (out/2026).
+function ScanRing({ diasFaltando, size }: { diasFaltando: number; size: number }) {
+  const sw = 3;
+  const r = (size - sw) / 2;
+  const c = 2 * Math.PI * r;
+  const p = Math.min(1, Math.max(0, (SCAN_INTERVAL_DAYS - diasFaltando) / SCAN_INTERVAL_DAYS));
+  return (
+    <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
+      <Circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#F4CADC" strokeWidth={sw} />
+      {p > 0 && (
+        <Circle
+          cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E8468F" strokeWidth={sw}
+          strokeDasharray={[c * p, c]} strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      )}
+    </Svg>
+  );
+}
 
 // Anel pontilhado do dia futuro (`2px dotted rgba(192,32,106,.45)` do design). Em SVG
 // porque borda `dotted` com raio não é confiável no Fabric.
@@ -470,14 +492,16 @@ export default function Home() {
           contentContainerStyle={{ paddingTop: 2, paddingHorizontal: 18, paddingBottom: 14, gap: 8 }}
         >
           {/* Primeiro card = scan de rosto. Bloqueado (51a · scan-card="a"): contorno
-              rosa a 35%, cadeado #C0206A sobre #F6D3E3, título apagado e "Faltam N
+              rosa a 35%, cadeado #C0206A sobre branco com o anel de progresso dos 7 dias
+              em volta, título apagado e "Faltam N
               dias". Liberado: card normal, abre o scan. */}
           {scanDays > 0 ? (
             <View style={[styles.card, styles.cardLocked]}>
               <View style={[styles.cardClip, styles.cardClipLocked]}>
                 <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
                 <View style={styles.cardInner}>
-                  <View style={[styles.cardCircle, { backgroundColor: '#F6D3E3' }]}>
+                  <View style={[styles.cardCircle, { backgroundColor: '#FFFFFF' }]}>
+                    <ScanRing diasFaltando={scanDays} size={38} />
                     <Svg width={18} height={18} viewBox="0 0 24 24">
                       <Rect x={5} y={10.5} width={14} height={10} rx={2.5} fill="none" stroke={PINK_DEEP} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                       <Path d={LOCK_PATH} fill="none" stroke={PINK_DEEP} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
