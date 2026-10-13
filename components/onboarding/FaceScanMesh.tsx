@@ -3,11 +3,11 @@
 // skincare em que uma malha branca cobre o rosto, uma linha clara varre a pele e
 // faíscas acendem por onde ela passa.
 //
-// ⚠️ NÃO é rastreamento facial: a câmera do app não detecta o rosto (seria ARKit/uma
-// lib nativa). A malha é um "rosto" genérico — um elipsoide com latitudes,
-// longitudes, anéis dos olhos e da boca — projetado no oval em que ela encaixa o
-// rosto, e girado (`yaw`) para o lado da etapa da vez. Casa com quem está centrada no
-// oval; não acompanha um rosto fora dele.
+// A malha é um "rosto" genérico — um elipsoide com latitudes, longitudes, anéis dos
+// olhos e da boca — projetado no oval em que ela encaixa o rosto e girado (`yaw`,
+// lado; `tilt`, cima/baixo). Na câmera, quem gira é o rastreador de rosto
+// (`modules/niks-face-tracker`): a malha acompanha a cabeça real. Casa com quem está
+// centrada no oval; não acompanha um rosto fora dele.
 //
 // Componente PURO (desenha a partir de `t` e `yaw`); quem anima é a tela: a câmera, no
 // mesmo relógio dos traços do anel, e o resultado do scan (tela 8), que mostra a malha
@@ -28,7 +28,7 @@ type Pt = { x: number; y: number; z: number };
  * uma perspectiva leve.
  */
 const PITCH = -0.2;
-function project(phi: number, theta: number, a: number, b: number, yaw: number): Pt {
+function project(phi: number, theta: number, a: number, b: number, yaw: number, tilt = 0): Pt {
   const p = phi * DEG, t = theta * DEG;
   const chin = phi < 0 ? 1 - 0.32 * Math.pow(-phi / 90, 1.4) : 1 - 0.08 * Math.pow(phi / 90, 2);
   const x0 = a * chin * Math.cos(p) * Math.sin(t);
@@ -37,9 +37,10 @@ function project(phi: number, theta: number, a: number, b: number, yaw: number):
   // yaw (em volta do eixo vertical)
   const x1 = x0 * Math.cos(yaw) + z0 * Math.sin(yaw);
   const z1 = -x0 * Math.sin(yaw) + z0 * Math.cos(yaw);
-  // pitch (em volta do eixo horizontal)
-  const y2 = y0 * Math.cos(PITCH) - z1 * Math.sin(PITCH);
-  const z2 = y0 * Math.sin(PITCH) + z1 * Math.cos(PITCH);
+  // pitch (em volta do eixo horizontal): o fixo da câmera + `tilt` (positivo = cabeça para cima)
+  const pitch = PITCH + tilt;
+  const y2 = y0 * Math.cos(pitch) - z1 * Math.sin(pitch);
+  const z2 = y0 * Math.sin(pitch) + z1 * Math.cos(pitch);
   const k = 1 + (z2 / a) * 0.12;                      // perspectiva leve
   return { x: x1 * k, y: (y2 + a * Math.sin(PITCH) * 0.9) * k, z: z2 };
 }
@@ -71,9 +72,9 @@ export const MESH_FEATURES = {
 } as const;
 
 /** Posição na tela de um ponto da máscara — a MESMA conta que o componente desenha. */
-export function faceMeshPoint(cx: number, cy: number, rx: number, ry: number, yaw: number, phi: number, theta: number) {
+export function faceMeshPoint(cx: number, cy: number, rx: number, ry: number, yaw: number, phi: number, theta: number, tilt = 0) {
   const a = rx * 0.95;
-  const p = project(phi, theta, a, ry * 0.97, yaw);
+  const p = project(phi, theta, a, ry * 0.97, yaw, tilt);
   return { x: cx + p.x, y: cy + ry * 0.07 + p.y };
 }
 
@@ -94,9 +95,11 @@ const SPARKS = Array.from({ length: 22 }, (_, i) => {
 });
 
 export function FaceScanMesh({
-  cx, cy, rx, ry, t, yaw, opacity = 1, scanLine = true, sparks = true, meshStrength = 1,
+  cx, cy, rx, ry, t, yaw, tilt = 0, opacity = 1, scanLine = true, sparks = true, meshStrength = 1,
 }: {
   cx: number; cy: number; rx: number; ry: number; t: number; yaw: number; opacity?: number;
+  /** Inclinação extra em radianos (positivo = cabeça para cima). A câmera usa; o resultado, não. */
+  tilt?: number;
   /** Linha de scan varrendo o rosto (a câmera usa sempre; o resultado só na abertura). */
   scanLine?: boolean;
   /** Faíscas por onde a linha passa. */
@@ -108,7 +111,7 @@ export function FaceScanMesh({
   const a = rx * 0.95;                 // meia-largura do "rosto"
   const b = ry * 0.97;                 // meia-altura
   const ccy = cy + ry * 0.07;          // o rosto fica um pouco abaixo do centro do oval
-  const P = (phi: number, theta: number) => project(phi, theta, a, b, yaw);
+  const P = (phi: number, theta: number) => project(phi, theta, a, b, yaw, tilt);
 
   // MÁSCARA, não globo (referência do produto): a malha cobre só o rosto — do meio da
   // testa (φ = MASK_TOP) ao queixo, de bochecha a bochecha (|θ| ≤ MASK_SIDE) —, com

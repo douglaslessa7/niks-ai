@@ -10,13 +10,14 @@ import {
 import { routineLoadingLines } from '../../components/onboarding/answers';
 import { awaitRoutine, ensureSkinPreview } from '../../lib/onboardingPrefetch';
 
-// Tela 23 do fluxo completo — "Criando uma rotina só sua, <nome>". Anel R 122 (trilho
+// ⚠️ FORA DO FLUXO (out/2026, a pedido do produto): nada navega para cá.
+// "Criando uma rotina só sua, <nome>". Anel R 122 (trilho
 // branco 13 pt + progresso em degradê #FF5EA8 → #FF8CC0, 11 pt) em volta de um disco
 // branco Ø214 com a porcentagem; embaixo do título, uma frase que troca a cada terço
 // (`routineLoadingLines`: queixa → tipo de pele do scan → o que causou reação, esta só
 // se ela informou na tela 17) e 4 tracinhos pulsando.
 //
-// A rotina já está sendo gerada em segundo plano desde o objetivo (18) — aqui só
+// A rotina já está sendo gerada em segundo plano desde que o relatório ficou pronto — aqui só
 // aguardamos (`awaitRoutine`, que dispara de novo se o job de fundo falhou). A % anda
 // no ritmo do design (0 → 100 em ~6,5 s) mas SEGURA em 95% até a rotina chegar. Se a
 // geração falhar, a tela segue mesmo assim: o signup gera de novo

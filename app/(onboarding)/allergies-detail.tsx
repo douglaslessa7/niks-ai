@@ -9,11 +9,10 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 17 do fluxo completo — detalhe da alergia (condicional: `allergy_type`
-// 'reaction' ou 'sensitive', nota do design). Campo #F0F0F0 no padrão do nome,
+// Tela 13 do onboarding — detalhe da alergia (condicional: `allergy_type`
+// 'reaction', como na versão B). Campo #F0F0F0 no padrão do nome,
 // bloco centrado acima do teclado (título → 9 → subtítulo → 21 → campo → 39 →
-// botão), com texto livre. Libera com 4+ caracteres e grava `allergy_description`
-// — que também vira a 3ª frase do loading da rotina ("Deixando … de fora…").
+// botão), com texto livre. Libera com 4+ caracteres e grava `allergy_description`.
 const STEP = OB_STEPS.alergiaDetalhe;
 const STEP_NAME = 'Detalhe da Alergia';
 

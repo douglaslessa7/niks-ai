@@ -1,47 +1,31 @@
-import { useRef, useState } from 'react';
-import { FlatList, useWindowDimensions, View } from 'react-native';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
+import { useEffect, useRef, useState } from 'react';
+import { FlatList, useWindowDimensions } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { Screen2, Screen3, Screen4, Screen5 } from '../../components/onboarding/welcomeSlides';
-import { useAppStore } from '../../store/onboarding';
-import { OB_STEPS, obStep } from '../../components/onboarding/kit';
+import { OB, OB_STEPS, obStep } from '../../components/onboarding/kit';
 
-const WHITE = '#FFFFFF';
+const WHITE = OB.bg;
 
-// Telas de apresentação 2–5 (glow up / expert / produtos / espelho), agora mostradas
-// DEPOIS da criação de conta (dentro do app). Sem o link "Já tem conta? Entrar" — não
-// se passa `onLogin` aos slides. Última tela ("Vamos lá") → HOME (a antiga tela de
-// notificações pós-cadastro saiu do fluxo: a permissão agora é pedida antes do
-// cadastro, na tela 13b). Os slides
-// vivem em `components/onboarding/welcomeSlides.tsx` (fonte única, com `app/index.tsx`).
+// ⚠️ FORA DO FLUXO (out/2026, a pedido do produto): nada navega para cá.
+// Apresentação 2–5 (glow up / expert / produtos / escanear
+// produto), mostrada DEPOIS da criação de conta, como na versão B. Sem o link "Já tem
+// conta? Entrar" — não se passa `onLogin` aos slides. Última tela ("Começar") →
+// notificações (tela 23), que arma o tutorial da home e entra no app. Os slides vivem
+// em `components/onboarding/welcomeSlides.tsx` (fonte única, com `app/index.tsx`).
 export default function Apresentacao() {
   const router = useRouter();
   const [activeScreen, setActiveScreen] = useState(0);
   const { track } = useMixpanel();
-  const armHomeTutorial = useAppStore((s) => s.armHomeTutorial);
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList>(null);
 
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
+  useEffect(() => {
+    track('onboarding_step_viewed', obStep(OB_STEPS.apresentacao, 'Apresentação'));
+  }, []);
 
   const goToNext = (index: number) => {
     if (index < 3) {
@@ -49,15 +33,7 @@ export default function Apresentacao() {
       listRef.current?.scrollToIndex({ index: index + 1, animated: true });
     } else {
       track('onboarding_step_completed', obStep(OB_STEPS.apresentacao, 'Apresentação'));
-      // ÚNICO ponto em que uma usuária NOVA entra no app (as outras rotas para a
-      // home — login, paywall de reengajamento, `index` com sessão — são de conta
-      // já existente). É por isso que o tutorial de primeiro acesso é armado AQUI
-      // (morava na antiga `notifications.tsx`, que saiu do fluxo): quem atualiza o
-      // app ou loga numa conta antiga nunca passa por esta linha. Conta existente
-      // que refaz o onboarding também passa, e quem barra é o servidor
-      // (`users.home_tutorial_seen_at`). Ver "Feature: Tutorial de primeiro acesso".
-      armHomeTutorial();
-      router.replace('/(app)/home');
+      router.replace('/(onboarding)/notifications');
     }
   };
 
@@ -66,10 +42,6 @@ export default function Apresentacao() {
     h: height,
     topInset: insets.top,
     bottomInset: insets.bottom,
-    fXBold,
-    fBold,
-    fSemi,
-    fReg,
     // sem onLogin → sem link "Já tem conta? Entrar" (já criou a conta)
   };
 

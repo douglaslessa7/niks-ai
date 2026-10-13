@@ -374,16 +374,22 @@ type AppStore = {
   // decidir entre o payload multi e o payload single.
   // ⚠️ NUNCA persistir (ver o `partialize` no fim do arquivo): ~1 MB de base64.
   skinCollagesBase64: string[]
+  // Formato das imagens de `skinCollagesBase64` — vai como `scanLayout` à `analyze-skin-app`:
+  // 'expressions_v1' = [neutra, 2×2 de expressões, 2 perfis] (`camera-multi`, aposentada);
+  // 'turns_v1' = [frente, virada para um lado, virada para o outro], fotos avulsas tiradas
+  // sozinhas durante o giro da cabeça (`camera?modo=app`, out/2026). null = 1 foto.
+  skinScanLayout: 'expressions_v1' | 'turns_v1' | null
+  // Pontos do rosto na foto de frente, achados pelo próprio iPhone (Vision) logo depois da
+  // foto (`camera.tsx`). Os pontinhos do relatório (`resultado-scan`) preferem estes aos
+  // `face_landmarks` estimados pela IA. null = sem módulo/rosto (vale o da IA). Não persiste.
+  skinFaceLandmarks: Record<'eye_left' | 'eye_right' | 'nose_tip' | 'mouth_center' | 'chin' | 'forehead', { x: number; y: number }> | null
   // Setter ATÔMICO do scan multi-foto. Existe para não haver um render intermediário
   // com a foto neutra nova ao lado das colagens do scan anterior.
-  setSkinScanImages: (neutral: { base64: string; uri: string }, collages: string[]) => void
-  // Scan do ONBOARDING (tela 7 do fluxo completo): as fotos olhando para a esquerda e
-  // para a direita da tela, nessa ordem. A de frente é a `skinImage*` de sempre.
-  // ⚠️ Hoje a `analyze-skin` (onboarding) recebe SÓ a de frente — as laterais ficam
-  // guardadas para quando a função aceitar mais de uma foto. URIs de arquivo (não
-  // base64) e EM MEMÓRIA, fora do partialize, como as demais fotos.
-  skinScanSideUris: string[]
-  setSkinScanSideUris: (uris: string[]) => void
+  setSkinScanImages: (
+    neutral: { base64: string; uri: string },
+    collages: string[],
+    layout?: 'expressions_v1' | 'turns_v1',
+  ) => void
   skinScanId: string | null
   protocolResult: ProtocolResult | null
   setProtocolResult: (result: ProtocolResult) => void
@@ -489,7 +495,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   skinImageBase64: null,
   skinImageUri: null,
   skinCollagesBase64: [],
-  skinScanSideUris: [],
+  skinScanLayout: null,
+  skinFaceLandmarks: null,
   skinScanId: null,
   protocolResult: null,
   protocolGenerating: false,
@@ -539,10 +546,9 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   // Caminho de 1 foto (onboarding e galeria em __DEV__). LIMPA as colagens de propósito:
   // sem isso, um scan de 1 foto feito depois de um scan multi reenviaria à IA as
   // colagens antigas junto com a foto nova.
-  setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri, skinCollagesBase64: [] }),
-  setSkinScanImages: (neutral, collages) =>
-    set({ skinImageBase64: neutral.base64, skinImageUri: neutral.uri, skinCollagesBase64: collages }),
-  setSkinScanSideUris: (uris) => set({ skinScanSideUris: uris }),
+  setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null }),
+  setSkinScanImages: (neutral, collages, layout = 'expressions_v1') =>
+    set({ skinImageBase64: neutral.base64, skinImageUri: neutral.uri, skinCollagesBase64: collages, skinScanLayout: layout }),
 
   setProtocolResult: (result) => set({ protocolResult: result }),
   setProtocolGenerating: (v) => set({ protocolGenerating: v }),
@@ -640,7 +646,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanSideUris: [], skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null, rotinaPassoAlvo: null, escolhaParaPasso: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null, skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null, rotinaPassoAlvo: null, escolhaParaPasso: null }),
 }), {
   // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
   // O store era 100% em memória, então TODO cache dele morria ao fechar o app —

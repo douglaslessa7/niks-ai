@@ -5,18 +5,14 @@ import {
   OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount, useObName, withName,
 } from '../../components/onboarding/kit';
 
-// Tela 12 do fluxo completo — escolha única.
-//
-// `value` é o texto que continua indo para `onboarding.sun_exposure` (e dali para
-// a `analyze-skin` e para `users.sun_exposure`): são os rótulos ANTIGOS da tela,
-// mantidos de propósito para a IA e o banco não verem nada mudar. O design só
-// trocou o que aparece para a usuária.
-// Só "Entre 1 e 3 horas" tem frase revelada no design — as outras não têm.
+// Tela 8 do onboarding — escolha única. Textos e opções da versão B (rótulo =
+// valor gravado em `onboarding.sun_exposure`, como sempre foi); "Quase nenhum" tem
+// a frase curta de B embaixo. Sem frase revelada ao marcar (decisão do produto).
 const OPTIONS: ObChoice<string>[] = [
-  { label: 'Quase nenhum', value: 'Quase nenhum' },
-  { label: 'Menos de 1 hora', value: 'Menos de 1 hora por dia' },
-  { label: 'Entre 1 e 3 horas', value: 'Entre 1 a 3 horas por dia', reveal: 'Vamos incluir a reaplicação do protetor no meio do dia.' },
-  { label: 'Mais de 3 horas', value: 'Mais de 3 horas por dia' },
+  { label: 'Quase nenhum', value: 'Quase nenhum', sub: 'Fico a maior parte do tempo em ambiente fechado' },
+  { label: 'Menos de 1 hora por dia', value: 'Menos de 1 hora por dia' },
+  { label: 'Entre 1 a 3 horas por dia', value: 'Entre 1 a 3 horas por dia' },
+  { label: 'Mais de 3 horas por dia', value: 'Mais de 3 horas por dia' },
 ];
 
 const STEP = OB_STEPS.sol;
@@ -32,14 +28,14 @@ export default function SunExposure() {
 
   return (
     <ObChoiceScreen<string>
-      title={withName(name, 'quanto tempo você passa exposta ao sol por dia?')}
-      subtitle="Isso define a proteção solar da sua rotina."
+      title={withName(name, 'quanto tempo você passa exposta ao sol\npor dia?')}
+      // Sem subtítulo; "por dia?" sempre na última linha (pedido do produto).
       options={OPTIONS}
       onBack={() => router.back()}
       onSelect={(v) => setOnboardingField('sun_exposure', v)}
       onContinue={() => {
         track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-        router.push('/(onboarding)/hydration');
+        router.push('/(onboarding)/hydration-sleep');
       }}
     />
   );

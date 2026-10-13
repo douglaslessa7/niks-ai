@@ -1,13 +1,12 @@
-// ⚠️ FORA DO FLUXO desde o "fluxo completo" (out/2026): nada navega para cá.
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
 
-// Tela 12 do onboarding novo — rotina atual (padrão 3i). ⚠️ A tela "Quais produtos
-// você já usa?" (skincare-routine-detail) SAIU do fluxo: `skincare_routine_description`
-// vai vazio para o `generate-protocol`, que foi ajustado para não exigir ativo
-// declarado nesse caso (prompt + checagem 1).
+// Tela 10 do onboarding — rotina atual (padrão 3i), textos da versão B. Como na
+// versão B, "completar o que falta" e "dermatologista prescreveu" levam ao detalhe
+// ("Quais produtos você já usa?" / "…foram prescritos?", tela 11); as outras seguem
+// para as alergias e limpam a descrição de uma passagem anterior pelo detalhe.
 type RoutineType = 'zero' | 'complement' | 'prescribed' | 'unsure';
 
 const OPTIONS: ObChoice<RoutineType>[] = [
@@ -30,16 +29,19 @@ export default function SkincareRoutine() {
   return (
     <ObChoiceScreen<RoutineType>
       title="Como está sua rotina de skincare hoje?"
-      subtitle="Isso nos ajuda a criar o melhor protocolo para você."
+      // Sem subtítulo; opções centralizadas na tela, título no topo (pedido do produto).
+      centerOptions
       options={OPTIONS}
       onBack={() => router.back()}
-      onSelect={(v) => {
-        setOnboardingField('skincare_routine_type', v);
-        setOnboardingField('skincare_routine_description', null);
-      }}
+      onSelect={(v) => setOnboardingField('skincare_routine_type', v)}
       onContinue={(v) => {
         track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), routine_type: v });
-        router.push('/(onboarding)/horario-rotina');
+        if (v === 'complement' || v === 'prescribed') {
+          router.push('/(onboarding)/skincare-routine-detail');
+          return;
+        }
+        setOnboardingField('skincare_routine_description', null);
+        router.push('/(onboarding)/allergies');
       }}
     />
   );

@@ -86,9 +86,9 @@ export function concernBenefits(concerns: string[]): string[] {
   return list.slice(0, 3);
 }
 
-/** Etiquetas em volta da logo na tela 5 (o design tem 2 posições). */
+/** Etiquetas em volta da logo na tela 5: uma por escolha (até 3, como a pergunta). */
 export function concernTags(concerns: string[]): string[] {
-  return concerns.map((c) => CONCERN_CHIP[c] ?? c).slice(0, 2);
+  return concerns.map((c) => CONCERN_CHIP[c] ?? c).slice(0, 3);
 }
 
 // Loading da rotina (tela 23): a frase troca a cada terço — "Escolhendo ativos

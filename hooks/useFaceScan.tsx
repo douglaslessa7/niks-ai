@@ -19,7 +19,9 @@ export function useFaceScan() {
     // O tutorial de preparação (scan-prep-app) é mostrado UMA vez só na vida.
     // Depois de visto (flag persistido no store), o botão vai direto para a câmera.
     if (scanTutorialSeen) {
-      router.push('/(scan)/camera-multi' as any);
+      // Câmera do giro em modo app: 3 fotos (frente + os dois lados). A `camera-multi`
+      // (6 fotos com expressões) saiu do fluxo em out/2026.
+      router.push('/(scan)/camera?modo=app' as any);
     } else {
       router.push('/(scan)/scan-prep-app' as any);
     }

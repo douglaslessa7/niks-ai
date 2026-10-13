@@ -19,8 +19,10 @@ import { dateKey, getRoutineHistory, sessionDate, type RoutinePeriod } from './r
 // tira o de hoje quando ela conclui a rotina (protocolo.tsx). O dia é a
 // "sessão-do-dia" de lib/routineProgress (a noite que passa da meia-noite conta para
 // o dia em que começou) — a mesma chave do histórico.
-// O texto NÃO mostra o número de passos (out/2026): "Seu skincare da manhã/noturno
-// está te esperando".
+// O texto NÃO mostra o número de passos (out/2026): "☀️ Bom dia! / Hora da sua rotina
+// de skincare matinal." e "🌙 Boa noite! / Não esqueça sua rotina de skincare noturna
+// antes de dormir."; 1 h depois, "Ainda dá tempo! 🔥 / Faça seu skincare
+// matinal|noturno agora e não perca sua sequência".
 //
 // Quem chama: a home (a cada carga dos dados, que já trazem horários e passos) e o
 // Alarme (ao salvar um horário, via `syncRoutineReminders`). O logout cancela. Só
@@ -46,15 +48,20 @@ const lateId = (period: RoutinePeriod, day: string) => `${ID_PREFIX}${PERIOD_ID[
 const LEGACY_IDS = [`${ID_PREFIX}manha-antes`, `${ID_PREFIX}noite-antes`];
 
 export function routineReminderContent(period: RoutinePeriod, kind: Kind = 'hora') {
-  const name = period === 'am' ? 'da manhã' : 'da noite';
   const emoji = period === 'am' ? '☀️' : '🌙';
   if (kind === 'depois') {
-    return { title: 'Ainda dá tempo! 🔥', body: `Faça sua rotina ${name} agora e não perca sua sequência ${emoji}` };
+    return {
+      title: 'Ainda dá tempo! 🔥',
+      body: period === 'am'
+        ? `Faça seu skincare matinal agora e não perca sua sequência ${emoji}`
+        : `Faça seu skincare noturno agora e não perca sua sequência ${emoji}`,
+    };
   }
-  return {
-    title: `Hora da sua rotina ${name} ${emoji}`,
-    body: period === 'am' ? 'Seu skincare da manhã está te esperando' : 'Seu skincare noturno está te esperando',
-  };
+  // Textos do antigo push do servidor (`send-notifications`, 7h/21h fixos — desligado
+  // em out/2026), agora no horário DELA (pedido do produto).
+  return period === 'am'
+    ? { title: '☀️ Bom dia!', body: 'Hora da sua rotina de skincare matinal.' }
+    : { title: '🌙 Boa noite!', body: 'Não esqueça sua rotina de skincare noturna antes de dormir.' };
 }
 
 type Slot = { minutes: number };

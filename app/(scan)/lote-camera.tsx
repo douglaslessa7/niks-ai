@@ -6,7 +6,7 @@
 //   2. RÓTULO de ingredientes — ou "Pular rótulo · a análise fica menos precisa".
 // Depois do rótulo (ou do pular) o app monta a imagem combinada (lib/loteProdutos) e
 // já pede a frente do próximo; no 7º vai direto para a revisão. A fileira de 7 espaços
-// mostra quantos já foram. "Revisar (N)" e o X (com produtos) levam à revisão; sem
+// mostra quantos já foram. "Pronto" (só na frente, com 1+ produto) e o X (com produtos) levam à revisão; sem
 // produtos, o X sai. Nada é analisado aqui.
 // `?rotuloDe=<id>`: abre direto no rótulo de um produto já fotografado ("Adicionar
 // rótulo" da revisão) e volta. No simulador (sem câmera), o disparador abre a galeria.
@@ -249,10 +249,11 @@ export default function LoteCamera() {
             )}
           </>
         )}
-        {/* Frente com produtos: "Revisar (N)" */}
+        {/* Frente com produtos: "Pronto" — deixa óbvio que não precisa chegar a 7
+            (no design era "Revisar (N)"; trocado a pedido do Douglas). Leva à revisão. */}
         {!rot && !alvo && count > 0 && (
           <TouchableOpacity onPress={revisar} disabled={ocupado} activeOpacity={0.85} style={st.revisar}>
-            <Text style={st.revisarTxt}>Revisar ({count})</Text>
+            <Text style={st.revisarTxt}>Pronto</Text>
           </TouchableOpacity>
         )}
 

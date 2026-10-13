@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, Image, TouchableOpacity, ScrollView, Animated,
+  View, Text, Image, TouchableOpacity, ScrollView, Animated, Easing,
   NativeSyntheticEvent, NativeScrollEvent, StyleProp, ViewStyle, TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,26 +42,26 @@ export const OB = {
 };
 
 // ── Contadores do funil ──────────────────────────────────────────────────────
-// Numeração ÚNICA do onboarding (Mixpanel `step_number`) = o número da tela no
-// design "fluxo completo" + 1 (a apresentação 0.1 e os dados 0.2 contam como 1 e 2).
-// As telas condicionais (idade da pele, detalhe da alergia) mantêm o número mesmo
+// Numeração ÚNICA do onboarding (Mixpanel `step_number`) na ordem do fluxo de
+// out/2026 (o fluxo da versão B — commit 8ae3453 — com o scan novo e o visual do kit).
+// As telas condicionais (detalhe da rotina, detalhe da alergia) mantêm o número mesmo
 // quando não aparecem — o funil mostra o pulo, não renumera.
 export const OB_STEPS = {
-  ola: 1, seusDados: 2, nome: 3, prazer: 4, idade: 5, incomoda: 6, entendi: 7,
-  prepScan: 8, camera: 9, analisando: 10, resultadoScan: 11, idadePele: 12,
-  transicaoRotina: 13, sol: 15, hidratacao: 16, sono: 17,
-  gravidez: 18, alergias: 19, alergiaDetalhe: 20, objetivo: 21, empatia: 22,
-  horarioRotina: 23, avisoLembretes: 24, pedidoNotificacao: 25, loadingRotina: 26,
-  rotinaPronta: 27, compromisso: 28,
+  ola: 1, nome: 2, prazer: 3, idade: 4, gravidez: 5, incomoda: 6, potencial: 7,
+  tipoPele: 8, sol: 9, aguaSono: 10, rotinaAtual: 11, rotinaDetalhe: 12,
+  alergias: 13, alergiaDetalhe: 14, objetivo: 15, comSemNiks: 16,
+  prepScan: 17, camera: 18, analisando: 19, resultadoScan: 20, rotinaPronta: 21,
+  horarioRotina: 22, compromisso: 23,
   // Paywall (Superwall) entre o compromisso e a conta — não é tela nossa, não conta.
-  criarConta: 29,
-  // Telas FORA do fluxo desde o "fluxo completo" (out/2026). Os arquivos ficaram no
-  // repo; o 0 garante que nada delas entra no funil novo se alguém navegar até lá.
-  // `incomodaRotina` (14) = a 2ª "o que te incomoda", tirada a pedido do produto.
-  incomodaRotina: 0, potencial: 0, tipoPele: 0, rotinaAtual: 0, comSemNiks: 0, loading: 0,
-  relatorio: 0, apresentacao: 0,
+  criarConta: 24, notificacoes: 25,
+  // Telas FORA do fluxo (arquivos ficaram no repo, nada navega até elas): o 0
+  // garante que nada delas entra no funil se alguém navegar até lá.
+  seusDados: 0, entendi: 0, idadePele: 0, transicaoRotina: 0,
+  hidratacao: 0, sono: 0, empatia: 0, avisoLembretes: 0,
+  pedidoNotificacao: 0, loadingRotina: 0, incomodaRotina: 0,
+  loading: 0, relatorio: 0, planPreview: 0, apresentacao: 0,
 } as const;
-export const OB_STEP_TOTAL = 29;
+export const OB_STEP_TOTAL = 25;
 
 /** Evento de Mixpanel no padrão do onboarding (`step_total` fixo do funil novo). */
 export function obStep(step: number, name: string) {
@@ -177,35 +177,165 @@ export function ObCheck({ size = 18, bg = OB.pink, fg = '#FFFFFF', stroke = 2.4 
 // `TouchableOpacity` (Fabric) não devolvia a opacidade do toque — o card selecionado
 // ficava rosa CLARO até um 2º toque (bug visto no simulador). Com a `key`, cada
 // estado é um touchable novo, nascido com opacidade cheia.
-export function ObOptionCard({
-  label, selected, reveal, onPress, disabled,
-}: { label: string; selected: boolean; reveal?: string; onPress: () => void; disabled?: boolean }) {
+// `sub` = frase curta SEMPRE visível embaixo do rótulo (ex.: "Oleosa — Brilha durante
+// o dia", textos da versão B); `reveal` = frase que só aparece com a opção marcada.
+// ── Toque das opções (out/2026, pedido do produto — réplica do toque do Flo) ──
+// Medido quadro a quadro numa gravação do Flo (30 fps): ao encostar o dedo o botão encolhe
+// ~5% em ~0,1 s; ao soltar, o rosa nasce como um CÍRCULO no ponto do dedo e cobre o botão
+// em ~0,13 s enquanto ele volta ao tamanho; a opção que estava marcada se fecha num círculo
+// para o meio. Vibração leve (`haptics.tap`) no instante do toque. Quem usa `ObPress` NÃO
+// chama haptics no próprio onPress (vibraria duas vezes). Tudo no driver nativo.
+// ⚠️ O círculo sai de `locationX/Y` do toque: o conteúdo do botão leva
+// `pointerEvents="none"`, senão o alvo do toque é o texto e a coordenada sai relativa a ele.
+// Afundar PERCEPTÍVEL e suave (pedido do produto, 13/out): desce 8% desacelerando, chega ao
+// fundo mesmo num toque rápido e sobe macio com um quique leve.
+const PRESS_SCALE = 0.92;
+const PRESS_IN_MS = 120;        // o afundar SEMPRE vai até o fim (toque rápido incluso)…
+const FILL_IN_MS = 200;         // círculo abrindo a partir do dedo
+const FILL_OUT_MS = 170;        // círculo da opção anterior fechando
+
+type Touch = { x: number; y: number };
+
+/** Cor do texto/ícone do botão com `ObFill`: fica "aceso" (branco) NA HORA em que o rosa
+ *  começa e só apaga quando o círculo da opção que sai já quase fechou — senão aparece
+ *  texto preto sobre o rosa por um instante. */
+export function useObFillText(on: boolean) {
+  const [lit, setLit] = useState(on);
+  useEffect(() => {
+    if (on) { setLit(true); return; }
+    const id = setTimeout(() => setLit(false), FILL_OUT_MS * 0.7);
+    return () => clearTimeout(id);
+  }, [on]);
+  return on || lit;
+}
+
+export function ObPress({
+  onPress, onPressIn, onPressOut, disabled, style, outerStyle, children,
+}: {
+  onPress: () => void; onPressIn?: (touch: Touch) => void; onPressOut?: () => void;
+  disabled?: boolean; style?: StyleProp<ViewStyle>;
+  /** Tamanho na linha do pai (ex.: `width: '100%'`, `flex: 1`). ⚠️ % de largura no `style`
+   *  é relativo ao toque por fora (que abraça o conteúdo) — sem isto o card encolhe. */
+  outerStyle?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const downAt = useRef(0);
+  const upTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (upTimer.current) clearTimeout(upTimer.current); }, []);
   return (
     <TouchableOpacity
-      key={selected ? 'on' : 'off'}
-      activeOpacity={selected ? 0.85 : 0.7}
+      activeOpacity={1}
+      disabled={disabled}
+      style={outerStyle}
+      onPressIn={(e) => {
+        haptics.tap();
+        if (upTimer.current) clearTimeout(upTimer.current);
+        downAt.current = Date.now();
+        Animated.timing(scale, { toValue: PRESS_SCALE, duration: PRESS_IN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+        onPressIn?.({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY });
+      }}
+      onPressOut={() => {
+        // …e só então volta: num toque rápido o dedo sai antes de o botão terminar de
+        // afundar, e sem esta espera ele voltava sem ter descido (imperceptível).
+        const wait = Math.max(0, PRESS_IN_MS - (Date.now() - downAt.current));
+        upTimer.current = setTimeout(() => {
+          Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 8 }).start();
+        }, wait);
+        onPressOut?.();
+      }}
       onPress={onPress}
+    >
+      <Animated.View style={[style, { transform: [{ scale }] }]}>{children}</Animated.View>
+    </TouchableOpacity>
+  );
+}
+
+/** Rosa do botão: ao ligar, um CÍRCULO abre a partir de `touch` (o ponto do dedo) até
+ *  cobrir o botão; ao desligar, fecha num círculo para o meio. O pai precisa de
+ *  `overflow: 'hidden'` (raio) e o conteúdo dele, de `pointerEvents="none"`. */
+export function ObFill({ on, touch, color = OB.pink }: { on: boolean; touch?: Touch | null; color?: string }) {
+  const p = useRef(new Animated.Value(on ? 1 : 0)).current;
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [origin, setOrigin] = useState<Touch | null>(null);   // null = meio do botão
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    p.stopAnimation();
+    if (on) {
+      setOrigin(touch ?? null);
+      p.setValue(0);
+      Animated.timing(p, { toValue: 1, duration: FILL_IN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    } else {
+      setOrigin(null);   // com o círculo cheio, trocar o centro não aparece (cobre tudo)
+      Animated.timing(p, { toValue: 0, duration: FILL_OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true }).start();
+    }
+  }, [on]);
+  const o = origin ?? { x: size.w / 2, y: size.h / 2 };
+  const R = Math.hypot(Math.max(o.x, size.w - o.x), Math.max(o.y, size.h - o.y)) + 1;
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+      onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+    >
+      {size.w > 0 && (
+        <Animated.View
+          style={{
+            position: 'absolute', left: o.x - R, top: o.y - R, width: 2 * R, height: 2 * R, borderRadius: R,
+            backgroundColor: color,
+            opacity: p.interpolate({ inputRange: [0, 0.01, 1], outputRange: [0, 1, 1] }),
+            transform: [{ scale: p }],
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+export function ObOptionCard({
+  label, sub, selected, reveal, onPress, disabled,
+}: { label: string; sub?: string; selected: boolean; reveal?: string; onPress: () => void; disabled?: boolean }) {
+  // O rosa abre a partir do dedo já no toque; se o dedo sair sem escolher (rolou a tela),
+  // fecha de novo.
+  const [pressing, setPressing] = useState(false);
+  const [touch, setTouch] = useState<Touch | null>(null);
+  // Texto e check ficam brancos JUNTO com o rosa (no toque), não só ao soltar, e voltam ao
+  // preto só quando o rosa já fechou — nunca texto preto sobre rosa.
+  const fillOn = selected || pressing;
+  const on = useObFillText(fillOn);
+  return (
+    <ObPress
+      onPress={onPress}
+      onPressIn={(t) => { setTouch(t); setPressing(true); }}
+      onPressOut={() => setPressing(false)}
       disabled={disabled}
       style={{
-        backgroundColor: selected ? OB.pink : OB.option, borderRadius: 12, minHeight: 65,
+        backgroundColor: OB.option, borderRadius: 12, minHeight: 65, overflow: 'hidden',
         paddingHorizontal: 19, paddingVertical: 21, justifyContent: 'center', gap: 12,
         opacity: disabled ? 0.5 : 1,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-        <Text style={{ flex: 1, fontSize: 17, lineHeight: 23, fontWeight: '400', color: selected ? '#FFFFFF' : OB.ink }}>
-          {label}
-        </Text>
-        {selected ? (
+      <ObFill on={fillOn} touch={touch} />
+      <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: '400', color: on ? '#FFFFFF' : OB.ink }}>
+            {label}
+          </Text>
+          {!!sub && (
+            <Text style={{ fontSize: 14, lineHeight: 19, color: on ? 'rgba(255,255,255,0.85)' : OB.sub }}>{sub}</Text>
+          )}
+        </View>
+        {on ? (
           <ObCheck size={20} bg="#FFFFFF" fg={OB.pink} stroke={2.4} />
         ) : (
           <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: OB.radio }} />
         )}
       </View>
-      {selected && !!reveal && (
-        <Text style={{ fontSize: 15, lineHeight: 21, color: '#FFFFFF', paddingRight: 36 }}>{reveal}</Text>
+      {on && !!reveal && (
+        <Text pointerEvents="none" style={{ fontSize: 15, lineHeight: 21, color: '#FFFFFF', paddingRight: 36 }}>{reveal}</Text>
       )}
-    </TouchableOpacity>
+    </ObPress>
   );
 }
 
@@ -345,10 +475,10 @@ export function ObWheel({
 // Estrutura das perguntas de escolha única: título a 118 pt, subtítulo 9 pt
 // abaixo, opções 22 pt abaixo (gap 8), botão pílula fixo. A tela chamadora
 // decide o que gravar (`onSelect`) e para onde ir (`onContinue`).
-export type ObChoice<V extends string> = { label: string; value: V; reveal?: string };
+export type ObChoice<V extends string> = { label: string; value: V; reveal?: string; sub?: string };
 
 export function ObChoiceScreen<V extends string>({
-  title, subtitle, options, initial = null, onSelect, onContinue, onBack,
+  title, subtitle, options, initial = null, onSelect, onContinue, onBack, centerOptions = false, optionsTop,
 }: {
   title: string;
   subtitle?: string;
@@ -357,25 +487,34 @@ export function ObChoiceScreen<V extends string>({
   onSelect: (value: V) => void;
   onContinue: (value: V) => void;
   onBack: () => void;
+  /** Título no topo e as opções CENTRALIZADAS na altura livre entre ele e o botão
+   *  (um pouco acima do centro exato: 100 pt de folga embaixo, pedido do produto). */
+  centerOptions?: boolean;
+  /** Distância do título (ou subtítulo) até as opções; padrão 22 com subtítulo, 34 sem. */
+  optionsTop?: number;
 }) {
   const { y, buttonBottom } = useObFrame();
   const [selected, setSelected] = useState<V | null>(initial);
+  const top = optionsTop ?? (subtitle ? 22 : 34);
   return (
     <ObScreen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 24 }}
+        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 24, flexGrow: centerOptions ? 1 : undefined }}
       >
         <ObTitle>{title}</ObTitle>
         {!!subtitle && <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>{subtitle}</ObSubtitle>}
-        <View style={{ marginTop: subtitle ? 22 : 34, marginHorizontal: 17, gap: 8 }}>
+        <View style={centerOptions
+          ? { flex: 1, justifyContent: 'center', marginTop: top, marginBottom: 100, marginHorizontal: 17, gap: 8 }
+          : { marginTop: top, marginHorizontal: 17, gap: 8 }}>
           {options.map((opt) => (
             <ObOptionCard
               key={opt.value}
               label={opt.label}
+              sub={opt.sub}
               reveal={opt.reveal}
               selected={selected === opt.value}
-              onPress={() => { haptics.select(); setSelected(opt.value); onSelect(opt.value); }}
+              onPress={() => { setSelected(opt.value); onSelect(opt.value); }}
             />
           ))}
         </View>

@@ -3,9 +3,9 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
 
-// Tela 16 do fluxo completo — alergias (escolha única). "Tenho pele muito
-// sensível/reativa" e "Já tive reação" levam ao detalhe (17, nota do design); as
-// outras seguem direto para o objetivo (18).
+// Tela 12 do onboarding — alergias (escolha única), textos da versão B. Como na
+// versão B, só "Já tive reação" leva ao detalhe (13); as outras seguem direto para o
+// objetivo (14).
 type AllergyType = 'none' | 'sensitive' | 'reaction' | 'no_history';
 
 const OPTIONS: ObChoice<AllergyType>[] = [
@@ -27,18 +27,19 @@ export default function Allergies() {
 
   return (
     <ObChoiceScreen<AllergyType>
-      title="Você já teve alergia a algum produto de skincare?"
-      subtitle="Isso garante que nenhum ativo problemático entre no seu protocolo."
+      title="Você tem alguma alergia ou sensibilidade a produtos de skincare?"
+      // Sem subtítulo e com mais respiro até as opções (pedido do produto).
+      optionsTop={54}
       options={OPTIONS}
       onBack={() => router.back()}
       onSelect={(v) => setOnboardingField('allergy_type', v)}
       onContinue={(v) => {
         track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-        if (v === 'reaction' || v === 'sensitive') {
+        if (v === 'reaction') {
           router.push('/(onboarding)/allergies-detail');
           return;
         }
-        // Sem detalhe: a descrição de uma passagem anterior pela tela 17 não vale mais.
+        // Sem detalhe: a descrição de uma passagem anterior pela tela 13 não vale mais.
         setOnboardingField('allergy_description', null);
         router.push('/(onboarding)/goal-desire');
       }}

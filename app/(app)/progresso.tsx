@@ -1,8 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Seu progresso — réplica do design 43d do Claude Design (projeto "NIKS home
 // redesign — rotina skincare", NiksProgressFlo.dc.html com v="home2" first): anel com
-// a foto do último scan + Niks Score, "Fazer novo scan", Suas métricas, Sua evolução,
-// Seus scans e Seu timelapse. Abre pelo atalho "Progresso" da home.
+// a foto do último scan + Niks Score, o CARD DE MÉTRICAS da home antiga (versão B,
+// commit 8ae3453 — Figma node 1:63: 6 métricas em 3 colunas × 2 linhas,
+// barra no semáforo de `metricColor`; tocar = compartilhar), Sua evolução, Seus scans e
+// Seu timelapse. Abre pelo atalho "Progresso" da home. As letras do card seguem a
+// tipografia do app (fonte do sistema/SF Pro, #121212), não mais Lato/Exo 2. Sem botão de scan e sem a frase
+// "Seu primeiro scan" (pedido do produto, out/2026).
 // O mesmo arquivo do design desenha a versão com 2+ scans (43c — `notFirst`): abas +
 // gráfico em "Sua evolução", variação nas métricas e todos os scans na fileira. A
 // tela escolhe pela quantidade de scans da usuária.
@@ -26,11 +30,12 @@ import { supabase } from '../../lib/supabase';
 import { useUserId } from '../../lib/currentUser';
 import { useCachedQuery } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
-import { useFaceScan } from '../../hooks/useFaceScan';
+import { usePickProfilePhoto } from '../../lib/profilePhoto';
 import { METRIC_DEFS, type Metricas } from '../../lib/metricDefs';
-import type { MetricKey } from '../../lib/metricColor';
+import { metricColor, type MetricKey } from '../../lib/metricColor';
 import { sessionDate, dateKey } from '../../lib/routineProgress';
-import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
+import { BG_STOPS } from '../../lib/homeTheme';
+import { getScoreTheme, getScoreScreenTheme } from '../../lib/scoreTheme';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -46,6 +51,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SCAN_INTERVAL_DAYS = 7;
 const TIMELAPSE_DAYS = 30;
 
+// Quebras de linha dos nomes no card de métricas: "da pele" fica junto na 2ª linha
+// (pedido do produto). Os outros usam o nome de `METRIC_DEFS` (que já quebra
+// "Linhas de / expressão").
+const CARD_LABEL: Partial<Record<MetricKey, string>> = { qualidade_pele: 'Qualidade\nda pele' };
+
 // Abas de "Sua evolução" (SERIES do design, nesta ordem).
 const SERIES: { key: 'score' | MetricKey; label: string; better: 'up' | 'down' }[] = [
   { key: 'score', label: 'Score', better: 'up' },
@@ -58,12 +68,11 @@ const SERIES: { key: 'score' | MetricKey; label: string; better: 'up' | 'down' }
 // Ícones do design (viewBox 24).
 const LOCK_RECT = { x: 4.5, y: 10.5, width: 15, height: 10.5, rx: 2.5 };
 const LOCK_PATH = 'M8 10.5V7.5a4 4 0 0 1 8 0v3';
-const SCAN_PATH = 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8.5 14.5s1.3 1.5 3.5 1.5 3.5-1.5 3.5-1.5M9 9.5h.01M15 9.5h.01';
 const BACK_PATH = 'M15 5l-7 7 7 7';
 const SHARE_PATH = 'M12 3v12M7.5 7.5L12 3l4.5 4.5M5 12v6.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V12';
 
 type ScanRow = { created_at: string; skin_score: number | null; foto_url: string | null; full_result: { metricas?: Metricas } | null };
-type ProgressData = { scans: ScanRow[]; firstPhotoOn: string | null };
+type ProgressData = { scans: ScanRow[]; firstPhotoOn: string | null; fotoHomeUrl?: string | null };
 
 /** Diferença em dias de calendário (virada às 04:00, igual à rotina). */
 function daysBetween(a: Date, b: Date): number {
@@ -92,13 +101,12 @@ export default function Progresso() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const uid = useUserId();
-  const { startFaceScan } = useFaceScan();
   const [scrolled, setScrolled] = useState(false);
   const [tab, setTab] = useState<(typeof SERIES)[number]['key']>('score');
   const [tipW, setTipW] = useState(0);
 
   const fetchProgress = useCallback(async (): Promise<ProgressData> => {
-    const [{ data: scans }, { data: photo }] = await Promise.all([
+    const [{ data: scans }, { data: photo }, { data: userRow }] = await Promise.all([
       supabase.from('skin_scans')
         .select('created_at, skin_score, foto_url, full_result')
         .eq('user_id', uid!)
@@ -110,8 +118,14 @@ export default function Progresso() {
         .order('taken_on', { ascending: true })
         .limit(1)
         .maybeSingle(),
+      // A foto escolhida pela usuária (galeria → ajuste) vale mais que a do scan, como na home.
+      supabase.from('users').select('foto_home_url').eq('id', uid!).maybeSingle(),
     ]);
-    return { scans: (scans ?? []) as ScanRow[], firstPhotoOn: photo?.taken_on ?? null };
+    return {
+      scans: (scans ?? []) as ScanRow[],
+      firstPhotoOn: photo?.taken_on ?? null,
+      fotoHomeUrl: userRow?.foto_home_url ?? null,
+    };
   }, [uid]);
 
   // Revalida a cada foco (um scan novo tem de aparecer na volta), sem piscar.
@@ -119,7 +133,6 @@ export default function Progresso() {
 
   const now = new Date();
   // Noturno a partir das 18h, como a home (38f).
-  const theme = homeTheme(isNightTheme(now), 'rgba(255,226,236,0.40)');
   const scans = data?.scans ?? [];
   const last = scans[0];
   const prev = scans[1];
@@ -127,11 +140,16 @@ export default function Progresso() {
 
   // ── Topo: anel + Niks Score ──
   const score = last?.skin_score ?? null;
-  const RING_C = 2 * Math.PI * 79;
+  // A tela muda de cor pela faixa do score (como a home antiga): 0–25 vermelho,
+  // 26–50 laranja, 51–75 amarelo, 76–100 rosa. Fundo, número e anel acompanham.
+  const theme = getScoreScreenTheme(score);
+  const scoreColor = getScoreTheme(score).score;
+  // Tom claro do fim do degradê do arco (`band.med` da 43g).
+  const ringLight = score == null ? '#FFDEED' : score <= 25 ? '#FFEBEB' : score <= 50 ? '#FFE3D5' : score <= 75 ? '#FFF3D2' : '#FFDEED';
+  // Só com 2+ scans: "+N desde o último scan". (A frase "Seu primeiro scan" saiu.)
   const deltaT = first || score == null || prev?.skin_score == null
-    ? 'Seu primeiro scan'
+    ? ''
     : `${signed(score - prev.skin_score)} desde o último scan`;
-  const lastDate = last ? `Scan de ${dayLabel(last.created_at, now, 'hoje')}` : '';
 
   // ── Próximo scan (de 7 em 7 dias a partir do último) ──
   const daysLeft = last ? Math.max(0, SCAN_INTERVAL_DAYS - daysBetween(new Date(last.created_at), now)) : 0;
@@ -140,20 +158,10 @@ export default function Progresso() {
     ? 'Seu gráfico começa no segundo scan.'
     : `Seu gráfico começa no segundo scan, daqui a ${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'}.`;
 
-  // ── Suas métricas ──
-  const metrics = METRIC_DEFS.map((m, i) => {
-    const v = metricOf(last, m.key);
-    const p = first ? null : metricOf(prev, m.key);
-    const d = v != null && p != null ? v - p : 0;
-    const good = m.positive ? d > 0 : d < 0;
-    return {
-      label: m.label.replace('\n', ' '),
-      v, w: v ?? 0,
-      dT: v != null && p != null && d !== 0 ? signed(d) : '',
-      dInk: good ? '#E8468F' : MUTED,
-      top: i > 0,
-    };
-  });
+  // ── Card de métricas (grade 3 × 2) ──
+  const metricas: Metricas = last?.full_result?.metricas ?? null;
+  // Scan anterior às 6 métricas (`full_result` sem `metricas`): aviso por cima.
+  const legacyScan = score != null && metricas == null;
 
   // ── Sua evolução (2+ scans): até 6 scans, do mais antigo ao mais novo ──
   const S = SERIES.find((s) => s.key === tab)!;
@@ -182,7 +190,8 @@ export default function Progresso() {
     : 1;
   const tlLeft = TIMELAPSE_DAYS - tlDay;
 
-  const photo = last?.foto_url ?? null;
+  const photo = data?.fotoHomeUrl ?? last?.foto_url ?? null;
+  const pickPhoto = usePickProfilePhoto();
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const v = e.nativeEvent.contentOffset.y > 8;
@@ -204,63 +213,91 @@ export default function Progresso() {
         onScroll={onScroll}
         contentContainerStyle={{ paddingTop: headerH, paddingBottom: 112 }}
       >
-        {/* Anel com a foto do último scan */}
-        <View style={{ marginTop: 22, alignItems: 'center' }}>
-          <View style={{ width: 168, height: 168 }}>
-            <Svg width={168} height={168} style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
-              <Circle cx={84} cy={84} r={79} fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth={6} />
-              <Circle
-                cx={84} cy={84} r={79} fill="none" stroke={PINK} strokeWidth={6} strokeLinecap="round"
-                strokeDasharray={`${(RING_C * (score ?? 0) / 100).toFixed(1)} ${RING_C.toFixed(1)}`}
-              />
-            </Svg>
-            <View style={styles.ringPhoto}>
-              {photo ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
-            </View>
-          </View>
-        </View>
-        <Text style={[styles.center, { marginTop: 22, height: 22, fontSize: 17, fontWeight: '500', lineHeight: 22, letterSpacing: -0.3 }]}>Seu Niks Score</Text>
-        <Text style={[styles.center, { marginTop: 5, height: 56, fontSize: 48, fontWeight: '700', lineHeight: 56, letterSpacing: -0.6 }]}>{score ?? '—'}</Text>
-        <Text style={[styles.center, { marginTop: 14, height: 22, fontSize: 17, fontWeight: '400', lineHeight: 22, letterSpacing: -0.3 }]}>{deltaT}</Text>
-        <View style={{ marginTop: 22, alignItems: 'center' }}>
-          {daysLeft > 0 ? (
-            // Scan de rosto de 7 em 7 dias: travado até liberar — mesma linguagem do card
-            // bloqueado da home (51a): fundo #F6D3E3, cadeado #C0206A, texto preto, sem toque.
-            <View style={[styles.scanBtn, styles.scanBtnLocked]}>
-              <Svg width={18} height={18} viewBox="0 0 24 24">
-                <Rect x={5} y={10.5} width={14} height={10} rx={2.5} fill="none" stroke={PINK_DEEP} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                <Path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" fill="none" stroke={PINK_DEEP} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-              <Text style={{ color: INK, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 }}>
-                {daysLeft === 1 ? 'Próximo scan amanhã' : `Próximo scan em ${daysLeft} dias`}
-              </Text>
-            </View>
-          ) : (
-            <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.action(); startFaceScan(); }} style={styles.scanBtn}>
-              <Svg width={18} height={18} viewBox="0 0 24 24">
-                <Path d={SCAN_PATH} fill="none" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-              <Text style={{ color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 }}>Fazer novo scan</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Suas métricas */}
-        <SectionHead style={{ marginTop: 40 }} title="Suas métricas" right={lastDate} />
-        <View style={styles.card}>
-          {metrics.map((m) => (
-            <View key={m.label} style={[styles.metricRow, m.top && { borderTopWidth: 1, borderTopColor: '#EFE8EB' }]}>
-              <View style={styles.baselineRow}>
-                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.35, color: INK }}>{m.label}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 7 }}>
-                  {m.dT ? <Text style={{ fontSize: 14, fontWeight: '600', color: m.dInk }}>{m.dT}</Text> : null}
-                  <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.5, color: INK }}>{m.v ?? '—'}</Text>
-                </View>
+        {/* Foto do último scan (Ø140, o tamanho de sempre) com o ARCO da tela 43g (Claude
+            Design, NiksProgressScore v="home2"): anel de 5 pt em degradê 160° da cor da faixa
+            do score até o tom claro da faixa, sombra 0 14 30 rgba(120,60,72,.14). O bloco
+            ocupa os mesmos 168 pt de antes, para o resto da tela não se mover. */}
+        <View style={{ marginTop: 22, height: 168, alignItems: 'center', justifyContent: 'center' }}>
+          {/* Tocar na foto = trocar pela galeria e enquadrar no círculo (como na home antiga). */}
+          <TouchableOpacity activeOpacity={0.85} onPress={pickPhoto} style={styles.photoRing} accessibilityLabel="Trocar foto de perfil">
+            <LinearGradient
+              colors={[scoreColor, ringLight]}
+              start={{ x: 0.33, y: 0 }}
+              end={{ x: 0.67, y: 1 }}
+              style={styles.photoRingFill}
+            >
+              <View style={styles.photoInner}>
+                {photo ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
               </View>
-              <View style={styles.bar}><View style={[styles.barFill, { width: `${m.w}%` }]} /></View>
-            </View>
-          ))}
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
+        {/* Número primeiro e "Niks score" embaixo dele (referência do produto, out/2026). */}
+        <Text style={[styles.center, { marginTop: 22, height: 70, fontSize: 64, fontWeight: '800', lineHeight: 70, letterSpacing: -1.8, color: scoreColor }]}>{score ?? '—'}</Text>
+        <Text style={[styles.center, { marginTop: 2, height: 25, fontSize: 20, fontWeight: '700', lineHeight: 25, letterSpacing: -0.4 }]}>Niks score</Text>
+        {/* Linha ondulada sob "Niks score" — cópia da tela 43g (Claude Design, NiksProgressScore
+            v="home2"): 150 × 12, traço 3 na cor da faixa do score. */}
+        <View style={{ marginTop: 4, alignItems: 'center' }}>
+          <Svg width={150} height={12} viewBox="0 0 150 12">
+            <Path
+              d="M3 6 q8 -6 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0"
+              fill="none" stroke={scoreColor} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"
+            />
+          </Svg>
+        </View>
+        {!!deltaT && (
+          <Text style={[styles.center, { marginTop: 14, height: 22, fontSize: 17, fontWeight: '400', lineHeight: 22, letterSpacing: -0.3 }]}>{deltaT}</Text>
+        )}
+
+        {/* ── Card de métricas da home antiga (versão B, Figma node 1:63) ──
+            Grade 3 × 2 (mais quadrada, referência do produto). Cada métrica = label (SF Pro) +
+            valor (SF Pro bold) + barra no semáforo de `metricColor`. TOCAR NO CARD =
+            compartilhar (como na home antiga). O toque fica num wrapper POR FORA: o card
+            tem `overflow: 'hidden'`, que já atrapalhou toque no New Architecture. */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          disabled={score == null}
+          accessibilityRole="button"
+          accessibilityLabel="Compartilhar minhas métricas"
+          style={styles.metricsCardTouch}
+          onPress={() => { haptics.tap(); router.push('/(share)/share-capture' as any); }}
+        >
+          <View style={styles.metricsCard}>
+            {/* Grade 3 × 2 (referência do produto, out/2026): em cada célula o nome fica
+                numa área de 2 linhas alinhada por baixo — todos os números na mesma
+                altura — e a barra ocupa a largura toda da coluna. */}
+            <View style={[styles.metricsGrid, legacyScan && { opacity: 0.22 }]}>
+              {METRIC_DEFS.map((m) => {
+                const v = metricas?.[m.key] ?? null;
+                const fill = v == null ? 0 : v / 100;
+                const barColor = v == null ? 'transparent' : metricColor(v, m.positive);
+                return (
+                  <View key={m.label} style={styles.metricCell}>
+                    <View style={styles.metricLabelBox}>
+                      <Text numberOfLines={2} style={styles.metricLabel}>{CARD_LABEL[m.key] ?? m.label}</Text>
+                    </View>
+                    <Text style={styles.metricValue}>{v == null ? '—' : v}</Text>
+                    <View style={styles.metricTrack}>
+                      <View style={[styles.metricFill, { width: `${fill * 100}%`, backgroundColor: barColor }]} />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Scan anterior às 6 métricas: as métricas ficam de fundo e o aviso por cima. */}
+            {legacyScan && (
+              <View style={styles.metricsLock} pointerEvents="none">
+                <Text style={{ color: INK, textAlign: 'center', letterSpacing: -0.3, fontWeight: '800', fontSize: 15 }}>
+                  Aprimoramos a análise de pele.
+                </Text>
+                <Text style={{ color: '#818181', textAlign: 'center', fontWeight: '600', fontSize: 12.5, lineHeight: 17, marginTop: 6 }}>
+                  Faça um novo scan para desbloquear suas 6 novas métricas e ter uma análise mais precisa.
+                </Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
 
         {/* Sua evolução */}
         <SectionHead style={{ marginTop: 30 }} title="Sua evolução" />
@@ -476,18 +513,37 @@ const styles = StyleSheet.create({
     shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
   },
   center: { textAlign: 'center', color: INK },
-  ringPhoto: {
-    position: 'absolute', left: 14, top: 14, width: 140, height: 140, borderRadius: 70,
-    overflow: 'hidden', backgroundColor: '#FDE6EF',
+  photoRing: {
+    width: 150, height: 150, borderRadius: 75,
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.14, shadowRadius: 15,
+    elevation: 6,
   },
-  scanBtn: {
-    height: 48, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 32,
-    borderRadius: 100, backgroundColor: PINK,
-    shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
-  },
-  scanBtnLocked: { backgroundColor: '#F6D3E3', shadowOpacity: 0 },
+  photoRingFill: { flex: 1, borderRadius: 75, padding: 5 },
+  photoInner: { flex: 1, borderRadius: 70, overflow: 'hidden', backgroundColor: '#FDE6EF' },
   card: { marginTop: 10, marginHorizontal: 18, backgroundColor: '#FFFFFF', borderRadius: 13, overflow: 'hidden' },
-  metricRow: { paddingTop: 13, paddingHorizontal: 17, paddingBottom: 14, gap: 8 },
+  // Card de métricas da home antiga (versão B).
+  metricsCardTouch: { marginTop: 36, marginHorizontal: 17 },
+  metricsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingTop: 14, paddingBottom: 18, paddingHorizontal: 16,
+    overflow: 'hidden',
+    shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 10,
+  },
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 14, rowGap: 22 },
+  metricCell: { width: '29.5%' },
+  metricLabelBox: { height: 36, justifyContent: 'flex-end' },
+  metricLabel: { fontSize: 13.5, lineHeight: 17, fontWeight: '500', letterSpacing: -0.2, color: '#4A4448' },
+  metricValue: { marginTop: 4, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.6, color: INK },
+  metricTrack: { marginTop: 8, height: 5, borderRadius: 3, backgroundColor: '#F1ECEE', overflow: 'hidden' },
+  metricFill: { height: '100%', borderRadius: 3 },
+  metricsLock: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
   baselineRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
   bar: { height: 4, borderRadius: 2, backgroundColor: TRACK, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 2, backgroundColor: PINK },

@@ -9,16 +9,16 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 1 do fluxo completo — campo de texto. Vem depois da apresentação (0.1) e dos
-// dados (0.2), que chega aqui com `replace`: NÃO tem voltar, e carrega o link "Já
-// tem conta? Entrar" — o único caminho de login de quem já tem conta. Vem ANTES do
+// Tela 2 do onboarding — campo de texto. Vem da apresentação "Olá, eu sou a NIKS"
+// (0.1) com `replace`: NÃO tem voltar, e carrega o link "Já tem conta? Entrar" — o
+// único caminho de login de quem já tem conta. Vem ANTES do
 // signup/paywall: ainda não há sessão, então o nome só vai para o store
 // (`pendingName`, persistido); quem grava em `users.nome` é o signup
 // (`saveToSupabase`). A captura de nome DENTRO do app (guard do `(app)/_layout`,
 // usuária legada sem nome) continua em `components/onboarding/NameCapture.tsx`.
 //
 // O teclado abre sozinho; antes de digitar, campo vazio com cursor e botão a 40%;
-// o bloco fica centrado na altura livre acima do teclado.
+// o bloco fica centrado na altura livre acima do teclado. Textos = versão B.
 const STEP = OB_STEPS.nome;
 const STEP_NAME = 'Nome';
 
@@ -52,7 +52,7 @@ export default function Nome() {
             campo (57) → 128 → botão → 14 → "Já tem conta?". */}
         <View>
           <ObTitle>Como você quer ser chamada?</ObTitle>
-          <ObSubtitle style={{ marginTop: 40, marginHorizontal: 30 }}>É assim que a NIKS vai falar com você.</ObSubtitle>
+          <ObSubtitle style={{ marginTop: 40, marginHorizontal: 30 }}>Esse é o nome que aparecerá na tela inicial do app.</ObSubtitle>
           <View style={{
             marginTop: 24, marginHorizontal: 17, height: 57, borderRadius: 12,
             backgroundColor: OB.option, justifyContent: 'center',

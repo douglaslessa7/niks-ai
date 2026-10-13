@@ -15,7 +15,7 @@ import { useCachedQuery } from '../../lib/cache';
 import { contarPassosMinhaRotina } from '../../lib/minhaRotina';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { scheduleRoutineReminders } from '../../lib/routineReminders';
-import { onCoachPrepare, setCoachStageReady } from '../../lib/coachMarks';
+import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
 import {
   getRoutineHistory, routineStreak, routinesDoneOn, sessionDate,
   RoutineHistory, RoutinePeriod,
@@ -97,12 +97,17 @@ function minutesUntil(target: number, nowMin: number): number {
 }
 
 // ── Os 3 estados do herói (ST7 a/b/c do design) ─────────────────────────────
-// a · antes do horário: "Sua rotina da noite em" + contagem regressiva + "Ver rotina"
-// b · na hora:          "Hora da sua rotina da manhã" + duração + "Iniciar rotina"
-// c · concluída:        "Rotina da manhã concluída" + "Xh até a rotina da noite", sem botão
+// a · antes do horário: "Seu skincare noturno em" + contagem regressiva + "Iniciar
+//     skincare" APAGADO e sem toque (ainda não é a hora; pedido do produto, out/2026 —
+//     era "Ver rotina")
+// b · na hora:          "Hora do seu skincare matinal" + duração + "Iniciar skincare"
+// c · concluída:        "Skincare matinal concluído" + "Xh" + "até o seu skincare noturno", sem botão
+// Na home NUNCA "rotina da manhã/noite": sempre "skincare matinal/noturno" (pedido do Douglas, out/2026).
 type Hero = {
   label: string; num: string; phrase: string; info: boolean;
   btn: string | null; done: boolean; focus: RoutinePeriod;
+  /** Botão visível mas apagado e sem toque (antes do horário da rotina). */
+  locked?: boolean;
 };
 
 function heroFor(now: Date, d: HomeData, hist: RoutineHistory): Hero {
@@ -114,20 +119,20 @@ function heroFor(now: Date, d: HomeData, hist: RoutineHistory): Hero {
 
   if (t >= d.pmTime || t < NIGHT_WINDOW_END) {
     if (day.pm) {
-      return { label: 'Rotina da noite concluída', num: fmtDuration(minutesUntil(d.amTime, t)), phrase: 'até a rotina da manhã', info: false, btn: null, done: true, focus: 'am' };
+      return { label: 'Skincare noturno concluído', num: fmtDuration(minutesUntil(d.amTime, t)), phrase: 'até o seu skincare matinal', info: false, btn: null, done: true, focus: 'am' };
     }
-    return { label: 'Hora da sua rotina da noite', num: dur(d.pmCount), phrase: passos(d.pmCount), info: true, btn: 'Iniciar rotina', done: false, focus: 'pm' };
+    return { label: 'Hora do seu skincare noturno', num: dur(d.pmCount), phrase: passos(d.pmCount), info: true, btn: 'Iniciar skincare', done: false, focus: 'pm' };
   }
   if (t >= d.amTime && t < amEnd) {
     if (day.am) {
-      return { label: 'Rotina da manhã concluída', num: fmtDuration(minutesUntil(d.pmTime, t)), phrase: 'até a rotina da noite', info: false, btn: null, done: true, focus: 'pm' };
+      return { label: 'Skincare matinal concluído', num: fmtDuration(minutesUntil(d.pmTime, t)), phrase: 'até o seu skincare noturno', info: false, btn: null, done: true, focus: 'pm' };
     }
-    return { label: 'Hora da sua rotina da manhã', num: dur(d.amCount), phrase: passos(d.amCount), info: true, btn: 'Iniciar rotina', done: false, focus: 'am' };
+    return { label: 'Hora do seu skincare matinal', num: dur(d.amCount), phrase: passos(d.amCount), info: true, btn: 'Iniciar skincare', done: false, focus: 'am' };
   }
   if (t < d.amTime) {
-    return { label: 'Sua rotina da manhã em', num: fmtDuration(minutesUntil(d.amTime, t)), phrase: passos(d.amCount), info: true, btn: 'Ver rotina', done: false, focus: 'am' };
+    return { label: 'Seu skincare matinal em', num: fmtDuration(minutesUntil(d.amTime, t)), phrase: passos(d.amCount), info: true, btn: 'Iniciar skincare', locked: true, done: false, focus: 'am' };
   }
-  return { label: 'Sua rotina da noite em', num: fmtDuration(minutesUntil(d.pmTime, t)), phrase: passos(d.pmCount), info: true, btn: 'Ver rotina', done: false, focus: 'pm' };
+  return { label: 'Seu skincare noturno em', num: fmtDuration(minutesUntil(d.pmTime, t)), phrase: passos(d.pmCount), info: true, btn: 'Iniciar skincare', locked: true, done: false, focus: 'pm' };
 }
 
 function keyOf(d: Date): string {
@@ -367,13 +372,16 @@ export default function Home() {
   const markHomeTutorialSeen = useAppStore((s) => s.markHomeTutorialSeen);
   useEffect(() => {
     if (homeTutorialSeenAt) markHomeTutorialSeen();
-    setCoachStageReady(!loading && homeTutorialSeenAt !== undefined);
-    return () => setCoachStageReady(false);
+    setCoachStageReady('home', !loading && homeTutorialSeenAt !== undefined);
+    return () => setCoachStageReady('home', false);
   }, [loading, homeTutorialSeenAt, markHomeTutorialSeen]);
 
   const scrollRef = useRef<ScrollView | null>(null);
+  const rowRef = useRef<ScrollView | null>(null);
+  // Tutorial (58a–58d): nenhuma parada da home rola — tela e fileira "Pra você" no início.
   useEffect(() => onCoachPrepare(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
+    rowRef.current?.scrollTo({ x: 0, animated: false });
   }), []);
 
   // Cabeçalho fixo: transparente no topo; ao rolar ganha o fundo rosado + linha
@@ -392,6 +400,16 @@ export default function Home() {
 
   const go = (path: string) => { haptics.tap(); router.push(path as any); };
 
+  // Alvos do tutorial de primeira entrada (58a–58d) — os `data-tut` do NiksHomeFlo.
+  const tutCnt = useCoachMark('home-cnt');
+  const tutCnt2 = useCoachMark('home-cnt2');
+  const tutRot = useCoachMark('home-rot', { enabled: !hero.done && !!hero.btn });
+  const tutWeek = useCoachMark('home-week');
+  const tutStreak = useCoachMark('home-streak');
+  const tutScan = useCoachMark('home-scan');
+  const tutRowTitle = useCoachMark('home-rowTitle');
+  const tutRow = useCoachMark('home-row');
+
   // Scan de rosto a cada 7 dias (51a): bloqueado enquanto faltam dias.
   const scanDays = scanDaysLeft(d.lastScanAt, now);
 
@@ -401,10 +419,10 @@ export default function Home() {
     { text: 'Progresso', icon: 'prog', onPress: () => go('/progresso') },
     { text: 'NIKS Chat', icon: 'chat', onPress: () => go('/niks-chat') },
     { text: 'Escanear produto', icon: 'prod', onPress: () => go('/(scan)/product-camera') },
-    { text: 'Minha coleção', icon: 'coll', onPress: () => go('/recomendacao-produtos') },
-    { text: 'Alarme de rotina', icon: 'alarm', onPress: () => go('/alarme') },
-    { text: 'Ver calendário', icon: 'cal', onPress: () => go('/calendario') },
-    { text: 'Dica do dia', icon: 'tip' },
+    // Alarme de rotina OCULTADO por enquanto (11/10/2026, decisão do Douglas) até a
+    // função ser repensada. A tela /alarme segue existindo; para voltar, descomentar.
+    // { text: 'Alarme de rotina', icon: 'alarm', onPress: () => go('/alarme') },
+    { text: 'Dica do dia', icon: 'tip', onPress: () => go('/dica-do-dia') },
   ];
 
   return (
@@ -433,7 +451,7 @@ export default function Home() {
         <View style={{ height: insets.top + 15 + 32 + 8 }} />
 
         {/* ── Semana ───────────────────────────────────────────────────── */}
-        <View style={styles.week}>
+        <View style={styles.week} {...tutWeek}>
           {days.map((day, i) => {
             const sz = day.today ? 50 : 34;
             const fullToday = day.today && day.kind === 'full';
@@ -465,36 +483,54 @@ export default function Home() {
         </View>
 
         {/* ── Herói: rotina ─────────────────────────────────────────────── */}
-        <Text style={styles.heroLabel}>{hero.label}</Text>
+        <Text style={styles.heroLabel} ref={tutCnt.ref as any} onLayout={tutCnt.onLayout}>{hero.label}</Text>
         <Text style={styles.heroNum}>{hero.num}</Text>
         {/* 51a: a linha da frase "N passos ⓘ" continua no lugar, vazia (phrase: '',
             info: false quando há o card de scan). */}
-        <View style={styles.heroPhrase} />
-        {/* ── Botão rosa da 38o: "Ver rotina"/"Iniciar rotina" (some com a rotina feita) ── */}
+        <View style={styles.heroPhrase} {...tutCnt2} />
+        {/* ── Botão rosa da 38o: "Iniciar skincare" (apagado e sem toque antes do horário;
+            some com a rotina feita) ── */}
         {!hero.done && hero.btn && (
           <View style={{ marginTop: 28, alignItems: 'center' }}>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => { haptics.action(); router.push('/protocolo' as any); }}
-              style={styles.heroPill}
-            >
-              <Text style={styles.heroPillText}>{hero.btn}</Text>
-            </TouchableOpacity>
+            <View {...tutRot}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                // Na hora da rotina, "Iniciar skincare" cai direto no guia passo a passo
+                // (tela imersiva) da Rotina. Antes da hora fica apagado e não responde.
+                disabled={!!hero.locked}
+                accessibilityState={{ disabled: !!hero.locked }}
+                onPress={() => {
+                  haptics.action();
+                  router.push((hero.btn === 'Iniciar skincare' ? `/protocolo?iniciar=${hero.focus}` : '/protocolo') as any);
+                }}
+                style={[styles.heroPill, hero.btn === 'Iniciar skincare' && styles.heroPillPlay, hero.locked && { opacity: 0.4 }]}
+              >
+                {hero.btn === 'Iniciar skincare' && (
+                  // Mesmo ▶ do "Iniciar skincare" da tela Rotina.
+                  <Svg width={13} height={14} viewBox="0 0 13 14">
+                    <Path d="M1 1.6v10.8c0 .8.9 1.3 1.6.9l9-5.4c.6-.4.6-1.3 0-1.7l-9-5.4C1.9.4 1 .8 1 1.6z" fill="#fff" />
+                  </Svg>
+                )}
+                <Text style={styles.heroPillText}>{hero.btn}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
         {/* ── Pra você · Hoje ──────────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { marginTop: hero.done ? 56 : 40 }]}>Pra você · Hoje</Text>
+        <Text style={[styles.sectionTitle, { marginTop: hero.done ? 56 : 40 }]} ref={tutRowTitle.ref as any} onLayout={tutRowTitle.onLayout}>Pra você · Hoje</Text>
+        <View style={{ marginTop: 10 }} {...tutRow}>
         <ScrollView
+          ref={rowRef}
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ marginTop: 10 }}
           contentContainerStyle={{ paddingTop: 2, paddingHorizontal: 18, paddingBottom: 14, gap: 8 }}
         >
           {/* Primeiro card = scan de rosto. Bloqueado (51a · scan-card="a"): contorno
               rosa a 35%, cadeado #C0206A sobre branco com o anel de progresso dos 7 dias
               em volta, título apagado e "Faltam N
               dias". Liberado: card normal, abre o scan. */}
+          <View {...tutScan}>
           {scanDays > 0 ? (
             <View style={[styles.card, styles.cardLocked]}>
               <View style={[styles.cardClip, styles.cardClipLocked]}>
@@ -531,6 +567,7 @@ export default function Home() {
               </View>
             </TouchableOpacity>
           )}
+          </View>
           {cards.map((c) => (
             // Vidro: branco 58% + desfoque (backdrop-filter blur 16) + contorno rosa.
             // A sombra fica no wrapper; o recorte arredondado do desfoque, no de dentro
@@ -556,12 +593,13 @@ export default function Home() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+        </View>
 
-        {/* ── Seus produtos · Rotina da manhã/noite ───────────────────── */}
+        {/* ── Seus produtos · Skincare matinal/noturno ───────────────────── */}
         {products.length > 0 && (
           <View style={styles.surface}>
             <Text style={styles.surfaceTitle}>
-              Seus produtos · {hero.focus === 'am' ? 'Rotina da manhã' : 'Rotina da noite'}
+              Seus produtos · {hero.focus === 'am' ? 'Skincare matinal' : 'Skincare noturno'}
             </Text>
             <ScrollView
               horizontal
@@ -624,6 +662,7 @@ export default function Home() {
           </View>
 
           {/* Sequência — estilo 5: círculo branco + selo rosa. Abre o calendário (42b). */}
+          <View {...tutStreak}>
           <TouchableOpacity activeOpacity={0.85} onPress={() => go('/calendario')} style={styles.streakBtn} accessibilityLabel="Abrir calendário">
             <Svg width={20} height={20} viewBox="0 0 24 24">
               <Path d={FLAME} fill="none" stroke={INK} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
@@ -632,6 +671,7 @@ export default function Home() {
               <Text style={styles.streakBadgeText}>{streak}</Text>
             </View>
           </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>
@@ -699,6 +739,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
   },
+  heroPillPlay: { flexDirection: 'row', gap: 9 },
   heroPillText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
 
   sectionTitle: {

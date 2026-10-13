@@ -10,8 +10,8 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 17 do onboarding novo — Com × Sem NIKS (Gráfico B "3x mais rápido",
-// modelo 6b do design). Tela de valor: só o voltar, fundo rosado.
+// Tela 15 do onboarding — Com × Sem NIKS (Gráfico B "3x mais rápido",
+// modelo 6b do design), textos da versão B. Tela de valor: só o voltar, fundo branco (como o resto do onboarding, pedido do produto).
 //
 // Animação (roda UMA vez; mesma conta do `tickG` do design): as duas barras
 // crescem juntas de baixo para cima. "Sem o NIKS" para em 25% da altura aos
@@ -19,8 +19,8 @@ import {
 // e termina aos 1,1 s com um leve quique (passa ~4% e volta). O "3x" aparece quando
 // a barra passa da metade e conta de 1,0x a 3x entre 0,4 e 1,1 s.
 //
-// Depois daqui vem o LOADING (tela 18) — é lá que a `analyze-skin` roda, porque
-// ela usa tipo de pele / sol / sono, respondidos depois da foto.
+// Depois daqui vem o tutorial do scan: todas as respostas já estão no store quando
+// a foto chega, então a `analyze-skin` (disparada pela câmera) recebe o perfil inteiro.
 const STEP = OB_STEPS.comSemNiks;
 const STEP_NAME = 'Com x Sem NIKS';
 const TOTAL_MS = 1200;
@@ -65,12 +65,12 @@ export default function SocialProof() {
       setScanSource('onboarding');
       router.replace('/(app)/skin-result' as any);
     } else {
-      router.push('/(scan)/loading' as any);
+      router.push('/(scan)/scan-prep' as any);
     }
   };
 
   return (
-    <ObScreen variant="blush">
+    <ObScreen>
       <View style={{
         position: 'absolute', left: 17, right: 17, top: y(100), height: 330, borderRadius: 20,
         backgroundColor: '#FFFFFF',
@@ -80,7 +80,7 @@ export default function SocialProof() {
         <View style={{ position: 'absolute', left: 56, width: 110, bottom: 68, alignItems: 'center', gap: 10 }}>
           <View style={{ alignItems: 'center', gap: 2, opacity: num0 }}>
             <Text style={{ fontSize: 20, lineHeight: 24, fontWeight: '700', color: OB.ink }}>22%</Text>
-            <Text style={{ fontSize: 13, lineHeight: 16, color: OB.sub }}>eficácia</Text>
+            <Text style={{ fontSize: 13, lineHeight: 16, color: OB.sub }}>Eficácia</Text>
           </View>
           <View style={{ width: 110, height: h0, borderRadius: 14, backgroundColor: OB.track }} />
         </View>
@@ -91,7 +91,7 @@ export default function SocialProof() {
             <LinearGradient colors={['#FFC4DA', OB.pink]} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
             <View style={{ position: 'absolute', left: 0, right: 0, top: 22, alignItems: 'center', gap: 2, opacity: txt }}>
               <Text style={{ fontSize: 40, lineHeight: 44, fontWeight: '700', color: '#FFFFFF', fontVariant: ['tabular-nums'] }}>{count}</Text>
-              <Text style={{ fontSize: 13, lineHeight: 16, color: '#FFFFFF' }}>mais resultado</Text>
+              <Text style={{ fontSize: 13, lineHeight: 16, color: '#FFFFFF' }}>Mais resultado</Text>
             </View>
           </View>
         </View>
@@ -106,10 +106,10 @@ export default function SocialProof() {
       </View>
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(462) }}>
-        <ObTitle>Com o NIKS, você chega lá 3x mais rápido.</ObTitle>
+        <ObTitle>Com o NIKS, você vai conseguir 3x mais rápido.</ObTitle>
       </View>
       <ObSubtitle style={{ position: 'absolute', left: 30, right: 30, top: y(580), marginHorizontal: 0, lineHeight: 24 }}>
-        O NIKS monta o skincare exato para o seu objetivo, sem tentativa e erro.
+        O NIKS conhece a sua pele melhor que ninguém e monta o skincare exato que você precisa para atingir seu objetivo, sem erros.
       </ObSubtitle>
 
       <ObHeader onBack={() => router.back()} />

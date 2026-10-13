@@ -26,6 +26,8 @@ import { haptics } from '../../lib/haptics';
 import { CAT_ORDER, catOf } from '../../lib/productCategory';
 import { listarEscaneados, type ScanItem } from '../../lib/escaneados';
 import { dedupeByProduct, sameProduct } from '../../lib/productMatch';
+import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
+import { checkProdutosTutorial } from '../../lib/produtosTutorial';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
 // Reformada para a linguagem visual do app (home / protocolo / niks-chat): fundo
@@ -251,6 +253,21 @@ export default function RecomendacaoProdutos() {
       useAppStore.getState().setEscolhaParaPasso(null);
     };
   }, []));
+  // ── Tutorial de primeira entrada (59a–59d) ─────────────────────────────────
+  // Alvos = `data-tut` do NiksProductsShelf. A parada 3 rola até o fim (recomendados);
+  // as outras, para o topo. Cada foco confere no servidor se a conta já viu.
+  const tutShelf = useCoachMark('prod-shelf');
+  const tutEdit = useCoachMark('prod-edit');
+  const tutRecTitle = useCoachMark('prod-recTitle');
+  const tutRecRow = useCoachMark('prod-recRow');
+  const tutScanBtn = useCoachMark('prod-scanBtn');
+  const mainScrollRef = useRef<ScrollView | null>(null);
+  useEffect(() => onCoachPrepare((scroll) => {
+    if (scroll === 'end') mainScrollRef.current?.scrollToEnd({ animated: true });
+    else mainScrollRef.current?.scrollTo({ y: 0, animated: true });
+  }), []);
+  useFocusEffect(useCallback(() => { void checkProdutosTutorial(); }, []));
+
   // Trocou de visão (estante ↔ "Ver todos"): a lista nova começa no topo → pílula aberta.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { lastY.current = 0; setPill(false); }, [view]);
@@ -591,15 +608,15 @@ export default function RecomendacaoProdutos() {
             <Text style={p47.topTitle}>Meus produtos</Text>
           </View>
         )}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {/* Editar/OK da estante: só com produto. No modo Editar, compartilhar e busca
-              saem do topo — sobra só o "OK". */}
-          {view === 'main' && colecao.length > 0 && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }} {...(view === 'main' ? tutEdit : {})}>
+          {/* Editar/OK da estante: sempre na estante, mesmo vazia (designs 59a–59d). No
+              modo Editar, compartilhar e busca saem do topo — sobra só o "OK". */}
+          {view === 'main' && (
             <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.select(); setEditing((e) => !e); }} hitSlop={8} style={p47.editBtn} accessibilityLabel={editing ? 'Concluir edição da estante' : 'Editar estante'}>
               <Text style={[p47.editText, editing && { fontWeight: '700' }]}>{editing ? 'OK' : 'Editar'}</Text>
             </TouchableOpacity>
           )}
-          {view === 'main' && colecao.length > 0 && !editing && (
+          {view === 'main' && !editing && (
             <TouchableOpacity activeOpacity={0.85} onPress={() => { void shelfRef.current?.share(); }} style={p47.circle36} accessibilityLabel="Compartilhar estante">
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 15V3.5M7.5 8 12 3.5 16.5 8M5 12.5v6A2 2 0 0 0 7 20.5h10a2 2 0 0 0 2-2v-6" /></Svg>
             </TouchableOpacity>
@@ -701,17 +718,20 @@ export default function RecomendacaoProdutos() {
   const Carousel = <G extends GridItem>(o: {
     title: string; items: G[]; onPick: (p: G) => void; subOf: (p: G) => string | null; onAll: () => void;
     shelfOf?: (p: G) => boolean;
+    tut?: [object, object]; // alvos "recTitle"/"recRow" do tutorial (só nos Recomendados)
   }) => (
     <>
-      <View style={p47.sectionRow}>
+      <View style={p47.sectionRow} {...o.tut?.[0]}>
         <Text style={p47.title}>{o.title}</Text>
         <TouchableOpacity onPress={o.onAll} hitSlop={10} accessibilityLabel={`Ver todos: ${o.title}`}>
           <Text style={p47.seeAll}>Ver todos</Text>
         </TouchableOpacity>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 12 }}>
+      <View style={{ marginTop: 12 }} {...o.tut?.[1]}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 12 }}>
         {o.items.slice(0, CAROUSEL_MAX).map((p) => ProductCard(p, o.onPick, o.subOf(p), { width: CARD_W }, !!o.shelfOf?.(p)))}
       </ScrollView>
+      </View>
     </>
   );
 
@@ -727,6 +747,15 @@ export default function RecomendacaoProdutos() {
 
   // Recomendados = tudo o que a IA indicou e que NÃO está escolhido na rotina.
   const recShown = state === 'ready' ? recList.filter((r) => !inRoutine(r.prod)) : [];
+
+  // Palco do tutorial: estante carregada e "Recomendados pra você" na tela (com
+  // produtos, ou "Montando sua recomendação…"). Sem a seção, o tutorial não começa.
+  const tutStage = view === 'main' && !searchOpen && !editing && colState === 'ready' && scanState !== 'loading'
+    && ((state === 'ready' && recShown.length > 0) || state === 'generating');
+  useEffect(() => {
+    setCoachStageReady('produtos', tutStage);
+  }, [tutStage]);
+  useFocusEffect(useCallback(() => () => setCoachStageReady('produtos', false), []));
   // Modo escolha: o produto tocado (estante, escaneado ou recomendado) vai para o passo —
   // e para a estante, se ainda não estiver (lib/minhaRotina). Aviso da pele dela; o forte
   // pede confirmação. Depois, volta para a Rotina.
@@ -804,6 +833,7 @@ export default function RecomendacaoProdutos() {
   // A ação é a mesma (câmera de produto).
   const Bubbles = () => (
     <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 53 + insets.bottom + 18, alignItems: 'center' }}>
+    <View {...tutScanBtn}>
     <TouchableOpacity activeOpacity={0.85} onPress={handleEscanearProduto} accessibilityRole="button" accessibilityLabel="Escanear produto" style={[p47.pill, PILL_PINK && p47.pillPink]}>
       <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={PILL_FG} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
         <Path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M15.5 4H18a2 2 0 0 1 2 2v2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5M8.5 20H6a2 2 0 0 1-2-2v-2.5" />
@@ -816,6 +846,7 @@ export default function RecomendacaoProdutos() {
         <Text numberOfLines={1} style={[p47.pillText, { color: PILL_FG }]}>Escanear produto</Text>
       </Animated.View>
     </TouchableOpacity>
+    </View>
     </View>
   );
 
@@ -840,7 +871,7 @@ export default function RecomendacaoProdutos() {
           Seção sem produto não aparece; Escaneados vazio vira convite. Com texto na
           busca, a estante dá lugar aos resultados das três origens. */}
       {view === 'main' && (
-        <ScrollView style={{ flex: 1 }} scrollEnabled={scrollOn} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={mainScrollRef} style={{ flex: 1 }} scrollEnabled={scrollOn} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
           {PageTop()}
           {searching ? (() => {
             const q = fold(query.trim());
@@ -874,14 +905,15 @@ export default function RecomendacaoProdutos() {
                 onRemove={(c) => confirmRemove(c)}
                 onDragActive={setScrollOn}
                 onScan={() => router.push('/(scan)/product-camera' as any)}
+                tutMark={tutShelf}
               />
               {colState === 'error' && <RetryRow text="Não deu pra carregar sua estante agora." onRetry={loadColecao} />}
 
               {/* Recomendados pra você */}
               {state === 'generating' && (
                 <>
-                  <View style={p47.sectionRow}><Text style={p47.title}>Recomendados pra você</Text></View>
-                  <View style={{ marginTop: 14, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={p47.sectionRow} {...tutRecTitle}><Text style={p47.title}>Recomendados pra você</Text></View>
+                  <View style={{ marginTop: 14, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 10 }} {...tutRecRow}>
                     <ActivityIndicator color="#FF5EA8" />
                     {/* Usuária legada: a recomendação está sendo gerada agora (IA, uma vez na vida da conta). */}
                     <Text style={p47.sub}>Montando sua recomendação…</Text>
@@ -896,7 +928,7 @@ export default function RecomendacaoProdutos() {
               )}
               {recShown.length > 0 && Carousel<RecEntry>({
                 title: 'Recomendados pra você', items: recShown, onPick: openRec, subOf: recSub, shelfOf: recInShelf,
-                onAll: () => openList('recomendados'),
+                onAll: () => openList('recomendados'), tut: [tutRecTitle, tutRecRow],
               })}
 
               {/* Escaneados recentemente — vazio vira convite para o 1º scan */}
@@ -1203,7 +1235,8 @@ const p47 = StyleSheet.create({
   },
   shelfTagText: { fontSize: 12, fontWeight: '600', letterSpacing: -0.1, color: '#C0206A' },
   // "Editar"/"OK" da estante, no topo: texto rosa (o mesmo do "Ver todos"/"Cancelar").
-  editBtn: { height: 36, paddingHorizontal: 6, justifyContent: 'center' },
+  // Sem folga à esquerda: o alvo "edit" do tutorial começa no texto, como no design.
+  editBtn: { height: 36, paddingLeft: 0, paddingRight: 6, justifyContent: 'center' },
   editText: { fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: '#E8468F' },
   name: { fontSize: 16, fontWeight: '500', lineHeight: 20, letterSpacing: -0.3, color: INK },
   sub: { fontSize: 15, fontWeight: '400', lineHeight: 20, letterSpacing: -0.2, color: '#8A8385' },

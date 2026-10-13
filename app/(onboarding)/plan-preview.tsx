@@ -1,3 +1,5 @@
+// ⚠️ FORA DO FLUXO desde out/2026: o conteúdo desta tela (versão B) foi para a
+// `rotina-pronta.tsx`, no visual do kit. Nada navega para cá.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, Animated, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -144,7 +146,7 @@ export default function PlanPreview() {
   const arrowTop = cardPhotoH / 2 - 18;
 
   useEffect(() => {
-    track('onboarding_step_viewed', obStep(OB_STEPS.rotinaPronta, 'Protocolo Pronto'));
+    track('onboarding_step_viewed', obStep(OB_STEPS.planPreview, 'Protocolo Pronto'));
   }, []);
 
   return (
@@ -472,7 +474,7 @@ export default function PlanPreview() {
           <TouchableOpacity
             onPress={() => {
               haptics.action();
-              track('onboarding_step_completed', obStep(OB_STEPS.rotinaPronta, 'Protocolo Pronto'));
+              track('onboarding_step_completed', obStep(OB_STEPS.planPreview, 'Protocolo Pronto'));
               // Tela 21 do onboarding novo (compromisso) fica entre a rotina pronta e o paywall.
               router.push('/(onboarding)/compromisso' as any);
             }}

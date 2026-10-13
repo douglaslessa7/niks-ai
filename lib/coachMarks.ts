@@ -1,56 +1,42 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Coach marks — onde cada elemento destacado ESTÁ na tela.
 //
-// O tutorial de primeiro acesso escurece a tela inteira e recorta um buraco em
-// volta de um elemento. O buraco precisa das coordenadas REAIS (em coordenadas
-// de janela) de elementos que vivem em ARQUIVOS DIFERENTES:
-//   • botão "Escanear" e card de métricas → `app/(app)/home.tsx`
-//   • ícones da navbar                    → `app/(app)/_layout.tsx`
-// e o overlay, que precisa cobrir a navbar, mora no `_layout` (ver a seção
-// "Feature: Tutorial de primeiro acesso" no README).
+// Os tutoriais de primeira entrada (home = designs 58a–58d, Produtos = 59a–59d)
+// escurecem a tela inteira e recortam um buraco em volta de um elemento. O buraco
+// precisa das coordenadas REAIS (de janela) de elementos que vivem nas telas
+// (`home.tsx`, `recomendacao-produtos.tsx`, `Shelf.tsx`), e o overlay, que cobre
+// a navbar, mora no `(app)/_layout` (ver `components/coach/TutorialOverlay.tsx`).
 //
 // Por que um registro de MÓDULO e não o Zustand: as medidas são efêmeras (mudam
-// a cada layout/rotação) e não têm nada a ver com o estado do app — persistir ou
-// versionar isso no store seria ruído. Mesmo padrão de `lib/nativePresentation.ts`
-// e `lib/shareResume.ts`. O que PERSISTE (já viu / está armado) vive no store.
+// a cada layout/rolagem) e não têm nada a ver com o estado do app. O que PERSISTE
+// (já viu / está armado) vive no store e no banco.
 //
-// Fluxo de medição, em 2 canais separados de propósito (a ordem importa):
-//   1. `requestCoachPrepare()` — o overlay avisa a tela que vai destacar algo.
-//      A home aproveita para ROLAR PARA O TOPO (o card de métricas pode estar
-//      fora da viewport; medir antes disso daria um buraco no lugar errado).
-//   2. `requestCoachMeasure()` — só depois, todos os alvos se remedem.
-// Um canal só não resolveria: a ordem de execução dos listeners dependeria da
-// ordem dos hooks, e a home mediria ANTES de ter rolado.
+// Dois canais, em ordem:
+//   1. `requestCoachPrepare(scroll)` — o overlay avisa a tela que vai destacar a
+//      próxima parada; a tela ROLA ('top' = início; 'end' = fim, parada 3 dos
+//      Produtos). Medir antes disso daria um buraco no lugar errado.
+//   2. `requestCoachMeasure()` — todos os alvos se remedem. O overlay chama a cada
+//      300 ms (e em rajada durante as transições), como o `setInterval` do design.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { View } from 'react-native';
 
+// Nomes = `data-tut` dos designs (NiksHomeFlo / NiksProductsShelf).
 export type CoachTargetKey =
-  | 'scan'          // botão "Escanear" da home (pílula)
-  | 'metrics'       // card de métricas da home (retângulo arredondado)
-  | 'nav-rotina'    // navbar: ícone "beauty" → /protocolo (círculo)
-  | 'nav-produtos'  // navbar: ícone de frasco → /recomendacao-produtos (círculo)
-  | 'nav-chat';     // navbar: balão → /niks-chat (círculo)
+  | 'home-cnt' | 'home-cnt2' | 'home-rot' | 'home-week' | 'home-streak'
+  | 'home-scan' | 'home-rowTitle' | 'home-row'
+  | 'prod-shelf' | 'prod-edit' | 'prod-recTitle' | 'prod-recRow' | 'prod-scanBtn';
 
-/** Formato do recorte. `radius` só é lido no 'rect'. */
-export type CoachShape = 'pill' | 'rect' | 'circle';
-
-export type CoachRect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  shape: CoachShape;
-  radius?: number;
-};
-
+export type CoachRect = { x: number; y: number; width: number; height: number };
 export type CoachTargets = Partial<Record<CoachTargetKey, CoachRect>>;
+export type CoachStage = 'home' | 'produtos';
+export type CoachScroll = 'top' | 'end';
 
 let targets: CoachTargets = {};
-let stageReady = false;
+const stageReady: Record<CoachStage, boolean> = { home: false, produtos: false };
 
 const subscribers = new Set<() => void>();
-const prepareListeners = new Set<() => void>();
+const prepareListeners = new Set<(scroll: CoachScroll) => void>();
 const measureListeners = new Set<() => void>();
 
 function emit() {
@@ -63,9 +49,7 @@ function sameRect(a: CoachRect | undefined, b: CoachRect | null): boolean {
     Math.abs(a.x - b.x) < 0.5 &&
     Math.abs(a.y - b.y) < 0.5 &&
     Math.abs(a.width - b.width) < 0.5 &&
-    Math.abs(a.height - b.height) < 0.5 &&
-    a.shape === b.shape &&
-    a.radius === b.radius
+    Math.abs(a.height - b.height) < 0.5
   );
 }
 
@@ -79,27 +63,26 @@ export function registerCoachTarget(key: CoachTargetKey, rect: CoachRect | null)
 }
 
 /**
- * A tela de fundo terminou de carregar e pode ser destacada. A home chama com
- * `true` quando os dados chegam (ela abre com SKELETON no cold start — destacar
- * um card ainda pulsando explicaria a coisa errada).
+ * A tela de fundo terminou de carregar e pode ser destacada (destacar um card
+ * ainda carregando explicaria a coisa errada). Uma flag por tela.
  */
-export function setCoachStageReady(value: boolean): void {
-  if (stageReady === value) return;
-  stageReady = value;
+export function setCoachStageReady(stage: CoachStage, value: boolean): void {
+  if (stageReady[stage] === value) return;
+  stageReady[stage] = value;
   emit();
 }
 
-/** Canal 1 — "vou destacar algo, se prepare" (a home rola para o topo). */
-export function requestCoachPrepare(): void {
-  prepareListeners.forEach((fn) => fn());
+/** Canal 1 — "vou destacar a próxima parada, role para `scroll`". */
+export function requestCoachPrepare(scroll: CoachScroll): void {
+  prepareListeners.forEach((fn) => fn(scroll));
 }
 
-/** Canal 2 — "agora meça". Sempre DEPOIS do prepare (ver cabeçalho). */
+/** Canal 2 — "agora meça". */
 export function requestCoachMeasure(): void {
   measureListeners.forEach((fn) => fn());
 }
 
-export function onCoachPrepare(fn: () => void): () => void {
+export function onCoachPrepare(fn: (scroll: CoachScroll) => void): () => void {
   prepareListeners.add(fn);
   return () => { prepareListeners.delete(fn); };
 }
@@ -117,32 +100,25 @@ export function useCoachTargets(): CoachTargets {
 }
 
 /** `true` quando a tela de fundo terminou de carregar (ver `setCoachStageReady`). */
-export function useCoachStageReady(): boolean {
-  const [value, setValue] = useState(stageReady);
+export function useCoachStageReady(stage: CoachStage): boolean {
+  const [value, setValue] = useState(stageReady[stage]);
   useEffect(() => {
-    const fn = () => setValue(stageReady);
+    const fn = () => setValue(stageReady[stage]);
     subscribers.add(fn);
     fn();
     return () => { subscribers.delete(fn); };
-  }, []);
+  }, [stage]);
   return value;
 }
 
 /**
- * Liga um elemento ao registro. Devolve `{ ref, onLayout }` para pregar num
- * componente de HOST (`<View>` puro) — não num `TouchableOpacity`: o que
- * interessa é a caixa desenhada, e o touchable pode ser bem maior que ela
- * (os itens da navbar são `flex: 1`, uma coluna inteira).
+ * Liga um elemento ao registro. Devolve `{ ref, onLayout, collapsable }` para
+ * espalhar num componente de HOST (`<View>` puro, ou `<Text>`) — não num
+ * `TouchableOpacity`: o que interessa é a caixa desenhada.
  *
- * `enabled: false` desregistra o alvo — é assim que a home some com o passo do
- * card de métricas para quem ainda não tem scan (ver o overlay).
+ * `enabled: false` desregistra o alvo (ex.: botão "Ver rotina" some com a rotina feita).
  */
-export function useCoachMark(
-  key: CoachTargetKey,
-  shape: CoachShape,
-  options?: { radius?: number; enabled?: boolean },
-) {
-  const radius = options?.radius;
+export function useCoachMark(key: CoachTargetKey, options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
   const ref = useRef<View | null>(null);
 
@@ -150,13 +126,13 @@ export function useCoachMark(
     if (!enabled) { registerCoachTarget(key, null); return; }
     const node = ref.current;
     if (!node) return;
-    // measureInWindow → coordenadas de JANELA, que é o mesmo sistema do overlay
-    // (ele é absoluto sobre a View raiz do (app)/_layout, que preenche a tela).
+    // measureInWindow → coordenadas de JANELA, o mesmo sistema do overlay (ele é
+    // absoluto sobre a View raiz do (app)/_layout, que preenche a tela).
     node.measureInWindow?.((x, y, width, height) => {
-      if (!width || !height) return; // view ainda sem layout — o próximo onLayout resolve
-      registerCoachTarget(key, { x, y, width, height, shape, radius });
+      if (!width || !height) return; // ainda sem layout — o próximo onLayout resolve
+      registerCoachTarget(key, { x, y, width, height });
     });
-  }, [key, shape, radius, enabled]);
+  }, [key, enabled]);
 
   useEffect(() => {
     if (!enabled) { registerCoachTarget(key, null); return; }
@@ -168,5 +144,5 @@ export function useCoachMark(
   // Desregistra ao desmontar: um alvo fantasma viraria buraco no vazio.
   useEffect(() => () => { registerCoachTarget(key, null); }, [key]);
 
-  return { ref, onLayout: measure };
+  return { ref, onLayout: measure, collapsable: false as const };
 }

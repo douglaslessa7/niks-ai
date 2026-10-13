@@ -3,19 +3,11 @@ import {
   View, Text, TouchableOpacity, TextInput,
   Platform, Alert, ActivityIndicator,
   KeyboardAvoidingView, ScrollView, Linking,
-  LayoutAnimation, UIManager, useWindowDimensions,
+  LayoutAnimation, UIManager,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Eye, EyeOff, Mail } from 'lucide-react-native';
-import Svg, { Path, Rect, G, Ellipse, Circle } from 'react-native-svg';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold,
-  Nunito_700Bold,
-  Nunito_600SemiBold,
-  Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
+import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppStore } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
@@ -23,45 +15,31 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { saveOnboardingProtocol } from '../../lib/onboardingPrefetch';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { haptics } from '../../lib/haptics';
-import { useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
-import { SignupHeroText } from '../../components/onboarding/SignupHeroText';
+import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const DEEP = '#121212';
-const DEEP_SOFT = '#515151';
-const CORAL = '#FF9D9D';
-const CORAL_DEEP = '#F2808E';
+// Tela 24 do onboarding — criar conta, depois do paywall. LAYOUT da versão B (commit
+// 8ae3453: "Bem-vinda! Vamos começar personalizando a sua jornada.", e-mail → senha,
+// "ou", Google e Apple, termos) no VISUAL do kit (fonte do sistema, #FF5EA8, campos
+// #F0F0F0), sem o X e sem a etiqueta "sua conta" (pedido do produto, out/2026). A tela
+// "#1 app de skincare com IA" (modelo 10a) saiu; `SignupHeroText.tsx` ficou no repo.
+// Lógica de cadastro intacta. → notificações.
+const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
 
 export default function Signup() {
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold,
-    Nunito_700Bold,
-    Nunito_600SemiBold,
-    Nunito_400Regular,
-  });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
-  const fReg   = fontsLoaded ? 'Nunito_400Regular' : undefined;
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
   const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating } = useAppStore();
   const { track, identify } = useMixpanel();
-  const armHomeTutorial = useAppStore((s) => s.armHomeTutorial);
-
-  // Fim do onboarding: conta criada → HOME. O carrossel pós-cadastro (`apresentacao`)
-  // saiu do fluxo completo, então o tutorial de primeiro acesso é armado AQUI — este
-  // é agora o único caminho de usuária NOVA até a home (login, paywall de
-  // reengajamento e `index` com sessão são de conta existente). Conta existente que
-  // refaz o onboarding também passa, e quem barra é o servidor
-  // (`users.home_tutorial_seen_at`). Ver "Feature: Tutorial de primeiro acesso".
+  // Conta criada → notificações → home. (A apresentação pós-cadastro — slides 2 a 5 —
+  // saiu a pedido do produto.) O tutorial de primeiro acesso da home é armado na tela
+  // de notificações, a última antes de entrar no app.
   const finishOnboarding = () => {
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
-    armHomeTutorial();
-    router.replace('/(app)/home');
+    router.replace('/(onboarding)/notifications');
   };
 
   const startProtocolGeneration = (userId: string) => {
@@ -96,12 +74,7 @@ export default function Signup() {
   const [waitingConfirmation, setWaitingConfirmation] = useState(false);
   const [emailSent, setEmailSent] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
-  // Tela 10a mostra só os três botões; "Continuar com e-mail" abre o formulário.
-  const [showEmailForm, setShowEmailForm] = useState(false);
-  const { y, insets } = useObFrame();
-  const { width: screenW, height: screenH } = useWindowDimensions();
-  // O design é desenhado em 393 pt de largura: centraliza as posições horizontais.
-  const x0 = (screenW - 393) / 2;
+  const { insets } = useObFrame();
   const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleEmailContinue = () => {
@@ -226,355 +199,202 @@ export default function Signup() {
 
   const emailActive = email.trim().length > 0;
   const passwordActive = password.trim().length > 0;
-  const emailFocused = focusedField === 'email';
-  const passwordFocused = focusedField === 'password';
+
+  const fieldLabel = { fontSize: 15, lineHeight: 20, fontWeight: '600' as const, color: OB.ink, marginBottom: 8 };
+  const field = (focused: boolean) => ({
+    height: 57, borderRadius: 12, backgroundColor: OB.option, paddingHorizontal: 16,
+    borderWidth: 1.5, borderColor: focused ? OB.pink : 'transparent',
+  });
+  const wide = { width: '100%' as const, height: 50, borderRadius: 25 };
 
   if (waitingConfirmation) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 32 }}>
-            <View style={{ marginBottom: 24 }}>
-              <Mail size={64} color={CORAL} />
-            </View>
-            <Text style={{ fontFamily: fXBold, fontSize: 28, fontWeight: '800', color: DEEP, textAlign: 'center', marginBottom: 14, letterSpacing: -0.7, lineHeight: 32 }}>
-              Verifique seu e-mail
-            </Text>
-            <Text style={{ fontFamily: fReg, fontSize: 14.5, color: DEEP_SOFT, textAlign: 'center', marginBottom: 8, lineHeight: 21.75 }}>
-              {'Enviamos um link de confirmação para '}
-              <Text style={{ fontFamily: fXBold, fontWeight: '700', color: DEEP }}>{emailSent}</Text>
-              {'. Clique no link para ativar sua conta.'}
-            </Text>
-            <Text style={{ fontFamily: fReg, fontSize: 13, color: DEEP_SOFT, textAlign: 'center', marginBottom: 40, lineHeight: 19.5, opacity: 0.7 }}>
-              Não se esqueça de checar a pasta de spam.
-            </Text>
-            <TouchableOpacity
-              onPress={handleResend}
-              disabled={resendCooldown > 0}
-              activeOpacity={0.85}
-              style={{
-                width: '100%', height: 60, borderRadius: 100,
-                alignItems: 'center', justifyContent: 'center',
-                backgroundColor: resendCooldown > 0 ? 'rgba(18,18,18,0.18)' : CORAL,
-                shadowColor: CORAL,
-                shadowOffset: { width: 0, height: resendCooldown > 0 ? 0 : 14 },
-                shadowOpacity: resendCooldown > 0 ? 0 : 0.55,
-                shadowRadius: 30,
-                marginBottom: 8,
-              }}
-            >
-              <Text style={{ fontFamily: fSemi, fontSize: 17, fontWeight: '600', color: '#FFFFFF', letterSpacing: -0.2 }}>
-                {resendCooldown > 0 ? `Reenviar em ${resendCooldown}s` : 'Reenviar e-mail'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleUseOtherEmail} activeOpacity={0.7} style={{ marginTop: 16 }}>
-              <Text style={{ fontFamily: fReg, fontSize: 15, color: DEEP_SOFT, letterSpacing: -0.1 }}>Usar outro e-mail</Text>
-            </TouchableOpacity>
+      <ObScreen>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingBottom: 32 }}>
+          <View style={{ marginBottom: 24 }}>
+            <Mail size={64} color={OB.pink} />
           </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Tela 10a · Criar conta (clone do Flo) ─────────────────────────────────
-  if (!showEmailForm) {
-    const btn = {
-      height: 46, borderRadius: 23,
-      flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 12,
-    };
-    const btnText = { fontSize: 20, fontWeight: '600' as const, letterSpacing: -0.3 };
-    // Botões na mesma grade do resto (Apple no topo a 627 pt). Em telas baixas em
-    // que não cabem, sobem até ficarem a 19 pt da safe area de baixo.
-    const buttonCount = Platform.OS === 'ios' ? 3 : 2;
-    const buttonsH = 46 * buttonCount + 17 * (buttonCount - 1);
-    const buttonsTop = Math.min(y(799) - buttonsH, screenH - insets.bottom - 19 - buttonsH);
-    return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        {/* X 19 × 19 */}
-        <View style={{ position: 'absolute', left: x0 + 22, top: y(59.5) }}>
-          <Svg width={19} height={19} viewBox="0 0 19 19">
-            <Path d="M1.5 1.5 L17.5 17.5 M17.5 1.5 L1.5 17.5" fill="none" stroke="#121212" strokeWidth={1.8} strokeLinecap="round" />
-          </Svg>
-        </View>
-
-        {/* Dois ramos de 7 flores */}
-        {FLOWERS.map(([left, top, rot, size], i) => (
-          <View key={i} style={{ position: 'absolute', left: x0 + left, top: y(top), transform: [{ rotate: `${rot}deg` }] }}>
-            <Flower size={size} />
-          </View>
-        ))}
-
-        {/* "#1" e "app de / skincare com IA*" — contornos da SF nos pesos exatos do design */}
-        <View pointerEvents="none" style={{ position: 'absolute', left: x0, top: y(0), width: 393, height: 852 }}>
-          <SignupHeroText />
-        </View>
-
-        <View style={{ position: 'absolute', left: x0 + 17, width: 359, top: y(404), alignItems: 'center', gap: 12 }}>
-          <Text numberOfLines={1} style={{ fontSize: 26, lineHeight: 32, fontWeight: '700', letterSpacing: -0.5, color: '#121212', textAlign: 'center' }}>
-            Cuide da sua pele de verdade
+          <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink, textAlign: 'center', marginBottom: 12 }}>
+            Verifique seu e-mail
           </Text>
-          <Text style={{ paddingHorizontal: 13, fontSize: 18, lineHeight: 25, fontWeight: '400', color: '#818181', textAlign: 'center' }}>
-            90% das usuárias dizem que o NIKS entende o que a pele delas precisa.
+          <Text style={{ fontSize: 17, lineHeight: 23, color: OB.sub, textAlign: 'center', marginBottom: 8 }}>
+            {'Enviamos um link de confirmação para '}
+            <Text style={{ fontWeight: '600', color: OB.ink }}>{emailSent}</Text>
+            {'. Clique no link para ativar sua conta.'}
           </Text>
-          <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 20, color: '#818181', textAlign: 'center' }}>
-            Com base em pesquisa com usuárias do NIKS
+          <Text style={{ fontSize: 15, lineHeight: 20, color: OB.sub, textAlign: 'center', marginBottom: 36 }}>
+            Não se esqueça de checar a pasta de spam.
           </Text>
-        </View>
-
-        {/* Três botões de 46 pt, 17 pt entre eles; o último termina a 53 pt da base do frame */}
-        <View style={{ position: 'absolute', left: x0 + 17, width: 359, top: buttonsTop, gap: 17 }}>
-          {Platform.OS === 'ios' && (
-            <TouchableOpacity onPress={handleAppleSignIn} disabled={loading} activeOpacity={0.85} style={[btn, { backgroundColor: '#000000' }]}>
-              {loading ? <ActivityIndicator color="#FFFFFF" /> : (
-                <>
-                  <Svg width={22} height={22} viewBox="0 0 24 24">
-                    <Path fill="#FFFFFF" d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
-                  </Svg>
-                  <Text style={[btnText, { color: '#FFFFFF' }]}>Continuar com Apple</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={handleGoogleSignIn} disabled={loading} activeOpacity={0.85} style={[btn, { backgroundColor: '#F0F0F0' }]}>
-            {loading ? <ActivityIndicator color="#121212" /> : (
-              <>
-                <Svg width={22} height={22} viewBox="0 0 24 24">
-                  <Path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.87c2.26-2.09 3.57-5.16 3.57-8.81z" />
-                  <Path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.92l-3.87-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.95H1.27v3.1A12 12 0 0 0 12 24z" />
-                  <Path fill="#FBBC05" d="M5.27 14.28a7.2 7.2 0 0 1 0-4.56v-3.1H1.27a12 12 0 0 0 0 10.76l4-3.1z" />
-                  <Path fill="#EA4335" d="M12 4.77c1.76 0 3.34.61 4.59 1.8l3.43-3.43C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.27 6.62l4 3.1C6.22 6.88 8.87 4.77 12 4.77z" />
-                </Svg>
-                <Text style={[btnText, { color: '#121212' }]}>Continuar com Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => { haptics.action(); setShowEmailForm(true); }}
-            activeOpacity={0.85}
-            style={[btn, { backgroundColor: '#F0F0F0' }]}
-          >
-            <Svg width={25} height={21} viewBox="0 0 25 21">
-              <Rect x={0} y={0} width={25} height={21} rx={4} fill="#121212" />
-              <Path d="M5 6 L12.5 12 L20 6" fill="none" stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-            </Svg>
-            <Text style={[btnText, { color: '#121212' }]}>Continuar com e-mail</Text>
+          <ObPillButton
+            label={resendCooldown > 0 ? `Reenviar em ${resendCooldown}s` : 'Reenviar e-mail'}
+            onPress={handleResend}
+            disabled={resendCooldown > 0}
+            style={wide}
+          />
+          <TouchableOpacity onPress={handleUseOtherEmail} activeOpacity={0.7} style={{ marginTop: 18 }}>
+            <Text style={{ fontSize: 17, color: OB.sub }}>Usar outro e-mail</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ObScreen>
     );
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
-        <TouchableOpacity
-          onPress={() => { haptics.tap(); setShowEmailForm(false); }}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={{ position: 'absolute', left: 22, top: 5.5, zIndex: 1 }}
+    <ObScreen>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, paddingTop: insets.top + 40, paddingBottom: Math.max(18, insets.bottom) }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Svg width={19} height={19} viewBox="0 0 19 19">
-            <Path d="M1.5 1.5 L17.5 17.5 M17.5 1.5 L1.5 17.5" fill="none" stroke="#121212" strokeWidth={1.8} strokeLinecap="round" />
-          </Svg>
-        </TouchableOpacity>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <ScrollView
-            contentContainerStyle={{ flexGrow: 1 }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Title block */}
-            <View style={{ paddingTop: 34, paddingHorizontal: 28 }}>
-              <Text style={{ fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
-                sua conta
-              </Text>
-              <Text style={{ fontFamily: fXBold, fontSize: 26, fontWeight: '800', color: DEEP, letterSpacing: -0.7, lineHeight: 29.9 }}>
-                {'Bem-vinda! Vamos começar personalizando a '}
-                <Text style={{ fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -0.9 }}>
-                  sua jornada
-                </Text>
-                {'.'}
-              </Text>
-              <Text style={{ fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
-                {'Crie sua conta no '}
-                <Text style={{ fontFamily: fXBold, fontWeight: '700', color: DEEP }}>NIKS</Text>
-                {' para começar a sua jornada.'}
-              </Text>
+          {/* Título (versão B, sem a etiqueta "sua conta" e sem destaque colorido) */}
+          <View style={{ paddingHorizontal: 24 }}>
+            <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink }}>
+              Bem-vinda! Vamos começar personalizando a sua jornada.
+            </Text>
+            <Text style={{ marginTop: 12, fontSize: 17, lineHeight: 23, color: OB.sub }}>
+              {'Crie sua conta no '}
+              <Text style={{ fontWeight: '700', color: OB.ink }}>NIKS</Text>
+              {' para começar a sua jornada.'}
+            </Text>
+          </View>
+
+          <View style={{ flex: 1, minHeight: 32 }} />
+
+          {/* Formulário */}
+          <View style={{ paddingHorizontal: 24, gap: 14 }}>
+            <View>
+              <Text style={fieldLabel}>Endereço de e-mail</Text>
+              <View style={[field(focusedField === 'email'), { justifyContent: 'center' }]}>
+                <TextInput
+                  placeholder="seuemail@exemplo.com"
+                  placeholderTextColor={OB.sub}
+                  value={email}
+                  onChangeText={handleEmailChange}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  selectionColor={OB.pink}
+                  cursorColor={OB.pink}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
+                  style={{ fontSize: 17, color: OB.ink }}
+                />
+              </View>
             </View>
 
-            <View style={{ flex: 1, minHeight: 32 }} />
-
-            {/* Form */}
-            <View style={{ paddingHorizontal: 24, paddingBottom: 14, gap: 14 }}>
-
-              {/* Email field */}
+            {step === 'password' && (
               <View>
-                <Text style={{ fontFamily: fSemi, fontSize: 14, fontWeight: '600', color: DEEP, letterSpacing: -0.1, marginBottom: 10 }}>
-                  Endereço de e-mail
-                </Text>
-                <View style={{
-                  height: 56, borderRadius: 16,
-                  backgroundColor: '#FFFFFF',
-                  borderWidth: emailFocused ? 1.5 : 1,
-                  borderColor: emailFocused ? CORAL : 'rgba(18,18,18,0.12)',
-                  shadowColor: CORAL,
-                  shadowOffset: { width: 0, height: emailFocused ? 6 : 2 },
-                  shadowOpacity: emailFocused ? 0.22 : 0.03,
-                  shadowRadius: emailFocused ? 22 : 14,
-                  paddingHorizontal: 18,
-                  justifyContent: 'center',
-                }}>
+                <Text style={fieldLabel}>Defina uma senha para a sua conta</Text>
+                <View style={[field(focusedField === 'password'), { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
                   <TextInput
-                    placeholder="seuemail@exemplo.com"
-                    placeholderTextColor="rgba(18,18,18,0.30)"
-                    value={email}
-                    onChangeText={handleEmailChange}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    onFocus={() => setFocusedField('email')}
+                    placeholder="Mínimo 8 caracteres"
+                    placeholderTextColor={OB.sub}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoFocus
+                    selectionColor={OB.pink}
+                    cursorColor={OB.pink}
+                    onFocus={() => setFocusedField('password')}
                     onBlur={() => setFocusedField(null)}
-                    style={{ fontFamily: fReg, fontSize: 16, color: DEEP, letterSpacing: -0.15 }}
+                    style={{ flex: 1, fontSize: 17, color: OB.ink }}
                   />
+                  <TouchableOpacity
+                    onPress={() => { haptics.tap(); setShowPassword(!showPassword); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    {showPassword
+                      ? <EyeOff size={20} color={OB.sub} />
+                      : <Eye size={20} color={OB.sub} />}
+                  </TouchableOpacity>
                 </View>
               </View>
+            )}
 
-              {/* Password field */}
-              {step === 'password' && (
-                <View>
-                  <Text style={{ fontFamily: fSemi, fontSize: 14, fontWeight: '600', color: DEEP, letterSpacing: -0.1, marginBottom: 10 }}>
-                    Defina uma senha para a sua conta
-                  </Text>
-                  <View style={{
-                    height: 56, borderRadius: 16,
-                    backgroundColor: '#FFFFFF',
-                    borderWidth: passwordFocused ? 1.5 : 1,
-                    borderColor: passwordFocused ? DEEP : 'rgba(18,18,18,0.12)',
-                    shadowColor: DEEP,
-                    shadowOffset: { width: 0, height: passwordFocused ? 4 : 2 },
-                    shadowOpacity: passwordFocused ? 0.16 : 0.03,
-                    shadowRadius: passwordFocused ? 18 : 14,
-                    paddingHorizontal: 18,
-                    flexDirection: 'row', alignItems: 'center', gap: 12,
-                  }}>
-                    <TextInput
-                      placeholder="Mínimo 8 caracteres"
-                      placeholderTextColor="rgba(18,18,18,0.30)"
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                      autoFocus
-                      onFocus={() => setFocusedField('password')}
-                      onBlur={() => setFocusedField(null)}
-                      style={{
-                        flex: 1, fontFamily: fReg, fontSize: 16, color: DEEP,
-                        letterSpacing: (password.length > 0 && !showPassword) ? 4 : -0.15,
-                      }}
-                    />
-                    <TouchableOpacity
-                      onPress={() => { haptics.tap(); setShowPassword(!showPassword); }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      {showPassword
-                        ? <EyeOff size={20} color={DEEP} style={{ opacity: 0.55 }} />
-                        : <Eye size={20} color={DEEP} style={{ opacity: 0.55 }} />
-                      }
-                    </TouchableOpacity>
-                  </View>
+            {step === 'email' ? (
+              <ObPillButton onPress={handleEmailContinue} disabled={!emailActive} style={wide} />
+            ) : localLoading ? (
+              <View style={[wide, { backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }]}>
+                <ActivityIndicator color="#FFFFFF" />
+              </View>
+            ) : (
+              <ObPillButton label="Criar minha conta" onPress={handleCreateAccount} disabled={!passwordActive} style={wide} />
+            )}
+
+            {/* "ou" + Google + Apple — só no passo do e-mail */}
+            {step === 'email' && (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 4 }}>
+                  <View style={{ flex: 1, height: 1, backgroundColor: OB.divider }} />
+                  <Text style={{ fontSize: 15, color: OB.sub }}>ou</Text>
+                  <View style={{ flex: 1, height: 1, backgroundColor: OB.divider }} />
                 </View>
-              )}
 
-              {/* Primary CTA */}
-              {step === 'email' ? (
                 <TouchableOpacity
-                  onPress={handleEmailContinue}
+                  onPress={handleGoogleSignIn}
                   activeOpacity={0.85}
-                  style={{
-                    height: 60, borderRadius: 100,
-                    backgroundColor: emailActive ? CORAL : 'rgba(18,18,18,0.18)',
-                    alignItems: 'center', justifyContent: 'center',
-                    shadowColor: CORAL,
-                    shadowOffset: { width: 0, height: emailActive ? 14 : 0 },
-                    shadowOpacity: emailActive ? 0.55 : 0,
-                    shadowRadius: 30,
-                    elevation: emailActive ? 8 : 0,
-                  }}
+                  disabled={loading}
+                  style={[wide, {
+                    backgroundColor: OB.option, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
+                  }]}
                 >
-                  <Text style={{ fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: emailActive ? '#FFFFFF' : 'rgba(255,255,255,0.92)' }}>
-                    Continuar
-                  </Text>
+                  {loading ? <ActivityIndicator color={OB.ink} /> : (
+                    <>
+                      <Svg width={20} height={20} viewBox="0 0 48 48">
+                        <Path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                        <Path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                        <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                        <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                      </Svg>
+                      <Text style={{ fontSize: 17, fontWeight: '600', color: OB.ink }}>Continuar com o Google</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  onPress={handleCreateAccount}
-                  activeOpacity={0.85}
-                  disabled={localLoading}
-                  style={{
-                    height: 60, borderRadius: 100,
-                    backgroundColor: passwordActive ? CORAL : 'rgba(18,18,18,0.18)',
-                    alignItems: 'center', justifyContent: 'center',
-                    shadowColor: CORAL,
-                    shadowOffset: { width: 0, height: passwordActive ? 14 : 0 },
-                    shadowOpacity: passwordActive ? 0.55 : 0,
-                    shadowRadius: 30,
-                    elevation: passwordActive ? 8 : 0,
-                  }}
-                >
-                  {localLoading
-                    ? <ActivityIndicator color="#FFFFFF" />
-                    : <Text style={{ fontFamily: fSemi, fontSize: 17, fontWeight: '600', letterSpacing: -0.2, color: passwordActive ? '#FFFFFF' : 'rgba(255,255,255,0.92)' }}>Criar minha conta</Text>
-                  }
-                </TouchableOpacity>
-              )}
 
-            </View>
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    onPress={handleAppleSignIn}
+                    activeOpacity={0.85}
+                    disabled={loading}
+                    style={[wide, {
+                      backgroundColor: OB.ink, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    }]}
+                  >
+                    {loading ? <ActivityIndicator color="#FFFFFF" /> : (
+                      <>
+                        <Svg width={20} height={20} viewBox="0 0 24 24">
+                          <Path d="M17.05 12.04c-.03-2.71 2.21-4.01 2.31-4.07-1.26-1.84-3.22-2.09-3.92-2.12-1.67-.17-3.26 1-4.11 1-.86 0-2.17-.98-3.57-.95-1.84.03-3.54 1.07-4.49 2.71-1.92 3.33-.49 8.25 1.38 10.96.91 1.32 2 2.8 3.4 2.75 1.37-.06 1.89-.88 3.54-.88 1.65 0 2.12.88 3.57.85 1.47-.03 2.4-1.35 3.3-2.68 1.04-1.54 1.47-3.04 1.49-3.12-.03-.01-2.87-1.1-2.9-4.36zM14.5 4.27c.75-.91 1.26-2.17 1.12-3.43-1.08.04-2.39.72-3.17 1.62-.7.8-1.31 2.08-1.15 3.32 1.21.09 2.45-.61 3.2-1.51z" fill="#FFFFFF" />
+                        </Svg>
+                        <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>Continuar com a Apple</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </View>
 
-            {/* Terms */}
-            <View style={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 18, alignItems: 'center' }}>
-              <Text style={{ fontFamily: fReg, textAlign: 'center', fontSize: 12, lineHeight: 18, color: DEEP_SOFT, letterSpacing: -0.05 }}>
-                {'Ao continuar, você concorda com nossos '}
-                <Text
-                  onPress={() => { haptics.tap(); Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'); }}
-                  style={{ fontFamily: fSemi, color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
-                >
-                  Termos de Uso
-                </Text>
-                {' e '}
-                <Text
-                  onPress={() => { haptics.tap(); Linking.openURL('https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5'); }}
-                  style={{ fontFamily: fSemi, color: DEEP, fontWeight: '600', textDecorationLine: 'underline' }}
-                >
-                  Política de Privacidade
-                </Text>
-                {'.'}
-              </Text>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-// Tela 10a: dois ramos de 7 flores — [left, top, rotação°, tamanho] no frame de 393 × 852.
-const FLOWERS: [number, number, number, number][] = [
-  [94.3, 148.3, 20, 10], [288.7, 148.3, -20, 10],
-  [72.0, 158.8, -15, 14.5], [306.6, 158.8, 15, 14.5],
-  [54.3, 175.4, 30, 18], [320.7, 175.4, -30, 18],
-  [42.1, 199.3, 5, 21.5], [329.4, 199.3, -5, 21.5],
-  [40.9, 228.8, -20, 23.5], [328.6, 228.8, 20, 23.5],
-  [48.3, 261.0, 15, 28], [316.7, 261.0, -15, 28],
-  [73.1, 287.6, -5, 22], [297.9, 287.6, 5, 22],
-];
-
-function Flower({ size }: { size: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="-1 -1 2 2">
-      <G fill="#FFC4DA">
-        {[0, 60, 120, 180, 240, 300].map((r) => (
-          <Ellipse key={r} cx={0} cy={-0.52} rx={0.2} ry={0.44} transform={`rotate(${r})`} />
-        ))}
-      </G>
-      <Circle cx={0} cy={0} r={0.13} fill="#FFFFFF" />
-    </Svg>
+          {/* Termos */}
+          <Text style={{ marginTop: 16, paddingHorizontal: 24, textAlign: 'center', fontSize: 13, lineHeight: 18, color: OB.sub }}>
+            {'Ao continuar, você concorda com nossos '}
+            <Text
+              onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
+              style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
+            >
+              Termos de Uso
+            </Text>
+            {' e '}
+            <Text
+              onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
+              style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
+            >
+              Política de Privacidade
+            </Text>
+            {'.'}
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ObScreen>
   );
 }

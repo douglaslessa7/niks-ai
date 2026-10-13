@@ -69,10 +69,13 @@ type Props = {
   showError: boolean;
   /** "Tentar novamente" do estado de erro. */
   onRetry: () => void;
+  /** Fundo branco liso, sem o degradê rosado — usado no onboarding, para combinar com
+   *  as outras telas dele (pedido do produto). Os scans de dentro do app seguem o 50a. */
+  plainBackground?: boolean;
 };
 
 export function ScanLoadingView({
-  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry,
+  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry, plainBackground = false,
 }: Props) {
   const { width } = useWindowDimensions();
   const { y } = useObFrame();
@@ -93,13 +96,15 @@ export function ScanLoadingView({
   const [numW, setNumW] = useState(0);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F9F2F5' }}>
+    <View style={{ flex: 1, backgroundColor: plainBackground ? '#FFFFFF' : '#F9F2F5' }}>
       <StatusBar style="dark" />
-      <LinearGradient
-        colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']}
-        locations={[0, 0.3, 0.6, 1]}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-      />
+      {!plainBackground && (
+        <LinearGradient
+          colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']}
+          locations={[0, 0.3, 0.6, 1]}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        />
+      )}
       {/* Brilho branco radial (560 pt, centrado na horizontal, topo a 150 pt) */}
       <Svg
         width={GLOW_D} height={GLOW_D} pointerEvents="none"

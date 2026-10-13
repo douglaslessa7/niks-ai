@@ -2,7 +2,7 @@
 // (`app/(scan)/camera.tsx`) e pelo tutorial que a antecede (`app/(scan)/scan-prep.tsx`),
 // para o tutorial mostrar exatamente o anel que ela vai ver.
 //
-// O anel tem traços em volta de um oval; cada uma das 3 etapas (3 fotos) é dona de um
+// O anel tem traços em volta de um oval; cada uma das 3 etapas (só a de frente tira foto; os lados são o giro da cabeça) é dona de um
 // terço deles: frente = traços de cima e de baixo, esquerda = arco da esquerda da tela,
 // direita = arco da direita da tela. Na etapa da vez o arco acende traço a traço.
 export type ScanStepId = 'frente' | 'esquerda' | 'direita';

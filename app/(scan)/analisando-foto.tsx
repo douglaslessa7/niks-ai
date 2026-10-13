@@ -93,6 +93,7 @@ export default function AnalisandoFoto() {
       <Stack.Screen options={{ gestureEnabled: false }} />
       <ScanLoadingView
         kind="face"
+        plainBackground  // fundo branco como o resto do onboarding (pedido do produto)
         percentage={pct}
         showDemandNotice={demand.showDemandNotice}
         countdown={demand.countdown}

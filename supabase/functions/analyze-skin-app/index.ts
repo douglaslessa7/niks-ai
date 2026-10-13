@@ -47,6 +47,12 @@ Deno.serve(async (req) => {
     // futuro que mandasse 3 fotos avulsas cairia no prompt de colagem e a IA leria
     // posições de célula que não existem.
     const isMulti = scanLayout === 'expressions_v1' && images.length === 3
+    // 'turns_v1' (out/2026): 3 fotos AVULSAS do giro da cabeça — [frente, virada para um
+    // lado, virada para o outro], sem expressões e sem colagem. Prompt próprio (blocos
+    // `*_T`); o 'expressions_v1' segue intacto para as versões do app que ainda o mandam.
+    const isTurns = scanLayout === 'turns_v1' && images.length === 3
+    // Escolhe o bloco do formato: colagens (expressions_v1), giro (turns_v1) ou nada (1 foto).
+    const pick = (multi: string, turns: string) => (isMulti ? multi : isTurns ? turns : '')
 
     const ctx = skinProfile ? [
       skinProfile.skin_type ? `Tipo de pele declarado: ${skinProfile.skin_type}` : null,
@@ -155,10 +161,66 @@ Os perfis do Layout B dão cobertura real de "queixo_mandibula" e da porção la
   Com as células de expressão, esta métrica passa a ser MEDIDA e não estimada: avalie a quantidade e a profundidade dos sulcos nas células SORRINDO, SURPRESA e BRAVA, e o quanto deles PERSISTE na foto neutra. 0 = nenhum sulco nem na expressão máxima; 100 = sulcos profundos já visíveis em repouso. A métrica juventude, por outro lado, continua sendo avaliada na foto NEUTRA.
 `
 
+    // ── Blocos do formato 'turns_v1' (frente + dois lados, fotos avulsas) ─────────
+    const BLOCO_IMAGENS_T = `
+---
+
+## AS IMAGENS QUE VOCÊ RECEBEU
+
+Você recebeu 3 FOTOS AVULSAS da MESMA pessoa, na mesma sessão, mesma luz, com segundos de diferença entre elas (ela girou a cabeça diante da câmera frontal):
+
+1. FOTO FRONTAL — rosto de frente, expressão em repouso.
+2. FOTO LATERAL — rosto virado para um dos lados (semi-perfil).
+3. FOTO LATERAL — rosto virado para o OUTRO lado (semi-perfil).
+
+As fotos NÃO estão espelhadas. Identifique pela PRÓPRIA imagem qual lado do rosto cada foto lateral mostra (para onde o nariz aponta e qual bochecha está à mostra) — o lado anatomicamente DIREITO do rosto dela aparece à ESQUERDA da imagem. Use esse lado anatômico em distribution, location e region_insights.
+
+Não há fotos de expressão (sorriso, surpresa, testa franzida) neste conjunto.
+
+### REGRA DE PROCEDÊNCIA DOS ACHADOS — obrigatória
+
+- A FOTO FRONTAL (imagem 1) é a REFERÊNCIA para todos os achados estáticos. Dela saem: skin_phototype, skin_type_sebaceous, skin_hydration, barrier_status, acne, cicatrizes, pigmentacao, rosacea, textura_poros, brilho_sebaceo, area_periocular e condicoes_secundarias.
+- As FOTOS LATERAIS revelam áreas que a frontal quase não mostra: contorno da MANDÍBULA, região PRÉ-AURICULAR, lateral e asa do NARIZ, e a bochecha sob luz rasante — onde poros dilatados, cicatrizes atróficas e textura irregular ficam MUITO mais evidentes do que de frente. Elas COMPLEMENTAM a frontal: ACRESCENTAM achados que a frontal não conseguiu mostrar (ver a regra abaixo). O único limite é não contradizer a frontal em áreas que ambas mostram com clareza — se as duas mostram bem a mesma região e discordam, prevalece a frontal.
+
+### COMPLEMENTAÇÃO vs CONTAGEM DUPLA — leia com atenção
+
+É UM único rosto visto de 3 ângulos, não 3 pessoas nem 3 momentos diferentes. Isso cria DOIS casos com tratamentos OPOSTOS:
+
+- MESMA lesão vista de novo (na frontal E numa lateral, ou nas duas laterais): conta UMA vez. Não some.
+- Lesão DISTINTA que só um ângulo revelou (existe de verdade, mas a frontal não conseguiu mostrar — tipicamente na lateral da bochecha, mandíbula, região pré-auricular ou asa do nariz): essa você SOMA. Ela entra na contagem, no severity/severity_score, na distribution e no location.
+
+Ou seja: a frontal é o ponto de partida da contagem, mas NÃO é o teto. O que você nunca faz é contar a mesma lesão duas vezes só porque ela aparece em mais de uma foto. A mesma lógica vale para cicatrizes, pigmentação e poros na lateral da bochecha e na mandíbula.
+`
+
+    const BLOCO_QUALIDADE_T = `
+Com as 3 fotos: avalie a qualidade da FOTO FRONTAL como qualidade principal, pois é ela que sustenta a maior parte dos campos. Se uma foto lateral estiver borrada, cortada ou quase frontal (cabeça mal virada), registre isso em qualidade_foto.notas e desconsidere aquela foto — mas NÃO reduza a confiança dos campos que a frontal sustenta por causa dela.
+`
+
+    const BLOCO_DIFERENCIACOES_T = `
+### Assimetria
+Compare o lado esquerdo e o direito do rosto na foto frontal e nas duas fotos laterais.
+Assimetria RELEVANTE é a de distribuição: lesões, pigmentação ou textura concentradas mais em um lado (ex.: acne só na bochecha esquerda, melasma mais intenso à direita). Quando encontrar, reporte no insight do campo correspondente e em pontos_fracos, nomeando o lado.
+Assimetria de traços faciais e de expressão é NORMAL em todo rosto humano e NÃO deve ser reportada.
+`
+
+    const BLOCO_ENVELHECIMENTO_T = `
+Sem fotos de expressão, lines_type é avaliado no rosto EM REPOUSO (frontal e laterais): não presuma linhas dinâmicas que você não consegue ver.
+
+firmness_loss: use as FOTOS LATERAIS. O contorno mandibular, o jowling e a perda de volume temporal são muito mais legíveis de lado do que de frente. Um contorno mandibular nítido nas duas laterais contradiz "moderada" ou "grave", mesmo que a frontal sugira flacidez.
+`
+
+    const BLOCO_RELEVO_T = `
+Use as FOTOS LATERAIS: a luz rasante evidencia RELEVO. Cicatrizes atróficas (icepick, boxcar, rolling) e poros dilatados na bochecha e na região pré-auricular podem ser praticamente invisíveis de frente e óbvios de lado. Se um achado só aparece de lado, ele CONTA — inclua a região em location.
+`
+
+    const BLOCO_REGIOES_T = `
+As fotos laterais dão cobertura real de "queixo_mandibula" e da porção lateral de "bochechas" — regiões que uma foto frontal quase não mostra. Se você identificou algo ali nas laterais, GERE o insight; não deixe de gerar por insegurança de foto frontal.
+`
+
     const systemPrompt = `Você é um sistema especializado em análise visual de pele com conhecimento clínico equivalente a um dermatologista experiente. Sua função é analisar fotografias faciais e extrair uma ficha clínica estruturada com máxima precisão visual.
 
 PRINCÍPIO FUNDAMENTAL: Você analisa APENAS o que consegue ver na imagem. Nunca invente, nunca extrapole além do visível. Quando houver dúvida real, declare confiança baixa naquele campo específico — isso é mais útil do que uma resposta falsa e confiante.
-${isMulti ? BLOCO_IMAGENS : ''}
+${pick(BLOCO_IMAGENS, BLOCO_IMAGENS_T)}
 ---
 
 ## COMO USAR O CONTEXTO DECLARADO PELO USUÁRIO
@@ -187,13 +249,13 @@ Impactos específicos por problema:
 - Luz amarela/quente: distorce fotótipo e pigmentação — sinalize skin_phototype e pigmentacao em campos_incertos
 - Filtro de beleza evidente ou suavização de pele: compromete acne, textura, cicatrizes — sinalize em campos_incertos
 - Maquiagem visível: compromete pigmentacao, brilho_sebaceo, skin_phototype — sinalize em campos_incertos
-${isMulti ? BLOCO_QUALIDADE : ''}
+${pick(BLOCO_QUALIDADE, BLOCO_QUALIDADE_T)}
 ---
 
 ## ETAPA 2 — DIFERENCIAÇÕES CRÍTICAS
 
 Antes de analisar campo a campo, internalize as seguintes diferenciações. São os erros mais comuns em análise visual de pele e você deve evitá-los ativamente.
-${isMulti ? BLOCO_DIFERENCIACOES : ''}
+${pick(BLOCO_DIFERENCIACOES, BLOCO_DIFERENCIACOES_T)}
 ### Filamentos sebáceos vs comedões abertos no nariz
 FILAMENTOS SEBÁCEOS são estruturas FISIOLÓGICAS e NORMAIS do folículo pilossebáceo:
 - Aparecem como pontos cinza-amarelados ou acinzentados UNIFORMES e DIFUSOS no nariz
@@ -337,7 +399,7 @@ type:
 
 severity: "leve" | "moderada" | "grave"
 location: array com regiões afetadas
-${isMulti ? BLOCO_RELEVO : ''}
+${pick(BLOCO_RELEVO, BLOCO_RELEVO_T)}
 **PIGMENTAÇÃO — pigmentacao**
 present: há manchas, áreas mais escuras ou alterações de uniformidade de tom?
 
@@ -376,7 +438,7 @@ texture:
 - "muito_irregular": aspecto rugoso evidente
 
 insight: descreva onde os poros estão dilatados, o padrão de textura, e se há queratose pilar nas bochechas laterais
-${isMulti ? BLOCO_RELEVO : ''}
+${pick(BLOCO_RELEVO, BLOCO_RELEVO_T)}
 **BRILHO SEBÁCEO — brilho_sebaceo**
 intensity: "nenhum" | "leve" | "moderado" | "intenso"
 location: array — use: "zona_t", "testa", "nariz", "queixo", "bochechas"
@@ -408,7 +470,7 @@ firmness_loss — avalie por sinais de flacidez:
 skin_age: estime a APARÊNCIA da pele em anos — não a idade da pessoa, mas a aparência visual da pele
 
 Nota para peles escuras: envelhecimento em fotótipos IV-VI manifesta-se primariamente como discromia e perda de volume, com menos rítides do que fotótipos claros — não subestime a qualidade da pele de fotótipos escuros por falta de rugas.
-${isMulti ? BLOCO_ENVELHECIMENTO : ''}
+${pick(BLOCO_ENVELHECIMENTO, BLOCO_ENVELHECIMENTO_T)}
 **ÁREA PERIOCULAR — area_periocular**
 - "normal"
 - "olheiras": escurecimento abaixo dos olhos
@@ -479,7 +541,7 @@ Para cada região do rosto onde você identificou alguma condição relevante, g
    Exemplos: "Reduzir a obstrução folicular vai diminuir o surgimento de novos cravos e pápulas.", "Tratar a inflamação ativa aqui vai prevenir o acúmulo de novas manchas.", "Controlar a oleosidade vai refinar a textura e minimizar a aparência dos poros."
 
 Gere region_insights APENAS para regiões onde há condição relevante. Se a região está sem alterações significativas, não inclua.
-${isMulti ? BLOCO_REGIOES : ''}
+${pick(BLOCO_REGIOES, BLOCO_REGIOES_T)}
 
 Se a usuária declarou preocupações (campo 'concerns' no contexto — linha "Preocupações declaradas"), gere um 'concerns_alignment':
 
@@ -665,7 +727,7 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
   "disclaimer": "Esta é uma análise estética por IA, não substitui consulta dermatológica."
 }`
 
-    const baseInstruction = isMulti
+    const baseInstruction = isMulti || isTurns
       ? 'Analise o rosto DESTA PESSOA usando todas as imagens fornecidas, seguindo todas as etapas do sistema e respeitando a REGRA DE PROCEDÊNCIA DOS ACHADOS.'
       : 'Analise o rosto nesta foto seguindo todas as etapas do sistema.'
 
@@ -699,7 +761,20 @@ Use esta imagem para mandíbula, região pré-auricular, lateral e asa do nariz,
       image_url: { url: `data:image/jpeg;base64,${b64}`, detail: 'high' },
     })
 
-    const userContent = isMulti
+    const LABEL_FRONTAL_T = 'IMAGEM 1 — FOTO FRONTAL. Rosto de frente, expressão em repouso. É a REFERÊNCIA para todos os achados estáticos (acne, poros, textura, pigmentação, oleosidade).'
+    const LABEL_LATERAL_T = (n: number) => `IMAGEM ${n} — FOTO LATERAL (semi-perfil) DA MESMA PESSOA, ${n === 2 ? 'rosto virado para um dos lados' : 'rosto virado para o OUTRO lado'}. NÃO está espelhada: identifique pela própria foto qual lado do rosto aparece. Use para mandíbula, região pré-auricular, lateral e asa do nariz, e relevo da bochecha sob luz rasante.`
+
+    const userContent = isTurns
+      ? [
+          { type: 'text', text: LABEL_FRONTAL_T },
+          img(images[0]),
+          { type: 'text', text: LABEL_LATERAL_T(2) },
+          img(images[1]),
+          { type: 'text', text: LABEL_LATERAL_T(3) },
+          img(images[2]),
+          { type: 'text', text: contextMessage },
+        ]
+      : isMulti
       ? [
           { type: 'text', text: LABEL_NEUTRA },
           img(images[0]),
@@ -798,7 +873,7 @@ Use esta imagem para mandíbula, região pré-auricular, lateral e asa do nariz,
 
       // Observabilidade: é por aqui que se descobre truncamento sem precisar do
       // relato de uma usuária. `finish_reason: 'length'` = bateu no teto acima.
-      console.log(`[analyze-skin-app] tentativa ${attempt} · multi=${isMulti} · finish_reason=${choice.finish_reason} · usage=${JSON.stringify(data.usage ?? {})}`)
+      console.log(`[analyze-skin-app] tentativa ${attempt} · multi=${isMulti} · turns=${isTurns} · finish_reason=${choice.finish_reason} · usage=${JSON.stringify(data.usage ?? {})}`)
 
       if (choice.finish_reason === 'length') {
         lastError = 'resposta truncada (finish_reason=length)'

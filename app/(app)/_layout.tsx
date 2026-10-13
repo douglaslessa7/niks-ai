@@ -1,6 +1,7 @@
 import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
@@ -10,37 +11,37 @@ import { useAppStore } from '../../store/onboarding';
 import NameCapture from '../../components/onboarding/NameCapture';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { isNativePresentationOpen, waitForNativePresentationToClose } from '../../lib/nativePresentation';
-import { useCoachMark, useCoachStageReady } from '../../lib/coachMarks';
+import { useCoachStageReady } from '../../lib/coachMarks';
 import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
+import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
+import { finishProdutosTutorial, useProdutosTutorialPending } from '../../lib/produtosTutorial';
 import AvisoLote from '../../components/rotina/AvisoLote';
 import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
-// ── Bottom navbar — réplica da `nav` do design 38e (Claude Design, NiksHomeFlo
-// base=7). Barra branca 87pt no frame de 852 (53 + home indicator), padding 12/18,
-// borda superior #F2E6E6, sombra --shadow-nav (0 -6 24 rgba(0,0,0,.10)), 5 colunas.
-// Ícones line 28pt #8A8A93 (paths copiados do design); no centro a logo
-// `score-logo-pink.png` 46pt com o ponto #FF9D9D da aba ativa (Home).
-// Aba ativa (design 41d, Rotina): ícone rosa #FF5EA8 com traço 1.7 e ponto rosa
-// logo abaixo (`margin-top: -3px` após a caixa de 44 → topo do ponto em 41).
-// Na Home o ponto é o #FF9D9D sob a logo (design 38e).
-const NAV_INACTIVE = '#8A8A93';
+// ── Bottom navbar — réplica da `nav` "splitHouse" da tela 57d do Claude Design
+// (projeto "NIKS home redesign", `NiksHomeFlo.dc.html`). Flutua a 26 pt da base:
+//   • à esquerda, círculo branco Ø64 com a CASA (Home) — sombra 0 8 22 rgba(192,32,106,.16);
+//   • ao lado (gap 14), pílula branca de 60 pt com borda de 1,5 pt em degradê
+//     #FFC2DB → #FF5EA8 → #F86B79 (100°), padding 0 10, três ícones line 27 pt em
+//     caixas de 60 × 46 (gap 4): rosto (Rotina) · frasco (Produtos) · pessoa (Perfil).
+//   • atrás, véu de 130 pt rgba(249,242,245,0) → .85 (70%).
+// O NIKS Chat SAIU da navbar (out/2026). Ícones inativos #7A7076; a aba ativa fica
+// rosa #FF5EA8 com o ponto rosa embaixo (como antes); a casa ativa é a casa rosa do
+// design e, fora da Home, fica cinza como os outros.
+const NAV_INACTIVE = '#7A7076';
 const NAV_ACTIVE = '#FF5EA8';
-const NAV_HOME_DOT = '#FF9D9D';
-const NAV_BORDER = '#F2E6E6';
-const NAV_BADGE = '#E8452F';      // ponto de notificação do chat (design)
 // Modo noturno da tab bar (sincronizado com o tema da tela — ex.: protocolo à noite)
 const NAV_ACTIVE_DARK = '#FF9D9D';
 const NAV_INACTIVE_DARK = '#8B93A8';
 const NAV_BG_DARK = '#1A1F2E';
-const NAV_ICON = 28;
-const NAV_DOT_TOP = 41; // ícone: caixa de 44 − 3
+const NAV_ICON = 27;
 
-type NavKey = 'rotina' | 'produtos' | 'home' | 'chat' | 'perfil';
+type NavKey = 'rotina' | 'produtos' | 'perfil';
 
-function NavGlyph({ name, color, active }: { name: Exclude<NavKey, 'home'>; color: string; active: boolean }) {
+function NavGlyph({ name, color, active }: { name: NavKey; color: string; active: boolean }) {
   const c = {
     stroke: color,
-    strokeWidth: active ? 1.7 : name === 'rotina' ? 1.55 : 1.6,
+    strokeWidth: active ? 1.7 : 1.6,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
     fill: 'none',
@@ -62,12 +63,6 @@ function NavGlyph({ name, color, active }: { name: Exclude<NavKey, 'home'>; colo
           <Path d="M12 5.5V8.5M8 15.5h4" {...c} />
         </>
       )}
-      {name === 'chat' && (
-        <>
-          <Path d="M21 12a8 8 0 0 1-11.4 7.2L4 20l1-4.6A8 8 0 1 1 21 12z" {...c} />
-          <Path d="M8.5 11h7M8.5 14h4.5" {...c} />
-        </>
-      )}
       {name === 'perfil' && (
         <>
           <Circle cx={12} cy={8} r={4} {...c} />
@@ -78,13 +73,21 @@ function NavGlyph({ name, color, active }: { name: Exclude<NavKey, 'home'>; colo
   );
 }
 
-// Ordem esquerda→direita do design: rosto (Rotina) · frasco (Produtos) · logo (Home)
-// · balão (Chat) · pessoa (Perfil).
-const NAV_ITEMS: { key: NavKey; route: string; badge?: boolean }[] = [
+// Casa do design (32 pt): chaminé, telhado em traço 2,5 e corpo preenchido.
+function HouseGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={32} height={32} viewBox="0 0 24 24">
+      <Rect x={16} y={4} width={2.7} height={5} rx={0.6} fill={color} />
+      <Path d="M2.4 11.4 12 3.4l9.6 8" fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+      <Path fill={color} d="M5 11.6 12 5.8l7 5.8v8a1.6 1.6 0 0 1-1.6 1.6h-3.1v-5a1 1 0 0 0-1-1h-2.6a1 1 0 0 0-1 1v5H6.6A1.6 1.6 0 0 1 5 19.6z" />
+    </Svg>
+  );
+}
+
+// Ordem da pílula, esquerda→direita: rosto (Rotina) · frasco (Produtos) · pessoa (Perfil).
+const NAV_ITEMS: { key: NavKey; route: string }[] = [
   { key: 'rotina',   route: '/protocolo' },
   { key: 'produtos', route: '/recomendacao-produtos' },
-  { key: 'home',     route: '/home' },
-  { key: 'chat',     route: '/niks-chat', badge: true },
   { key: 'perfil',   route: '/perfil' },
 ];
 
@@ -97,67 +100,65 @@ function GlobalBottomBar() {
 
   // O alarme é parte da rotina: no design 44a a aba Rotina aparece ativa nele. No
   // progresso (43d) a Rotina também aparece ativa. (A estante deixou de ser tela própria:
-  // é o topo da aba Produtos.)
+  // é o topo da aba Produtos.) "Seu nome" (set-name) abre pelo Perfil e o mantém ativo.
   const isActive = (route: string) => pathname === route || pathname.startsWith(`${route}/`)
-    || (route === '/protocolo' && (pathname === '/alarme' || pathname === '/progresso'));
+    || (route === '/protocolo' && (pathname === '/alarme' || pathname === '/progresso'))
+    || (route === '/perfil' && pathname === '/set-name');
 
   const activeColor = isDark ? NAV_ACTIVE_DARK : NAV_ACTIVE;
   const inactiveColor = isDark ? NAV_INACTIVE_DARK : NAV_INACTIVE;
-
-  // ── Alvos do tutorial de primeiro acesso (coach marks) ────────────────────
-  // A medida sai da View do glifo (28×28), não do TouchableOpacity (`flex: 1`,
-  // uma coluna inteira da barra). Hooks chamados um a um (ordem fixa).
-  const rotinaMark = useCoachMark('nav-rotina', 'circle');
-  const produtosMark = useCoachMark('nav-produtos', 'circle');
-  const chatMark = useCoachMark('nav-chat', 'circle');
-  const marks: Partial<Record<NavKey, ReturnType<typeof useCoachMark>>> = {
-    rotina: rotinaMark,
-    produtos: produtosMark,
-    chat: chatMark,
-  };
+  const surface = isDark ? NAV_BG_DARK : '#FFFFFF';
+  const homeActive = isActive('/home');
+  // 26 pt da base no frame de 852 (home indicator de 34 → 8 dentro dele).
+  const bottom = Math.max(16, insets.bottom - 8);
 
   return (
-    <View style={[
-      styles.navbar,
-      {
-        height: 53 + insets.bottom,
-        backgroundColor: isDark ? NAV_BG_DARK : '#FFFFFF',
-        borderTopColor: isDark ? 'rgba(255,255,255,0.07)' : NAV_BORDER,
-      },
-    ]}>
-      {NAV_ITEMS.map((it) => {
-        const active = isActive(it.route);
+    <>
+      {/* Véu atrás da barra */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={isDark ? ['rgba(26,31,46,0)', 'rgba(26,31,46,0.85)'] : ['rgba(249,242,245,0)', 'rgba(249,242,245,0.85)']}
+        locations={[0, 0.7]}
+        style={[styles.fade, { height: 130 + Math.max(0, bottom - 26) }]}
+      />
+      <View pointerEvents="box-none" style={[styles.navbar, { bottom }]}>
+        {/* Casa (Home) */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => { haptics.tap(); router.push('/home' as any); }}
+          style={[styles.homeBtn, { backgroundColor: surface }]}
+          accessibilityLabel="Início"
+        >
+          <HouseGlyph color={homeActive ? activeColor : inactiveColor} />
+        </TouchableOpacity>
 
-        if (it.key === 'home') {
-          return (
-            <TouchableOpacity
-              key={it.key}
-              activeOpacity={0.7}
-              onPress={() => { haptics.tap(); router.push(it.route as any); }}
-              style={styles.centerItem}
-            >
-              <Image source={require('../../assets/home/score-logo-pink.png')} style={styles.centerLogo} />
-              <View style={[styles.dot, { backgroundColor: NAV_HOME_DOT }, !active && { opacity: 0 }]} />
-            </TouchableOpacity>
-          );
-        }
-
-        return (
-          <TouchableOpacity
-            key={it.key}
-            activeOpacity={0.7}
-            onPress={() => { haptics.tap(); router.push(it.route as any); }}
-            style={styles.item}
-          >
-            <View ref={marks[it.key]?.ref} onLayout={marks[it.key]?.onLayout}>
-              <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
-              {it.badge && <View style={[styles.badge, isDark && { borderColor: NAV_BG_DARK }]} />}
-            </View>
-            {active && <View style={[styles.dot, styles.dotAbs, isDark && { backgroundColor: NAV_ACTIVE_DARK }]} />}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
+        {/* Pílula com borda em degradê */}
+        <LinearGradient
+          colors={['#FFC2DB', '#FF5EA8', '#F86B79']}
+          locations={[0, 0.55, 1]}
+          start={{ x: 0, y: 0.41 }}
+          end={{ x: 1, y: 0.59 }}
+          style={styles.pillBorder}
+        >
+          <View style={[styles.pill, { backgroundColor: surface }]}>
+            {NAV_ITEMS.map((it) => {
+              const active = isActive(it.route);
+              return (
+                <TouchableOpacity
+                  key={it.key}
+                  activeOpacity={0.85}
+                  onPress={() => { haptics.tap(); router.push(it.route as any); }}
+                  style={styles.item}
+                >
+                  <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
+                  {active && <View style={[styles.dot, { backgroundColor: activeColor }]} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </LinearGradient>
+      </View>
+    </>
   );
 }
 
@@ -307,7 +308,7 @@ export default function AppLayout() {
     finishHomeTutorial();
     void markHomeTutorialSeenOnServer();
   }, [finishHomeTutorial]);
-  const coachStageReady = useCoachStageReady();
+  const coachStageReady = useCoachStageReady('home');
   const pathname = usePathname();
   // O tutorial só começa depois que a splash de abertura terminou o fade — senão
   // ele mediria/desenharia por baixo da logo.
@@ -321,6 +322,22 @@ export default function AppLayout() {
     homeTutorialPending &&
     !homeTutorialSeen &&
     coachStageReady;
+
+  // Tutorial de primeira entrada de Produtos (59a–59d): uma vez por conta, armado
+  // pela própria tela ao ganhar foco (lib/produtosTutorial.ts). O palco só fica
+  // pronto com a estante carregada e "Recomendados pra você" na tela (pronto ou
+  // "Montando sua recomendação…") — sem a seção, o tutorial espera a próxima visita.
+  const produtosTutorialPending = useProdutosTutorialPending();
+  const produtosStageReady = useCoachStageReady('produtos');
+  const showProdutosCoachMarks =
+    splashDone &&
+    ready &&
+    !needsName &&
+    !pendingShare &&
+    !showCoachMarks &&
+    pathname === '/recomendacao-produtos' &&
+    produtosTutorialPending &&
+    produtosStageReady;
 
   if (!ready) return null;
 
@@ -348,76 +365,80 @@ export default function AppLayout() {
         <Tabs.Screen name="calendario" options={{ href: null }} />
         <Tabs.Screen name="alarme" options={{ href: null }} />
         <Tabs.Screen name="progresso" options={{ href: null }} />
+        <Tabs.Screen name="dica-do-dia" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
-          escurecer a tela inteira e iluminar os ícones da barra. Dentro da
+          escurecer a tela inteira, navbar inclusive (designs 58/59). Dentro da
           `home.tsx` ele ficaria ABAIXO da navbar por mais zIndex que levasse
           (zIndex só vale entre irmãos; a navbar é do layout, a home é filha do
           <Tabs>). Ver "Feature: Tutorial de primeiro acesso" no README. */}
       {showCoachMarks && <HomeCoachMarks onFinish={handleCoachFinish} />}
+      {showProdutosCoachMarks && <ProdutosCoachMarks onFinish={() => { void finishProdutosTutorial(); }} />}
       {/* Aviso "Sua rotina está pronta" do lote "Montar minha rotina" (Fase 6) + toque
           no push dele. Irmão da navbar pelo mesmo motivo: fica por cima de qualquer aba. */}
-      {!showCoachMarks && <AvisoLote />}
+      {!showCoachMarks && !showProdutosCoachMarks && <AvisoLote />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Flush na borda inferior, full-width (nav do design 38e).
-  navbar: {
+  fade: {
     position: 'absolute',
     left: 0, right: 0, bottom: 0,
+  },
+  // Barra flutuante (nav "splitHouse" da 57d): casa + pílula, centralizadas, gap 14.
+  navbar: {
+    position: 'absolute',
+    left: 0, right: 0,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingTop: 12,
-    paddingHorizontal: 18,
-    borderTopWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 14,
+  },
+  homeBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: 'rgb(192,32,106)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 11,
+    elevation: 8,
+  },
+  // Borda de 1,5 pt em degradê = o degradê por fora + a pílula branca por dentro.
+  pillBorder: {
+    height: 60,
+    borderRadius: 30,
+    padding: 1.5,
+    shadowColor: 'rgb(192,32,106)',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 12,
+    shadowRadius: 11,
+    elevation: 8,
+  },
+  pill: {
+    flex: 1,
+    borderRadius: 28.5,
+    paddingHorizontal: 10 - 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   item: {
-    flex: 1,
-    height: 44,
+    width: 60,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  centerItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 3,
-    marginTop: -6,
-  },
-  centerLogo: {
-    width: 46,
-    height: 46,
-    resizeMode: 'contain',
-  },
+  // Ponto da aba ativa, logo abaixo do ícone (como na navbar anterior).
   dot: {
+    position: 'absolute',
+    bottom: 1,
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: NAV_ACTIVE,
-  },
-  // Nas abas de ícone o ponto fica na mesma altura do ponto da logo.
-  dotAbs: {
-    position: 'absolute',
-    top: NAV_DOT_TOP,
-  },
-  // Ponto de notificação no ícone do chat (canto superior direito). No design o
-  // span é content-box: 8px + borda de 2px de cada lado = 12px no total.
-  badge: {
-    position: 'absolute',
-    top: -1,
-    right: -2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: NAV_BADGE,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
 });

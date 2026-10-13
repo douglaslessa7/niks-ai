@@ -5,15 +5,33 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Onde estava o ROSTO na foto do scan do onboarding (`app/(scan)/camera.tsx`).
 //
 // A câmera mostra o preview em "cover" na tela inteira e pede para ela encaixar o
-// rosto num oval de 236 × 316 pt com centro em y 392 do frame do design (393 × 852,
-// convertido por `insets.top + y − 54`). A foto salva é o quadro inteiro da câmera,
-// então o rosto ocupa só uma parte dela. Este módulo refaz a conta do preview e
-// devolve o oval em coordenadas NORMALIZADAS da foto (0–1), para as telas que mostram
-// o rosto de perto (resultado do scan, rotina pronta) poderem enquadrá-lo.
+// rosto num oval grande (`cameraOval` — FONTE ÚNICA, usada pela própria câmera). A foto
+// salva é o quadro inteiro da câmera, então o rosto ocupa só uma parte dela. Este
+// módulo refaz a conta do preview e devolve o oval em coordenadas NORMALIZADAS da foto
+// (0–1), para as telas que mostram o rosto de perto (resultado do scan, rotina pronta)
+// poderem enquadrá-lo.
 // ⚠️ É aproximação: vale se ela estava centrada no oval e se a tela é a mesma da foto.
+
+/** PROPORÇÃO do oval da câmera e da malha (altura ÷ largura = 316 ÷ 236). */
 export const CAM_OVAL_W = 236;
 export const CAM_OVAL_H = 316;
-const CAM_OVAL_CY = 392;
+
+/**
+ * Oval da câmera do onboarding em pontos da tela (molde: o scan do Lovi). Ocupa até
+ * 86% da largura e o que couber na altura entre a fileira de cima (?, luz, X) e o
+ * botão "Começar"/pílula de instrução embaixo, com folga para os tracinhos do anel.
+ * `buttonCy` = centro do botão e da pílula.
+ */
+export function cameraOval(width: number, height: number, insetTop: number, insetBottom: number) {
+  const ratio = CAM_OVAL_H / CAM_OVAL_W;
+  const buttonCy = height - Math.max(insetBottom, 16) - 70;
+  const top = insetTop + 80;
+  const bottom = buttonCy - 95;
+  const ring = 18;                                          // espaço dos tracinhos em volta
+  const w = Math.min(width * 0.86, (bottom - top - 2 * ring) / ratio);
+  const h = w * ratio;
+  return { cx: width / 2, cy: (top + bottom) / 2, rx: w / 2, ry: h / 2, buttonCy };
+}
 
 export type FaceOval = { cx: number; cy: number; h: number }; // frações da largura/altura da foto
 
@@ -34,8 +52,9 @@ export function useFaceOval(size: { w: number; h: number } | null): FaceOval | n
   const insets = useSafeAreaInsets();
   if (!size) return null;
   const s = Math.max(width / size.w, height / size.h);       // escala do preview da câmera
-  const cyPx = size.h / 2 + (insets.top + CAM_OVAL_CY - 54 - height / 2) / s;
-  return { cx: 0.5, cy: cyPx / size.h, h: CAM_OVAL_H / s / size.h };
+  const oval = cameraOval(width, height, insets.top, insets.bottom);
+  const cyPx = size.h / 2 + (oval.cy - height / 2) / s;
+  return { cx: 0.5, cy: cyPx / size.h, h: (oval.ry * 2) / s / size.h };
 }
 
 /**

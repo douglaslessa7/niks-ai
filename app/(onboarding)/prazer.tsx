@@ -1,26 +1,25 @@
 import { useEffect, useRef } from 'react';
 import { View, Text, Animated, Easing } from 'react-native';
 import { useRouter } from 'expo-router';
-import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObPillButton, NIKS_LOGO_PINK,
-  useObFrame, useObName, obStep, useOnMount,
+  OB, OB_STEPS, ObScreen, NIKS_LOGO_PINK,
+  useObName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 2 do fluxo completo — "Prazer, <nome>!" + "Em poucos minutos, vamos montar o
-// plano perfeito para sua pele" (texto do produto; o do design falava em "1 foto",
-// e o scan tira 3). Diferente
-// da transição antiga (que seguia sozinha em 1,6 s), agora tem voltar e o botão
-// "Vamos lá". A logo entra com escala 0,8 → 1 e o texto logo depois.
+// Tela 3 do onboarding (voltou a pedido do produto, entre o nome e a idade) — "Prazer,
+// <nome>!", sem subtítulo (o "Em poucos minutos, vamos montar o plano perfeito para sua
+// pele" saiu a pedido do produto, out/2026). Tela PURA (13/out/2026): sem voltar e sem
+// botão — segue sozinha para a idade em `HOLD_MS` (`replace`: o voltar da idade cai no
+// nome, não aqui). A logo entra com escala 0,8 → 1 e o texto logo depois.
 const STEP = OB_STEPS.prazer;
 const STEP_NAME = 'Prazer';
+const HOLD_MS = 2300;
 
 export default function Prazer() {
   const router = useRouter();
   const { track } = useMixpanel();
   const name = useObName();
-  const { y, buttonBottom } = useObFrame();
   const logo = useRef(new Animated.Value(0)).current;
   const text = useRef(new Animated.Value(0)).current;
 
@@ -33,15 +32,18 @@ export default function Prazer() {
     ]).start();
   }, []);
 
-  const handleContinue = () => {
-    haptics.action();
-    track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/birthday');
-  };
+  useEffect(() => {
+    const id = setTimeout(() => {
+      track('onboarding_step_completed', obStep(STEP, STEP_NAME));
+      router.replace('/(onboarding)/birthday');
+    }, HOLD_MS);
+    return () => clearTimeout(id);
+  }, []);
 
   return (
     <ObScreen>
-      <View style={{ position: 'absolute', left: 30, right: 30, top: y(300), alignItems: 'center' }}>
+      {/* Logo + "Prazer, <nome>!" centralizados na altura da tela (pedido do produto). */}
+      <View style={{ position: 'absolute', left: 30, right: 30, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
         <Animated.Image
           source={NIKS_LOGO_PINK}
           style={{
@@ -53,14 +55,8 @@ export default function Prazer() {
           <Text style={{ marginTop: 24, fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.4, textAlign: 'center', color: OB.ink }}>
             {name ? `Prazer, ${name}!` : 'Prazer!'}
           </Text>
-          <Text style={{ marginTop: 12, fontSize: 17, lineHeight: 23, textAlign: 'center', color: OB.sub }}>
-            Em poucos minutos, vamos montar o plano perfeito para sua pele
-          </Text>
         </Animated.View>
       </View>
-
-      <ObHeader onBack={() => router.back()} />
-      <ObPillButton label="Vamos lá" onPress={handleContinue} bottom={buttonBottom} />
     </ObScreen>
   );
 }

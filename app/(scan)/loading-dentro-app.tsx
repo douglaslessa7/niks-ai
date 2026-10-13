@@ -18,7 +18,7 @@ const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 export default function LoadingDentroApp() {
   const router = useRouter();
-  const { skinImageBase64, skinImageUri, skinCollagesBase64, onboarding, setScanResult, setSelectedScan } = useAppStore();
+  const { skinImageBase64, skinImageUri, skinCollagesBase64, skinScanLayout, onboarding, setScanResult, setSelectedScan } = useAppStore();
   const { track } = useMixpanel();
 
   const [percentage, setPercentage] = useState(0);
@@ -91,10 +91,12 @@ export default function LoadingDentroApp() {
               // fora de ordem (app novo + função velha) degradar para a análise de
               // 1 foto em vez de quebrar.
               imageBase64: skinImageBase64,
-              // Scan multi-foto: [neutra_alta, layoutA, layoutB]. Ausente no fluxo
-              // de 1 foto — é o que a função usa para escolher o prompt.
+              // Scan multi-foto: 'turns_v1' = [frente, um lado, outro lado] (câmera do
+              // giro, out/2026); 'expressions_v1' = [neutra_alta, layoutA, layoutB]
+              // (camera-multi, aposentada). Ausente no fluxo de 1 foto — é o que a
+              // função usa para escolher o prompt.
               imagesBase64: skinCollagesBase64.length ? skinCollagesBase64 : undefined,
-              scanLayout: skinCollagesBase64.length ? 'expressions_v1' : 'single',
+              scanLayout: skinCollagesBase64.length ? (skinScanLayout ?? 'expressions_v1') : 'single',
               skinProfile: {
                 skin_type: onboarding.skin_type,
                 concerns: onboarding.concerns,
@@ -222,7 +224,8 @@ export default function LoadingDentroApp() {
       countdown={countdown}
       countdownPaused={countdownPaused}
       showError={showError}
-      onRetry={() => router.back()}
+      // Câmera nova do zero (a do giro chega aqui com `replace`, então não há o que "voltar").
+      onRetry={() => router.replace('/(scan)/camera?modo=app' as any)}
     />
   );
 }

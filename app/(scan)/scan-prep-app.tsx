@@ -5,13 +5,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, Sun, CalendarClock, Glasses, Sparkles } from 'lucide-react-native';
+import { Sun, CalendarClock, Glasses, Sparkles } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Image as ExpoImage } from 'expo-image';
-import { useFonts } from 'expo-font';
-import {
-  Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold, Nunito_400Regular,
-} from '@expo-google-fonts/nunito';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
@@ -22,14 +18,17 @@ import { useAppStore } from '../../store/onboarding';
 // comportamento a `scan-prep.tsx` (a versão do onboarding, que NÃO deve ser alterada).
 // Aberta direto pelo botão "Escanear" da home (e pelo "Escanear minha pele" da Rotina)
 // via hooks/useFaceScan.
+// Visual (out/2026) = identidade nova do app (home/Perfil/Progresso): fonte do sistema,
+// #FF5EA8, fundo branco, voltar redondo do Progresso. Sem a
+// etiqueta "Passo N de 4" acima do título (pedido do produto).
 
-const WHITE      = '#FFFFFF';
-const INK        = '#121212';
-const INK_MUTE   = '#818181';
-const CORAL      = '#FF9D9D';                  // rosa da Rotina (protocolo BRAND)
-const CORAL_WASH = 'rgba(255,157,157,0.14)';   // wash do rosa da Rotina
-const CARD_BD    = '#E3E3E6';                  // hairline-assinatura do app
-const DOT_OFF    = 'rgba(18,18,18,0.10)';
+const WHITE     = '#FFFFFF';
+const INK       = '#121212';
+const INK_MUTE  = '#818181';
+const PINK      = '#FF5EA8';
+const PINK_WASH = 'rgba(255,94,168,0.10)';
+const DOT_OFF   = 'rgba(18,18,18,0.12)';
+const BACK_PATH = 'M15 5l-7 7 7 7';
 
 // ── Mídia dos passos ───────────────────────────────────────────────────────────
 // Cada passo tem sua própria imagem (ver `media` no STEPS abaixo). Passos ainda
@@ -84,7 +83,7 @@ function ProgressDots({ active }: { active: number }) {
             width: i === active ? 26 : 7,
             height: 7,
             borderRadius: 100,
-            backgroundColor: i === active ? CORAL : DOT_OFF,
+            backgroundColor: i === active ? PINK : DOT_OFF,
           }}
         />
       ))}
@@ -93,13 +92,6 @@ function ProgressDots({ active }: { active: number }) {
 }
 
 export default function ScanPrepApp() {
-  const [fontsLoaded] = useFonts({
-    Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold, Nunito_400Regular,
-  });
-  const f8 = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const f7 = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const f4 = fontsLoaded ? 'Nunito_400Regular' : undefined;
-
   const router = useRouter();
   const { track } = useMixpanel();
   const setScanTutorialSeen = useAppStore((s) => s.setScanTutorialSeen);
@@ -140,8 +132,9 @@ export default function ScanPrepApp() {
     // Tutorial concluído: marca como visto (persistido) para que os próximos scans
     // pulem esta tela e vão direto à câmera — ver hooks/useFaceScan.
     setScanTutorialSeen(true);
-    // `camera-multi` (6 fotos), não `camera` (1 foto) — esta última é a do ONBOARDING.
-    router.push('/(scan)/camera-multi' as any);
+    // A câmera do giro em modo app (frente + os dois lados → 3 fotos para a IA). Não é
+    // mais a `camera-multi` (6 fotos com expressões), que saiu do fluxo em out/2026.
+    router.push('/(scan)/camera?modo=app' as any);
   };
 
   const isLast = index === TOTAL - 1;
@@ -159,17 +152,20 @@ export default function ScanPrepApp() {
     <SafeAreaView style={{ flex: 1, backgroundColor: WHITE }}>
       <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
-        {/* Header — botão voltar (card branco do app) */}
+        {/* Header — voltar redondo (o mesmo do Progresso) */}
         <View style={{ paddingVertical: 6, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity
             onPress={handleBack}
-            activeOpacity={0.7}
+            activeOpacity={0.85}
             style={{
-              width: 40, height: 40, borderRadius: 100, backgroundColor: WHITE,
-              borderWidth: 1, borderColor: CARD_BD, alignItems: 'center', justifyContent: 'center',
+              width: 36, height: 36, borderRadius: 18, backgroundColor: WHITE,
+              alignItems: 'center', justifyContent: 'center',
+              shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
             }}
           >
-            <ChevronLeft size={18} color={INK} />
+            <Svg width={18} height={18} viewBox="0 0 24 24">
+              <Path d={BACK_PATH} fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
           </TouchableOpacity>
         </View>
 
@@ -185,7 +181,7 @@ export default function ScanPrepApp() {
           onMomentumScrollEnd={syncIndex}
           getItemLayout={(_, i) => ({ length: pageW, offset: pageW * i, index: i })}
           style={{ flexGrow: 0 }}
-          renderItem={({ item, index: i }) => {
+          renderItem={({ item }) => {
             const { Icon } = item;
             return (
               <View style={{ width: pageW, paddingHorizontal: 28 }}>
@@ -193,11 +189,11 @@ export default function ScanPrepApp() {
                 {/* Área de mídia — arte de fundo + GIF por cima */}
                 <View
                   style={{
-                    height: mediaH, borderRadius: 28, backgroundColor: CORAL_WASH,
+                    height: mediaH, borderRadius: 28, backgroundColor: PINK_WASH,
                     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
                   }}
                 >
-                  <Icon size={Math.round(mediaH * 0.3)} color={CORAL} strokeWidth={1.6} />
+                  <Icon size={Math.round(mediaH * 0.3)} color={PINK} strokeWidth={1.6} />
                   <ExpoImage
                     source={item.media}
                     contentFit="cover"
@@ -207,13 +203,10 @@ export default function ScanPrepApp() {
 
                 {/* Texto — altura mínima fixa para o botão não dançar entre slides */}
                 <View style={{ paddingTop: 28, minHeight: 210 }}>
-                  <Text style={{ fontFamily: f7, fontSize: 11, color: CORAL, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
-                    {`Passo ${i + 1} de ${TOTAL}`}
-                  </Text>
-                  <Text style={{ fontFamily: f8, fontSize: 26, color: INK, letterSpacing: -0.7, lineHeight: 32 }}>
+                  <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: INK }}>
                     {item.title}
                   </Text>
-                  <Text style={{ fontFamily: f4, marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: INK_MUTE, letterSpacing: -0.1 }}>
+                  <Text style={{ marginTop: 12, fontSize: 17, lineHeight: 23, color: INK_MUTE }}>
                     {item.body}
                   </Text>
                 </View>
@@ -236,13 +229,11 @@ export default function ScanPrepApp() {
             onPress={handleNext}
             activeOpacity={0.9}
             style={{
-              height: 58, borderRadius: 100, backgroundColor: CORAL,
+              height: 50, borderRadius: 25, backgroundColor: PINK,
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-              shadowColor: CORAL, shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.45, shadowRadius: 16, elevation: 6,
             }}
           >
-            <Text style={{ fontFamily: f7, fontSize: 17, letterSpacing: -0.2, color: WHITE }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: WHITE }}>
               {isLast ? 'Abrir câmera' : 'Continuar'}
             </Text>
             <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">

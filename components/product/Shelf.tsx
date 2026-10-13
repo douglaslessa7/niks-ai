@@ -264,9 +264,11 @@ type Props = {
   onDragActive: (active: boolean) => void; // trava/destrava a rolagem da tela
   onScan: () => void;                      // convite da estante vazia + espaço "+"
   semArraste?: boolean;                    // modo escolha: só toque, sem arrastar
+  // Alvo "shelf" do tutorial de Produtos (59a): a caixa da estante (useCoachMark).
+  tutMark?: { ref: React.RefObject<View | null>; onLayout: () => void; collapsable: false };
 };
 
-const Shelf = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, editing, onPick, onRemove, onDragActive, onScan, semArraste = false }, ref) {
+const Shelf = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, editing, onPick, onRemove, onDragActive, onScan, semArraste = false, tutMark }, ref) {
   const { width: W } = useWindowDimensions();
   // Palco no frame do design; encolhe só em tela mais estreita que 393.
   const k = Math.min(1, W / STAGE_W);
@@ -436,7 +438,7 @@ const Shelf = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, edi
         }}
       >
         {/* Estante: caixa externa + fundo interno + luzes + prateleiras */}
-        <View style={[s.outer, { height: boxH }]}>
+        <View style={[s.outer, { height: boxH }]} {...tutMark}>
           <LinearGradient colors={['#F9DCE8', '#F3C9DA']} style={[StyleSheet.absoluteFill, { borderRadius: 20 }]} />
           <View style={s.outerInset} />
         </View>

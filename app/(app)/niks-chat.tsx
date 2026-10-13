@@ -110,16 +110,20 @@ function FadeIn({ children, enabled }: { children: React.ReactNode; enabled: boo
 // 1ª opção da folha: não vira conversa — abre direto a câmera do lote (montar a
 // rotina com os produtos de casa), com o mesmo teto de 1 por dia da aba Rotina.
 const OPCAO_LOTE = 'Monte uma rotina para mim com os produtos que eu tenho em casa.';
+// Análise de refeição (voltou em out/2026, no lugar de "Estou vendo o resultado com o
+// meu protocolo?"): como na versão antiga do chat, não vira conversa — abre direto a
+// câmera de comida (`(scan)/food-camera` → `food-report`). Ação direta (seta à direita,
+// como a opção do lote), com a bolinha e a fonte normal das outras opções (pedido do produto).
+const OPCAO_REFEICAO = 'Analisar o impacto da minha refeição na minha pele';
 const SUGS = [
   'Apareceu uma espinha no meu rosto. Preciso de ajuda.',
-  'Estou vendo o resultado com o meu protocolo?',
+  OPCAO_REFEICAO,
   'Minha pele reagiu a algo que eu usei.',
 ];
 // Respostas prontas das 3 opções (texto do design). Gravadas no banco como uma
 // conversa normal, igual às respostas pré-definidas de antes.
 const PREDEFINED_RESPONSES: Record<string, string> = {
   [SUGS[0]]: 'ah, que chato! me manda uma foto de perto dela? assim eu vejo se tá inflamada e te digo o que passar hoje.',
-  [SUGS[1]]: 'bora ver juntas! me manda uma selfie agora que eu comparo com o seu último scan.',
   [SUGS[2]]: 'entendi. qual produto você usou por último? e o que apareceu: vermelhidão, coceira ou bolinhas?',
 };
 const ABOUT = ['Analisa fotos da sua pele e dos seus produtos', 'Tira dúvidas sobre o seu protocolo', 'Ajusta a rotina quando a pele reage'];
@@ -1305,6 +1309,26 @@ export default function NiksChat() {
               </Svg>
             </TouchableOpacity>
             {SUGS.map((q, i) => {
+              if (q === OPCAO_REFEICAO) {
+                return (
+                  <TouchableOpacity
+                    key={q}
+                    activeOpacity={0.85}
+                    onPress={() => { haptics.action(); router.push('/(scan)/food-camera' as any) }}
+                    style={[styles.opt, { borderTopWidth: 1, borderTopColor: HAIR }]}
+                    accessibilityRole="button"
+                  >
+                    {/* Bolinha igual às outras opções (pedido do produto); tocar abre a câmera direto. */}
+                    <View style={[styles.radio, { borderWidth: 1.5, borderColor: '#A39A9F' }]}>
+                      <View style={[styles.radioDot, { backgroundColor: 'transparent' }]} />
+                    </View>
+                    <Text style={[styles.optText, { flex: 1 }]} lineBreakStrategyIOS="push-out">{q}</Text>
+                    <Svg width={14} height={14} viewBox="0 0 24 24">
+                      <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </TouchableOpacity>
+                )
+              }
               const on = pick === i
               return (
                 <TouchableOpacity

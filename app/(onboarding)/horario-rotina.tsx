@@ -9,15 +9,17 @@ import {
   useObFrame, useObName, withName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 20 do fluxo completo — horário da rotina: o seletor da tela 3 em duas rodas
-// lado a lado, sobre UMA faixa, como o seletor de hora do iOS. Vem DEPOIS do objetivo,
-// e a rotina pré-gerada não é refeita por isso (a chave dela ignora os horários).
+// Tela 21 do onboarding — horário da rotina: duas rodas lado a lado, sobre UMA faixa,
+// como o seletor de hora do iOS. Vem DEPOIS de "Sua rotina de skincare está pronta" e
+// leva ao compromisso, que leva ao paywall (pedido do produto, out/2026). A rotina pré-gerada não é refeita por
+// isso (a chave dela ignora os horários).
 //
 // Grava em `onboarding.rotina_manha_horario` / `rotina_noite_horario` ('HH:MM') e o
 // fuso do aparelho em `rotina_fuso` (IANA). Vão para `users.rotina_*` no
 // `saveToSupabase` (signup). ⚠️ O agendamento das notificações do servidor AINDA
 // NÃO lê estes campos — o pg_cron segue em 7h/21h fixos.
-// O horário da noite alimenta o título da tela 21 ("…hoje às 21h").
+// Os lembretes locais da rotina (`lib/routineReminders.ts`) leem esses horários da
+// conta; sem eles, usam 7h/21h.
 function halfHours(fromH: number, toH: number) {
   const out: string[] = [];
   for (let h = fromH; h <= toH; h++) {
@@ -60,7 +62,7 @@ export default function HorarioRotina() {
     setOnboardingField('rotina_noite_horario', night.current);
     setOnboardingField('rotina_fuso', deviceTimeZone());
     track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), manha: morning.current, noite: night.current });
-    router.push('/(onboarding)/aviso-lembretes');
+    router.push('/(onboarding)/compromisso');
   };
 
   const column = (label: string, items: string[], ref: { current: string }) => (
@@ -78,7 +80,7 @@ export default function HorarioRotina() {
   return (
     <ObScreen>
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(118) }}>
-        <ObTitle>{withName(name, 'que horas você quer fazer sua rotina?')}</ObTitle>
+        <ObTitle>{withName(name, 'que horas você vai fazer seu skincare?')}</ObTitle>
         <ObSubtitle style={{ marginTop: 9 }}>A gente te lembra na hora certa.</ObSubtitle>
       </View>
 

@@ -21,7 +21,7 @@ import {
   type StyleProp, type TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Image as ExpoImage } from 'expo-image';
@@ -792,8 +792,35 @@ export default function Protocolo() {
   const flowRef = useRef(flow);
   flowRef.current = flow;
   const restoredRef = useRef(false);
+
+  // "Iniciar rotina" da HOME (`/protocolo?iniciar=am|pm`): troca para o período e,
+  // quando a rotina carregar, abre direto o guia passo a passo (retomando o passo onde
+  // parou hoje). O parâmetro é consumido na hora para não reabrir ao voltar à aba.
+  const { iniciar } = useLocalSearchParams<{ iniciar?: string }>();
+  const pendingStartRef = useRef<'am' | 'pm' | null>(null);
   useEffect(() => {
-    if (restoredRef.current || loadState !== 'ready') return;
+    if (iniciar !== 'am' && iniciar !== 'pm') return;
+    pendingStartRef.current = iniciar;
+    router.setParams({ iniciar: undefined } as any);
+    if (period !== iniciar) setPeriod(iniciar);
+  }, [iniciar]);
+  useEffect(() => {
+    const p = pendingStartRef.current;
+    if (!p || loadState !== 'ready' || period !== p) return;
+    pendingStartRef.current = null;
+    if (!canStart || !n || flowRef.current) return;
+    restoredRef.current = true; // o pedido da home vale mais que reabrir o fluxo antigo
+    flowLoadedRef.current = true;
+    void getRoutineFlow(p).then((s) => {
+      const resume = s && s.step !== 'cam' ? s : null;
+      setLit(resume ? resume.lit.filter((i) => i < n) : []);
+      setRun(resume ? Math.min(resume.run, n - 1) : 0);
+      setFlow('guide');
+    });
+  }, [iniciar, loadState, period, canStart, n]);
+
+  useEffect(() => {
+    if (restoredRef.current || loadState !== 'ready' || pendingStartRef.current) return;
     restoredRef.current = true;
     let alive = true;
     void Promise.all([getRoutineHistory(), getRoutineFlow('am'), getRoutineFlow('pm')]).then(([h, amF, pmF]) => {
@@ -1045,7 +1072,7 @@ export default function Protocolo() {
                   <Svg width={13} height={14} viewBox="0 0 13 14">
                     <Path d="M1 1.6v10.8c0 .8.9 1.3 1.6.9l9-5.4c.6-.4.6-1.3 0-1.7l-9-5.4C1.9.4 1 .8 1 1.6z" fill="#fff" />
                   </Svg>
-                  <Text style={styles.heroBtnText}>Iniciar rotina</Text>
+                  <Text style={styles.heroBtnText}>Iniciar skincare</Text>
                 </TouchableOpacity>
               </View>
             )}

@@ -48,3 +48,39 @@ export function getScoreTheme(score: number | null): ScoreTheme {
   if (score <= 75) return THEME_YELLOW;
   return THEME_PINK;
 }
+
+// ── Fundo de tela por faixa do score ("Seu progresso", out/2026) ──────────────
+// Mesma estrutura do fundo da home (`lib/homeTheme`: 6 paradas em BG_STOPS, bolha de
+// cor no canto, fundo do cabeçalho rolado), tingida pela faixa do score — como a home
+// antiga mudava de cor pelo score. Rosa = exatamente o fundo de dia de hoje (BG_DAY).
+export type ScoreScreenTheme = {
+  bg: readonly [string, string, string, string, string, string];
+  base: string;
+  blob: string;
+  header: string;
+};
+
+const SCREEN_RED: ScoreScreenTheme = {
+  bg: ['#FFE4E4', '#FFD4D4', '#FFC7C7', '#FDDEDE', '#FBEEEE', '#F9F3F3'],
+  base: '#F9F3F3', blob: 'rgba(255,214,214,0.40)', header: 'rgba(255,214,214,0.94)',
+};
+const SCREEN_ORANGE: ScoreScreenTheme = {
+  bg: ['#FFEADC', '#FFDDC8', '#FFD1B6', '#FDE4D3', '#FBF1E9', '#F9F5F1'],
+  base: '#F9F5F1', blob: 'rgba(255,226,206,0.40)', header: 'rgba(255,222,200,0.94)',
+};
+const SCREEN_YELLOW: ScoreScreenTheme = {
+  bg: ['#FFF4D9', '#FFECC2', '#FFE4AB', '#FDEFCF', '#FBF6E9', '#F9F7F2'],
+  base: '#F9F7F2', blob: 'rgba(255,238,198,0.40)', header: 'rgba(255,236,190,0.94)',
+};
+const SCREEN_PINK: ScoreScreenTheme = {
+  bg: ['#FFE3EF', '#FFD3E5', '#FFC6DC', '#FDDFEB', '#FBEEF3', '#F9F2F5'],
+  base: '#F9F2F5', blob: 'rgba(255,226,236,0.40)', header: 'rgba(255,214,231,0.94)',
+};
+
+export function getScoreScreenTheme(score: number | null): ScoreScreenTheme {
+  if (score == null) return SCREEN_PINK;
+  if (score <= 25) return SCREEN_RED;
+  if (score <= 50) return SCREEN_ORANGE;
+  if (score <= 75) return SCREEN_YELLOW;
+  return SCREEN_PINK;
+}

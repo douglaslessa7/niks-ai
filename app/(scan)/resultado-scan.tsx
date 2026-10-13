@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, Image, ScrollView, TouchableOpacity, Alert, useWindowDimensions,
+  View, Text, Image, ScrollView, TouchableOpacity, Alert, Animated, useWindowDimensions,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -12,12 +12,14 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB, OB_STEPS, useObFrame, obStep, useOnMount } from '../../components/onboarding/kit';
 import { buildFindings, findingChips, REGION_INFO, Region } from '../../components/onboarding/scanFindings';
 import { useImageSize, useFaceOval, fitFace, affineFit, CAM_OVAL_W, CAM_OVAL_H, Pt2 } from '../../lib/faceFrame';
-import { FaceScanMesh, MESH_FEATURES, faceMeshPoint } from '../../components/onboarding/FaceScanMesh';
+import { MESH_FEATURES, faceMeshPoint } from '../../components/onboarding/FaceScanMesh';
 import type { ScanResult } from '../../store/onboarding';
+import { formatPriority, formatContraindication, barrierLabel, hydrationLabel, sebaceoLabel } from '../../lib/skinReportFormat';
 
 // Tela 8 do onboarding — RELATÓRIO do scan, réplica da tela 49d do Claude Design
-// ("NIKS home redesign", componente `NiksSkinScanFlo.dc.html`, estágio `report`), com
-// a MÁSCARA do scan (`FaceScanMesh`) encaixada no rosto por cima da foto.
+// ("NIKS home redesign", componente `NiksSkinScanFlo.dc.html`, estágio `report`). Sem a
+// máscara do scan por cima da foto (saiu em out/2026): só os pontinhos rosas, encaixados
+// no rosto pelos `face_landmarks` (a conta da máscara continua dando as posições).
 //
 // Estrutura do 49d (frame 393 × 852):
 //   • foto do rosto no topo (0–470), com pontinhos brancos de aro/brilho rosa nas
@@ -30,9 +32,18 @@ import type { ScanResult } from '../../store/onboarding';
 //       4. "Validação do objetivo principal" — miniaturas, selo e barra
 //          (`concerns_alignment`); some se a análise não trouxe o campo;
 //       5. "Recomendações pra …" — numeradas (`action_recommendations`);
+//       6–8. três seções do relatório da versão B, no visual dos cards do 49d e com
+//          os títulos de B: "Condição Geral" (Barreira/Hidratação/Oleosidade/
+//          Fotótipo), "Por onde começar" (`prioridade_clinica`) e "Evitar para sua
+//          pele" (`contraindicacoes`);
 //   • véu rosado + botão "Próximo" de largura cheia (18 pt das bordas, 34 da base).
-// "Próximo" → idade da pele (9, só se a pele parece mais velha que ela) ou a
-// transição (10). X → refazer o scan.
+// ROLAGEM (pedido do produto): a tela inteira rola — a foto fica parada e a folha SOBE
+// por cima dela; a data e o X somem enquanto ela sobe. O "Próximo" (e o véu) só
+// aparecem, com fade, quando a seção "Pontos fortes da pele" chega a 80% da altura
+// da tela (marcador logo antes dela); depois não somem mais.
+// "Próximo" → "Sua rotina de skincare está pronta" (o loading da rotina esteve aqui e
+// foi tirado a pedido do produto).
+// X → refazer o scan.
 //
 // ENCAIXE (`buildFaceLayout`): com `face_landmarks` (a `analyze-skin` do onboarding
 // devolve olhos, nariz, boca, queixo e testa) a foto é enquadrada pelo rosto real e a
@@ -90,13 +101,20 @@ export default function ResultadoScan() {
   const { track } = useMixpanel();
   const scanResult = useAppStore((s) => s.scanResult);
   const photoUri = useAppStore((s) => s.skinImageUri);
-  const birthday = useAppStore((s) => s.onboarding.birthday);
+  // Pontos do rosto achados pelo iPhone na própria foto (precisos); sem eles, os da IA.
+  const deviceLandmarks = useAppStore((s) => s.skinFaceLandmarks);
   const concerns = useAppStore((s) => s.onboarding.concerns);
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { insets, y } = useObFrame();
   const photoSize = useImageSize(photoUri);
   const oval = useFaceOval(photoSize);
   const [filter, setFilter] = useState('Todos');
+  // Rolagem da tela inteira: a folha sobe por cima da foto. O "Próximo" só aparece
+  // quando a seção "Pontos fortes da pele" entra na tela (e não some mais).
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const strengthsY = useRef<number | null>(null);
+  const [showNext, setShowNext] = useState(false);
+  const nextOpacity = useRef(new Animated.Value(0)).current;
   const scannedAt = useRef(scanDateLabel(new Date())).current;
 
   useOnMount(() => track('onboarding_step_viewed', obStep(OB_STEPS.resultadoScan, 'Resultado do Scan')));
@@ -111,38 +129,44 @@ export default function ResultadoScan() {
   const boxTop = BOX_TOP;
   const boxH = y(BOX_H);
   const layout = useMemo(
-    () => buildFaceLayout(photoSize, oval, scanResult?.face_landmarks ?? null, width, boxH, u),
-    [photoSize, oval, scanResult, width, boxH, u],
+    () => buildFaceLayout(photoSize, oval, deviceLandmarks ?? scanResult?.face_landmarks ?? null, width, boxH, u),
+    [photoSize, oval, scanResult, deviceLandmarks, width, boxH, u],
   );
   const fit = layout?.photo ?? null;
 
-  // Pontinhos: um aglomerado por âncora de cada região com achado; levam a categoria
-  // do achado para o filtro dos chips.
-  const dots = useMemo(() => {
-    if (!layout) return [];
-    const out: Dot[] = [];
-    findings.forEach((f, fi) => {
-      if (!f.region) return;
-      layout.anchors[f.region].forEach((p, ai) => out.push(...clusterDots(p, layout.sparkR, fi * 7 + ai, f.category)));
-    });
-    return out;
-  }, [findings, layout]);
 
   // ── Dados das seções de baixo ───────────────────────────────────────────────
   const strengths = scanResult?.skin_strengths ?? [];
   const recs = scanResult?.action_recommendations ?? [];
   const align = scanResult?.concerns_alignment;
+  const priority = scanResult?.prioridade_clinica;
+  const avoid = scanResult?.contraindicacoes ?? [];
+  const condition = [
+    { label: 'Barreira', value: barrierLabel(scanResult?.barrier_status) },
+    { label: 'Hidratação', value: hydrationLabel(scanResult?.skin_hydration) },
+    { label: 'Oleosidade', value: sebaceoLabel(scanResult?.brilho_sebaceo?.intensity) },
+    { label: 'Fotótipo', value: scanResult?.skin_phototype ? `Fitzpatrick ${scanResult.skin_phototype}` : '—' },
+  ];
   const goalLabels = concerns.filter((c) => c !== 'Outro');
   const mainGoal = joinPt(goalLabels.slice(0, 2).map((c, i) => (i ? c.toLowerCase() : c)));
   const vThumbs = layout ? [layout.anchors.nariz_zona_t[0], layout.anchors.bochechas[1] ?? layout.anchors.bochechas[0], layout.anchors.queixo_mandibula[0]] : [];
 
+  const revealNext = () => {
+    if (showNext) return;
+    setShowNext(true);
+    Animated.timing(nextOpacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+  };
+  // A seção "Pontos fortes" (ou, sem ela, o que vem logo depois da análise) chegou a
+  // 80% da altura da tela → mostra o botão.
+  const onSheetScroll = (offsetY: number) => {
+    if (showNext || strengthsY.current == null) return;
+    if (offsetY + height * 0.8 >= y(SHEET_TOP) + strengthsY.current) revealNext();
+  };
+
   const handleNext = () => {
     haptics.action();
     track('onboarding_step_completed', obStep(OB_STEPS.resultadoScan, 'Resultado do Scan'));
-    const age = Number(birthday);
-    const skinAge = scanResult?.skin_age ?? scanResult?.envelhecimento?.skin_age;
-    const older = skinAge != null && !isNaN(age) && age > 0 && Math.round(skinAge) > age;
-    router.push(older ? '/(onboarding)/idade-pele' : '/(onboarding)/transicao-rotina');
+    router.push('/(onboarding)/rotina-pronta');
   };
 
   // X = refazer o scan (no onboarding não há "fora" para onde ir).
@@ -184,39 +208,25 @@ export default function ResultadoScan() {
         {photoUri && !fit && (
           <Image source={{ uri: photoUri }} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
         )}
-        {layout && <FaceOverlay width={width} height={boxH} layout={layout} dots={dots} filter={filter} />}
-      </View>
-
-      {/* Topo: data (vidro claro) + X */}
-      <View style={{ position: 'absolute', top: y(62), left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View style={{ width: 36 }} />
-        <View style={{
-          height: 34, paddingHorizontal: 16, borderRadius: 17, justifyContent: 'center',
-          backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)',
-        }}>
-          <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: OB.ink }}>{scannedAt}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={handleClose}
-          activeOpacity={0.85}
-          style={{
-            width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
-          }}
-        >
-          <Svg width={16} height={16} viewBox="0 0 24 24">
-            <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={OB.ink} strokeWidth={2.4} strokeLinecap="round" />
-          </Svg>
-        </TouchableOpacity>
+        {/* Sem pontinhos nem máscara sobre a foto (13/out/2026, pedido do produto). */}
       </View>
 
       {/* Folha */}
-      <View style={{
-        position: 'absolute', left: 0, right: 0, top: y(SHEET_TOP), bottom: 0,
-        borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: R.sheet, overflow: 'hidden',
-        shadowColor: '#783C48', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.1, shadowRadius: 12,
-      }}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}>
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        contentContainerStyle={{ paddingTop: y(SHEET_TOP) }}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true, listener: (e: any) => onSheetScroll(e.nativeEvent.contentOffset.y) },
+        )}
+        onContentSizeChange={(_, h) => { if (h <= height + 20) revealNext(); }}
+      >
+        <View style={{
+          minHeight: height, paddingBottom: 120 + insets.bottom,
+          borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: R.sheet, overflow: 'hidden',
+        }}>
           {/* 1. Achados */}
           <View style={{ backgroundColor: '#FFFFFF', borderBottomLeftRadius: 26, borderBottomRightRadius: 26, paddingBottom: 8 }}>
             <View style={{ alignSelf: 'center', marginTop: 8, width: 36, height: 5, borderRadius: 3, backgroundColor: R.handle }} />
@@ -275,6 +285,8 @@ export default function ResultadoScan() {
             </View>
           </View>
 
+          {/* Marcador: daqui para baixo começa "Pontos fortes" — é o que libera o "Próximo". */}
+          <View onLayout={(e) => { strengthsY.current = e.nativeEvent.layout.y; }} />
           {/* 2. Pontos fortes */}
           {strengths.length > 0 && (
             <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingVertical: 20 }}>
@@ -389,27 +401,129 @@ export default function ResultadoScan() {
               </View>
             </View>
           )}
-        </ScrollView>
 
+          {/* 6. Condição Geral (versão B) — grade 2 × 2 */}
+          {scanResult && (
+            <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingVertical: 20, paddingHorizontal: 18 }}>
+              <Text style={sectionTitle}>Condição Geral</Text>
+              <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {condition.map((c) => (
+                  <View key={c.label} style={{ width: '48.5%', borderRadius: 16, backgroundColor: R.sheet, paddingVertical: 14, paddingHorizontal: 14, gap: 4 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '500', color: R.muted }}>{c.label}</Text>
+                    <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.35, color: OB.ink }}>{c.value}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* 7. Por onde começar (versão B) */}
+          {!!priority?.primaria && (
+            <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingVertical: 20, paddingHorizontal: 18 }}>
+              <Text style={sectionTitle}>Por onde começar</Text>
+              <View style={{ marginTop: 14, gap: 12 }}>
+                {[priority.primaria, priority.secundaria].filter(Boolean).map((item, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: i === 0 ? OB.pink : R.pillBg, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: i === 0 ? '#FFFFFF' : R.pillInk }}>{i === 0 ? '01' : '02'}</Text>
+                    </View>
+                    <Text style={{ flex: 1, fontSize: 17, fontWeight: '600', letterSpacing: -0.35, color: OB.ink }}>{formatPriority(item)}</Text>
+                  </View>
+                ))}
+              </View>
+              {!!priority.justificativa && (
+                <Text style={{ marginTop: 14, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, color: R.text2 }}>{priority.justificativa}</Text>
+              )}
+            </View>
+          )}
+
+          {/* 8. Evitar para sua pele (versão B) */}
+          {avoid.length > 0 && (
+            <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingTop: 20, paddingHorizontal: 18, paddingBottom: 8 }}>
+              <Text style={sectionTitle}>Evitar para sua pele</Text>
+              <View style={{ marginTop: 6 }}>
+                {avoid.map((item, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i ? 1 : 0, borderColor: R.line }}>
+                    <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: R.pillBg, alignItems: 'center', justifyContent: 'center' }}>
+                      <Svg width={10} height={10} viewBox="0 0 10 10">
+                        <Path d="M1.5 1.5 L8.5 8.5 M8.5 1.5 L1.5 8.5" stroke={R.pillInk} strokeWidth={1.8} strokeLinecap="round" />
+                      </Svg>
+                    </View>
+                    <Text style={{ flex: 1, fontSize: 16, lineHeight: 21, letterSpacing: -0.3, color: OB.ink }}>{formatContraindication(item)}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+      </Animated.ScrollView>
+
+      {/* Topo: data (vidro claro) + X */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute', top: y(62), left: 20, right: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          // some enquanto a folha sobe até ele
+          opacity: scrollY.interpolate({ inputRange: [0, Math.max(1, y(SHEET_TOP) - y(62) - 60)], outputRange: [1, 0], extrapolate: 'clamp' }),
+        }}
+      >
+        <View style={{ width: 36 }} />
+        <View style={{
+          height: 34, paddingHorizontal: 16, borderRadius: 17, justifyContent: 'center',
+          backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.85)',
+        }}>
+          <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: OB.ink }}>{scannedAt}</Text>
+        </View>
+        <TouchableOpacity
+          onPress={handleClose}
+          activeOpacity={0.85}
+          style={{
+            width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+            shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
+          }}
+        >
+          <Svg width={16} height={16} viewBox="0 0 24 24">
+            <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={OB.ink} strokeWidth={2.4} strokeLinecap="round" />
+          </Svg>
+        </TouchableOpacity>
+      </Animated.View>
+
+
+      {/* Faixa da cor da folha atrás da barra de status: aparece quando a folha chega ao
+          topo, para o conteúdo não passar por baixo do relógio. */}
+      <Animated.View pointerEvents="none" style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: R.sheet,
+        opacity: scrollY.interpolate({
+          inputRange: [Math.max(0, y(SHEET_TOP) - insets.top - 12), Math.max(1, y(SHEET_TOP) - insets.top)],
+          outputRange: [0, 1], extrapolate: 'clamp',
+        }),
+      }} />
+
+      {/* Véu + "Próximo": só depois que "Pontos fortes da pele" entra na tela */}
+      <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 120, opacity: nextOpacity }}>
         <LinearGradient
-          pointerEvents="none"
           colors={['rgba(249,242,245,0)', R.sheet]}
           locations={[0, 0.55]}
-          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 120 }}
+          style={{ flex: 1 }}
         />
-      </View>
+      </Animated.View>
 
+      <Animated.View
+        pointerEvents={showNext ? 'box-none' : 'none'}
+        style={{ position: 'absolute', left: 18, right: 18, bottom: Math.max(34, insets.bottom), opacity: nextOpacity }}
+      >
       <TouchableOpacity
         onPress={handleNext}
         activeOpacity={0.85}
         style={{
-          position: 'absolute', left: 18, right: 18, bottom: Math.max(34, insets.bottom), height: 50, borderRadius: 25,
+          height: 50, borderRadius: 25,
           backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center',
           shadowColor: OB.pink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
         }}
       >
         <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>Próximo</Text>
       </TouchableOpacity>
+      </Animated.View>
     </View>
   );
 }
@@ -474,7 +588,7 @@ function buildFaceLayout(
           queixo_mandibula: [{ x: M.x + (C.x - M.x) * 0.42, y: M.y + (C.y - M.y) * 0.42 }],
           area_periocular: [o(E1, 0, 0.24), o(E2, 0, 0.24)],
         },
-        sparkR: ed * 0.17,
+        sparkR: ed * 0.11,   // aglomerado pequeno: lê como ÁREA, não como "espinhas aqui"
         scanTop: F.y - ed * 0.6,
         scanBottom: C.y + ed * 0.1,
       };
@@ -495,73 +609,8 @@ function buildFaceLayout(
     photo: { left: f.left, top: f.top, w: f.width, h: f.height },
     mesh: { cx: W / 2, cy: FACE_CY * u, rx: ry * (CAM_OVAL_W / CAM_OVAL_H), ry, yaw: 0, matrix: null },
     anchors,
-    sparkR: 13 * u,
+    sparkR: 9 * u,
     scanTop: FACE_CY * u - ry * 0.85,
     scanBottom: FACE_CY * u + ry,
   };
-}
-
-// ── Máscara + pontinhos sobre a foto ─────────────────────────────────────────
-// Ao abrir, a linha de scan passa UMA vez de cima a baixo pela máscara; cada pontinho
-// aparece quando ela passa pela altura dele. Pontinhos no estilo do 49d: miolo branco,
-// aro rosa e brilho rosa; com um chip selecionado, só os daquela categoria ficam.
-// Componente próprio, com relógio próprio (para no fim da passada), para a animação
-// não re-renderizar a lista de achados a cada quadro.
-const SWEEP_MS = 2600;   // = a ida da linha de scan no FaceScanMesh
-const FPS_MS = 33;
-
-type Dot = { x: number; y: number; s: number; cat: string };
-
-/** Aglomerado em volta de `p`: tamanhos 3,5–7 pt como no 49d (posições fixas, sem sorteio). */
-function clusterDots(p: Pt2, R0: number, seed: number, cat: string): Dot[] {
-  let s = (seed + 1) * 16807 % 2147483647;
-  const rnd = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
-  return Array.from({ length: 7 }, () => {
-    const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * R0;
-    return { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d * 0.8, s: 3.5 + rnd() * 3.5, cat };
-  });
-}
-
-function FaceOverlay({ width, height, layout, dots, filter }: { width: number; height: number; layout: FaceLayout; dots: Dot[]; filter: string }) {
-  const [t, setT] = useState(0);
-  const start = useRef(Date.now());
-  useEffect(() => {
-    let id: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      const now = Date.now() - start.current;
-      setT(now);
-      if (now < SWEEP_MS + 450) id = setTimeout(tick, FPS_MS);
-    };
-    tick();
-    return () => clearTimeout(id);
-  }, []);
-
-  const sweep = Math.min(1, t / SWEEP_MS);
-  const e = sweep < 0.5 ? 2 * sweep * sweep : 1 - Math.pow(-2 * sweep + 2, 2) / 2;
-  const scanY = layout.scanTop + e * (layout.scanBottom - layout.scanTop);
-  const { mesh } = layout;
-  const meshEl = (
-    <FaceScanMesh
-      cx={mesh.cx} cy={mesh.cy} rx={mesh.rx} ry={mesh.ry} t={t} yaw={mesh.yaw}
-      opacity={Math.min(1, t / 400)} scanLine={t < SWEEP_MS} sparks={false} meshStrength={1.15}
-    />
-  );
-
-  return (
-    <Svg width={width} height={height} style={{ position: 'absolute', left: 0, top: 0 }}>
-      {mesh.matrix ? <G transform={`matrix(${mesh.matrix.join(' ')})`}>{meshEl}</G> : meshEl}
-      {dots.map((d, i) => {
-        if (d.y > scanY && t < SWEEP_MS) return null;           // a linha ainda não passou
-        if (filter !== 'Todos' && d.cat !== filter) return null;
-        const r = d.s / 2;
-        return (
-          <G key={i}>
-            <Circle cx={d.x} cy={d.y} r={r + 5} fill={OB.pink} fillOpacity={0.28} />
-            <Circle cx={d.x} cy={d.y} r={r + 2} fill={OB.pink} fillOpacity={0.55} />
-            <Circle cx={d.x} cy={d.y} r={r} fill="#FFFFFF" />
-          </G>
-        );
-      })}
-    </Svg>
-  );
 }

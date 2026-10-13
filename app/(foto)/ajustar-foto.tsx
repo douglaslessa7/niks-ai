@@ -1,27 +1,26 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, Image, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet,
   useWindowDimensions, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFonts } from 'expo-font';
-import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
-import { ChevronLeft } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import { useAppStore, uploadScanPhoto } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
-import { getScoreTheme } from '../../lib/scoreTheme';
+import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
 
-// ── Ajustar a foto da home ──────────────────────────────────────────────────────
-// A usuária tocou na própria foto na home e escolheu uma da galeria. Aqui ela enquadra
-// essa foto DENTRO do círculo exato da home (mesmo diâmetro, mesmo anel, mesmo score em
-// cima) — por isso a tela é um mini-espelho da home, e não um cropper genérico.
+// ── Ajustar a foto de perfil ────────────────────────────────────────────────────
+// A usuária tocou na própria foto ("Seu progresso" ou Perfil — `lib/profilePhoto`) e
+// escolheu uma da galeria. Aqui ela enquadra essa foto no círculo (arrastar + pinça).
+// Visual na identidade do app (out/2026): fundo degradê de `lib/homeTheme` (dia/noite),
+// voltar redondo branco, SF Pro, arco em degradê rosa #FF5EA8 → #FFDEED, botão rosa.
 //
 // No confirmar, o recorte vira um JPEG QUADRADO: a home continua fazendo só um
 // `<Image resizeMode="cover">` no círculo, sem saber que essa tela existe.
@@ -32,7 +31,8 @@ import { haptics } from '../../lib/haptics';
 const WHITE    = '#FFFFFF';
 const INK      = '#121212';
 const INK_MUTE = '#818181';
-const CORAL    = '#FF9D9D'; // rosa da Rotina (cor primária do app)
+const PINK     = '#FF5EA8'; // rosa do app (botão, arco)
+const PINK_LIGHT = '#FFDEED';
 
 const MIN_SCALE = 1;   // 1 = a imagem já cobre o círculo (base); nunca deixa buraco
 const MAX_SCALE = 4;
@@ -47,21 +47,15 @@ export default function AjustarFoto() {
 
   const draft = useAppStore((s) => s.homePhotoDraft);
   const setHomePhotoDraft = useAppStore((s) => s.setHomePhotoDraft);
-  const skinScore = useAppStore((s) => s.skinScore);
 
   const [saving, setSaving] = useState(false);
 
-  const [fontsLoaded] = useFonts({ Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold });
-  const fXBold = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold  = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi  = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
 
-  // Geometria idêntica à da home (home.tsx) — é o ponto da tela: ela vê o formato real.
-  const D        = Math.round(width * 0.58);          // foto = 228/393 (Figma node 1:51)
-  const LOGO     = Math.round(width * (49 / 393));    // sparkle do topo (Figma node 1:385)
-  const RING_IMG = D * (265.005 / 228);               // anel: asset cobre 265, círculo interno 228
+  // Diâmetro do círculo de enquadramento (o recorte é quadrado; as telas mostram em círculo).
+  const D = Math.round(width * 0.62);
+  const RING = 5; // espessura do arco
 
-  const theme = getScoreTheme(skinScore);
+  const theme = homeTheme(isNightTheme(), 'rgba(255,226,236,0.40)');
 
   // Sem foto no store (entrou direto na rota, ou o store foi resetado): não há o que ajustar.
   useEffect(() => {
@@ -187,6 +181,8 @@ export default function AjustarFoto() {
       // A home lê de cache agora, então precisa ser avisada que a foto mudou —
       // sem isso ela mostraria a foto antiga até o cache vencer.
       invalidateCache(`home:${user.id}`);
+      invalidateCache(`progresso:${user.id}`);
+      invalidateCache(`perfil:${user.id}`);
       router.back(); // a home revalida ao ganhar foco — sem callback nem estado extra
     } catch (e: any) {
       setSaving(false); // a tela fica aberta: nada foi gravado, ela pode tentar de novo
@@ -197,16 +193,12 @@ export default function AjustarFoto() {
   if (!draft) return <View style={styles.root} />;
 
   return (
-    <View style={styles.root}>
-      {/* Mesmo gradiente da home, na cor da faixa do score */}
-      <LinearGradient
-        colors={['#FFFFFF', '#FFFFFF', theme.heroSoft, theme.heroMed, '#F9F9F9']}
-        locations={[0, 0.5, 0.72, 0.82, 1]}
-        style={styles.heroGradient}
-        pointerEvents="none"
-      />
+    <View style={[styles.root, { backgroundColor: theme.base }]}>
+      <LinearGradient colors={theme.bg} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <View style={styles.circleWhite} pointerEvents="none" />
+      <View style={[styles.circleBlob, { backgroundColor: theme.blob }]} pointerEvents="none" />
 
-      <SafeAreaView edges={['top']} style={{ backgroundColor: 'transparent' }}>
+      <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => {
@@ -216,30 +208,25 @@ export default function AjustarFoto() {
             style={styles.backBtn}
             hitSlop={10}
             disabled={saving}
+            accessibilityLabel="Voltar"
           >
-            <ChevronLeft size={26} color={INK} strokeWidth={2.2} />
+            <Svg width={18} height={18} viewBox="0 0 24 24">
+              <Path d="M15 5l-7 7 7 7" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { fontFamily: fBold }]}>Ajuste sua foto</Text>
-          <View style={styles.backBtn} />
+          <Text style={styles.headerTitle}>Ajuste sua foto</Text>
+          <View style={{ width: 36 }} />
         </View>
 
-        {/* Bloco do score — idêntico ao da home, para ela ver o resultado no contexto */}
-        <View style={styles.scoreBlock}>
-          <Image
-            source={theme.logo}
-            style={[styles.scoreLogo, { width: LOGO, height: Math.round(LOGO * (199 / 196)) }]}
-          />
-          <Text style={[styles.scoreNumber, { fontFamily: fXBold, color: theme.score }]}>
-            {skinScore != null ? skinScore : '—'}
-          </Text>
-          <Text style={[styles.scoreLabel, { fontFamily: fXBold }]}>Niks score</Text>
-          <Image source={theme.underline} style={styles.scoreUnderline} resizeMode="stretch" />
-        </View>
-
-        {/* Círculo no diâmetro exato da home + anel do tema por cima */}
+        {/* Círculo de enquadramento com o arco em degradê rosa */}
         <View style={styles.photoWrap}>
-          <GestureDetector gesture={gesture}>
-            <View style={{ width: D, height: D }}>
+          <LinearGradient
+            colors={[PINK, PINK_LIGHT]}
+            start={{ x: 0.33, y: 0 }}
+            end={{ x: 0.67, y: 1 }}
+            style={[styles.ring, { width: D + RING * 2, height: D + RING * 2, borderRadius: (D + RING * 2) / 2, padding: RING }]}
+          >
+            <GestureDetector gesture={gesture}>
               <View style={[styles.photoCircle, { width: D, height: D, borderRadius: D / 2 }]}>
                 <Animated.Image
                   source={{ uri: draft.uri }}
@@ -255,25 +242,11 @@ export default function AjustarFoto() {
                   ]}
                 />
               </View>
-              {/* `pointerEvents="none"` no View: o anel não pode roubar o toque do
-                  GestureDetector (no iOS o RNGH faz hit-test através das subviews). */}
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  width: RING_IMG, height: RING_IMG,
-                  left: (D - RING_IMG) / 2, top: (D - RING_IMG) / 2,
-                }}
-              >
-                <Image source={theme.ringImg} style={{ width: '100%', height: '100%' }} />
-              </View>
-            </View>
-          </GestureDetector>
-        </View>
+            </GestureDetector>
+          </LinearGradient>
 
-        <Text style={[styles.hint, { fontFamily: fSemi }]}>
-          Arraste e pince para enquadrar
-        </Text>
+          <Text style={styles.hint}>Arraste e pince para enquadrar</Text>
+        </View>
       </SafeAreaView>
 
       {/* Botão fixo no rodapé */}
@@ -281,13 +254,13 @@ export default function AjustarFoto() {
         <TouchableOpacity
           style={[styles.cta, saving && { opacity: 0.7 }]}
           onPress={handleConfirm}
-          activeOpacity={0.9}
+          activeOpacity={0.85}
           disabled={saving}
         >
           {saving ? (
             <ActivityIndicator color={WHITE} />
           ) : (
-            <Text style={[styles.ctaText, { fontFamily: fBold }]}>Usar esta foto</Text>
+            <Text style={styles.ctaText}>Usar esta foto</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -296,35 +269,43 @@ export default function AjustarFoto() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F9F9F9' },
-  heroGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 520 },
+  root: { flex: 1 },
+  // Mesmas bolhas de fundo do Perfil / "Seu progresso".
+  circleWhite: {
+    position: 'absolute', width: 620, height: 620, borderRadius: 310,
+    left: -330, top: 250, backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  circleBlob: {
+    position: 'absolute', width: 560, height: 560, borderRadius: 280,
+    left: 190, top: -90,
+  },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, height: 44,
+    paddingHorizontal: 20, paddingTop: 15, paddingBottom: 10,
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, color: INK, letterSpacing: -0.4 },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: WHITE,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
+  },
+  headerTitle: { fontSize: 17, fontWeight: '500', color: INK, letterSpacing: -0.3 },
 
-  // Score (mesmos valores da home)
-  scoreBlock: { alignItems: 'center', paddingTop: 2 },
-  scoreLogo: { resizeMode: 'contain' },
-  scoreNumber: { fontSize: 72, letterSpacing: -2.88, marginTop: 2 },
-  scoreLabel: { fontSize: 30.5, color: INK, letterSpacing: -1.2, marginTop: -14 },
-  scoreUnderline: { width: 160, height: 7, marginTop: 3 },
+  // Foto: centralizada no espaço entre o cabeçalho e o botão.
+  photoWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 90 },
+  ring: {
+    shadowColor: 'rgb(120,60,72)', shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.14, shadowRadius: 15,
+  },
+  photoCircle: { overflow: 'hidden', backgroundColor: '#FDE6EF' },
 
-  // Foto
-  photoWrap: { alignItems: 'center', marginTop: 10, width: '100%' },
-  photoCircle: { overflow: 'hidden', backgroundColor: '#F3F3F4' },
-
-  hint: { fontSize: 14, color: INK_MUTE, textAlign: 'center', marginTop: 28 },
+  hint: { fontSize: 15, color: INK_MUTE, textAlign: 'center', marginTop: 24, letterSpacing: -0.2 },
 
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
   cta: {
-    height: 48, minWidth: 180, paddingHorizontal: 28, borderRadius: 999,
-    backgroundColor: CORAL, alignItems: 'center', justifyContent: 'center',
-    shadowColor: CORAL, shadowOpacity: 0.45, shadowRadius: 14, shadowOffset: { width: 0, height: 6 },
+    height: 48, minWidth: 200, paddingHorizontal: 28, borderRadius: 24,
+    backgroundColor: PINK, alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#121212', shadowOpacity: 0.07, shadowRadius: 8, shadowOffset: { width: 0, height: 6 },
     elevation: 6,
   },
-  ctaText: { fontSize: 16, color: WHITE, letterSpacing: -0.3 },
+  ctaText: { fontSize: 18, fontWeight: '600', color: WHITE },
 });

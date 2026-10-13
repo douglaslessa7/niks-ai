@@ -11,7 +11,7 @@ import { concernBenefits, concernTags } from '../../components/onboarding/answer
 
 // Tela 5 do fluxo completo ("Eco") — "Entendi! Vamos te ajudar a:", logo depois do
 // "o que te incomoda" (4) e antes da preparação do scan. As etiquetas em volta da
-// logo e os benefícios mudam conforme o que ela marcou (`answers.ts`).
+// logo (uma por escolha, até 3) e os benefícios mudam conforme o que ela marcou (`answers.ts`).
 //
 // Medidas do design (frame de 393): halo Ø320 em (36, 80), etiquetas em (87, 162) e
 // (252, 295), título a 430, benefícios a 488 (gap 16) e a frase final em negrito.
@@ -19,7 +19,9 @@ import { concernBenefits, concernTags } from '../../components/onboarding/answer
 // o número é um marcador do design, e prova social não pode ir ao ar inventada.
 const STEP = OB_STEPS.entendi;
 const STEP_NAME = 'Entendi';
-const TAG_POS = [{ left: 51, top: 82 }, { left: 216, top: 215 }]; // relativas ao halo
+// Relativas ao halo. O design só tinha as 2 primeiras; a 3ª (embaixo à esquerda) entrou
+// porque ela pode marcar até 3 e a etiqueta da 3ª escolha sumia.
+const TAG_POS = [{ left: 51, top: 82 }, { left: 216, top: 215 }, { left: 34, top: 238 }];
 
 export default function Entendi() {
   const router = useRouter();
