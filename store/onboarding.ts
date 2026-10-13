@@ -548,7 +548,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   // colagens antigas junto com a foto nova.
   setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null }),
   setSkinScanImages: (neutral, collages, layout = 'expressions_v1') =>
-    set({ skinImageBase64: neutral.base64, skinImageUri: neutral.uri, skinCollagesBase64: collages, skinScanLayout: layout }),
+    set({ skinImageBase64: neutral.base64, skinImageUri: neutral.uri, skinCollagesBase64: collages, skinScanLayout: layout, skinFaceLandmarks: null }),
 
   setProtocolResult: (result) => set({ protocolResult: result }),
   setProtocolGenerating: (v) => set({ protocolGenerating: v }),

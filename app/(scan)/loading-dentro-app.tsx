@@ -160,7 +160,8 @@ export default function LoadingDentroApp() {
         }
 
         setTimeout(() => {
-          router.replace('/(app)/skin-result' as any);
+          // Mesmo relatório do onboarding (49d), em modo app (a `skin-result` antiga saiu do fluxo).
+          router.replace('/(scan)/resultado-scan?modo=app' as any);
         }, 500);
       } catch (err) {
         if (retryCount.current < 2) {

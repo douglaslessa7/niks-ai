@@ -585,6 +585,10 @@ export default function Camera() {
       // Ordem fixa: frente, lado ESQUERDO da tela, lado DIREITO da tela. A IA identifica
       // pela própria foto qual lado do rosto aparece (as fotos não são espelhadas).
       setSkinScanImages(front, [front.base64, left.base64, right.base64], 'turns_v1');
+      // Pontos do rosto pelo iPhone (enquadram a foto e recortam as miniaturas do relatório).
+      faceLandmarksInImage(front.uri).then((lm) => {
+        if (lm && useAppStore.getState().skinImageUri === front.uri) useAppStore.setState({ skinFaceLandmarks: lm });
+      });
       router.replace('/(scan)/loading-dentro-app' as any);
       return;
     }

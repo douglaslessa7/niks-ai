@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, Alert, Animated, useWindowDimensions,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import { requestAppReview } from '../../lib/storeReview';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB, OB_STEPS, useObFrame, obStep, useOnMount } from '../../components/onboarding/kit';
@@ -44,6 +45,14 @@ import { formatPriority, formatContraindication, barrierLabel, hydrationLabel, s
 // "Próximo" → "Sua rotina de skincare está pronta" (o loading da rotina esteve aqui e
 // foi tirado a pedido do produto).
 // X → refazer o scan.
+//
+// MODO APP (`?modo=app`, out/2026): é TAMBÉM o resultado do scan de dentro do app (a
+// `(app)/skin-result`, de design antigo, saiu do fluxo). Muda: "Concluir" no lugar de
+// "Próximo" e X = fechar, os dois → home com o pedido de avaliação da App Store (um dos 3
+// "momentos de dopamina"); card "Atualizando sua rotina" no 1º scan do app
+// (`routineUpdatingNotice`, ver `lib/regenerateProtocolInApp.ts`); sem os passos do funil
+// do onboarding no Mixpanel. As seções que dependem das respostas do onboarding somem
+// sozinhas quando elas não estão na memória.
 //
 // ENCAIXE (`buildFaceLayout`): com `face_landmarks` (a `analyze-skin` do onboarding
 // devolve olhos, nariz, boca, queixo e testa) a foto é enquadrada pelo rosto real e a
@@ -99,6 +108,17 @@ const cap = (x: string) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : x);
 export default function ResultadoScan() {
   const router = useRouter();
   const { track } = useMixpanel();
+  const { modo } = useLocalSearchParams<{ modo?: string }>();
+  const inApp = modo === 'app';
+  // (modo app) Card "Atualizando sua rotina": a regeneração do 1º scan do app liga a flag
+  // depois dos guards dela; reage a ela virar true, não só na montagem.
+  const routineUpdatingNotice = useAppStore((s) => s.routineUpdatingNotice);
+  const [showRoutineCard, setShowRoutineCard] = useState(false);
+  useEffect(() => {
+    if (!inApp || !routineUpdatingNotice) return;
+    useAppStore.getState().setRoutineUpdatingNotice(false);
+    setShowRoutineCard(true);
+  }, [inApp, routineUpdatingNotice]);
   const scanResult = useAppStore((s) => s.scanResult);
   const photoUri = useAppStore((s) => s.skinImageUri);
   // Pontos do rosto achados pelo iPhone na própria foto (precisos); sem eles, os da IA.
@@ -117,7 +137,7 @@ export default function ResultadoScan() {
   const nextOpacity = useRef(new Animated.Value(0)).current;
   const scannedAt = useRef(scanDateLabel(new Date())).current;
 
-  useOnMount(() => track('onboarding_step_viewed', obStep(OB_STEPS.resultadoScan, 'Resultado do Scan')));
+  useOnMount(() => { if (!inApp) track('onboarding_step_viewed', obStep(OB_STEPS.resultadoScan, 'Resultado do Scan')); });
 
   const findings = useMemo(() => buildFindings(scanResult), [scanResult]);
   const chips = useMemo(() => findingChips(findings), [findings]);
@@ -163,15 +183,23 @@ export default function ResultadoScan() {
     if (offsetY + height * 0.8 >= y(SHEET_TOP) + strengthsY.current) revealNext();
   };
 
+  // (modo app) Sai para a home; o pedido de avaliação é um dos 3 "momentos de dopamina".
+  const leaveToHome = () => {
+    requestAppReview();
+    router.replace('/(app)/home');
+  };
+
   const handleNext = () => {
     haptics.action();
+    if (inApp) { leaveToHome(); return; }
     track('onboarding_step_completed', obStep(OB_STEPS.resultadoScan, 'Resultado do Scan'));
     router.push('/(onboarding)/rotina-pronta');
   };
 
-  // X = refazer o scan (no onboarding não há "fora" para onde ir).
+  // X = refazer o scan (no onboarding não há "fora" para onde ir); no app, fechar.
   const handleClose = () => {
     haptics.tap();
+    if (inApp) { leaveToHome(); return; }
     Alert.alert('Refazer o scan?', 'Você vai tirar as fotos de novo.', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Refazer', onPress: () => router.replace('/(scan)/camera?retake=1' as any) },
@@ -521,9 +549,36 @@ export default function ResultadoScan() {
           shadowColor: OB.pink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
         }}
       >
-        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>Próximo</Text>
+        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>{inApp ? 'Concluir' : 'Próximo'}</Text>
       </TouchableOpacity>
       </Animated.View>
+
+      {/* (modo app) Card "Atualizando sua rotina" — 1º scan feito dentro do app. */}
+      {showRoutineCard && (
+        <View style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50,
+          alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, backgroundColor: 'rgba(18,18,18,0.25)',
+        }}>
+          <View style={{
+            width: '100%', backgroundColor: '#FFFFFF', borderRadius: 20, padding: 22,
+            shadowColor: OB.ink, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.12, shadowRadius: 24, elevation: 10,
+          }}>
+            <Text style={{ fontSize: 20, lineHeight: 25, fontWeight: '700', letterSpacing: -0.4, color: OB.ink, textAlign: 'center', marginBottom: 8 }}>
+              Atualizando sua rotina
+            </Text>
+            <Text style={{ fontSize: 16, lineHeight: 22, color: OB.sub, textAlign: 'center', marginBottom: 20 }}>
+              Estamos atualizando sua rotina com base neste novo scan.
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => { haptics.tap(); setShowRoutineCard(false); }}
+              style={{ height: 50, borderRadius: 25, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
