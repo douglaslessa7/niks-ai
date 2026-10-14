@@ -1,0 +1,4 @@
+framework module NiksMediaPipe {
+  umbrella header "NiksMediaPipe.h"
+  export *
+}

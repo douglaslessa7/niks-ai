@@ -7,7 +7,6 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
 import Svg, { Path, Line, G, Defs, ClipPath, Ellipse, Circle } from 'react-native-svg';
 import { Sun } from 'lucide-react-native';
-import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
@@ -17,7 +16,7 @@ import { syncOnboardingPrefetch } from '../../lib/onboardingPrefetch';
 import { SCAN_STEPS, ringTicks, ringBack, type ScanStepId } from '../../components/onboarding/scanRing';
 import { FaceSkinMesh } from '../../components/onboarding/FaceSkinMesh';
 import FaceTracker, {
-  faceTrackerAvailable, faceARAvailable, FaceAR, detectFaceInImage, faceLandmarksInImage, detectAccessoryInImage, type FaceAccessory, type FaceFrame, type FaceARHandle, type FaceTrackerHandle,
+  faceTrackerAvailable, faceMPAvailable, FaceMP, detectFaceInImage, faceLandmarksInImage, detectAccessoryInImage, type FaceAccessory, type FaceFrame, type FaceMPHandle, type FaceTrackerHandle,
 } from '../../modules/niks-face-tracker';
 import {
   frontState, inOvalForTurn, headDirection, lightLevel, lightFill,
@@ -52,9 +51,10 @@ import { shapeFromFrame, shapeFromOval, easeShape, type FaceShape } from '../../
 // `camera-multi`) e sai SEM som de obturador (`shutterSound: false`).
 //
 // TRÊS NÍVEIS de câmera (cada um cai para o seguinte se faltar ou não der sinal de vida):
-//   (1) ARKit — iPhone com Face ID: `<FaceAR>` (`modules/niks-face-tracker/ios/
-//       NiksFaceARView.swift`) é câmera, MALHA 3D REAL do rosto (molde do Lovi: gruda em
-//       qualquer rosto), fundo desfocado e rastreador, tudo nativo; foto pelo `takePhoto`;
+//   (1) MediaPipe — `<FaceMP>` (`modules/niks-face-tracker/ios/NiksFaceMPView.swift`, câmera
+//       comum, SEM ARKit: a Apple recusou o 1.0.56 (1) pelo ARKit). É câmera, MALHA 3D do
+//       rosto (molde do Lovi: gruda
+//       em qualquer rosto), fundo desfocado e rastreador, tudo nativo; foto pelo `takePhoto`;
 //   (2) Vision — `<CameraView>` + `<FaceTracker>`, malha desenhada no contorno do rosto
 //       (`FaceSkinMesh` + `lib/faceGrid.ts`);
 //   (3) plano B por tempo (abaixo).
@@ -101,16 +101,9 @@ const POP_CONE = 38;            // meia-abertura do leque que salta, em graus
 const POP_LEN = 11;             // quanto o traço do meio do leque cresce para fora (pt)
 const POP_WIDTH = 0.9;          // e quanto ele engrossa
 const POP_EASE_MS = 140;        // entrada/saída suave do salto
-// Som + vibração conforme os traços acendem (out/2026, pedido do produto): um "toc" curto e GRAVE
-// (`assets/sounds/scan-tick.wav`) e um toque seco a cada leva de traços, no máximo 1 a cada
-// `TICK_FEEDBACK_MS`; o tom sobe conforme o anel enche (sensação de "empilhando"). Segue
-// o modo silencioso do iPhone (o som; a vibração vale sempre).
+// Vibração conforme os traços acendem: um toque seco a cada leva de traços, no máximo 1 a
+// cada `TICK_FEEDBACK_MS`. (O "tic" sonoro saiu em 14/out/2026, pedido do produto: sem som.)
 const TICK_FEEDBACK_MS = 60;
-const TICK_RATE_MIN = 0.9;      // velocidade/tom do "tic" com o anel vazio…
-const TICK_RATE_MAX = 1.15;     // …e cheio (sobe pouco: grave e neutro, pedido do produto)
-const TICK_VOLUME = 0.7;
-const TICK_POOL = 4;            // tocadores em rodízio: um "tic" não corta o anterior
-const TICK_SOUND = require('../../assets/sounds/scan-tick.wav');
 const TRACKER_TIMEOUT_MS = 4000; // (rosto) sem nenhum quadro com a câmera pronta → plano B
 const BG_DIM = 0.35;            // escurecimento do fundo desfocado
 const PINK = '#FF5EA8';         // rosa do onboarding: tracinho aceso
@@ -178,20 +171,21 @@ export default function Camera() {
   // foto, em loop — para ver e ajustar a animação. (Para seguir o fluxo no simulador, a
   // foto entra pelo depurador do Metro — ver README, "Navegar e preencher o store".)
   const demo = __DEV__ && isSimulator;
-  // Três níveis, do melhor para o reserva: (1) ARKit — câmera do Face ID, malha 3D real;
-  // (2) Vision — `<CameraView>` + rastreador, malha desenhada no contorno; (3) plano B por
-  // tempo. Cada um cai para o seguinte se faltar no aparelho ou não der sinal de vida.
-  const [arDead, setArDead] = useState(false);
+  // Três níveis, do melhor para o reserva: (1) MediaPipe — câmera + malha 3D, tudo
+  // nativo; (2) Vision — `<CameraView>` + rastreador, malha
+  // desenhada no contorno; (3) plano B por tempo. Cada um cai para o seguinte se faltar no
+  // aparelho ou não der sinal de vida.
+  const [mpDead, setMpDead] = useState(false);
   const [trackerDead, setTrackerDead] = useState(false);
-  const ar = faceARAvailable && !demo && !arDead;
-  const tracked = (ar || faceTrackerAvailable) && !demo && !trackerDead;   // guiado pelo rosto
-  const arRef = useRef<FaceARHandle>(null);
+  const mp = faceMPAvailable && !demo && !mpDead;
+  const tracked = (mp || faceTrackerAvailable) && !demo && !trackerDead;   // guiado pelo rosto
+  const mpRef = useRef<FaceMPHandle>(null);
   const trackerRef = useRef<FaceTrackerHandle>(null);
-  // O relógio da tela (efeito com `[tracked]`) guarda as funções do 1º render: se o ARKit
+  // O relógio da tela (efeito com `[tracked]`) guarda as funções do 1º render: se o MediaPipe
   // cair para o Vision, `tracked` segue `true` e o `takeFront` antigo ainda pediria a foto
-  // ao ARKit. Lido por ref, vale sempre o nível ATUAL.
-  const arOn = useRef(ar);
-  arOn.current = ar;
+  // ao MediaPipe. Lido por ref, vale sempre o nível ATUAL.
+  const mpOn = useRef(mp);
+  mpOn.current = mp;
 
   // "Começar" tocado → `startAt`; a etapa só começa com a câmera pronta (e o consentimento).
   const [started, setStarted] = useState(false);
@@ -236,32 +230,9 @@ export default function Camera() {
   useOnMount(() => { if (!inApp) track('onboarding_step_viewed', obStep(OB_STEPS.camera, 'Scan - Câmera')); });
   useEffect(() => () => { mountedRef.current = false; }, []);
 
-  // "Tic" dos traços acendendo: tocadores criados uma vez, liberados ao sair da tela.
-  const tickPlayers = useRef<AudioPlayer[]>([]);
-  const tickIdx = useRef(0);
+  // Vibração dos traços acendendo (sem som).
   const tickAt = useRef(0);
   const litSeen = useRef(0);
-  useEffect(() => {
-    try {
-      tickPlayers.current = Array.from({ length: TICK_POOL }, () => {
-        const pl = createAudioPlayer(TICK_SOUND);
-        pl.volume = TICK_VOLUME;
-        pl.shouldCorrectPitch = false;   // o tom sobe junto com a velocidade
-        return pl;
-      });
-    } catch {}
-    return () => { tickPlayers.current.forEach((pl) => { try { pl.release(); } catch {} }); tickPlayers.current = []; };
-  }, []);
-  const tickFeedback = (fill: number) => {
-    haptics.select();
-    const pl = tickPlayers.current[tickIdx.current++ % TICK_POOL];
-    if (!pl) return;
-    try {
-      pl.setPlaybackRate(TICK_RATE_MIN + (TICK_RATE_MAX - TICK_RATE_MIN) * clamp01(fill));
-      pl.seekTo(0);
-      pl.play();
-    } catch {}
-  };
 
   const canRun = demo ? granted : granted && !isSimulator && !!permission?.granted && cameraReady;
 
@@ -279,7 +250,7 @@ export default function Camera() {
   }, [started, canRun]);
 
   // O módulo existe mas nenhum quadro chegou: em vez de deixar a tela parada, cai para o
-  // nível seguinte (ARKit → Vision → plano B), recomeçando a frente se já tinha começado.
+  // nível seguinte (MediaPipe → Vision → plano B), recomeçando a frente se já tinha começado.
   useEffect(() => {
     if (!tracked || !cameraReady) return;
     const id = setTimeout(() => {
@@ -288,15 +259,15 @@ export default function Camera() {
       frontPhoto.current = null;
       sidePhotos.current = { left: null, right: null };
       if (stepRef.current >= 0) setStep(0);
-      if (ar) {
+      if (mp) {
         setCameraReady(false);       // a `<CameraView>` entra e avisa quando estiver pronta
-        setArDead(true);
+        setMpDead(true);
       } else {
         setTrackerDead(true);
       }
     }, TRACKER_TIMEOUT_MS);
     return () => clearTimeout(id);
-  }, [tracked, ar, cameraReady]);
+  }, [tracked, mp, cameraReady]);
 
   const lightArc = (arc: ScanStepId, p: number, now: number) => {
     TICKS.forEach((t, i) => {
@@ -413,14 +384,14 @@ export default function Camera() {
         if (p >= 1) { timedFired.current = true; timedStepDone(step); }
       }
 
-      // Som + vibração a cada leva de traços que ACABOU de acender (vale para o círculo e
+      // Vibração a cada leva de traços que ACABOU de acender (vale para o círculo e
       // para o plano B). Recomeçou o anel (contagem caiu) → zera.
       const litNow = litAt.current.reduce((n, at) => n + (at >= 0 && now >= at ? 1 : 0), 0);
       if (litNow < litSeen.current) litSeen.current = litNow;
       if (litNow > litSeen.current && now - tickAt.current >= TICK_FEEDBACK_MS) {
         litSeen.current = litNow;
         tickAt.current = now;
-        tickFeedback(litNow / N_TICKS);   // também na demonstração do simulador (para ouvir)
+        haptics.select();
       }
 
       setFrame((n) => n + 1);
@@ -432,16 +403,16 @@ export default function Camera() {
 
   // Tira a foto (frente ou lado) e normaliza a orientação EXIF (com base64: vai para a IA).
   // SEM SOM: ela não pode perceber que saiu uma foto — para ela, o rosto inteiro está sendo
-  // analisado. Por isso a foto sai do QUADRO AO VIVO do ARKit ou do rastreador; só o plano B
+  // analisado. Por isso a foto sai do QUADRO AO VIVO do MediaPipe ou do rastreador; só o plano B
   // (sem módulo) usa o `takePictureAsync`, cujo `shutterSound: false` o iOS nem sempre respeita.
   const takeFront = async () => {
     let shot: { uri: string } | undefined;
-    if (arOn.current) shot = await arRef.current?.takePhoto();
+    if (mpOn.current) shot = await mpRef.current?.takePhoto();
     // Build sem a foto silenciosa no rastreador: `takePhoto` não existe → cai no expo-camera.
     else if (typeof trackerRef.current?.takePhoto === 'function') {
       shot = await trackerRef.current.takePhoto().catch(() => undefined);
     }
-    if (!shot?.uri && !arOn.current) {
+    if (!shot?.uri && !mpOn.current) {
       shot = await cameraRef.current?.takePictureAsync({ quality: 0.7, base64: false, shutterSound: false });
     }
     if (!shot?.uri) throw new Error('Falha ao capturar');
@@ -642,8 +613,8 @@ export default function Camera() {
   // Malha: no modo com rosto, construída dentro do contorno real (`lib/faceGrid.ts`). No
   // plano B, um rosto genérico parado no oval.
   let mesh: ReactNode = null;
-  if (ar) {
-    // A malha 3D é desenhada pela própria view do ARKit.
+  if (mp) {
+    // A malha 3D é desenhada pela própria view do MediaPipe.
   } else if (tracked) {
     if (meshShape.current && meshAlpha.current > 0) {
       mesh = <FaceSkinMesh shape={meshShape.current} t={meshT} opacity={meshAlpha.current} />;
@@ -680,10 +651,10 @@ export default function Camera() {
       <Stack.Screen options={{ gestureEnabled: false }} />
       <StatusBar style="light" />
 
-      {/* iPhone com Face ID: a view do ARKit é câmera, malha, fundo desfocado e rastreador. */}
-      {ar && !isSimulator && permission?.granted && (
-        <FaceAR
-          ref={arRef}
+      {/* MediaPipe: câmera, malha, fundo desfocado e rastreador, tudo nativo. */}
+      {mp && !isSimulator && permission?.granted && (
+        <FaceMP
+          ref={mpRef}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
           hole={[cx - rx, cy - ry, 2 * rx, 2 * ry]}
@@ -692,7 +663,7 @@ export default function Camera() {
           onFace={(e) => { faceRef.current = { ...e.nativeEvent, t: Date.now() }; }}
         />
       )}
-      {!ar && !isSimulator && permission?.granted && (
+      {!mp && !isSimulator && permission?.granted && (
         <CameraView
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
@@ -701,7 +672,7 @@ export default function Camera() {
         />
       )}
       {/* Fundo desfocado ao vivo com o furo do oval (nativo; também é o rastreador). */}
-      {tracked && !ar && !isSimulator && permission?.granted && (
+      {tracked && !mp && !isSimulator && permission?.granted && (
         <FaceTracker
           ref={trackerRef}
           style={StyleSheet.absoluteFill}

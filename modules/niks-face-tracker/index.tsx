@@ -105,24 +105,24 @@ export async function detectFaceInImage(uri: string): Promise<boolean> {
   return nativeModule.detectFaceInImage(uri);
 }
 
-// ── Scan com a câmera do Face ID (ARKit) ────────────────────────────────────────
-// Nos iPhones com Face ID, a câmera do onboarding usa esta view no lugar de
-// `<CameraView>` + `<FaceTracker>`: ela mesma mostra a câmera, desenha a MALHA 3D REAL
-// do rosto (molde do Lovi), o fundo desfocado com o furo do oval, manda `onFace` no
-// mesmo formato `FaceFrame` (coordenadas já em pontos da tela) e tira a foto
-// (`takePhoto`). O porquê está em `ios/NiksFaceARView.swift`.
-// ⚠️ Como o resto do módulo, só existe depois de `pod install` + build novo; sem ele (ou
-// sem Face ID: iPhone SE, Android) `faceARAvailable` é `false` e a tela usa o Vision.
+// ── Scan com o MediaPipe Face Landmarker ─────────────────────────────────────────
+// A câmera do scan usa esta view no lugar de `<CameraView>` + `<FaceTracker>`: ela mesma
+// mostra a câmera (comum — SEM ARKit e sem câmera de profundidade), desenha a MALHA 3D do
+// rosto (molde do Lovi) pelos 478 pontos do Face Landmarker (Google), o fundo desfocado
+// com o furo do oval, manda `onFace` no formato `FaceFrame` (coordenadas já em pontos da
+// tela) e tira a foto (`takePhoto`). O porquê está em `ios/NiksFaceMPView.swift`.
+// ⚠️ Só existe depois de `pod install` + build novo; sem ele (ou no Android)
+// `faceMPAvailable` é `false` e a tela usa o Vision.
 
-const arModule =
-  Platform.OS === 'ios' ? requireOptionalNativeModule<{ isSupported(): boolean }>('NiksFaceAR') : null;
+const mpModule =
+  Platform.OS === 'ios' ? requireOptionalNativeModule<{ isSupported(): boolean }>('NiksFaceMP') : null;
 
-/** `true` só com o módulo no binário E um iPhone com a câmera do Face ID. */
-export const faceARAvailable = (() => {
-  try { return !!arModule?.isSupported(); } catch { return false; }
+/** `true` com o módulo no binário, câmera frontal e o modelo embarcado. */
+export const faceMPAvailable = (() => {
+  try { return !!mpModule?.isSupported(); } catch { return false; }
 })();
 
-export type FaceARProps = ViewProps & {
+export type FaceMPProps = ViewProps & {
   onFace?: (e: { nativeEvent: FaceFrame }) => void;
   /** A câmera começou a mandar quadros. */
   onReady?: () => void;
@@ -136,16 +136,16 @@ export type FaceARProps = ViewProps & {
 };
 
 /** Métodos da view (via `ref`). */
-export type FaceARHandle = {
+export type FaceMPHandle = {
   /** Foto de frente do quadro ao vivo: sem som, em pé, sem espelhar. */
   takePhoto(): Promise<{ uri: string; width: number; height: number }>;
 };
 
-const NativeFaceAR = faceARAvailable
-  ? requireNativeView<FaceARProps & { ref?: Ref<FaceARHandle> }>('NiksFaceAR')
+const NativeFaceMP = faceMPAvailable
+  ? requireNativeView<FaceMPProps & { ref?: Ref<FaceMPHandle> }>('NiksFaceMP')
   : null;
 
-export const FaceAR = forwardRef<FaceARHandle, FaceARProps>(function FaceAR(props, ref) {
-  if (!NativeFaceAR) return null;
-  return <NativeFaceAR {...props} ref={ref} />;
+export const FaceMP = forwardRef<FaceMPHandle, FaceMPProps>(function FaceMP(props, ref) {
+  if (!NativeFaceMP) return null;
+  return <NativeFaceMP {...props} ref={ref} />;
 });

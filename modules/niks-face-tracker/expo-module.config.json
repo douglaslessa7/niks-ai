@@ -5,7 +5,7 @@
   "apple": {
     "modules": [
       "NiksFaceTrackerModule",
-      "NiksFaceARModule"
+      "NiksFaceMPModule"
     ]
   }
 }
