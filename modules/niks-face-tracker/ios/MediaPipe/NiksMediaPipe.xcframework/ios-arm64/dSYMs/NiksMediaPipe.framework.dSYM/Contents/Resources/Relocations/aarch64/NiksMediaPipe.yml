@@ -1,0 +1,10 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/private/tmp/claude-501/-Users-teste-Desktop-niks-ai/b0cd4352-e2d3-4c34-b012-2576d9e86a09/scratchpad/niks-mediapipe-build/ios-arm64/NiksMediaPipe.framework/NiksMediaPipe'
+relocations:
+  - { offset: 0x27, size: 0x8, addend: 0x0, symName: '-[NKFaceLandmarker initWithModelPath:useGPU:]', symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x440 }
+  - { offset: 0x430, size: 0x8, addend: 0x0, symName: '-[NKFaceLandmarker initWithModelPath:useGPU:]', symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x440 }
+  - { offset: 0x4E5, size: 0x8, addend: 0x0, symName: '-[NKFaceLandmarker detectSampleBuffer:timestampMs:]', symObjAddr: 0x440, symBinAddr: 0x4440, symSize: 0x300 }
+  - { offset: 0x5C2, size: 0x8, addend: 0x0, symName: '-[NKFaceLandmarker usesGPU]', symObjAddr: 0x740, symBinAddr: 0x4740, symSize: 0x20 }
+  - { offset: 0x5F8, size: 0x8, addend: 0x0, symName: '-[NKFaceLandmarker .cxx_destruct]', symObjAddr: 0x760, symBinAddr: 0x4760, symSize: 0x30 }
+...

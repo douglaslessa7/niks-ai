@@ -142,7 +142,11 @@ final class NiksFaceMPView: ExpoView, AVCaptureVideoDataOutputSampleBufferDelega
     Self.sessionQueue.async { [weak self] in
       guard let self else { return }
       if !self.configured { self.configure() }
-      if self.landmarker == nil { self.landmarker = Self.makeLandmarker() }
+      // `landmarker` é gravado aqui (sessionQueue) e lido na videoQueue: sempre sob o `lock`.
+      self.lock.lock(); let has = self.landmarker != nil; self.lock.unlock()
+      if !has, let lm = Self.makeLandmarker() {
+        self.lock.lock(); self.landmarker = lm; self.lock.unlock()
+      }
       if self.configured, !self.session.isRunning { self.session.startRunning() }
     }
   }
@@ -247,6 +251,7 @@ final class NiksFaceMPView: ExpoView, AVCaptureVideoDataOutputSampleBufferDelega
     // 478 × (x, y, z), x/y em frações do quadro, z na escala do x (menor = mais perto).
     var landmarks: [SIMD3<Float>]?
     let ts = Int(CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)) * 1000)
+    lock.lock(); let landmarker = self.landmarker; lock.unlock()
     if let landmarker, ts > lastTs {
       lastTs = ts
       let t0 = CACurrentMediaTime()
