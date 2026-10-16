@@ -1846,6 +1846,8 @@ O **`@virex-tech/paywallo-sdk`** (`<PaywalloProvider>` em `app/_layout.tsx`, mon
 
 **Android — Facebook SDK em runtime:** `plugins/withFacebookAndroidSdk.js` põe `implementation 'com.facebook.android:facebook-android-sdk:latest.release'` no `android/app/build.gradle` (a pasta é gerada, por isso plugin). O Paywallo declara o Facebook SDK como `compileOnly`; sem o `implementation`, o `_fbp` vira um `PW_<uuid>` local que a Meta não reconhece, e a atribuição do Facebook perde o cookie matching no Android.
 
+**Funil de onboarding (tela Dropout do Paywallo):** todo `onboarding_step_viewed` do Mixpanel com `step_total === OB_STEP_TOTAL` e `step_number > 0` é repassado como `PaywalloClient.onboardingStep(step_number, step_name)` por um ponto só, o `track` de `lib/mixpanel/MixpanelProvider.tsx` (fire-and-forget, antes do `isReady`). Tela nova do onboarding só precisa usar `obStep(OB_STEPS.x, nome)` e já entra no funil; numeração escrita à mão (`camera-multi`, `scan-prep-app`, `rate-us`) fica de fora de propósito.
+
 **`paywall-detailed.tsx` — removido do projeto:**
 Era o paywall customizado (planos mensal/anual, trial de 3 dias, integração RevenueCat direta) do fluxo anterior ao Superwall. Arquivo deletado — não existe mais no projeto.
 
