@@ -9,8 +9,8 @@ import {
 // Tela 0.1 do design ("NIKS Onboarding - fluxo completo", Abertura) — "Olá, eu sou a
 // NIKS". Primeira tela depois da splash (tela 0) para quem não tem sessão
 // (`app/index.tsx`). O design não tem botão: a logo entra (escala 0,8 → 1), o texto
-// logo depois, e a tela segue sozinha (3 s) para o nome (fluxo da versão B — a tela 0.2
-// "Seus dados" não entra). `replace`: não há para onde voltar daqui.
+// logo depois, e a tela segue sozinha (3 s) para a 0.2 "Seus dados" (consentimento
+// LGPD), que leva ao nome. `replace`: não há para onde voltar daqui.
 const HOLD_MS = 3000;
 const STEP = OB_STEPS.ola;
 const STEP_NAME = 'Olá';
@@ -31,7 +31,7 @@ export default function Ola() {
     ]).start();
     const t = setTimeout(() => {
       track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-      router.replace('/(onboarding)/nome');
+      router.replace('/(onboarding)/seus-dados');
     }, HOLD_MS);
     return () => clearTimeout(t);
   }, []);

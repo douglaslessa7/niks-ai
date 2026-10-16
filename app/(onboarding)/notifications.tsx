@@ -1,30 +1,34 @@
 import { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
-import { supabase } from '../../lib/supabase';
-import { requestPushPermission, savePushToken } from '../../lib/notifications';
+import { askPushPermission, requestPushPermission, savePushToken } from '../../lib/notifications';
+import { getUserId } from '../../lib/currentUser';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, ObPillButton, NIKS_LOGO,
+  OB, OB_STEPS, ObScreen, ObHeader, ObPillButton, NIKS_LOGO,
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 26 (última) do onboarding — notificações, DEPOIS do cadastro. VISUAL = a tela
-// "Aviso de lembretes" do Felipe (fluxo completo, tela 21; `aviso-lembretes.tsx`, que
-// ficou no repo sem ligação). LÓGICA = a da versão B (pedido do produto, out/2026):
-// "Continuar" abre o pedido nativo de permissão (o pop-up do iOS, com teto de 10 s) e
-// grava o token direto na conta (`savePushToken` — aqui já existe sessão). O
-// "Continuar" fica na tela; depois do pop-up surge EMBAIXO dele o botão "Já ativei!",
-// e SÓ ele entra no app.
+// Onboarding — notificações, logo depois do horário da rotina e ANTES do cadastro
+// (16/out/2026, pedido do produto; antes era a última tela, depois da conta). Substitui
+// o "Aviso de lembretes" + o pedido nativo em tela cinza (`aviso-lembretes.tsx` e
+// `permitir-notificacoes.tsx`, que ficaram no repo sem ligação). VISUAL = o "Aviso de
+// lembretes" do fluxo completo. LÓGICA (16/out/2026, pedido do produto): "Continuar"
+// abre o pop-up nativo de permissão.
+//   • "Permitir" → avança SOZINHA para o objetivo, sem outro toque.
+//   • "Não permitir" → fica na tela; surge EMBAIXO do "Continuar" o botão "Já ativei!".
+//     Daí em diante o "Continuar" NÃO avança (o iOS não mostra o pop-up de novo — só
+//     avança se ela tiver ligado nos Ajustes nesse meio-tempo) e o "Já ativei!" avança.
+// A espera é só da PERMISSÃO (`askPushPermission`, resolve no toque do pop-up); o token
+// sai depois, em segundo plano — ele depende de rede e não pode segurar a tela.
 //
-// ÚNICO ponto em que uma usuária NOVA entra no app (as outras rotas para a home —
-// login, paywall de reengajamento, `index` com sessão — são de conta já existente).
-// É por isso que o tutorial de primeiro acesso da home é armado AQUI. Conta existente
-// que refaz o onboarding também passa, e quem barra é o servidor
-// (`users.home_tutorial_seen_at`). Ver "Feature: Tutorial de primeiro acesso" no README.
+// Ainda não há conta: o token vai para o store PERSISTIDO (`pendingPushToken`) e o
+// `saveToSupabase` do signup o grava em `users.push_token`. Se já houver sessão (caso
+// raro), grava direto também. O tutorial de primeiro acesso da home é armado no fim do
+// signup (`finishOnboarding`), não aqui.
 // Medidas do Flo: "iPhone" de 268 pt que some para baixo, sino Ø88 sobreposto ao
 // topo, notificação de 335 pt (mais larga que o iPhone) em y 205. O "21h" vem do
 // horário da noite escolhido na tela do horário.
@@ -57,39 +61,55 @@ export default function Notifications() {
   const { track } = useMixpanel();
   const night = useAppStore((s) => s.onboarding.rotina_noite_horario) ?? '21:00';
   const { y, buttonBottom } = useObFrame();
-  const armHomeTutorial = useAppStore((s) => s.armHomeTutorial);
+  const setPendingPushToken = useAppStore((s) => s.setPendingPushToken);
   const [loading, setLoading] = useState(false);
   const [hasRequested, setHasRequested] = useState(false);
 
   useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
-  // "Continuar" → pop-up nativo de permissão; o token vai direto para a conta.
-  const handleContinue = async () => {
-    haptics.action();
-    setLoading(true);
-    try {
-      const token = await Promise.race([
-        requestPushPermission(),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
-      ]);
-      if (token) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) await savePushToken(user.id, token);
-      }
-    } catch (error) {
-      console.error('[Notifications] Erro:', error);
-    } finally {
-      setLoading(false);
-      setHasRequested(true);
-    }
+  // Token em segundo plano (a permissão já foi dada): fica guardado até o cadastro, que
+  // o grava em `users.push_token`; com sessão (caso raro), grava direto também.
+  const saveTokenInBackground = () => {
+    requestPushPermission()
+      .then(async (token) => {
+        if (!token) return;
+        setPendingPushToken(token);
+        const uid = await getUserId();
+        if (uid) await savePushToken(uid, token);
+      })
+      .catch((error) => console.error('[Notifications] Erro ao obter o token:', error));
   };
 
-  // "Já ativei!" → entra no app (arma o tutorial da home).
-  const enterApp = () => {
+  const goNext = (granted: boolean) => {
+    track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), granted });
+    router.push('/(onboarding)/goal-desire');
+  };
+
+  // "Continuar" → pop-up nativo. Permitiu → avança na hora; não permitiu → fica e
+  // mostra o "Já ativei!".
+  const handleContinue = async () => {
+    if (loading) return;
     haptics.action();
-    track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    armHomeTutorial();
-    router.replace('/(app)/home');
+    setLoading(true);
+    let granted = false;
+    try {
+      granted = await askPushPermission();
+    } catch (error) {
+      console.error('[Notifications] Erro ao pedir permissão:', error);
+    }
+    setLoading(false);
+    if (granted) {
+      saveTokenInBackground();
+      goNext(true);
+      return;
+    }
+    setHasRequested(true);
+  };
+
+  // "Já ativei!" (só aparece depois de "Não permitir") → segue o onboarding.
+  const handleAlreadyEnabled = () => {
+    haptics.action();
+    goNext(false);
   };
 
   return (
@@ -154,10 +174,10 @@ export default function Notifications() {
         Quer que a NIKS te lembre quando for a hora de fazer seu skincare? Toque em "Continuar" e depois em "Permitir" que ela nunca vai deixar você esquecer.
       </Text>
 
-      {/* Sem voltar (a conta já foi criada) */}
-      <Stack.Screen options={{ gestureEnabled: false }} />
-      {/* "Continuar" fica SEMPRE na tela (abre o pedido nativo). Depois que o pop-up da
-          Apple aparece, surge EMBAIXO dele o "Já ativei!" — só ele avança. */}
+      {/* Voltar para o horário da rotina (agora a tela vem antes da conta). */}
+      <ObHeader onBack={() => router.back()} />
+      {/* "Continuar" fica SEMPRE na tela (abre o pedido nativo). Se ela não permitir,
+          surge EMBAIXO dele o "Já ativei!" — e só ele avança. */}
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: buttonBottom, alignItems: 'center', gap: 12 }}>
         {loading ? (
           <View style={{ height: 48, justifyContent: 'center' }}>
@@ -168,7 +188,7 @@ export default function Notifications() {
         )}
         {hasRequested && (
           <TouchableOpacity
-            onPress={enterApp}
+            onPress={handleAlreadyEnabled}
             activeOpacity={0.7}
             style={{
               width: 172, height: 48, borderRadius: 24, borderWidth: 1.5, borderColor: OB.pink,

@@ -39,21 +39,25 @@ Notifications.setNotificationHandler({
 });
 
 /**
+ * Só a permissão: mostra o pop-up do sistema (se ainda não foi respondido) e diz se
+ * ficou permitida. Resolve no toque em "Permitir"/"Não permitir" — sem teto de tempo,
+ * ao contrário do token, que depende de rede. Se já foi recusada antes, o iOS não
+ * mostra o pop-up de novo e responde `false` na hora.
+ */
+export async function askPushPermission(): Promise<boolean> {
+  await setupAndroidNotificationChannel();
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  if (existingStatus === 'granted') return true;
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === 'granted';
+}
+
+/**
  * Pede permissão de notificação ao usuário e retorna o Expo Push Token.
  * Retorna null se o usuário recusar.
  */
 export async function requestPushPermission(): Promise<string | null> {
-  await setupAndroidNotificationChannel();
-
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== 'granted') {
+  if (!(await askPushPermission())) {
     console.log('[notifications] Permissão negada pelo usuário.');
     return null;
   }

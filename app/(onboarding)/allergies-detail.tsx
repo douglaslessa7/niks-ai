@@ -9,7 +9,7 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 13 do onboarding — detalhe da alergia (condicional: `allergy_type`
+// Onboarding — detalhe da alergia (condicional: `allergy_type`
 // 'reaction', como na versão B). Campo #F0F0F0 no padrão do nome,
 // bloco centrado acima do teclado (título → 9 → subtítulo → 21 → campo → 39 →
 // botão), com texto livre. Libera com 4+ caracteres e grava `allergy_description`.
@@ -31,7 +31,7 @@ export default function AllergiesDetail() {
     if (!isActive) return;
     haptics.action();
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/goal-desire');
+    router.push('/(onboarding)/concerns');
   };
 
   return (

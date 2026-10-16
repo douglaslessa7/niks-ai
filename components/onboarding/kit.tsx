@@ -47,21 +47,30 @@ export const OB = {
 // As telas condicionais (detalhe da rotina, detalhe da alergia) mantêm o número mesmo
 // quando não aparecem — o funil mostra o pulo, não renumera.
 export const OB_STEPS = {
-  ola: 1, nome: 2, prazer: 3, idade: 4, gravidez: 5, incomoda: 6, potencial: 7,
-  tipoPele: 8, sol: 9, aguaSono: 10, rotinaAtual: 11, rotinaDetalhe: 12,
-  alergias: 13, alergiaDetalhe: 14, objetivo: 15, comSemNiks: 16,
-  prepScan: 17, camera: 18, analisando: 19, resultadoScan: 20, rotinaPronta: 21,
-  horarioRotina: 22, compromisso: 23,
+  // "Seus dados" (0.2 do design) entre o "Olá" e o nome (out/2026, pedido do produto).
+  ola: 1, seusDados: 2, nome: 3, prazer: 4, idade: 5, gravidez: 6,
+  // Alergias logo depois da gravidez (out/2026, pedido do produto).
+  alergias: 7, alergiaDetalhe: 8, incomoda: 9, potencial: 10,
+  tipoPele: 11, sol: 12, aguaSono: 13, rotinaAtual: 14, rotinaDetalhe: 15,
+  // Horário → notificações ("Continuar" + "Já ativei!") logo depois da rotina atual
+  // (16/out/2026, pedido do produto). A permissão sai ANTES da conta (token em
+  // `pendingPushToken`, gravado no signup).
+  horarioRotina: 16, notificacoes: 17,
+  objetivo: 18, comSemNiks: 19,
+  prepScan: 20, camera: 21, analisando: 22, resultadoScan: 23, rotinaPronta: 24,
+  compromisso: 25,
   // Paywall (Superwall) entre o compromisso e a conta — não é tela nossa, não conta.
-  criarConta: 24, notificacoes: 25,
+  // ⚠️ A última tela precisa valer OB_STEP_TOTAL: é o que marca o fim do onboarding
+  // no Paywallo (`lib/mixpanel/MixpanelProvider.tsx`).
+  criarConta: 26,
   // Telas FORA do fluxo (arquivos ficaram no repo, nada navega até elas): o 0
   // garante que nada delas entra no funil se alguém navegar até lá.
-  seusDados: 0, entendi: 0, idadePele: 0, transicaoRotina: 0,
-  hidratacao: 0, sono: 0, empatia: 0, avisoLembretes: 0,
-  pedidoNotificacao: 0, loadingRotina: 0, incomodaRotina: 0,
+  avisoLembretes: 0, pedidoNotificacao: 0, entendi: 0, idadePele: 0, transicaoRotina: 0,
+  hidratacao: 0, sono: 0, empatia: 0,
+  loadingRotina: 0, incomodaRotina: 0,
   loading: 0, relatorio: 0, planPreview: 0, apresentacao: 0,
 } as const;
-export const OB_STEP_TOTAL = 25;
+export const OB_STEP_TOTAL = 26;
 
 /** Evento de Mixpanel no padrão do onboarding (`step_total` fixo do funil novo). */
 export function obStep(step: number, name: string) {

@@ -3,9 +3,10 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
 
-// Tela 12 do onboarding — alergias (escolha única), textos da versão B. Como na
-// versão B, só "Já tive reação" leva ao detalhe (13); as outras seguem direto para o
-// objetivo (14).
+// Onboarding — alergias (escolha única), textos da versão B. Vem logo depois da
+// gravidez ("IMPORTANTE: alguns ativos…"), a pedido do produto. Como na versão B,
+// só "Já tive reação" leva ao detalhe; as outras seguem direto para "o que te
+// incomoda".
 type AllergyType = 'none' | 'sensitive' | 'reaction' | 'no_history';
 
 const OPTIONS: ObChoice<AllergyType>[] = [
@@ -39,9 +40,9 @@ export default function Allergies() {
           router.push('/(onboarding)/allergies-detail');
           return;
         }
-        // Sem detalhe: a descrição de uma passagem anterior pela tela 13 não vale mais.
+        // Sem detalhe: a descrição de uma passagem anterior pelo detalhe não vale mais.
         setOnboardingField('allergy_description', null);
-        router.push('/(onboarding)/goal-desire');
+        router.push('/(onboarding)/concerns');
       }}
     />
   );

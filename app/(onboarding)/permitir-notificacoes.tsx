@@ -17,7 +17,7 @@ import { OB, OB_STEPS, useObFrame, obStep, useOnMount } from '../../components/o
 // O alerta é o do iOS (desenhado pelo sistema, sem customização). Nosso é só o
 // fundo cinza #D1D1D1 (como no Flo) e a seta "Toque aqui!" centralizada sob o
 // botão "Permitir" (metade direita do alerta de 270 pt). Recusar não trava nada:
-// segue para o loading da rotina do mesmo jeito. Se a permissão já foi decidida antes, o
+// segue para o objetivo do mesmo jeito. Se a permissão já foi decidida antes, o
 // iOS não mostra o alerta e a tela segue direto.
 const STEP = OB_STEPS.pedidoNotificacao;
 const STEP_NAME = 'Pedido de Notificação';
@@ -49,7 +49,7 @@ export default function PermitirNotificacoes() {
       if (token) setPendingPushToken(token);
       track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), granted: !!token });
       // `replace`: nada volta para um pedido que já foi feito.
-      router.replace('/(onboarding)/loading-rotina');
+      router.replace('/(onboarding)/goal-desire');
     })();
   }, []);
 

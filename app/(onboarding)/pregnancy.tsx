@@ -39,7 +39,7 @@ export default function Pregnancy() {
     if (!selected) return;
     haptics.action();
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/concerns');
+    router.push('/(onboarding)/allergies');
   };
 
   return (

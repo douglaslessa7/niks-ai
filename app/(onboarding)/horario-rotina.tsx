@@ -10,9 +10,10 @@ import {
 } from '../../components/onboarding/kit';
 
 // Tela 21 do onboarding — horário da rotina: duas rodas lado a lado, sobre UMA faixa,
-// como o seletor de hora do iOS. Vem DEPOIS de "Sua rotina de skincare está pronta" e
-// leva ao compromisso, que leva ao paywall (pedido do produto, out/2026). A rotina pré-gerada não é refeita por
-// isso (a chave dela ignora os horários).
+// como o seletor de hora do iOS. Vem DEPOIS de "Como está sua rotina de skincare
+// hoje?" (e do detalhe dela) e leva às notificações ("Sua próxima rotina é hoje às…",
+// `notifications.tsx`) → objetivo (pedido do produto, out/2026). A rotina pré-gerada não é refeita por isso
+// (a chave dela ignora os horários).
 //
 // Grava em `onboarding.rotina_manha_horario` / `rotina_noite_horario` ('HH:MM') e o
 // fuso do aparelho em `rotina_fuso` (IANA). Vão para `users.rotina_*` no
@@ -62,7 +63,7 @@ export default function HorarioRotina() {
     setOnboardingField('rotina_noite_horario', night.current);
     setOnboardingField('rotina_fuso', deviceTimeZone());
     track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), manha: morning.current, noite: night.current });
-    router.push('/(onboarding)/compromisso');
+    router.push('/(onboarding)/notifications');
   };
 
   const column = (label: string, items: string[], ref: { current: string }) => (

@@ -9,7 +9,7 @@ import {
   OB, OB_STEPS, ObScreen, useObFrame, useObName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 23 do onboarding — compromisso, depois do horário da rotina e última antes do
+// Onboarding — compromisso, depois da rotina pronta e última antes do
 // paywall. Repouso = RÉPLICA da tela "28 Compromisso" de "NIKS Onboarding - fluxo
 // completo.dc.html" (Claude Design): círculo rosa Ø144 com a DIGITAL BRANCA no meio
 // (`digital-branca.png`, 54 × 75 — o mesmo arquivo do design), halo Ø216, centro em

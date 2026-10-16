@@ -3,10 +3,11 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
 
-// Tela 10 do onboarding — rotina atual (padrão 3i), textos da versão B. Como na
-// versão B, "completar o que falta" e "dermatologista prescreveu" levam ao detalhe
-// ("Quais produtos você já usa?" / "…foram prescritos?", tela 11); as outras seguem
-// para as alergias e limpam a descrição de uma passagem anterior pelo detalhe.
+// Onboarding — rotina atual (padrão 3i), textos da versão B. Como na versão B,
+// "completar o que falta" e "dermatologista prescreveu" levam ao detalhe
+// ("Quais produtos você já usa?" / "…foram prescritos?"); as outras seguem
+// para o horário da rotina (que leva ao aviso de lembretes e ao pedido de
+// notificação) e limpam a descrição de uma passagem anterior pelo detalhe.
 type RoutineType = 'zero' | 'complement' | 'prescribed' | 'unsure';
 
 const OPTIONS: ObChoice<RoutineType>[] = [
@@ -41,7 +42,7 @@ export default function SkincareRoutine() {
           return;
         }
         setOnboardingField('skincare_routine_description', null);
-        router.push('/(onboarding)/allergies');
+        router.push('/(onboarding)/horario-rotina');
       }}
     />
   );

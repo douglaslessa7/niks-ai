@@ -14,7 +14,8 @@ import { useImageSize, useFaceOval, fitFace, FaceOval } from '../../lib/faceFram
 // Tela 20 do onboarding — "Sua rotina de skincare está pronta." CONTEÚDO da versão B
 // (a antiga `plan-preview`, que ficou no repo sem ligação) no VISUAL do kit (cards de
 // foto da "Rotina pronta" do fluxo completo). Vem do resultado do scan e leva ao
-// horário da rotina (tela 21), que leva ao paywall.
+// compromisso, que leva ao paywall (o horário da rotina passou para depois da rotina
+// atual, out/2026).
 //
 // • Hoje = a foto de frente do scan; Em 8 semanas = o antes/depois da IA
 //   (`generate-skin-preview`, disparado na câmera). Se ele não chegar em 45 s, cai na
@@ -150,7 +151,7 @@ export default function RotinaPronta() {
   const handleContinue = () => {
     haptics.action();
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/horario-rotina');
+    router.push('/(onboarding)/compromisso');
   };
 
   return (

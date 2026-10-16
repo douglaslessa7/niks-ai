@@ -9,7 +9,7 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 11 do onboarding — detalhe da rotina atual (condicional: `skincare_routine_type`
+// Onboarding — detalhe da rotina atual (condicional: `skincare_routine_type`
 // 'complement' ou 'prescribed', como na versão B). Textos da versão B no visual do kit;
 // mesmo esqueleto do detalhe da alergia (título → 9 → subtítulo → 21 → campo → 39 →
 // botão, bloco centrado acima do teclado). Libera com 4+ caracteres e grava
@@ -34,7 +34,7 @@ export default function SkincareRoutineDetail() {
     if (!isActive) return;
     haptics.action();
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/allergies');
+    router.push('/(onboarding)/horario-rotina');
   };
 
   return (

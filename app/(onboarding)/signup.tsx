@@ -32,14 +32,18 @@ const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACI
 export default function Signup() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
-  const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating } = useAppStore();
+  const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating, armHomeTutorial } = useAppStore();
   const { track, identify } = useMixpanel();
-  // Conta criada → notificações → home. (A apresentação pós-cadastro — slides 2 a 5 —
-  // saiu a pedido do produto.) O tutorial de primeiro acesso da home é armado na tela
-  // de notificações, a última antes de entrar no app.
+  // Conta criada → home. A permissão de notificação é pedida ANTES da conta (depois do
+  // horário da rotina; o token vai no `saveToSupabase`), então a tela de notificações
+  // pós-cadastro saiu do fluxo (out/2026). Este é agora o ÚNICO ponto em que uma usuária
+  // NOVA entra no app — por isso o tutorial de primeiro acesso da home é armado AQUI
+  // (conta existente que refaz o onboarding também passa; quem barra é o servidor,
+  // `users.home_tutorial_seen_at`).
   const finishOnboarding = () => {
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
-    router.replace('/(onboarding)/notifications');
+    armHomeTutorial();
+    router.replace('/(app)/home');
   };
 
   const startProtocolGeneration = (userId: string) => {
