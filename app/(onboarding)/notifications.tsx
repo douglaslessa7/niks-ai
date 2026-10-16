@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, Image, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import * as ExpoNotifications from 'expo-notifications';
 import { askPushPermission, requestPushPermission, savePushToken } from '../../lib/notifications';
 import { getUserId } from '../../lib/currentUser';
 import { useAppStore } from '../../store/onboarding';
@@ -16,12 +17,13 @@ import {
 // (16/out/2026, pedido do produto; antes era a última tela, depois da conta). Substitui
 // o "Aviso de lembretes" + o pedido nativo em tela cinza (`aviso-lembretes.tsx` e
 // `permitir-notificacoes.tsx`, que ficaram no repo sem ligação). VISUAL = o "Aviso de
-// lembretes" do fluxo completo. LÓGICA (16/out/2026, pedido do produto): "Continuar"
-// abre o pop-up nativo de permissão.
-//   • "Permitir" → avança SOZINHA para o objetivo, sem outro toque.
-//   • "Não permitir" → fica na tela; surge EMBAIXO do "Continuar" o botão "Já ativei!".
-//     Daí em diante o "Continuar" NÃO avança (o iOS não mostra o pop-up de novo — só
-//     avança se ela tiver ligado nos Ajustes nesse meio-tempo) e o "Já ativei!" avança.
+// lembretes" do fluxo completo. LÓGICA (16/out/2026, pedido do produto) — um botão só,
+// o "Continuar":
+//   • 1º toque, permissão ainda não respondida → abre o pop-up nativo.
+//       "Permitir" → avança SOZINHA para o objetivo, sem outro toque.
+//       "Não permitir" → fica na tela, sem botão novo.
+//   • Toques seguintes → só avançam, sem pedir de novo.
+//   • Permissão já decidida antes (o iOS não mostraria o pop-up) → o 1º toque já avança.
 // A espera é só da PERMISSÃO (`askPushPermission`, resolve no toque do pop-up); o token
 // sai depois, em segundo plano — ele depende de rede e não pode segurar a tela.
 //
@@ -63,7 +65,8 @@ export default function Notifications() {
   const { y, buttonBottom } = useObFrame();
   const setPendingPushToken = useAppStore((s) => s.setPendingPushToken);
   const [loading, setLoading] = useState(false);
-  const [hasRequested, setHasRequested] = useState(false);
+  // Já mostrou o pop-up nesta tela: o próximo "Continuar" só avança.
+  const [asked, setAsked] = useState(false);
 
   useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
@@ -85,31 +88,33 @@ export default function Notifications() {
     router.push('/(onboarding)/goal-desire');
   };
 
-  // "Continuar" → pop-up nativo. Permitiu → avança na hora; não permitiu → fica e
-  // mostra o "Já ativei!".
+  // "Continuar": pede a permissão uma vez (se o sistema ainda mostra o pop-up);
+  // permitiu → avança; não permitiu → fica. Fora isso, avança.
   const handleContinue = async () => {
     if (loading) return;
     haptics.action();
     setLoading(true);
     let granted = false;
+    let prompted = false;
     try {
-      granted = await askPushPermission();
+      // `canAskAgain` = o sistema ainda mostraria o pop-up (no iOS, só enquanto ela
+      // nunca respondeu). Já decidida antes → não pede, só avança.
+      const { status, canAskAgain } = await ExpoNotifications.getPermissionsAsync();
+      granted = status === 'granted';
+      if (!asked && !granted && canAskAgain) {
+        prompted = true;
+        granted = await askPushPermission();
+      }
     } catch (error) {
       console.error('[Notifications] Erro ao pedir permissão:', error);
     }
     setLoading(false);
-    if (granted) {
-      saveTokenInBackground();
-      goNext(true);
+    if (granted) saveTokenInBackground();
+    if (prompted && !granted) {
+      setAsked(true); // "Não permitir": fica na tela; o próximo toque avança.
       return;
     }
-    setHasRequested(true);
-  };
-
-  // "Já ativei!" (só aparece depois de "Não permitir") → segue o onboarding.
-  const handleAlreadyEnabled = () => {
-    haptics.action();
-    goNext(false);
+    goNext(granted);
   };
 
   return (
@@ -176,27 +181,14 @@ export default function Notifications() {
 
       {/* Voltar para o horário da rotina (agora a tela vem antes da conta). */}
       <ObHeader onBack={() => router.back()} />
-      {/* "Continuar" fica SEMPRE na tela (abre o pedido nativo). Se ela não permitir,
-          surge EMBAIXO dele o "Já ativei!" — e só ele avança. */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: buttonBottom, alignItems: 'center', gap: 12 }}>
+      {/* Um botão só: "Continuar" (pede a permissão uma vez; depois, só avança). */}
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: buttonBottom, alignItems: 'center' }}>
         {loading ? (
           <View style={{ height: 48, justifyContent: 'center' }}>
             <ActivityIndicator color={OB.pink} />
           </View>
         ) : (
           <ObPillButton onPress={handleContinue} />
-        )}
-        {hasRequested && (
-          <TouchableOpacity
-            onPress={handleAlreadyEnabled}
-            activeOpacity={0.7}
-            style={{
-              width: 172, height: 48, borderRadius: 24, borderWidth: 1.5, borderColor: OB.pink,
-              backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <Text style={{ fontSize: 18, fontWeight: '600', color: OB.pink }}>Já ativei!</Text>
-          </TouchableOpacity>
         )}
       </View>
     </ObScreen>
