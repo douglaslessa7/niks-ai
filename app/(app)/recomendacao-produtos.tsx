@@ -903,7 +903,9 @@ export default function RecomendacaoProdutos() {
                 editing={editing}
                 onPick={(c) => { void openColecaoItem(c); }}
                 onRemove={(c) => confirmRemove(c)}
-                onDragActive={setScrollOn}
+                // `active` = arrastando → rolagem DESLIGADA. Passar `setScrollOn` direto
+                // invertia: soltar o produto travava a rolagem até sair da aba.
+                onDragActive={(active) => setScrollOn(!active)}
                 onScan={() => router.push('/(scan)/product-camera' as any)}
                 tutMark={tutShelf}
               />

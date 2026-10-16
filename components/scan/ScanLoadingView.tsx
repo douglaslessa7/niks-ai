@@ -14,7 +14,7 @@
 // `useObFrame().y()` (mesma régua do onboarding novo). Tipografia SF Pro = fonte
 // do sistema, por isso nenhum `fontFamily`.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { View, Text, Animated, Easing, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -72,10 +72,15 @@ type Props = {
   /** Fundo branco liso, sem o degradê rosado — usado no onboarding, para combinar com
    *  as outras telas dele (pedido do produto). Os scans de dentro do app seguem o 50a. */
   plainBackground?: boolean;
+  /** Conteúdo do disco branco NO LUGAR do número (o anel continua enchendo com a
+   *  `percentage`). Usado pelo "Compartilhar com o NIKS" (`share-product-loading`), que
+   *  mostra as fotos alternando rosto ↔ produto — as mesmas da revelação. Sem esta
+   *  prop, o disco mostra a porcentagem, como nas outras telas. */
+  center?: ReactNode;
 };
 
 export function ScanLoadingView({
-  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry, plainBackground = false,
+  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry, plainBackground = false, center,
 }: Props) {
   const { width } = useWindowDimensions();
   const { y } = useObFrame();
@@ -161,13 +166,14 @@ export function ScanLoadingView({
             />
           </Svg>
 
-          {/* Disco branco com a porcentagem */}
+          {/* Disco branco com a porcentagem (ou o `center`, quando a tela passa um) */}
           <View style={{
             position: 'absolute', top: y(250), left: centerX - DISC_D / 2,
             width: DISC_D, height: DISC_D, borderRadius: DISC_D / 2,
             backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
             shadowColor: '#C0206A', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15,
           }}>
+            {center ?? <>
             {/* O número fica centrado; o "%" pendura à direita sem deslocá-lo.
                 Posição do "%" pela largura MEDIDA do número — o `left: '100%'` do
                 design não resolve igual no RN (o "%" ia parar na borda da tela). */}
@@ -190,6 +196,7 @@ export function ScanLoadingView({
                 %
               </Text>
             )}
+            </>}
           </View>
 
           {/* Etapa atual + aviso fixo */}

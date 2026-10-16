@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Keyboard, Pressable, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
@@ -44,6 +44,10 @@ export default function Nome() {
 
   return (
     <ObScreen>
+      {/* Tocar fora do campo fecha o teclado (ele abre sozinho e, sem isto, não havia
+          como fechá-lo). Sem haptic: fechar teclado não leva retorno tátil (README). O
+          campo, o botão e o "Entrar" respondem antes, então continuam funcionando. */}
+      <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1, paddingTop: y(90), justifyContent: 'center' }}
@@ -85,6 +89,7 @@ export default function Nome() {
           </View>
         </View>
       </KeyboardAvoidingView>
+      </Pressable>
     </ObScreen>
   );
 }

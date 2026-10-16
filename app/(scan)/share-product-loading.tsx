@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, Animated } from 'react-native';
-import { useFonts } from 'expo-font';
-import { Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold } from '@expo-google-fonts/nunito';
+import { View, Text, TouchableOpacity, Animated, useWindowDimensions } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
 import Reanimated, {
-  FadeInDown, FadeOut, useAnimatedStyle, useSharedValue,
+  FadeInDown, useAnimatedStyle, useSharedValue,
   withRepeat, withSequence, withTiming,
 } from 'react-native-reanimated';
-import Svg, {
-  Path, Line, Circle, Defs,
-  LinearGradient as SvgLinearGradient, Stop,
-} from 'react-native-svg';
+import Svg, { Path, Line, Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { X } from 'lucide-react-native';
+import { OB, useObFrame } from '../../components/onboarding/kit';
 import { haptics } from '../../lib/haptics';
 import { getUserId } from '../../lib/currentUser';
 import { getAccessToken } from '../../lib/sessionToken';
@@ -35,31 +32,33 @@ import { getScoreTheme } from '../../lib/scoreTheme';
 // Tela de carregamento EXCLUSIVA da feature "Compartilhar com o NIKS".
 //
 // CARREGANDO = tela 50b do Claude Design (`components/scan/ScanLoadingView`), a MESMA
-// do scan de produto pela câmera (`product-loading.tsx`): anel rosa + %, etapa atual e
-// pontinhos. A busca da foto no link ocupa 0–14% da mesma tela.
+// do scan de produto pela câmera (`product-loading.tsx`): anel rosa, etapa atual e
+// pontinhos — só que com as fotos alternando (rosto ↔ produto) no disco, no lugar do
+// número (prop `center`). A busca da foto no link ocupa 0–14% do anel.
 //
-// Depois da análise a tela vira a REVELAÇÃO (número da compatibilidade + "Ver análise
-// completa"), com as fotos alternando no disco (rosto da usuária ↔ produto) e uma
-// linha de varredura; e há os estados de falha (sem foto no link, sem conexão).
+// Depois da análise a tela vira a REVELAÇÃO (X no canto superior esquerdo, número da
+// compatibilidade + "Compatibilidade de pele" em cima, círculo com as fotos alternando
+// no meio e "Ver análise completa" logo abaixo dele); e há os estados de falha (sem foto
+// no link, sem conexão). Disposição de sempre; VISUAL na identidade nova (SF Pro, rosa
+// #FF5EA8, fundo/anel/disco do `NiksLoadingFlo` e botões do `NiksProductDetailFlo`).
 //
 // A lógica da análise é a mesma da product-loading, via `useProductAnalysis`.
 // Só é aberta pelo (app)/_layout, depois do guard de assinatura, com o conteúdo em
 // `pendingShare` no store. Sem isso (ex.: deep link direto) volta pra home.
 
-// Tokens iguais aos da product-loading.
-const DEEP = '#1D3A44';
-const DEEP_SOFT = 'rgba(29,58,68,0.55)';
-const DEEP_FAINT = 'rgba(29,58,68,0.38)';
-const PINK = '#FF9D9D';           // rosa padrão do app
-const PINK_SOFT = '#FFC9C9';      // parada clara do gradiente do arco
-const CREAM = '#FFFFFF';
+// Identidade nova (a mesma do `ScanLoadingView` / `NiksLoadingFlo`).
+const PINK = OB.pink;             // #FF5EA8
+const INK = OB.ink;               // #121212
+const MUTED = '#8A8385';
 
+// Geometria do círculo da revelação — a MESMA de antes (só o visual mudou).
 const RING_SIZE = 250;
 const RING_STROKE = 8;
 const RING_R = (RING_SIZE - RING_STROKE) / 2;
 const RING_C = 2 * Math.PI * RING_R;
 const WHITE_D = RING_SIZE - 30;   // disco branco central (dentro do anel)
-const PHOTO_D = WHITE_D - 18;     // fotos dentro do disco
+const PHOTO_D = WHITE_D - 18;     // fotos dentro do disco (também no disco do loading)
+const GLOW_D = 560;               // brilho branco radial do fundo (identidade nova)
 
 // Ritmo da alternância rosto ↔ produto: troca rápida (350 ms) com uma parada que dá
 // tempo de olhar cada foto. ⚠️ Os 2000 ms originais pareciam slideshow e 900 ms
@@ -69,7 +68,6 @@ const HOLD_MS = 1300;
 // No fluxo de link a busca da imagem ocupa 0–15% e a análise continua dali.
 const URL_EXTRACT_CAP = 14;
 const URL_ANALYSIS_FLOOR = 15;
-
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -124,10 +122,8 @@ export default function ShareProductLoading() {
       navigateOnSuccess: false,
     });
 
-  const [fontsLoaded] = useFonts({ Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold });
-  const fExtra = fontsLoaded ? 'Nunito_800ExtraBold' : undefined;
-  const fBold = fontsLoaded ? 'Nunito_700Bold' : undefined;
-  const fSemi = fontsLoaded ? 'Nunito_600SemiBold' : undefined;
+  const insets = useSafeAreaInsets();
+  const { y } = useObFrame();
 
   // Montagem: sem share → home. Com share → tira do store e limpa resultado/imagem antigos.
   useEffect(() => {
@@ -265,16 +261,26 @@ export default function ShareProductLoading() {
 
   const displayPct = stage === 'extracting' || (isUrl && !analysisEnabled) ? extractPct : percentage;
 
-  // ── Animações ──────────────────────────────────────────────────────────────
-  // Halo e anel de progresso: mesmo padrão da product-loading (RN Animated +
-  // `strokeDashoffset` com `useNativeDriver: false` — decisão 22).
+  // ── Animações da revelação ─────────────────────────────────────────────────
+  // Halo pulsante e anel de progresso: RN Animated + `strokeDashoffset` com
+  // `useNativeDriver: false` (decisão 22).
+  const { width: screenW } = useWindowDimensions();
   const haloAnim = useRef(new Animated.Value(1)).current;
   const ringProgressAnim = useRef(new Animated.Value(0)).current;
+  const ringOffsetAnim = ringProgressAnim.interpolate({ inputRange: [0, 100], outputRange: [RING_C, 0] });
 
-  const ringOffsetAnim = ringProgressAnim.interpolate({
-    inputRange: [0, 100],
-    outputRange: [RING_C, 0],
-  });
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(haloAnim, { toValue: 1.1, duration: 1400, useNativeDriver: true }),
+        Animated.timing(haloAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  useEffect(() => {
+    Animated.timing(ringProgressAnim, { toValue: displayPct, duration: 450, useNativeDriver: false }).start();
+  }, [displayPct]);
 
   const failed = showError || stage === 'no_image' || stage === 'extract_error';
 
@@ -290,24 +296,6 @@ export default function ShareProductLoading() {
     haptics.action();
     router.replace('/(scan)/product-result' as any);
   };
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(haloAnim, { toValue: 1.1, duration: 1400, useNativeDriver: true }),
-        Animated.timing(haloAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  useEffect(() => {
-    Animated.timing(ringProgressAnim, {
-      toValue: displayPct,
-      duration: 450,
-      useNativeDriver: false,
-    }).start();
-  }, [displayPct]);
-
 
   // Fotos e varredura (UI thread, reanimated).
   const showProduct = useSharedValue(1);
@@ -346,7 +334,6 @@ export default function ShareProductLoading() {
     return () => clearInterval(timer);
   }, [productUri, faceUri, failed]);
 
-  const haloStyle = { transform: [{ scale: haloAnim }] };
   const placeholderStyle = useAnimatedStyle(() => ({ transform: [{ scale: placeholderPulse.value }] }));
   const productStyle = useAnimatedStyle(() => ({ opacity: showProduct.value }));
   const scanStyle = useAnimatedStyle(() => ({
@@ -377,9 +364,83 @@ export default function ShareProductLoading() {
 
   if (!share) return null;
 
+  // Fotos alternando (rosto da usuária ↔ produto) + varredura — o MESMO bloco no disco
+  // do loading e no da revelação, para a transição de uma tela para a outra não trocar
+  // o conteúdo do círculo. Sem produto ainda (link sendo lido): logo respirando.
+  const photos = (
+    <View style={{
+      width: PHOTO_D, height: PHOTO_D, borderRadius: PHOTO_D / 2,
+      overflow: 'hidden', backgroundColor: '#FFF7F7',
+      alignItems: 'center', justifyContent: 'center',
+    }}>
+      {!productUri && (
+        <Reanimated.View style={placeholderStyle}>
+          <ExpoImage
+            source={require('../../assets/home/niks-logo.png')}
+            style={{ width: 84, height: 85 }}
+            tintColor={PINK}
+            contentFit="contain"
+          />
+        </Reanimated.View>
+      )}
+
+      {productUri && faceUri && (
+        <ExpoImage
+          source={{ uri: faceUri }}
+          style={{ position: 'absolute', width: PHOTO_D, height: PHOTO_D }}
+          contentFit="cover"
+          onError={() => setFaceUri(null)}
+        />
+      )}
+
+      {productUri && (
+        <Reanimated.View
+          style={[{
+            position: 'absolute', width: PHOTO_D, height: PHOTO_D,
+            backgroundColor: '#FFFFFF',
+          }, productStyle]}
+        >
+          <ExpoImage
+            source={{ uri: productUri }}
+            style={{ width: PHOTO_D, height: PHOTO_D }}
+            contentFit="cover"
+          />
+        </Reanimated.View>
+      )}
+
+      {/* Varredura do scanner — faixa fina clara, sincronizada com o crossfade */}
+      <Reanimated.View
+        pointerEvents="none"
+        style={[{ position: 'absolute', top: -18, left: 0, width: PHOTO_D, height: 18 }, scanStyle]}
+      >
+        <LinearGradient
+          colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.75)', 'rgba(255,157,157,0.55)', 'rgba(255,255,255,0)']}
+          locations={[0, 0.45, 0.6, 1]}
+          style={{ flex: 1 }}
+        />
+      </Reanimated.View>
+    </View>
+  );
+
+  // Pílula rosa da identidade nova (cor, fonte e sombra do `NiksProductDetailFlo`); a
+  // altura de 60 é a de sempre desta tela.
+  const pillButton = (label: string, onPress: () => void) => (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={{
+        height: 60, borderRadius: 100, backgroundColor: PINK,
+        alignItems: 'center', justifyContent: 'center',
+        shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8, elevation: 8,
+      }}
+    >
+      <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+
   // CARREGANDO = tela 50b do Claude Design, a MESMA do scan de produto pela câmera
-  // (`product-loading`). Esta tela só tem visual próprio depois: a revelação da
-  // compatibilidade e os estados de falha.
+  // (`product-loading`) — anel, etapas e pontinhos iguais —, mas com as FOTOS
+  // alternando no disco em vez do número.
   if (!failed && !revealed) {
     return (
       <View style={{ flex: 1 }}>
@@ -392,6 +453,7 @@ export default function ShareProductLoading() {
           countdownPaused={countdownPaused}
           showError={false}
           onRetry={handleRetry}
+          center={photos}
         />
         {webviewUrl && <HiddenPageImageReader url={webviewUrl} onResult={handleWebviewResult} timeoutMs={12_000} />}
         {consentGate}
@@ -400,16 +462,29 @@ export default function ShareProductLoading() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: CREAM }}>
+    <View style={{ flex: 1, backgroundColor: '#F9F2F5' }}>
       <Stack.Screen options={{ gestureEnabled: false }} />
-      {/* Véu de fundo — igual ao da product-loading */}
+      <StatusBar style="dark" />
+      {/* Fundo da identidade nova — o mesmo do loading (`NiksLoadingFlo`) */}
       <LinearGradient
-        colors={['#FFF1F2', '#FFF8F8', '#FFFFFF']}
-        locations={[0, 0.4, 1]}
+        colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']}
+        locations={[0, 0.3, 0.6, 1]}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
+      <Svg
+        width={GLOW_D} height={GLOW_D} pointerEvents="none"
+        style={{ position: 'absolute', left: screenW / 2 - GLOW_D / 2, top: y(150) }}
+      >
+        <Defs>
+          <RadialGradient id="splGlow" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.75} />
+            <Stop offset="0.7" stopColor="#FFFFFF" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={GLOW_D / 2} cy={GLOW_D / 2} r={GLOW_D / 2} fill="url(#splGlow)" />
+      </Svg>
 
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <View style={{ flex: 1, maxWidth: 393, width: '100%', alignSelf: 'center' }}>
 
           {/* Fechar — esta tela é aberta de fora do app, então precisa de saída */}
@@ -417,14 +492,15 @@ export default function ShareProductLoading() {
             <TouchableOpacity
               onPress={handleClose}
               hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Fechar"
               style={{
-                width: 36, height: 36, borderRadius: 18,
+                width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF',
                 alignItems: 'center', justifyContent: 'center',
-                backgroundColor: '#FFFFFF',
-                borderWidth: 1, borderColor: 'rgba(29,58,68,0.08)',
+                shadowColor: '#783C48', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 7,
               }}
             >
-              <X size={18} color={DEEP} strokeWidth={2} />
+              <X size={16} color={INK} strokeWidth={2.4} />
             </TouchableOpacity>
           </View>
 
@@ -432,172 +508,64 @@ export default function ShareProductLoading() {
             <>
               {/* Revelação: número da compatibilidade acima do círculo. Só o número —
                   sem chip de veredito e sem nome do produto (isso é do product-result). */}
-              {revealed && (
-                <Reanimated.View
-                  entering={FadeInDown.duration(420)}
-                  style={{ alignItems: 'center', marginTop: 4 }}
-                >
-                  <Text style={{
-                    fontFamily: fExtra, fontSize: 72, letterSpacing: -2.88, color: theme.score,
-                  }}>
-                    {compat != null ? `${compat}%` : '—'}
-                  </Text>
-                  <Text style={{
-                    fontFamily: fExtra, fontSize: 20, letterSpacing: -0.4, color: '#121212', marginTop: -14,
-                  }}>
-                    Compatibilidade de pele
-                  </Text>
-                </Reanimated.View>
-              )}
+              <Reanimated.View entering={FadeInDown.duration(420)} style={{ alignItems: 'center', marginTop: 4 }}>
+                <Text style={{
+                  fontSize: 72, fontWeight: '700', letterSpacing: -2.88,
+                  fontVariant: ['tabular-nums'], color: theme.score,
+                }}>
+                  {compat != null ? `${compat}%` : '—'}
+                </Text>
+                <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.4, color: INK, marginTop: -14 }}>
+                  Compatibilidade de pele
+                </Text>
+              </Reanimated.View>
 
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                {/* Círculo — mesma composição da product-loading, com as fotos no centro */}
-                <View style={{
-                  width: RING_SIZE + 44, height: RING_SIZE + 44,
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {/* Anel decorativo externo (hairline rosa) */}
+                {/* Círculo — mesma composição de antes, no visual do loading novo */}
+                <View style={{ width: RING_SIZE + 44, height: RING_SIZE + 44, alignItems: 'center', justifyContent: 'center' }}>
+                  {/* Hairline externa */}
                   <View style={{
-                    position: 'absolute',
-                    width: RING_SIZE + 44, height: RING_SIZE + 44,
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,157,157,0.18)',
+                    position: 'absolute', width: RING_SIZE + 44, height: RING_SIZE + 44, borderRadius: 999,
+                    borderWidth: 1, borderColor: 'rgba(255,94,168,0.16)',
                   }} />
-
                   {/* Halo pulsante suave */}
-                  <Animated.View style={[{
-                    position: 'absolute',
-                    width: RING_SIZE, height: RING_SIZE,
-                    borderRadius: 999,
-                    backgroundColor: 'rgba(255,157,157,0.10)',
-                  }, haloStyle]} />
-
-                  {/* Disco branco central (card flutuante) */}
-                  <View style={{
-                    position: 'absolute',
-                    width: WHITE_D, height: WHITE_D,
-                    borderRadius: 999,
-                    backgroundColor: '#FFFFFF',
-                    shadowColor: PINK,
-                    shadowOffset: { width: 0, height: 12 },
-                    shadowOpacity: 0.28,
-                    shadowRadius: 28,
-                    elevation: 10,
+                  <Animated.View style={{
+                    position: 'absolute', width: RING_SIZE, height: RING_SIZE, borderRadius: 999,
+                    backgroundColor: 'rgba(255,94,168,0.08)', transform: [{ scale: haloAnim }],
                   }} />
-
-                  {/* Anel de progresso (preenche conforme a %) */}
-                  <Svg
-                    width={RING_SIZE}
-                    height={RING_SIZE}
-                    style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
-                  >
-                    <Defs>
-                      <SvgLinearGradient id="splRing" x1="0" y1="0" x2="1" y2="1">
-                        <Stop offset="0%" stopColor={PINK_SOFT} />
-                        <Stop offset="100%" stopColor={PINK} />
-                      </SvgLinearGradient>
-                    </Defs>
-                    <Circle
-                      cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
-                      stroke="rgba(29,58,68,0.06)" strokeWidth={RING_STROKE} fill="none"
-                    />
+                  {/* Disco branco central */}
+                  <View style={{
+                    position: 'absolute', width: WHITE_D, height: WHITE_D, borderRadius: 999, backgroundColor: '#FFFFFF',
+                    shadowColor: '#C0206A', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 10,
+                  }} />
+                  {/* Anel: trilho branco + progresso rosa, começando no topo */}
+                  <Svg width={RING_SIZE} height={RING_SIZE} style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
+                    <Circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R} stroke="#FFFFFF" strokeWidth={RING_STROKE} fill="none" />
                     <AnimatedCircle
                       cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_R}
-                      stroke="url(#splRing)" strokeWidth={RING_STROKE} fill="none"
-                      strokeLinecap="round"
-                      strokeDasharray={RING_C}
-                      strokeDashoffset={ringOffsetAnim}
+                      stroke={PINK} strokeWidth={RING_STROKE} fill="none" strokeLinecap="round"
+                      strokeDasharray={RING_C} strokeDashoffset={ringOffsetAnim}
                     />
                   </Svg>
-
                   {/* Fotos alternando dentro do disco (no lugar do número) */}
-                  <View style={{
-                    width: PHOTO_D, height: PHOTO_D, borderRadius: PHOTO_D / 2,
-                    overflow: 'hidden', backgroundColor: '#FFF7F7',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {!productUri && (
-                      <Reanimated.View style={placeholderStyle}>
-                        <ExpoImage
-                          source={require('../../assets/home/niks-logo.png')}
-                          style={{ width: 84, height: 85 }}
-                          tintColor={PINK}
-                          contentFit="contain"
-                        />
-                      </Reanimated.View>
-                    )}
-
-                    {productUri && faceUri && (
-                      <ExpoImage
-                        source={{ uri: faceUri }}
-                        style={{ position: 'absolute', width: PHOTO_D, height: PHOTO_D }}
-                        contentFit="cover"
-                        onError={() => setFaceUri(null)}
-                      />
-                    )}
-
-                    {productUri && (
-                      <Reanimated.View
-                        style={[{
-                          position: 'absolute', width: PHOTO_D, height: PHOTO_D,
-                          backgroundColor: '#FFFFFF',
-                        }, productStyle]}
-                      >
-                        <ExpoImage
-                          source={{ uri: productUri }}
-                          style={{ width: PHOTO_D, height: PHOTO_D }}
-                          contentFit="cover"
-                        />
-                      </Reanimated.View>
-                    )}
-
-                    {/* Varredura do scanner — faixa fina clara, sincronizada com o crossfade */}
-                    <Reanimated.View
-                      pointerEvents="none"
-                      style={[{ position: 'absolute', top: -18, left: 0, width: PHOTO_D, height: 18 }, scanStyle]}
-                    >
-                      <LinearGradient
-                        colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.75)', 'rgba(255,157,157,0.55)', 'rgba(255,255,255,0)']}
-                        locations={[0, 0.45, 0.6, 1]}
-                        style={{ flex: 1 }}
-                      />
-                    </Reanimated.View>
-                  </View>
+                  {photos}
                 </View>
 
-                {revealed && (
-                  /* Revelado: só o CTA. A análise completa continua no product-result. */
-                  <Reanimated.View
-                    entering={FadeInDown.delay(160).duration(420)}
-                    style={{ width: '100%', paddingHorizontal: 24, marginTop: 48 }}
-                  >
-                    <TouchableOpacity
-                      onPress={openFullAnalysis}
-                      style={{
-                        height: 60, borderRadius: 100, backgroundColor: PINK,
-                        alignItems: 'center', justifyContent: 'center',
-                        shadowColor: PINK, shadowOffset: { width: 0, height: 8 },
-                        shadowOpacity: 0.45, shadowRadius: 16, elevation: 8,
-                      }}
-                    >
-                      <Text style={{ fontFamily: fBold, fontSize: 17, color: '#FFFFFF' }}>
-                        Ver análise completa
-                      </Text>
-                    </TouchableOpacity>
-                  </Reanimated.View>
-                )}
+                {/* Só o CTA. A análise completa continua no product-result. */}
+                <Reanimated.View
+                  entering={FadeInDown.delay(160).duration(420)}
+                  style={{ width: '100%', paddingHorizontal: 24, marginTop: 48 }}
+                >
+                  {pillButton('Ver análise completa', openFullAnalysis)}
+                </Reanimated.View>
               </View>
             </>
           ) : (
-            /* Estados de falha — mesma casca de erro da product-loading */
+            /* Estados de falha — mesma casca de antes, no visual novo */
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
               <View style={{
-                width: '100%',
-                backgroundColor: PINK,
-                borderRadius: 16, padding: 13,
-                flexDirection: 'row', alignItems: 'flex-start', gap: 9,
-                marginBottom: 20,
+                width: '100%', backgroundColor: PINK, borderRadius: 16, padding: 13,
+                flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginBottom: 20,
               }}>
                 <Svg width={16} height={16} viewBox="0 0 16 16" style={{ marginTop: 1, flexShrink: 0 }}>
                   <Path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="white" strokeWidth={1.4} strokeLinejoin="round" fill="none" />
@@ -605,10 +573,10 @@ export default function ShareProductLoading() {
                   <Circle cx={8} cy={11.8} r={0.75} fill="white" />
                 </Svg>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: fBold, fontSize: 13, color: '#FFFFFF', marginBottom: 3 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
                     {stage === 'no_image' ? 'Não conseguimos pegar a foto desse link' : 'Não conseguimos analisar agora'}
                   </Text>
-                  <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, lineHeight: 18, color: '#FFFFFF' }}>
                     {stage === 'no_image'
                       ? 'Tente compartilhar a imagem ou tirar uma foto do produto.'
                       : stage === 'extract_error'
@@ -625,43 +593,27 @@ export default function ShareProductLoading() {
                 <Path d="M24 50 C28 44 44 44 48 50" stroke={PINK} strokeWidth={3} strokeLinecap="round" fill="none" />
               </Svg>
 
-              <Text style={{ fontFamily: fBold, fontSize: 18, color: DEEP, textAlign: 'center', lineHeight: 24, marginBottom: 8 }}>
+              <Text style={{ fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK, textAlign: 'center', marginBottom: 8 }}>
                 Algo deu errado por aqui...
               </Text>
-              <Text style={{ fontFamily: fSemi, fontSize: 14, color: DEEP_SOFT, textAlign: 'center', marginBottom: 32 }}>
+              <Text style={{ fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: MUTED, textAlign: 'center', marginBottom: 32 }}>
                 {stage === 'no_image'
                   ? 'Você pode tirar uma foto do produto agora'
                   : 'Toque para tentar novamente'}
               </Text>
 
-              <TouchableOpacity
-                onPress={stage === 'no_image' ? handleTakePhoto : handleRetry}
-                style={{
-                  width: '100%',
-                  backgroundColor: PINK,
-                  borderRadius: 100,
-                  height: 60,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  shadowColor: PINK,
-                  shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.45,
-                  shadowRadius: 16, elevation: 8,
-                }}
-              >
-                <Text style={{ fontFamily: fBold, fontSize: 17, color: '#FFFFFF' }}>
-                  {stage === 'no_image' ? 'Tirar foto' : 'Tentar novamente'}
-                </Text>
-              </TouchableOpacity>
+              <View style={{ width: '100%' }}>
+                {pillButton(stage === 'no_image' ? 'Tirar foto' : 'Tentar novamente', stage === 'no_image' ? handleTakePhoto : handleRetry)}
+              </View>
 
               <TouchableOpacity onPress={handleClose} style={{ paddingVertical: 14, marginTop: 6 }}>
-                <Text style={{ fontFamily: fBold, fontSize: 15, color: DEEP_SOFT }}>Voltar</Text>
+                <Text style={{ fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: MUTED }}>Voltar</Text>
               </TouchableOpacity>
             </View>
           )}
 
         </View>
-      </SafeAreaView>
+      </View>
 
       {webviewUrl && <HiddenPageImageReader url={webviewUrl} onResult={handleWebviewResult} timeoutMs={12_000} />}
       {consentGate}

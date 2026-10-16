@@ -113,7 +113,7 @@ const SIDE_SHOT = 0.85;
 const SIDE_MAX_DY = 0.7;
 const SIDE_HOLD_MS = 250;
 const SIDE_FACE_TRIES = 2;      // a conferência do Vision recusou N vezes → aceita a foto
-const APP_PHOTO_W = 1200;       // (modo app) as 3 fotos vão juntas à IA: reduz a 1200 de largura
+const APP_PHOTO_W = 1200;       // (modo app) as 3 fotos vão juntas à IA: reduz a 1200 de largura (só se for maior; nunca amplia)
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 // Etapas (plano B), arcos e ordem dos traços: `components/onboarding/scanRing.ts`.
@@ -406,7 +406,7 @@ export default function Camera() {
   // analisado. Por isso a foto sai do QUADRO AO VIVO do MediaPipe ou do rastreador; só o plano B
   // (sem módulo) usa o `takePictureAsync`, cujo `shutterSound: false` o iOS nem sempre respeita.
   const takeFront = async () => {
-    let shot: { uri: string } | undefined;
+    let shot: { uri: string; width?: number } | undefined;
     if (mpOn.current) shot = await mpRef.current?.takePhoto();
     // Build sem a foto silenciosa no rastreador: `takePhoto` não existe → cai no expo-camera.
     else if (typeof trackerRef.current?.takePhoto === 'function') {
@@ -416,9 +416,14 @@ export default function Camera() {
       shot = await cameraRef.current?.takePictureAsync({ quality: 0.7, base64: false, shutterSound: false });
     }
     if (!shot?.uri) throw new Error('Falha ao capturar');
+    // Só REDUZ: o quadro ao vivo do MediaPipe/rastreador já vem com 1080 de largura, e
+    // "reduzir" para 1200 era ampliar (sem ganho de detalhe, imagem mais mole). A foto do
+    // plano B (`takePictureAsync`, ~3024) continua sendo reduzida. Largura desconhecida →
+    // reduz, como antes.
+    const shrink = inApp && !(shot.width != null && shot.width <= APP_PHOTO_W);
     const out = await ImageManipulator.manipulateAsync(
       shot.uri,
-      inApp ? [{ resize: { width: APP_PHOTO_W } }] : [],
+      shrink ? [{ resize: { width: APP_PHOTO_W } }] : [],
       { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true },
     );
     if (!out.base64) throw new Error('Falha ao processar foto');
