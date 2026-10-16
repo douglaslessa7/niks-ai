@@ -18,7 +18,6 @@ import {
   nextPaywallPlacement,
   requestDownsell,
   subscribeDownsellRequest,
-  dslog, // TEMP-DS
 } from '../../lib/paywallFlow';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 
@@ -70,7 +69,6 @@ export default function PaywallSoft() {
     // o paywall normal. Quem decide é `nextPaywallPlacement`, para o fechamento
     // no X e o cancelamento da folha da Apple dividirem o mesmo flag.
     const next = nextPaywallPlacement();
-    dslog('handleAfterPaywall: não assinante, registerPlacement', next); // TEMP-DS
     // Paywallo: atributos de anúncio no Superwall ANTES de todo registerPlacement
     // (nunca lança, segura no máx. 1,5 s). Ver "Paywallo" no README.
     await syncSuperwallAttributes({ timeoutMs: 1500 });
@@ -78,23 +76,17 @@ export default function PaywallSoft() {
   };
 
   const { registerPlacement } = usePlacement({
-    onPresent: (info: any) => {
-      dslog('onPresent', { identifier: info?.identifier, name: info?.name, products: info?.productIds ?? info?.products?.map?.((p: any) => p?.id ?? p?.identifier) }); // TEMP-DS
-    },
-    onDismiss: async (info: any, result: any) => {
-      dslog('onDismiss', { identifier: info?.identifier, result }); // TEMP-DS
+    onDismiss: async () => {
       // Fechamento causado pelo botão "TENHO CUPOM": pula ESTA reapresentação (uso
       // único). Se não estiver armada, segue o fluxo normal (fail closed) intacto.
       if (consumeSuppressReapresentar()) return;
       await handleAfterPaywall();
     },
-    onSkip: async (reason: any) => {
-      dslog('onSkip', reason); // TEMP-DS
+    onSkip: async () => {
       // Superwall decidiu não exibir (já assinante, holdout) — verifica e entra
       await handleAfterPaywall();
     },
-    onError: async (error: any) => {
-      dslog('onError', String(error)); // TEMP-DS
+    onError: async () => {
       // SDK falhou — reapresenta (fail closed)
       await syncSuperwallAttributes({ timeoutMs: 1500 });
       registerPlacement({ placement: 'paywall_onboarding' });
@@ -128,43 +120,14 @@ export default function PaywallSoft() {
     // Cancelar DENTRO do downsell dispara o evento de novo, mas o flag já está
     // marcado e nada acontece — ela segue no paywall.
     onSuperwallEvent: async (eventInfo) => {
-      // TEMP-DS: todo evento do SDK, para ver o que chega na desistência da folha.
-      const ev: any = (eventInfo as any)?.event;
-      dslog('evento', ev?.event, {
-        produto: ev?.product?.productIdentifier ?? ev?.product?.identifier ?? ev?.product?.id,
-        paywall: ev?.paywallInfo?.identifier,
-        erro: ev?.error,
-        canShowDownsell: canShowDownsell(),
-      });
       if (eventInfo?.event?.event !== 'transactionAbandon') return;
-      if (!canShowDownsell()) { dslog('transactionAbandon: downsell já mostrado, nada a fazer'); return; } // TEMP-DS
+      if (!canShowDownsell()) return;
       markDownsellShown();
       armSuppressReapresentar();
-      dslog('transactionAbandon: dismiss() ...'); // TEMP-DS
-      try { await Superwall.shared.dismiss(); dslog('transactionAbandon: dismiss() ok'); } catch (e) { dslog('transactionAbandon: dismiss() erro', String(e)); } // TEMP-DS
+      try { await Superwall.shared.dismiss(); } catch {}
       requestDownsell();
     },
   });
-
-  // TEMP-DS: foto das offerings do RevenueCat (o produto do paywall está em alguma?).
-  useEffect(() => {
-    dslog('paywall-soft montada'); // TEMP-DS
-    Purchases.getOfferings()
-      .then((o) => {
-        const all = Object.values(o.all).map((of) => ({
-          offering: of.identifier,
-          current: o.current?.identifier === of.identifier,
-          produtos: of.availablePackages.map((p) => p.product.identifier),
-        }));
-        const achados = ['com.niksai.anual129', 'br.com.niksai.app.mensal.39', 'br.com.niksai.app.anual.99'].map(
-          (id) => ({ id, emOffering: all.filter((of) => of.produtos.some((p) => p === id || p.startsWith(id + ':'))).map((of) => of.offering) }),
-        );
-        dslog('RC offerings', all);
-        dslog('RC produtos do paywall', achados);
-      })
-      .catch((e) => dslog('RC getOfferings erro', String(e)));
-    return () => dslog('paywall-soft desmontada'); // TEMP-DS
-  }, []);
 
   // Pedido de downsell (vindo do `transactionAbandon` acima): aqui só registramos
   // o placement — é este registro, e não um `Superwall.shared.register` solto, que
@@ -172,11 +135,8 @@ export default function PaywallSoft() {
   useEffect(() => {
     if (__DEV__) return;
     return subscribeDownsellRequest(async () => {
-      dslog('listener do downsell: registerPlacement paywall_downsell'); // TEMP-DS
       await syncSuperwallAttributes({ timeoutMs: 1500 });
-      registerPlacement({ placement: 'paywall_downsell' })
-        .then(() => dslog('registerPlacement paywall_downsell resolvido')) // TEMP-DS
-        .catch((e) => dslog('registerPlacement paywall_downsell erro', String(e))); // TEMP-DS
+      registerPlacement({ placement: 'paywall_downsell' }).catch(() => {});
     });
   }, []);
 
@@ -223,7 +183,6 @@ export default function PaywallSoft() {
 
     let cancelled = false;
     const task = InteractionManager.runAfterInteractions(async () => {
-      dslog('registro inicial: paywall_onboarding'); // TEMP-DS
       await syncSuperwallAttributes({ timeoutMs: 1500 });
       if (cancelled) return;
       registerPlacement({ placement: 'paywall_onboarding' });

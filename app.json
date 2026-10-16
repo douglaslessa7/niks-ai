@@ -3,7 +3,7 @@
     "name": "NIKS",
     "newArchEnabled": true,
     "slug": "niks-ai",
-    "version": "1.0.56",
+    "version": "1.0.57",
     "orientation": "portrait",
     "icon": "./assets/icon-niks-rosa.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
-      "buildNumber": "4",
+      "buildNumber": "1",
       "icon": "./assets/icon-niks-rosa.png",
       "supportsTablet": false,
       "bundleIdentifier": "br.com.niksai.app",
@@ -26,6 +26,9 @@
         "NSPhotoLibraryUsageDescription": "O NIKS AI precisa acessar suas fotos para análise de pele.",
         "NSUserTrackingUsageDescription": "Usamos isso para mostrar anúncios mais relevantes e medir a eficácia das campanhas.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": true
       },
       "appleTeamId": "FZRSWCG9BR"
     },
