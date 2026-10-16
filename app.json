@@ -122,6 +122,7 @@
       ],
       "./plugins/withNiksActionExtension",
       "./plugins/withFmtCxx17",
+      "./plugins/withFacebookAndroidSdk",
       [
         "expo-build-properties",
         {

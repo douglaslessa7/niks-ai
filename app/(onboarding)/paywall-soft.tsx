@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { usePlacement, useSuperwallEvents } from 'expo-superwall';
 import Superwall from 'expo-superwall/compat';
 import Purchases from 'react-native-purchases';
+import { syncSuperwallAttributes } from '@virex-tech/paywallo-sdk';
 import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
@@ -70,6 +71,9 @@ export default function PaywallSoft() {
     // no X e o cancelamento da folha da Apple dividirem o mesmo flag.
     const next = nextPaywallPlacement();
     dslog('handleAfterPaywall: não assinante, registerPlacement', next); // TEMP-DS
+    // Paywallo: atributos de anúncio no Superwall ANTES de todo registerPlacement
+    // (nunca lança, segura no máx. 1,5 s). Ver "Paywallo" no README.
+    await syncSuperwallAttributes({ timeoutMs: 1500 });
     registerPlacement({ placement: next });
   };
 
@@ -92,6 +96,7 @@ export default function PaywallSoft() {
     onError: async (error: any) => {
       dslog('onError', String(error)); // TEMP-DS
       // SDK falhou — reapresenta (fail closed)
+      await syncSuperwallAttributes({ timeoutMs: 1500 });
       registerPlacement({ placement: 'paywall_onboarding' });
     },
   });
@@ -166,8 +171,9 @@ export default function PaywallSoft() {
   // carrega os callbacks de fail closed acima (onSkip/onError → paywall_onboarding).
   useEffect(() => {
     if (__DEV__) return;
-    return subscribeDownsellRequest(() => {
+    return subscribeDownsellRequest(async () => {
       dslog('listener do downsell: registerPlacement paywall_downsell'); // TEMP-DS
+      await syncSuperwallAttributes({ timeoutMs: 1500 });
       registerPlacement({ placement: 'paywall_downsell' })
         .then(() => dslog('registerPlacement paywall_downsell resolvido')) // TEMP-DS
         .catch((e) => dslog('registerPlacement paywall_downsell erro', String(e))); // TEMP-DS
@@ -183,10 +189,15 @@ export default function PaywallSoft() {
       if (__DEV__) return;
       if (firstFocus.current) { firstFocus.current = false; return; }
       const placement = consumeNextPlacement() ?? 'paywall_onboarding';
-      const task = InteractionManager.runAfterInteractions(() => {
+      // `cancelled`: o task.cancel() não alcança um sync já em voo — sem a flag, um
+      // blur durante o sync ainda registraria o placement.
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(async () => {
+        await syncSuperwallAttributes({ timeoutMs: 1500 });
+        if (cancelled) return;
         registerPlacement({ placement });
       });
-      return () => task.cancel();
+      return () => { cancelled = true; task.cancel(); };
     }, [])
   );
 
@@ -210,12 +221,15 @@ export default function PaywallSoft() {
     if (hasRegistered.current) return;
     hasRegistered.current = true;
 
-    const task = InteractionManager.runAfterInteractions(() => {
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(async () => {
       dslog('registro inicial: paywall_onboarding'); // TEMP-DS
+      await syncSuperwallAttributes({ timeoutMs: 1500 });
+      if (cancelled) return;
       registerPlacement({ placement: 'paywall_onboarding' });
     });
 
-    return () => task.cancel();
+    return () => { cancelled = true; task.cancel(); };
   }, []);
 
   return (
