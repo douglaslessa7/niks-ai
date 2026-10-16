@@ -7,19 +7,21 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAIConsent } from '../../hooks/useAIConsent';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, ObCheck,
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton,
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 import { ConsentSheet } from '../../components/onboarding/ConsentSheet';
-import { ringTicks, ringBack, ScanStepId } from '../../components/onboarding/scanRing';
+import { ringTicks, ringBack } from '../../components/onboarding/scanRing';
 
-// Tela 6 do fluxo completo — TUTORIAL do scan "girando o rosto" (a câmera da tela 7).
-// Substituiu a lista de cuidados do scan antigo de 1 foto: agora explica COMO o scan
-// funciona — 3 fotos que a câmera tira sozinha (frente → esquerda → direita), guiadas
-// pelo anel em volta do rosto. No topo, uma miniatura do MESMO anel da câmera
-// (`components/onboarding/scanRing.ts`) roda as 3 etapas em loop, com o rosto virando
-// para o lado da vez, e o passo correspondente da lista acende junto. Embaixo, os
-// cuidados de antes da foto em formato compacto.
+// TUTORIAL do scan do onboarding (antes da câmera). Explica o movimento do scan atual:
+// encaixar o rosto no círculo e GIRAR A CABEÇA DEVAGAR, DE UM LADO PARA O OUTRO, SEM
+// PARAR (17/out/2026, pedido do produto — antes eram 3 etapas paradas: frente →
+// esquerda → direita). ⚠️ Não mencionar a foto de frente: ela sai no começo sem a
+// usuária saber.
+// No topo, uma miniatura do MESMO anel da câmera (`components/onboarding/scanRing.ts`):
+// o rosto vai e volta sem pausa, os traços para onde ele aponta crescem (como o "salto"
+// da câmera) e o anel enche aos poucos, de baixo para cima. Embaixo, a instrução e os
+// cuidados de antes do scan em formato compacto.
 //
 // Consentimento de IA: no fluxo completo ele já foi dado na tela 0.2 ("Seus dados").
 // A folha "Antes de continuar" continua aqui como rede de segurança e a câmera mantém
@@ -28,26 +30,26 @@ const STEP = OB_STEPS.prepScan;
 const STEP_NAME = 'Tutorial do Scan';
 
 // ── Linha do tempo da demonstração ───────────────────────────────────────────
-const TURN_MS = 450;     // o rosto vira
-const FILL_MS = 1150;    // o arco acende
-const STEP_MS = TURN_MS + FILL_MS;
-const HOLD_MS = 1300;    // anel completo, antes de recomeçar
-const LOOP_MS = 3 * STEP_MS + HOLD_MS;
-const ORDER: ScanStepId[] = ['frente', 'esquerda', 'direita'];
+const SWING_MS = 2600;   // um vaivém completo da cabeça (esquerda → direita → esquerda)
+const FILL_MS = 5200;    // o anel enche (= 2 vaivéns)
+const HOLD_MS = 900;     // anel completo, antes de recomeçar (a cabeça não para)
+const LOOP_MS = FILL_MS + HOLD_MS;
 
 // Miniatura do anel: oval 100 × 134 (mesma proporção do oval da câmera, 236 × 316).
 const RW = 100;
 const RH = 134;
 const BOX_W = 180;
 const BOX_H = 186;
-const TICKS = ringTicks(48);
-const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
+// Traço: ângulo na tela (0 = direita, 90 = baixo, 180 = esquerda) e quando acende —
+// de baixo (90°) para cima (270°), pelos dois lados ao mesmo tempo.
+const TICKS = ringTicks(48).map((tk) => {
+  const deg = ((Math.atan2(tk.s, tk.c) * 180) / Math.PI + 360) % 360;
+  const fromBottom = Math.abs(((deg - 90 + 540) % 360) - 180); // 0 embaixo … 180 em cima
+  return { ...tk, deg, fillAt: (fromBottom / 180) * FILL_MS * 0.92 };
+});
+const POP_CONE = 55;     // graus em volta da direção do rosto que crescem
 
-const STEPS_INFO: { title: string; text: string }[] = [
-  { title: 'De frente', text: 'Olhe para a câmera, com o rosto dentro do círculo.' },
-  { title: 'Vire para a esquerda', text: 'Quando o lado esquerdo do círculo acender, vire o rosto devagar.' },
-  { title: 'Vire para a direita', text: 'Faça o mesmo para o lado direito. Cada foto sai sozinha.' },
-];
+const INSTRUCTION = 'Encaixe o rosto no círculo e gire a cabeça devagar, de um lado para o outro, sem parar.';
 
 const ICON = { fill: 'none', stroke: '#FFFFFF', strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 const TIPS: { label: string; icon: React.ReactNode }[] = [
@@ -57,37 +59,31 @@ const TIPS: { label: string; icon: React.ReactNode }[] = [
   { label: 'Sem\nóculos', icon: (<><Circle cx={6.5} cy={14.5} r={3.5} {...ICON} /><Circle cx={17.5} cy={14.5} r={3.5} {...ICON} /><Path d="M10 14.5c1.3-1 2.7-1 4 0" {...ICON} /></>) },
 ];
 
-/** Relógio da demonstração (ms dentro do loop), um quadro por frame. */
-function useLoopClock() {
+/** Relógio da demonstração (ms desde a montagem), um quadro por frame. */
+function useClock() {
   const [t, setT] = useState(0);
   const start = useRef(Date.now());
   useEffect(() => {
     let id: number;
-    const loop = () => { setT((Date.now() - start.current) % LOOP_MS); id = requestAnimationFrame(loop); };
+    const loop = () => { setT(Date.now() - start.current); id = requestAnimationFrame(loop); };
     id = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(id);
   }, []);
   return t;
 }
 
-// Para onde o rosto está virado em `t` (−1 = esquerda da tela, 0 = frente, 1 = direita).
-function headTurn(t: number) {
-  const k = (x: number) => easeInOut(Math.max(0, Math.min(1, x)));
-  if (t < STEP_MS) return 0;
-  if (t < 2 * STEP_MS) return -k((t - STEP_MS) / TURN_MS);
-  if (t < 3 * STEP_MS) return -1 + 2 * k((t - 2 * STEP_MS) / TURN_MS);
-  return 1 - k((t - 3 * STEP_MS) / 500);   // volta para a frente no fim
-}
+// Para onde o rosto está virado em `t` (−1 = esquerda da tela, 0 = frente, 1 = direita):
+// vaivém contínuo, sem pausa (seno — desacelera nas pontas e passa direto pelo meio).
+const headTurn = (t: number) => Math.sin((2 * Math.PI * t) / SWING_MS);
 
 function RingDemo({ t }: { t: number }) {
   const cx = BOX_W / 2;
   const cy = BOX_H / 2;
   const rx = RW / 2;
   const ry = RH / 2;
-  const stepIdx = Math.min(3, Math.floor(t / STEP_MS));
-  const active = stepIdx < 3 ? ORDER[stepIdx] : null;
-  const pulse = (Math.sin(t / 160) + 1) / 2;
+  const loopT = t % LOOP_MS;
   const turn = headTurn(t);
+  const headDeg = turn >= 0 ? 0 : 180;
 
   return (
     <Svg width={BOX_W} height={BOX_H}>
@@ -100,21 +96,20 @@ function RingDemo({ t }: { t: number }) {
         <Path d={`M${cx - 11} ${cy + 25} Q${cx} ${cy + 32} ${cx + 11} ${cy + 25}`} fill="none" stroke={OB.pink} strokeWidth={2.4} strokeLinecap="round" />
       </G>
       {TICKS.map((tk, i) => {
-        const arcIdx = ORDER.indexOf(tk.arc);
-        // Instante em que este traço acende: início da etapa dele + virada + varredura.
-        const litAt = arcIdx * STEP_MS + TURN_MS + tk.order * FILL_MS;
-        const lit = t >= litAt;
-        const g = lit ? ringBack(Math.min(1, (t - litAt) / 380)) : 0;
-        const focus = !lit && tk.arc === active;
+        const lit = loopT >= tk.fillAt;
+        const g = lit ? ringBack(Math.min(1, (loopT - tk.fillAt) / 380)) : 0;
+        // "Salto" dos traços para onde o rosto aponta, mais forte quanto mais virado.
+        const diff = Math.abs(((tk.deg - headDeg + 540) % 360) - 180);
+        const pop = Math.max(0, 1 - diff / POP_CONE) * Math.abs(turn);
         const r0 = 6 + g * 2;
-        const r1 = 13 + g * 6 + (focus ? 3 + pulse * 3 : 0);
+        const r1 = 13 + g * 6 + pop * 7;
         return (
           <Line
             key={i}
             x1={cx + (rx + r0) * tk.c} y1={cy + (ry + r0) * tk.s}
             x2={cx + (rx + r1) * tk.c} y2={cy + (ry + r1) * tk.s}
-            stroke={lit ? OB.pink : focus ? '#FFB3D6' : OB.track}
-            strokeWidth={lit ? 2 + Math.min(1, g) * 0.8 : 2}
+            stroke={lit ? OB.pink : pop > 0.15 ? '#FFB3D6' : OB.track}
+            strokeWidth={(lit ? 2 + Math.min(1, g) * 0.8 : 2) + pop * 0.8}
             strokeLinecap="round"
           />
         );
@@ -128,8 +123,7 @@ export default function ScanPrep() {
   const { track } = useMixpanel();
   const { y, buttonBottom } = useObFrame();
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
-  const t = useLoopClock();
-  const stepIdx = Math.min(3, Math.floor(t / STEP_MS)); // 3 = as três feitas
+  const t = useClock();
 
   useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
@@ -150,38 +144,19 @@ export default function ScanPrep() {
           <RingDemo t={t} />
         </View>
 
-        {/* Passos — o da vez acende junto com a demonstração */}
+        {/* A instrução — o mesmo card branco de antes, agora com um movimento só */}
         <View style={{
-          marginTop: 2, marginHorizontal: 17, borderRadius: 20, backgroundColor: '#FFFFFF', paddingVertical: 6,
+          marginTop: 2, marginHorizontal: 17, borderRadius: 20, backgroundColor: '#FFFFFF',
+          flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 22, paddingVertical: 18,
           shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 12,
         }}>
-          {STEPS_INFO.map((s, i) => {
-            const done = i < stepIdx;
-            const current = i === stepIdx;
-            return (
-              <View key={s.title} style={{
-                flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingHorizontal: 16, paddingVertical: 10,
-                marginHorizontal: 6, borderRadius: 14, backgroundColor: current ? '#FFF2F8' : 'transparent',
-              }}>
-                <View style={{ marginTop: 1 }}>
-                  {done ? (
-                    <ObCheck size={28} stroke={2.2} />
-                  ) : (
-                    <View style={{
-                      width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: current ? OB.pink : OB.option,
-                    }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: current ? '#FFFFFF' : OB.sub }}>{i + 1}</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '600', color: OB.ink }}>{s.title}</Text>
-                  <Text style={{ fontSize: 14, lineHeight: 19, color: OB.sub }}>{s.text}</Text>
-                </View>
-              </View>
-            );
-          })}
+          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
+            {/* Setas de um lado para o outro */}
+            <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Path d="M7 8 L3 12 L7 16 M17 8 L21 12 L17 16 M3.5 12 H20.5" {...ICON} />
+            </Svg>
+          </View>
+          <Text style={{ flex: 1, fontSize: 17, lineHeight: 23, fontWeight: '600', color: OB.ink }}>{INSTRUCTION}</Text>
         </View>
 
         {/* Cuidados antes da foto: 4 colunas, ícone + legenda (cabe sem rolar). */}
