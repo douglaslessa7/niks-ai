@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { PaywalloClient } from '@virex-tech/paywallo-sdk';
+import { PaywalloClient, onboardingManager } from '@virex-tech/paywallo-sdk';
 import { mixpanel, initMixpanel } from './mixpanelClient';
 import { OB_STEP_TOTAL } from '../../components/onboarding/kit';
 
@@ -13,16 +13,51 @@ import { OB_STEP_TOTAL } from '../../components/onboarding/kit';
  *   `scan-prep-app`, `rate-us`, com `step_total: 23`) ficam de fora — as duas
  *   primeiras são o scan DENTRO do app e encheriam o funil de passos falsos.
  * - Só `step_number > 0` (telas fora do fluxo valem 0).
- * - Fire-and-forget: nunca lança nem segura a tela.
+ * - Espera o SDK iniciar: `onboardingStep` antes do init lança NOT_INITIALIZED e o
+ *   passo se perderia (a 1ª tela monta cedo). Cada passo aguarda `waitUntilReady()`
+ *   com teto de 10 s — o `waitUntilReady` nunca rejeita, mas também não resolve se o
+ *   init falhar, daí o teto. Estourado o teto, tenta mesmo assim (e o erro é engolido).
+ * - Ordem garantida: os passos saem por uma FILA (promise encadeada), então o 2 nunca
+ *   sai antes do 1 mesmo que o SDK fique pronto no meio.
+ * - Último passo do funil (`step_number === OB_STEP_TOTAL`): depois dele, marca o fim
+ *   do onboarding com `onboardingManager.complete()`, uma vez só.
+ * - Fire-and-forget: nada aqui é aguardado pela tela e nenhum erro sai daqui.
  */
+const PAYWALLO_READY_TIMEOUT_MS = 10_000;
+let paywalloQueue: Promise<void> = Promise.resolve();
+let paywalloOnboardingCompleted = false;
+
+function paywalloReadyOrTimeout(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, PAYWALLO_READY_TIMEOUT_MS);
+  });
+  return Promise.race([PaywalloClient.waitUntilReady().catch(() => {}), timeout]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
 function forwardOnboardingStepToPaywallo(event: string, properties?: Record<string, unknown>) {
   if (event !== 'onboarding_step_viewed' || properties?.step_total !== OB_STEP_TOTAL) return;
   const step = properties.step_number;
   const name = properties.step_name;
   if (typeof step !== 'number' || step <= 0 || typeof name !== 'string') return;
-  try {
-    PaywalloClient.onboardingStep(step, name).catch(() => {});
-  } catch {}
+  const isLastStep = step === OB_STEP_TOTAL;
+
+  paywalloQueue = paywalloQueue
+    .then(paywalloReadyOrTimeout)
+    .then(() => PaywalloClient.onboardingStep(step, name))
+    .catch(() => {})
+    .then(() => {
+      if (!isLastStep || paywalloOnboardingCompleted) return;
+      paywalloOnboardingCompleted = true;
+      return onboardingManager.complete().catch(() => {
+        // Falhou (ex.: SDK ainda sem init) — libera para tentar de novo se o último
+        // passo for repassado outra vez.
+        paywalloOnboardingCompleted = false;
+      });
+    })
+    .catch(() => {});
 }
 
 interface MixpanelContextValue {
