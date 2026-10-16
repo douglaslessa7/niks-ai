@@ -28,7 +28,7 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
-        "NSPrivacyTracking": true
+        "NSPrivacyTracking": false
       },
       "appleTeamId": "FZRSWCG9BR"
     },
