@@ -13,15 +13,17 @@ import {
 import { ConsentSheet } from '../../components/onboarding/ConsentSheet';
 import { ringTicks, ringBack } from '../../components/onboarding/scanRing';
 
-// TUTORIAL do scan do onboarding (antes da câmera). Explica o movimento do scan atual:
-// encaixar o rosto no círculo e GIRAR A CABEÇA DEVAGAR, DE UM LADO PARA O OUTRO, SEM
-// PARAR (17/out/2026, pedido do produto — antes eram 3 etapas paradas: frente →
-// esquerda → direita). ⚠️ Não mencionar a foto de frente: ela sai no começo sem a
-// usuária saber.
-// No topo, uma miniatura do MESMO anel da câmera (`components/onboarding/scanRing.ts`):
-// o rosto vai e volta sem pausa, os traços para onde ele aponta crescem (como o "salto"
-// da câmera) e o anel enche aos poucos, de baixo para cima. Embaixo, a instrução e os
-// cuidados de antes do scan em formato compacto.
+// TUTORIAL do scan do onboarding (antes da câmera) — mostra EXATAMENTE o que ela vai
+// fazer na câmera: encaixar o rosto no círculo e GIRAR A CABEÇA EM CÍRCULO (360°),
+// devagar, até acender o anel inteiro (17/out/2026, pedido do produto — antes eram 3
+// etapas paradas: frente → esquerda → direita). ⚠️ Não mencionar a foto de frente: ela
+// sai no começo sem a usuária saber.
+// No topo, uma miniatura do MESMO anel da câmera (`components/onboarding/scanRing.ts`),
+// com a MESMA regra da câmera (cadastro do Face ID): só acende o traço para onde a
+// cabeça aponta — olhou para cima, acendem os de cima; para a esquerda, os da esquerda —
+// e o traço aceso fica aceso. Os traços da direção atual crescem (o "salto" da câmera).
+// O avatar dá uma volta completa; com o anel cheio, volta para a frente e recomeça.
+// Embaixo, a instrução e os cuidados de antes do scan em formato compacto.
 //
 // Consentimento de IA: no fluxo completo ele já foi dado na tela 0.2 ("Seus dados").
 // A folha "Antes de continuar" continua aqui como rede de segurança e a câmera mantém
@@ -30,26 +32,33 @@ const STEP = OB_STEPS.prepScan;
 const STEP_NAME = 'Tutorial do Scan';
 
 // ── Linha do tempo da demonstração ───────────────────────────────────────────
-const SWING_MS = 2600;   // um vaivém completo da cabeça (esquerda → direita → esquerda)
-const FILL_MS = 5200;    // o anel enche (= 2 vaivéns)
-const HOLD_MS = 900;     // anel completo, antes de recomeçar (a cabeça não para)
-const LOOP_MS = FILL_MS + HOLD_MS;
+const TILT_MS = 550;     // sai da frente e inclina a cabeça (e, no fim, volta)
+const ROT_MS = 5200;     // uma volta completa (360°)
+const HOLD_MS = 1100;    // anel cheio, de frente, antes de recomeçar
+const LOOP_MS = TILT_MS + ROT_MS + TILT_MS + HOLD_MS;
+// Começa olhando para CIMA — é a 1ª instrução da câmera — e gira no sentido
+// cima → direita da tela (= esquerda do avatar) → baixo → esquerda da tela → cima.
+const START_DEG = 270;
 
 // Miniatura do anel: oval 100 × 134 (mesma proporção do oval da câmera, 236 × 316).
 const RW = 100;
 const RH = 134;
 const BOX_W = 180;
 const BOX_H = 186;
-// Traço: ângulo na tela (0 = direita, 90 = baixo, 180 = esquerda) e quando acende —
-// de baixo (90°) para cima (270°), pelos dois lados ao mesmo tempo.
+// Traço: ângulo na tela (0 = direita, 90 = baixo, 180 = esquerda, 270 = cima) e o
+// instante em que a cabeça passa por ele (= quando acende).
 const TICKS = ringTicks(48).map((tk) => {
   const deg = ((Math.atan2(tk.s, tk.c) * 180) / Math.PI + 360) % 360;
-  const fromBottom = Math.abs(((deg - 90 + 540) % 360) - 180); // 0 embaixo … 180 em cima
-  return { ...tk, deg, fillAt: (fromBottom / 180) * FILL_MS * 0.92 };
+  const along = ((deg - START_DEG + 360) % 360) / 360;
+  return { ...tk, deg, litAt: TILT_MS + along * ROT_MS };
 });
-const POP_CONE = 55;     // graus em volta da direção do rosto que crescem
+const POP_CONE = 40;     // graus em volta da direção da cabeça que crescem
 
-const INSTRUCTION = 'Encaixe o rosto no círculo e gire a cabeça devagar, de um lado para o outro, sem parar.';
+const STEPS_INFO = [
+  'Encaixe o rosto no círculo.',
+  'Gire a cabeça devagar, em círculo.',
+  'Continue até acender o anel inteiro.',
+];
 
 const ICON = { fill: 'none', stroke: '#FFFFFF', strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 const TIPS: { label: string; icon: React.ReactNode }[] = [
@@ -59,48 +68,57 @@ const TIPS: { label: string; icon: React.ReactNode }[] = [
   { label: 'Sem\nóculos', icon: (<><Circle cx={6.5} cy={14.5} r={3.5} {...ICON} /><Circle cx={17.5} cy={14.5} r={3.5} {...ICON} /><Path d="M10 14.5c1.3-1 2.7-1 4 0" {...ICON} /></>) },
 ];
 
-/** Relógio da demonstração (ms desde a montagem), um quadro por frame. */
-function useClock() {
+/** Relógio da demonstração (ms dentro do loop), um quadro por frame. */
+function useLoopClock() {
   const [t, setT] = useState(0);
   const start = useRef(Date.now());
   useEffect(() => {
     let id: number;
-    const loop = () => { setT(Date.now() - start.current); id = requestAnimationFrame(loop); };
+    const loop = () => { setT((Date.now() - start.current) % LOOP_MS); id = requestAnimationFrame(loop); };
     id = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(id);
   }, []);
   return t;
 }
 
-// Para onde o rosto está virado em `t` (−1 = esquerda da tela, 0 = frente, 1 = direita):
-// vaivém contínuo, sem pausa (seno — desacelera nas pontas e passa direto pelo meio).
-const headTurn = (t: number) => Math.sin((2 * Math.PI * t) / SWING_MS);
+const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2);
+
+/** Para onde a cabeça aponta em `t`: ângulo na tela (graus) e quanto está inclinada (0–1). */
+function headPose(t: number) {
+  const k = (x: number) => easeInOut(Math.max(0, Math.min(1, x)));
+  if (t < TILT_MS) return { deg: START_DEG, tilt: k(t / TILT_MS) };
+  if (t < TILT_MS + ROT_MS) return { deg: START_DEG + ((t - TILT_MS) / ROT_MS) * 360, tilt: 1 };
+  return { deg: START_DEG + 360, tilt: 1 - k((t - TILT_MS - ROT_MS) / TILT_MS) };
+}
 
 function RingDemo({ t }: { t: number }) {
   const cx = BOX_W / 2;
   const cy = BOX_H / 2;
   const rx = RW / 2;
   const ry = RH / 2;
-  const loopT = t % LOOP_MS;
-  const turn = headTurn(t);
-  const headDeg = turn >= 0 ? 0 : 180;
+  const { deg, tilt } = headPose(t);
+  const a = (deg * Math.PI) / 180;
+  const dx = Math.cos(a) * tilt;   // −1 esquerda … 1 direita
+  const dy = Math.sin(a) * tilt;   // −1 cima … 1 baixo
+  const headDeg = deg % 360;
 
   return (
     <Svg width={BOX_W} height={BOX_H}>
-      {/* Rosto: oval rosado; olhos, nariz e boca deslizam para o lado da vez. */}
-      <Ellipse cx={cx} cy={cy} rx={rx - 10} ry={ry - 10} fill={OB.wash} />
-      <G transform={`translate(${turn * 13} 0)`}>
+      {/* Rosto: oval rosado; olhos, nariz e boca deslizam para onde a cabeça aponta. */}
+      <Ellipse cx={cx + dx * 3} cy={cy + dy * 3} rx={rx - 10} ry={ry - 10} fill={OB.wash} />
+      <G transform={`translate(${dx * 13} ${dy * 11})`}>
         <Ellipse cx={cx - 15} cy={cy - 12} rx={4} ry={5} fill={OB.pink} />
         <Ellipse cx={cx + 15} cy={cy - 12} rx={4} ry={5} fill={OB.pink} />
-        <Path d={`M${cx} ${cy - 4} L${cx + turn * 5 - 3} ${cy + 11} L${cx + 2} ${cy + 12}`} fill="none" stroke={OB.pink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d={`M${cx} ${cy - 4} L${cx + dx * 5 - 3} ${cy + 11 + dy * 2} L${cx + 2} ${cy + 12}`} fill="none" stroke={OB.pink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
         <Path d={`M${cx - 11} ${cy + 25} Q${cx} ${cy + 32} ${cx + 11} ${cy + 25}`} fill="none" stroke={OB.pink} strokeWidth={2.4} strokeLinecap="round" />
       </G>
       {TICKS.map((tk, i) => {
-        const lit = loopT >= tk.fillAt;
-        const g = lit ? ringBack(Math.min(1, (loopT - tk.fillAt) / 380)) : 0;
-        // "Salto" dos traços para onde o rosto aponta, mais forte quanto mais virado.
+        // Acende quando a cabeça passa por ele, e fica aceso até a volta recomeçar.
+        const lit = t >= tk.litAt;
+        const g = lit ? ringBack(Math.min(1, (t - tk.litAt) / 380)) : 0;
+        // "Salto" dos traços para onde a cabeça aponta, mais forte quanto mais inclinada.
         const diff = Math.abs(((tk.deg - headDeg + 540) % 360) - 180);
-        const pop = Math.max(0, 1 - diff / POP_CONE) * Math.abs(turn);
+        const pop = Math.max(0, 1 - diff / POP_CONE) * tilt;
         const r0 = 6 + g * 2;
         const r1 = 13 + g * 6 + pop * 7;
         return (
@@ -108,7 +126,7 @@ function RingDemo({ t }: { t: number }) {
             key={i}
             x1={cx + (rx + r0) * tk.c} y1={cy + (ry + r0) * tk.s}
             x2={cx + (rx + r1) * tk.c} y2={cy + (ry + r1) * tk.s}
-            stroke={lit ? OB.pink : pop > 0.15 ? '#FFB3D6' : OB.track}
+            stroke={lit ? OB.pink : OB.track}
             strokeWidth={(lit ? 2 + Math.min(1, g) * 0.8 : 2) + pop * 0.8}
             strokeLinecap="round"
           />
@@ -123,7 +141,7 @@ export default function ScanPrep() {
   const { track } = useMixpanel();
   const { y, buttonBottom } = useObFrame();
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
-  const t = useClock();
+  const t = useLoopClock();
 
   useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
@@ -144,19 +162,20 @@ export default function ScanPrep() {
           <RingDemo t={t} />
         </View>
 
-        {/* A instrução — o mesmo card branco de antes, agora com um movimento só */}
+        {/* A instrução em 3 passos numerados — o mesmo card branco de antes */}
         <View style={{
           marginTop: 2, marginHorizontal: 17, borderRadius: 20, backgroundColor: '#FFFFFF',
-          flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 22, paddingVertical: 18,
+          paddingHorizontal: 22, paddingVertical: 16, gap: 14,
           shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 12,
         }}>
-          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
-            {/* Setas de um lado para o outro */}
-            <Svg width={20} height={20} viewBox="0 0 24 24">
-              <Path d="M7 8 L3 12 L7 16 M17 8 L21 12 L17 16 M3.5 12 H20.5" {...ICON} />
-            </Svg>
-          </View>
-          <Text style={{ flex: 1, fontSize: 17, lineHeight: 23, fontWeight: '600', color: OB.ink }}>{INSTRUCTION}</Text>
+          {STEPS_INFO.map((text, i) => (
+            <View key={text} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>{i + 1}</Text>
+              </View>
+              <Text style={{ flex: 1, fontSize: 17, lineHeight: 22, fontWeight: '600', color: OB.ink }}>{text}</Text>
+            </View>
+          ))}
         </View>
 
         {/* Cuidados antes da foto: 4 colunas, ícone + legenda (cabe sem rolar). */}
