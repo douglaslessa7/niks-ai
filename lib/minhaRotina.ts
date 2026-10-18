@@ -17,7 +17,7 @@ import { normStepKey } from './savedProducts';
 import { listColecao, findInColecao, addToColecao } from './colecao';
 import { getUserId } from './currentUser';
 import { listarEscaneados } from './escaneados';
-import { avaliarProduto, type Aviso, type NivelAviso } from './avisoProduto';
+import { avaliarProduto, codigoTipoPele, type Aviso, type NivelAviso, type PeleParaAviso } from './avisoProduto';
 
 export type Periodo = 'am' | 'pm';
 
@@ -148,8 +148,8 @@ export async function avisoDoProduto(userId: string, ref: RefProduto): Promise<A
     scanId = c?.product_scan_id ?? null;
   }
   if (!scanId) return { nivel: 'nenhum', texto: null };
-  const [{ data: u }, { data: sc }] = await Promise.all([
-    supabase.from('users').select('pregnancy_status, tipo_pele').eq('id', userId).maybeSingle(),
+  const [pele, { data: sc }] = await Promise.all([
+    peleParaAviso(userId),
     supabase.from('product_scans').select('produto_nome, resultado').eq('id', scanId).maybeSingle(),
   ]);
   const r: any = sc?.resultado ?? {};
@@ -158,13 +158,31 @@ export async function avisoDoProduto(userId: string, ref: RefProduto): Promise<A
     ativos: Array.isArray(r?.produto?.ativos_detectados) ? r.produto.ativos_detectados : null,
     veredito: r?.veredito ?? null, compat: typeof r?.compatibilidade === 'number' ? r.compatibilidade : null,
     avisosAnalise: Array.isArray(r?.avisos) ? r.avisos : null,
-  }, { pregnancyStatus: u?.pregnancy_status ?? null, tipoPele: u?.tipo_pele ?? null });
+  }, pele);
+}
+
+/**
+ * A pele dela para os avisos: gestação + tipo de pele JÁ como código — "Não sei" cai no
+ * que o último scan detectou (lib/avisoProduto → codigoTipoPele). Fonte única: a Rotina
+ * e a folha "Escolher produto" leem por aqui.
+ */
+export async function peleParaAviso(userId: string): Promise<PeleParaAviso> {
+  const [{ data: u }, { data: sc }] = await Promise.all([
+    supabase.from('users').select('pregnancy_status, tipo_pele').eq('id', userId).maybeSingle(),
+    supabase.from('skin_scans')
+      .select('sebaceo:full_result->>skin_type_sebaceous, detectado:full_result->>skin_type_detected')
+      .eq('user_id', userId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  return {
+    pregnancyStatus: u?.pregnancy_status ?? null,
+    tipoPele: codigoTipoPele(u?.tipo_pele, sc as { sebaceo?: string | null; detectado?: string | null } | null),
+  };
 }
 
 /** Aviso de um produto do CATÁLOGO pra pele dela (mesma regra da folha "Escolher produto"). */
 export async function avisoProdutoCatalogo(userId: string, produtoId: string): Promise<Aviso> {
-  const [{ data: u }, { data: p }] = await Promise.all([
-    supabase.from('users').select('pregnancy_status, tipo_pele').eq('id', userId).maybeSingle(),
+  const [pele, { data: p }] = await Promise.all([
+    peleParaAviso(userId),
     supabase.from('produtos').select('nome, categoria, ativos_principais, seguro_gestante, tipos_pele').eq('id', produtoId).maybeSingle(),
   ]);
   return avaliarProduto({
@@ -172,7 +190,7 @@ export async function avisoProdutoCatalogo(userId: string, produtoId: string): P
     ativos: Array.isArray(p?.ativos_principais) ? p.ativos_principais : null,
     seguroGestante: typeof p?.seguro_gestante === 'boolean' ? p.seguro_gestante : null,
     tiposPele: Array.isArray(p?.tipos_pele) ? p.tipos_pele : null,
-  }, { pregnancyStatus: u?.pregnancy_status ?? null, tipoPele: u?.tipo_pele ?? null });
+  }, pele);
 }
 
 /**

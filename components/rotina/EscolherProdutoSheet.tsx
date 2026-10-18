@@ -33,7 +33,7 @@ import { dedupeByProduct, sameProduct } from '../../lib/productMatch';
 import { CAT_ORDER, catOf } from '../../lib/productCategory';
 import { normStepKey } from '../../lib/savedProducts';
 import { avaliarProduto, type PeleParaAviso, type ProdutoAvaliavel } from '../../lib/avisoProduto';
-import { definirProdutoDoPasso, nomeDoPasso, type PassoRotina, type RefProduto } from '../../lib/minhaRotina';
+import { definirProdutoDoPasso, nomeDoPasso, peleParaAviso, type PassoRotina, type RefProduto } from '../../lib/minhaRotina';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 
@@ -63,17 +63,12 @@ type Dados = { pele: PeleParaAviso; estante: Candidato[]; escaneados: Candidato[
 async function carregar(passo: PassoRotina): Promise<Dados> {
   const uid = await getUserId();
   if (!uid) throw new Error('sem sessão');
-  const [userRes, colecao, scans, recRes] = await Promise.all([
-    supabase.from('users').select('pregnancy_status, tipo_pele').eq('id', uid).maybeSingle(),
+  const [pele, colecao, scans, recRes] = await Promise.all([
+    peleParaAviso(uid),
     listColecao(uid).catch(() => []),
     listarEscaneados(uid).catch(() => []),
     supabase.from('recomendacoes_produtos').select('recomendacao').eq('user_id', uid).maybeSingle(),
   ]);
-  const pele: PeleParaAviso = {
-    pregnancyStatus: userRes.data?.pregnancy_status ?? null,
-    tipoPele: userRes.data?.tipo_pele ?? null,
-  };
-
   // Recomendados: TODOS os da IA (cada produto uma vez). Passo vindo da rotina ideal →
   // os do passo correspondente (mesmo nome do passo atual ou do passo da ideal, mesmo
   // período) vêm primeiro; passo criado por ela → na ordem da recomendação.

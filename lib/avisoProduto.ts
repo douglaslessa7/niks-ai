@@ -26,8 +26,28 @@ export type ProdutoAvaliavel = {
   tiposPele?: string[] | null;       // catálogo: seca/normal/mista/oleosa
 };
 
-/** O que importa da pele dela para os avisos. */
+/** O que importa da pele dela para os avisos. `tipoPele` = código (ver `codigoTipoPele`). */
 export type PeleParaAviso = { pregnancyStatus: string | null; tipoPele: string | null };
+
+const TIPOS_PELE = ['oleosa', 'seca', 'mista', 'normal'];
+
+/**
+ * Tipo de pele dela como código de `produtos.tipos_pele` — a MESMA resolução de
+ * `resolveSkinTypeCode` (recomendar-produtos): mudou lá, mude aqui. Resposta do cadastro;
+ * "Não sei" (ou vazio) → o que o último scan detectou; nada → null (sem aviso de tipo).
+ * Sem isso, "Não sei" marcava TODO produto do catálogo, inclusive os recomendados.
+ */
+export function codigoTipoPele(
+  tipoPele: string | null | undefined,
+  scan?: { sebaceo?: string | null; detectado?: string | null } | null,
+): string | null {
+  const resposta = norm(tipoPele ?? '').trim();
+  if (TIPOS_PELE.includes(resposta)) return resposta;
+  const seb = norm(scan?.sebaceo ?? '').trim();
+  if (TIPOS_PELE.includes(seb)) return seb;
+  const det = norm(scan?.detectado ?? '');
+  return TIPOS_PELE.find((t) => det.includes(t)) ?? null;
+}
 
 const RETINOID_RE = /(retinol|retinal|retinaldeido|tretinoina|isotretinoina|retinoide|retinoid|retinil|retinyl|adapalen|tazaroten|trifaroten|hidroxipinacolona|hydroxypinacolone|granactive|\bhpr\b)/;
 const HIDROQUINONA_RE = /(hidroquinona|hydroquinone)/;
@@ -64,8 +84,9 @@ export function avaliarProduto(p: ProdutoAvaliavel, pele: PeleParaAviso): Aviso 
   if (p.veredito == null && typeof p.compat === 'number' && p.compat < 40) {
     return { nivel: 'leve', texto: 'Pouco compatível com a sua pele.' };
   }
-  const tipo = (pele.tipoPele ?? '').toLowerCase();
-  if (tipo && Array.isArray(p.tiposPele) && p.tiposPele.length && !p.tiposPele.some((x) => tipo.includes(String(x).toLowerCase()))) {
+  // Comparação EXATA de códigos (antes era "a resposta contém o código", e "não sei" nunca continha).
+  const tipo = codigoTipoPele(pele.tipoPele);
+  if (tipo && Array.isArray(p.tiposPele) && p.tiposPele.length && !p.tiposPele.some((x) => norm(String(x)).trim() === tipo)) {
     return { nivel: 'leve', texto: 'Feito pra outro tipo de pele.' };
   }
   return { nivel: 'nenhum', texto: null };
