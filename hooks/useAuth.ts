@@ -7,6 +7,7 @@ import * as Crypto from 'expo-crypto'
 import { clearAllCache } from '../lib/cache'
 import { resetUserId } from '../lib/currentUser'
 import { cancelRoutineReminders } from '../lib/routineReminders'
+import { resetRevenueCatIdentity } from '../lib/subscriptionGate'
 import { useAppStore } from '../store/onboarding'
 
 // Client ID iOS gerado no Google Cloud Console
@@ -148,6 +149,13 @@ export function useAuth() {
     // ⚠️ Só os flags da HOME: `scanTutorialSeen` fica de fora de propósito — zerá-lo
     // faria quem sai e volta na MESMA conta rever o tutorial das 6 fotos.
     useAppStore.getState().clearHomeTutorialFlags()
+    // ⚠️ Assinatura: a próxima pessoa neste aparelho não pode herdar a desta conta.
+    // (1) o `subscriptionVerified` vive em memória e o `reset()` não o zera — sem
+    // esta linha, uma conta criada em seguida, na mesma sessão do app, pularia o
+    // guard do (app)/_layout; (2) o RevenueCat guarda o último usuário logado — sem
+    // o logOut, o `premium` desta conta liberaria o cadastro de outra.
+    useAppStore.getState().setSubscriptionVerified(false)
+    await resetRevenueCatIdentity()
     await clearAllCache()
     // Os lembretes da rotina são desta conta (horários dela) — a próxima agenda os seus.
     await cancelRoutineReminders()

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { View, ActivityIndicator, InteractionManager } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, ActivityIndicator, InteractionManager } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { usePlacement, useSuperwallEvents } from 'expo-superwall';
+import type { PaywallResult } from 'expo-superwall';
 import Superwall from 'expo-superwall/compat';
-import Purchases from 'react-native-purchases';
 import { syncSuperwallAttributes } from '@virex-tech/paywallo-sdk';
-import { getCustomerInfo, isSubscribed } from '../../lib/revenuecat';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -19,77 +18,117 @@ import {
   requestDownsell,
   subscribeDownsellRequest,
 } from '../../lib/paywallFlow';
+import { confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
+import { haptics } from '../../lib/haptics';
+import { OB, ObPillButton } from '../../components/onboarding/kit';
+
+// Paywall sem resposta (onSkip / onError / register que lança) seguidas vezes:
+// depois disso para de pedir em ciclo e mostra "Tentar de novo". Nunca o cadastro.
+const MAX_FALHAS_SEGUIDAS = 3;
 
 export default function PaywallSoft() {
   const router = useRouter();
   const hasRegistered = useRef(false);
   const { track } = useMixpanel();
   const setSubscriptionVerified = useAppStore((s) => s.setSubscriptionVerified);
+  const falhasRef = useRef(0);
+  const [semPaywall, setSemPaywall] = useState(false);
 
   track('paywall_viewed', { screen: 'soft' });
 
-  const handleAfterPaywall = async () => {
-    try {
-      let info = await getCustomerInfo();
-
-      // Fallback: se o cache do RC não mostrar assinatura ativa, sincroniza
-      // com a App Store. Isso cobre: (1) cache desatualizado pós-compra,
-      // (2) usuário anônimo comprou mas RC foi trocado para usuário identificado
-      // sem transferir a assinatura, (3) onPurchase retornou 'failed' mas a
-      // Apple processou o pagamento normalmente.
-      if (!isSubscribed(info)) {
-        try {
-          info = await Purchases.restorePurchases();
-        } catch {
-          // Se o restore falhar, info continua com o valor anterior
-        }
-      }
-
-      if (isSubscribed(info)) {
-        // Assinante confirmada — marca no store para (app)/_layout.tsx não re-verificar
-        setSubscriptionVerified(true);
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          // Usuária já tem conta (reengajamento) — não passa pelo signup, então atribui
-          // o cupom aqui (não bloqueia; o webhook ainda confirma a conversão) e vai à home.
-          attributeCouponIfAny(session.user.id);
-          router.replace('/(app)/home');
-        } else {
-          // Nova usuária — precisa criar a conta
-          router.replace('/(onboarding)/signup');
-        }
-        return;
-      }
-    } catch {
-      // ignora erro — vai reapresentar o paywall
-    }
-    // Não assinou — reapresenta o paywall (bloqueio total). Na PRIMEIRA saída da
-    // sessão o que volta é o downsell (segunda chance, uma vez só); depois dela,
-    // o paywall normal. Quem decide é `nextPaywallPlacement`, para o fechamento
-    // no X e o cancelamento da folha da Apple dividirem o mesmo flag.
-    const next = nextPaywallPlacement();
-    // Paywallo: atributos de anúncio no Superwall ANTES de todo registerPlacement
-    // (nunca lança, segura no máx. 1,5 s). Ver "Paywallo" no README.
+  // Pede um placement ao Superwall. Paywallo: atributos de anúncio ANTES de todo
+  // registerPlacement (nunca lança, segura no máx. 1,5 s — ver "Paywallo" no README).
+  // `isCancelled`: o blur da tela não alcança um sync já em voo.
+  const present = async (placement: string, motivo: string, isCancelled?: () => boolean) => {
     await syncSuperwallAttributes({ timeoutMs: 1500 });
-    registerPlacement({ placement: next });
+    if (isCancelled?.()) return;
+    pwlog(`registerPlacement ${placement} (${motivo})`); // TEMP-PWGUARD
+    try {
+      await registerPlacement({ placement });
+    } catch (e) {
+      pwlog(`registerPlacement ${placement} lançou`, String(e)); // TEMP-PWGUARD
+      paywallNaoApareceu('paywall_onboarding', 'register_lancou');
+    }
+  };
+
+  // Fail closed para "o paywall não apareceu": pede de novo; depois de
+  // MAX_FALHAS_SEGUIDAS para e mostra "Tentar de novo". NUNCA consulta o RevenueCat
+  // para liberar — o cadastro só abre por compra/restauração confirmada.
+  const paywallNaoApareceu = (placement: string, motivo: string) => {
+    falhasRef.current += 1;
+    if (falhasRef.current > MAX_FALHAS_SEGUIDAS) {
+      pwlog(`paywall não apareceu ${falhasRef.current - 1}x seguidas (${motivo}) → "Tentar de novo"`); // TEMP-PWGUARD
+      setSemPaywall(true);
+      return;
+    }
+    setTimeout(() => { void present(placement, motivo); }, 600);
+  };
+
+  // Compra ou restauração dentro do paywall: SÓ aqui o RevenueCat é consultado
+  // para liberar. Confirmou o `premium` → cadastro (nova usuária) ou home (já tem
+  // conta). Não confirmou → paywall de novo (ela pode tocar em "Restaurar compra").
+  const confirmarESeguir = async (tipo: 'purchased' | 'restored') => {
+    let ok = await confirmPremium({ source: 'sync', attempts: 3, label: `paywall:${tipo}` });
+    // "Restaurar compra" que o sync não resolveu: aí sim o restore do RevenueCat
+    // (foi ela quem pediu para restaurar).
+    if (!ok && tipo === 'restored') {
+      ok = await confirmPremium({ source: 'restore', label: 'paywall:restored' });
+    }
+    if (!ok) {
+      pwlog(`paywall:${tipo} sem premium confirmado → paywall`); // TEMP-PWGUARD
+      void present('paywall_onboarding', `${tipo}_sem_premium`);
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      // Já tem conta (reengajamento): o RevenueCat já está logado nesta conta (o
+      // guard do (app)/_layout fez o loginRevenueCat antes de mandar para cá), então
+      // a confirmação vale para ela. Não passa pelo signup → atribui o cupom aqui.
+      setSubscriptionVerified(true);
+      attributeCouponIfAny(session.user.id);
+      pwlog('premium confirmado, com sessão → home'); // TEMP-PWGUARD
+      router.replace('/(app)/home');
+    } else {
+      // Nova usuária. O `subscriptionVerified` NÃO é marcado aqui: a identidade
+      // muda no cadastro (Purchases.logIn), e é o signup que confere de novo e marca.
+      pwlog('premium confirmado, sem sessão → cadastro'); // TEMP-PWGUARD
+      router.replace('/(onboarding)/signup');
+    }
   };
 
   const { registerPlacement } = usePlacement({
-    onDismiss: async () => {
-      // Fechamento causado pelo botão "TENHO CUPOM": pula ESTA reapresentação (uso
-      // único). Se não estiver armada, segue o fluxo normal (fail closed) intacto.
-      if (consumeSuppressReapresentar()) return;
-      await handleAfterPaywall();
+    onPresent: () => {
+      falhasRef.current = 0;
+      setSemPaywall(false);
     },
-    onSkip: async () => {
-      // Superwall decidiu não exibir (já assinante, holdout) — verifica e entra
-      await handleAfterPaywall();
+    onDismiss: async (_info, result?: PaywallResult) => {
+      // Fechamento causado pelo botão "TENHO CUPOM" ou pelo cancelamento da folha da
+      // Apple (que pede o downsell): pula ESTA reapresentação (uso único).
+      if (consumeSuppressReapresentar()) {
+        pwlog(`onDismiss (${result?.type ?? '?'}) suprimido`); // TEMP-PWGUARD
+        return;
+      }
+      pwlog(`onDismiss → ${result?.type ?? 'sem resultado'}`); // TEMP-PWGUARD
+      if (result?.type === 'purchased' || result?.type === 'restored') {
+        await confirmarESeguir(result.type);
+        return;
+      }
+      // Recusou (X) ou resultado desconhecido: nada de RevenueCat, nada de restore
+      // automático. Paywall de novo — na 1ª saída da sessão, o downsell (mesmo flag
+      // do cancelamento da folha da Apple).
+      void present(nextPaywallPlacement(), 'dismiss_recusou');
     },
-    onError: async () => {
-      // SDK falhou — reapresenta (fail closed)
-      await syncSuperwallAttributes({ timeoutMs: 1500 });
-      registerPlacement({ placement: 'paywall_onboarding' });
+    onSkip: (reason) => {
+      // Superwall não apresentou (holdout, sem público — ex.: o downsell para quem o
+      // Superwall vê com assinatura no Apple ID). Antes liberava se o RevenueCat
+      // dissesse premium; agora é sempre paywall (restaurar é pelo botão).
+      pwlog('onSkip', reason); // TEMP-PWGUARD
+      paywallNaoApareceu(nextPaywallPlacement(), 'onSkip');
+    },
+    onError: (error) => {
+      pwlog('onError', String(error)); // TEMP-PWGUARD
+      paywallNaoApareceu('paywall_onboarding', 'onError');
     },
   });
 
@@ -121,7 +160,11 @@ export default function PaywallSoft() {
     // marcado e nada acontece — ela segue no paywall.
     onSuperwallEvent: async (eventInfo) => {
       if (eventInfo?.event?.event !== 'transactionAbandon') return;
-      if (!canShowDownsell()) return;
+      if (!canShowDownsell()) {
+        pwlog('transactionAbandon: downsell já mostrado nesta sessão'); // TEMP-PWGUARD
+        return;
+      }
+      pwlog('transactionAbandon → downsell'); // TEMP-PWGUARD
       markDownsellShown();
       armSuppressReapresentar();
       try { await Superwall.shared.dismiss(); } catch {}
@@ -131,12 +174,11 @@ export default function PaywallSoft() {
 
   // Pedido de downsell (vindo do `transactionAbandon` acima): aqui só registramos
   // o placement — é este registro, e não um `Superwall.shared.register` solto, que
-  // carrega os callbacks de fail closed acima (onSkip/onError → paywall_onboarding).
+  // carrega os callbacks de fail closed acima (onSkip/onError → paywall).
   useEffect(() => {
     if (__DEV__) return;
-    return subscribeDownsellRequest(async () => {
-      await syncSuperwallAttributes({ timeoutMs: 1500 });
-      registerPlacement({ placement: 'paywall_downsell' }).catch(() => {});
+    return subscribeDownsellRequest(() => {
+      void present('paywall_downsell', 'transactionAbandon');
     });
   }, []);
 
@@ -149,13 +191,9 @@ export default function PaywallSoft() {
       if (__DEV__) return;
       if (firstFocus.current) { firstFocus.current = false; return; }
       const placement = consumeNextPlacement() ?? 'paywall_onboarding';
-      // `cancelled`: o task.cancel() não alcança um sync já em voo — sem a flag, um
-      // blur durante o sync ainda registraria o placement.
       let cancelled = false;
-      const task = InteractionManager.runAfterInteractions(async () => {
-        await syncSuperwallAttributes({ timeoutMs: 1500 });
-        if (cancelled) return;
-        registerPlacement({ placement });
+      const task = InteractionManager.runAfterInteractions(() => {
+        void present(placement, 'volta_do_cupom', () => cancelled);
       });
       return () => { cancelled = true; task.cancel(); };
     }, [])
@@ -171,6 +209,8 @@ export default function PaywallSoft() {
       // Atalho de dev: pula o paywall. Mas NÃO pode mandar todo mundo pro signup —
       // quem já tem sessão (login pela tela "Entrar") já tem conta e deve ir pra home.
       // Sem esse check, logar numa conta existente em dev caía na tela de criar conta.
+      // ⚠️ Só existe em __DEV__ (Metro). Em Release/TestFlight/App Store o __DEV__ é
+      // false e este bloco não roda.
       supabase.auth.getSession().then(({ data: { session } }) => {
         setSubscriptionVerified(true);
         router.replace(session?.user ? '/(app)/home' : '/(onboarding)/signup');
@@ -183,17 +223,38 @@ export default function PaywallSoft() {
 
     let cancelled = false;
     const task = InteractionManager.runAfterInteractions(async () => {
-      await syncSuperwallAttributes({ timeoutMs: 1500 });
+      // Sem sessão, o RevenueCat precisa estar anônimo antes de qualquer compra ou
+      // confirmação — senão valeria o premium de uma conta anterior do aparelho.
+      await ensureAnonymousRevenueCat('paywall');
       if (cancelled) return;
-      registerPlacement({ placement: 'paywall_onboarding' });
+      void present('paywall_onboarding', 'inicial', () => cancelled);
     });
 
     return () => { cancelled = true; task.cancel(); };
   }, []);
 
+  const tentarDeNovo = () => {
+    haptics.action();
+    falhasRef.current = 0;
+    setSemPaywall(false);
+    void present('paywall_onboarding', 'tentar_de_novo');
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-      <ActivityIndicator color="#FB7B6B" />
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+      {semPaywall ? (
+        <>
+          <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '700', color: OB.ink, textAlign: 'center' }}>
+            Não conseguimos carregar agora
+          </Text>
+          <Text style={{ marginTop: 8, marginBottom: 28, fontSize: 16, lineHeight: 22, color: OB.sub, textAlign: 'center' }}>
+            Confira sua conexão e tente de novo.
+          </Text>
+          <ObPillButton label="Tentar de novo" onPress={tentarDeNovo} />
+        </>
+      ) : (
+        <ActivityIndicator color="#FB7B6B" />
+      )}
     </View>
   );
 }

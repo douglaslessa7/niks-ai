@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { saveOnboardingProtocol } from '../../lib/onboardingPrefetch';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
+import { confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
 import { haptics } from '../../lib/haptics';
 import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
 
@@ -32,15 +33,53 @@ const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACI
 export default function Signup() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
-  const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating, armHomeTutorial } = useAppStore();
+  const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating, armHomeTutorial, setSubscriptionVerified } = useAppStore();
   const { track, identify } = useMixpanel();
+
+  // ── Trava: o cadastro só aparece com `premium` CONFIRMADO no RevenueCat ──────
+  // Regra de negócio (out/2026): qualquer outra resposta — erro, timeout, sem
+  // internet, link direto `niks-ai://signup`, qualquer caminho que um dia chegue
+  // aqui por engano — volta para o paywall. Na dúvida, paywall. Ver
+  // `lib/subscriptionGate.ts` e "Guard de assinatura" no README.
+  // Em __DEV__ o paywall é pulado de propósito (atalho de dev) — a trava também.
+  const [liberado, setLiberado] = useState(__DEV__);
+  useEffect(() => {
+    if (__DEV__) return;
+    let ativo = true;
+    (async () => {
+      await ensureAnonymousRevenueCat('cadastro');
+      const ok = await confirmPremium({ label: 'cadastro:abertura' });
+      if (!ativo) return;
+      if (ok) {
+        setLiberado(true);
+      } else {
+        pwlog('cadastro aberto sem premium → paywall'); // TEMP-PWGUARD
+        router.replace('/(onboarding)/paywall-soft');
+      }
+    })();
+    return () => { ativo = false; };
+  }, []);
+
   // Conta criada → home. A permissão de notificação é pedida ANTES da conta (depois do
   // horário da rotina; o token vai no `saveToSupabase`), então a tela de notificações
   // pós-cadastro saiu do fluxo (out/2026). Este é agora o ÚNICO ponto em que uma usuária
   // NOVA entra no app — por isso o tutorial de primeiro acesso da home é armado AQUI
   // (conta existente que refaz o onboarding também passa; quem barra é o servidor,
   // `users.home_tutorial_seen_at`).
-  const finishOnboarding = () => {
+  // ⚠️ Confere o `premium` DE NOVO, já com a identidade da conta nova (o
+  // Purchases.logIn troca a identidade do RevenueCat). Só então marca o
+  // `subscriptionVerified` que faz o guard do (app)/_layout pular a verificação.
+  // Sem premium → paywall (já com sessão: comprar ou restaurar leva à home).
+  const finishOnboarding = async () => {
+    if (!__DEV__) {
+      const ok = await confirmPremium({ attempts: 2, label: 'cadastro:conta_criada' });
+      if (!ok) {
+        pwlog('conta criada sem premium na identidade nova → paywall'); // TEMP-PWGUARD
+        router.replace('/(onboarding)/paywall-soft');
+        return;
+      }
+      setSubscriptionVerified(true);
+    }
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
     armHomeTutorial();
     router.replace('/(app)/home');
@@ -65,9 +104,11 @@ export default function Signup() {
     });
   };
 
+  // Só conta como "viu o cadastro" depois da trava liberar.
   useEffect(() => {
+    if (!liberado) return;
     track('onboarding_step_viewed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
-  }, []);
+  }, [liberado]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -127,8 +168,8 @@ export default function Signup() {
           // usuária entra normalmente; o webhook ainda confirma a conversão.
           attributeCouponIfAny(data.session.user.id);
           startProtocolGeneration(data.session.user.id);
+          await finishOnboarding();
         }
-        finishOnboarding();
       }
     } catch (error: any) {
       Alert.alert('Erro ao criar conta', error?.message ?? 'Tente novamente.');
@@ -171,8 +212,9 @@ export default function Signup() {
         await saveToSupabase(data.user.id);
         attributeCouponIfAny(data.user.id);
         startProtocolGeneration(data.user.id);
+        // Só com conta criada (antes ia para a home mesmo sem `user.id`).
+        await finishOnboarding();
       }
-      finishOnboarding();
     } catch (error: any) {
       Alert.alert('Erro', error?.message ?? 'Tente novamente.');
     }
@@ -194,8 +236,9 @@ export default function Signup() {
         await saveToSupabase(session.user.id);
         attributeCouponIfAny(session.user.id);
         startProtocolGeneration(session.user.id);
+        // Só com conta criada (antes ia para a home mesmo sem sessão).
+        await finishOnboarding();
       }
-      finishOnboarding();
     } catch (error: any) {
       Alert.alert('Erro', JSON.stringify(error));
     }
@@ -210,6 +253,17 @@ export default function Signup() {
     borderWidth: 1.5, borderColor: focused ? OB.pink : 'transparent',
   });
   const wide = { width: '100%' as const, height: 50, borderRadius: 25 };
+
+  // Trava ainda conferindo o `premium`: nada do formulário aparece.
+  if (!liberado) {
+    return (
+      <ObScreen>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={OB.pink} />
+        </View>
+      </ObScreen>
+    );
+  }
 
   if (waitingConfirmation) {
     return (
