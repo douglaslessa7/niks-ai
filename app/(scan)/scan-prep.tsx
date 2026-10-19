@@ -7,14 +7,15 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAIConsent } from '../../hooks/useAIConsent';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton,
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, ObCheck,
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 import { ConsentSheet } from '../../components/onboarding/ConsentSheet';
 import { ringTicks, ringBack } from '../../components/onboarding/scanRing';
 
-// TUTORIAL do scan do onboarding (antes da câmera) — mostra EXATAMENTE o que ela vai
-// fazer na câmera: encaixar o rosto no círculo e GIRAR A CABEÇA EM CÍRCULO (360°),
+// TUTORIAL do scan do onboarding (antes da câmera). Título: "Agora vamos analisar a /
+// sua pele:" — quebra fixa, tudo em preto, sem eyebrow (18/out/2026 — a versão só com "Como funciona o seu scan"
+// não avisava que a pele ia ser analisada). Logo abaixo, a demonstração, que mostra EXATAMENTE o que ela vai fazer na câmera: encaixar o rosto no círculo e GIRAR A CABEÇA EM CÍRCULO (360°),
 // devagar, até acender o anel inteiro (17/out/2026, pedido do produto — antes eram 3
 // etapas paradas: frente → esquerda → direita). ⚠️ Não mencionar a foto de frente: ela
 // sai no começo sem a usuária saber.
@@ -23,7 +24,10 @@ import { ringTicks, ringBack } from '../../components/onboarding/scanRing';
 // cabeça aponta — olhou para cima, acendem os de cima; para a esquerda, os da esquerda —
 // e o traço aceso fica aceso. Os traços da direção atual crescem (o "salto" da câmera).
 // O avatar dá uma volta completa; com o anel cheio, volta para a frente e recomeça.
-// Embaixo, a instrução e os cuidados de antes do scan em formato compacto.
+// Os 3 passos acendem JUNTO com a carinha (como na 1ª versão do design novo): o da vez
+// fica rosa, os próximos apagados e os feitos ganham ✓ — passo 1 na fase de frente
+// (`FRONT_MS`), passo 2 na 1ª metade da volta, passo 3 até o anel encher, ✓✓✓ na pausa.
+// Embaixo, "Para uma análise mais precisa, se certifique:" + os cuidados em 4 colunas.
 //
 // Consentimento de IA: no fluxo completo ele já foi dado na tela 0.2 ("Seus dados").
 // A folha "Antes de continuar" continua aqui como rede de segurança e a câmera mantém
@@ -32,10 +36,11 @@ const STEP = OB_STEPS.prepScan;
 const STEP_NAME = 'Tutorial do Scan';
 
 // ── Linha do tempo da demonstração ───────────────────────────────────────────
+const FRONT_MS = 1300;  // de frente, parada (passo 1: encaixar o rosto)
 const TILT_MS = 550;     // sai da frente e inclina a cabeça (e, no fim, volta)
 const ROT_MS = 5200;     // uma volta completa (360°)
 const HOLD_MS = 1100;    // anel cheio, de frente, antes de recomeçar
-const LOOP_MS = TILT_MS + ROT_MS + TILT_MS + HOLD_MS;
+const LOOP_MS = FRONT_MS + TILT_MS + ROT_MS + TILT_MS + HOLD_MS;
 // Começa olhando para CIMA — é a 1ª instrução da câmera — e gira no sentido
 // cima → direita da tela (= esquerda do avatar) → baixo → esquerda da tela → cima.
 const START_DEG = 270;
@@ -45,20 +50,29 @@ const RW = 100;
 const RH = 134;
 const BOX_W = 180;
 const BOX_H = 186;
+const RING_SCALE = 0.9; // desenhada menor para a tela inteira caber sem rolar
 // Traço: ângulo na tela (0 = direita, 90 = baixo, 180 = esquerda, 270 = cima) e o
 // instante em que a cabeça passa por ele (= quando acende).
 const TICKS = ringTicks(48).map((tk) => {
   const deg = ((Math.atan2(tk.s, tk.c) * 180) / Math.PI + 360) % 360;
   const along = ((deg - START_DEG + 360) % 360) / 360;
-  return { ...tk, deg, litAt: TILT_MS + along * ROT_MS };
+  return { ...tk, deg, litAt: FRONT_MS + TILT_MS + along * ROT_MS };
 });
 const POP_CONE = 40;     // graus em volta da direção da cabeça que crescem
 
-const STEPS_INFO = [
-  'Encaixe o rosto no círculo.',
-  'Gire a cabeça devagar, em círculo.',
-  'Continue até acender o anel inteiro.',
+const STEPS_INFO: { title: string; text: string }[] = [
+  { title: 'Encaixe o rosto no círculo', text: 'Olhe para a câmera, com o rosto inteiro dentro do círculo.' },
+  { title: 'Gire a cabeça devagar', text: 'Faça um círculo com a cabeça: para cima, para os lados e para baixo.' },
+  { title: 'Continue até acender o anel', text: 'Cada parte acende quando você olha para ela. Anel cheio, pronto!' },
 ];
+
+/** Passo da vez em `t` (0–2); 3 = os três feitos (anel cheio). */
+function stepAt(t: number) {
+  if (t < FRONT_MS) return 0;
+  if (t < FRONT_MS + TILT_MS + ROT_MS / 2) return 1;
+  if (t < FRONT_MS + TILT_MS + ROT_MS) return 2;
+  return 3;
+}
 
 const ICON = { fill: 'none', stroke: '#FFFFFF', strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 const TIPS: { label: string; icon: React.ReactNode }[] = [
@@ -86,6 +100,8 @@ const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2,
 /** Para onde a cabeça aponta em `t`: ângulo na tela (graus) e quanto está inclinada (0–1). */
 function headPose(t: number) {
   const k = (x: number) => easeInOut(Math.max(0, Math.min(1, x)));
+  if (t < FRONT_MS) return { deg: START_DEG, tilt: 0 };
+  t -= FRONT_MS;
   if (t < TILT_MS) return { deg: START_DEG, tilt: k(t / TILT_MS) };
   if (t < TILT_MS + ROT_MS) return { deg: START_DEG + ((t - TILT_MS) / ROT_MS) * 360, tilt: 1 };
   return { deg: START_DEG + 360, tilt: 1 - k((t - TILT_MS - ROT_MS) / TILT_MS) };
@@ -103,7 +119,7 @@ function RingDemo({ t }: { t: number }) {
   const headDeg = deg % 360;
 
   return (
-    <Svg width={BOX_W} height={BOX_H}>
+    <Svg width={BOX_W * RING_SCALE} height={BOX_H * RING_SCALE} viewBox={`0 0 ${BOX_W} ${BOX_H}`}>
       {/* Rosto: oval rosado; olhos, nariz e boca deslizam para onde a cabeça aponta. */}
       <Ellipse cx={cx + dx * 3} cy={cy + dy * 3} rx={rx - 10} ry={ry - 10} fill={OB.wash} />
       <G transform={`translate(${dx * 13} ${dy * 11})`}>
@@ -142,6 +158,7 @@ export default function ScanPrep() {
   const { y, buttonBottom } = useObFrame();
   const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
   const t = useLoopClock();
+  const stepIdx = stepAt(t);
 
   useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
 
@@ -156,30 +173,50 @@ export default function ScanPrep() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 32 }}
       >
-        <ObTitle>Como funciona o seu scan</ObTitle>
-
-        <View style={{ alignItems: 'center', marginTop: 16 }}>
+        <ObTitle>{'Agora vamos analisar a\nsua pele:'}</ObTitle>
+        <View style={{ alignItems: 'center', marginTop: 14 }}>
           <RingDemo t={t} />
         </View>
 
-        {/* A instrução em 3 passos numerados — o mesmo card branco de antes */}
+        {/* Passos — o da vez acende junto com a demonstração */}
         <View style={{
-          marginTop: 2, marginHorizontal: 17, borderRadius: 20, backgroundColor: '#FFFFFF',
-          paddingHorizontal: 22, paddingVertical: 16, gap: 14,
+          marginTop: 2, marginHorizontal: 17, borderRadius: 20, backgroundColor: '#FFFFFF', paddingVertical: 4,
           shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 12,
         }}>
-          {STEPS_INFO.map((text, i) => (
-            <View key={text} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>{i + 1}</Text>
+          {STEPS_INFO.map((s, i) => {
+            const done = i < stepIdx;
+            const current = i === stepIdx;
+            return (
+              <View key={s.title} style={{
+                flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingHorizontal: 16, paddingVertical: 7,
+                marginHorizontal: 6, borderRadius: 14, backgroundColor: current ? '#FFF2F8' : 'transparent',
+              }}>
+                <View style={{ marginTop: 1 }}>
+                  {done ? (
+                    <ObCheck size={28} stroke={2.2} />
+                  ) : (
+                    <View style={{
+                      width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: current ? OB.pink : OB.option,
+                    }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: current ? '#FFFFFF' : OB.sub }}>{i + 1}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '600', color: OB.ink }}>{s.title}</Text>
+                  <Text style={{ fontSize: 14, lineHeight: 19, color: OB.sub }}>{s.text}</Text>
+                </View>
               </View>
-              <Text style={{ flex: 1, fontSize: 17, lineHeight: 22, fontWeight: '600', color: OB.ink }}>{text}</Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
-        {/* Cuidados antes da foto: 4 colunas, ícone + legenda (cabe sem rolar). */}
-        <View style={{ marginTop: 18, marginHorizontal: 17, flexDirection: 'row' }}>
+        {/* Cuidados antes da foto: a frase que explica + 4 colunas, ícone + legenda. */}
+        <Text style={{ marginTop: 14, marginHorizontal: 17, textAlign: 'center', fontSize: 15, lineHeight: 20, color: OB.body }}>
+          Para uma análise mais precisa, se certifique:
+        </Text>
+        <View style={{ marginTop: 10, marginHorizontal: 17, flexDirection: 'row' }}>
           {TIPS.map((tip) => (
             <View key={tip.label} style={{ flex: 1, alignItems: 'center', gap: 6 }}>
               <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
