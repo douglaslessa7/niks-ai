@@ -6,13 +6,23 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 // ("phrase-without-block"). Os argumentos chegam em pedaços no stream e são juntados.
 export type ChamadaFerramenta = { name: string; arguments: string }
 
+// Tokens que a API devolveu (para o custo em `ia_custos`). `input` = entrada SEM cache.
+export type Uso = { input: number; cacheWrite: number; cacheWrite1h: number; cacheRead: number; output: number }
+export const USO_ZERO: Uso = { input: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 }
+
+export type RespostaModelo = {
+  stream: ReadableStream<Uint8Array>
+  ferramentas: Promise<ChamadaFerramenta[]>
+  uso: Promise<Uso>
+}
+
 export interface ChatModel {
   stream(
     systemPrompt: string,
     userMessage: string,
     images?: Array<{ base64: string; mimeType: string }>,
     tools?: unknown[],
-  ): Promise<{ stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> }>
+  ): Promise<RespostaModelo>
 }
 
 export class OpenAIModel implements ChatModel {
@@ -21,7 +31,7 @@ export class OpenAIModel implements ChatModel {
     userMessage: string,
     images?: Array<{ base64: string; mimeType: string }>,
     tools?: unknown[],
-  ): Promise<{ stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> }> {
+  ): Promise<RespostaModelo> {
     let userContent: unknown
     if (images && images.length > 0) {
       userContent = [
@@ -42,6 +52,8 @@ export class OpenAIModel implements ChatModel {
       model: 'gpt-5.4-mini',
       max_completion_tokens: 6000,
       stream: true,
+      // O último chunk traz o `usage` (choices vazio) — vai para `ia_custos`.
+      stream_options: { include_usage: true },
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
@@ -89,7 +101,16 @@ export class OpenAIModel implements ChatModel {
     const chamadas: { name: string; arguments: string }[] = []
     let resolverFerramentas!: (c: ChamadaFerramenta[]) => void
     const ferramentas = new Promise<ChamadaFerramenta[]>((r) => { resolverFerramentas = r })
+    let uso: Uso = { ...USO_ZERO }
+    let resolverUso!: (u: Uso) => void
+    const usoPromise = new Promise<Uso>((r) => { resolverUso = r })
     const lerDelta = (parsed: any) => {
+      const u = parsed?.usage
+      if (u) {
+        // Sem desconto de cache no custo (preço do cache não confirmado): `cached_tokens`
+        // fica dentro de `input`, para o custo nunca sair subestimado.
+        uso = { ...USO_ZERO, input: u.prompt_tokens ?? 0, output: u.completion_tokens ?? 0 }
+      }
       const tcs = parsed?.choices?.[0]?.delta?.tool_calls
       if (!Array.isArray(tcs)) return
       for (const tc of tcs) {
@@ -151,10 +172,11 @@ export class OpenAIModel implements ChatModel {
         } finally {
           reader.releaseLock()
           resolverFerramentas(chamadas.filter(Boolean))
+          resolverUso(uso)
         }
       },
     })
-    return { stream, ferramentas }
+    return { stream, ferramentas, uso: usoPromise }
   }
 }
 

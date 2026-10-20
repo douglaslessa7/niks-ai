@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildContext } from './context.ts'
 import { NIKS_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
-import { geminiModel } from './model.ts'
+import { responder } from './roteador.ts'
 import { detectEvolutionIntent } from './safety.ts'
 import { extractAndSave } from './memory.ts'
 import { checkApprovalIntent, extractJSON } from './protocol-actions.ts'
@@ -139,7 +139,9 @@ Deno.serve(async (req) => {
 
     const imageUrlJson = imageUrls.length > 0 ? JSON.stringify(imageUrls) : null
 
-    // Salvar mensagem do usuário e buscar contexto em paralelo
+    // Salvar mensagem do usuário e buscar contexto em paralelo. O histórico vai só até
+    // ANTES desta mensagem (ela já entra em <CurrentMessage>; o insert corre em paralelo).
+    const inicioMensagem = new Date().toISOString()
     const isEvolutionQuery = detectEvolutionIntent(message)
     const [saveResult, context] = await Promise.all([
       supabase.from('coach_messages').insert({
@@ -150,7 +152,7 @@ Deno.serve(async (req) => {
         image_url: imageUrlJson ?? null,
         client_message_id: clientMessageId ?? null,
       }),
-      buildContext(supabase, userId, conversationId, isEvolutionQuery),
+      buildContext(supabase, userId, conversationId, isEvolutionQuery, inicioMensagem),
     ])
 
     if (saveResult.error) {
@@ -160,12 +162,15 @@ Deno.serve(async (req) => {
     // Montar context pack e iniciar stream
     const v2 = rotinaV2 === true
     const contextPack = buildContextPack(context, message, (images?.length ?? 0) > 0, supportsProtocolCard === true, v2)
-    const { stream: geminiStream, ferramentas } = await geminiModel.stream(
-      NIKS_SYSTEM_PROMPT,
+    // Claude Sonnet 5.5, com o gpt-5.4-mini como reserva automática (roteador.ts).
+    const { stream: geminiStream, ferramentas, registrarCusto } = await responder({
+      supabase,
+      userId,
+      systemPrompt: NIKS_SYSTEM_PROMPT,
       contextPack,
       images,
-      ferramentaProposta(v2),
-    )
+      tools: ferramentaProposta(v2),
+    })
 
     // Intercepta chunks inline (sem tee) e CORTA o bloco [[PROTOCOL_PATCH]]…[[/PROTOCOL_PATCH]]
     // do stream — a usuária nunca vê o marcador. Resistente a marcador partido entre chunks
@@ -296,6 +301,7 @@ Deno.serve(async (req) => {
     EdgeRuntime.waitUntil((async () => {
       const { visible, blocks: capturedBlocks } = await resultPromise
       const cleanText = visible.replace(/\s+$/, '')
+      await registrarCusto()
 
       await supabase.from('coach_messages').insert({
         conversation_id: conversationId,

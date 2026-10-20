@@ -100,16 +100,21 @@ async function getRecentFoodScans(supabase: ReturnType<typeof createSupabaseClie
   return data
 }
 
-async function getHistory(supabase: ReturnType<typeof createSupabaseClient>, userId: string) {
+// As 40 mensagens MAIS RECENTES dos últimos 3 dias, em ordem cronológica. (Até out/2026 a
+// busca era crescente + limit 40: com mais de 40 em 3 dias, entravam as 40 MAIS ANTIGAS e o
+// fim da conversa ficava de fora.) `antesDe` corta a mensagem que acabou de chegar.
+async function getHistory(supabase: ReturnType<typeof createSupabaseClient>, userId: string, antesDe?: string) {
   const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
-  const { data } = await supabase
+  let query = supabase
     .from('coach_messages')
     .select('id, role, content, image_url, created_at')
     .eq('user_id', userId)
     .gte('created_at', threeDaysAgo)
-    .order('created_at', { ascending: true })
+  if (antesDe) query = query.lt('created_at', antesDe)
+  const { data } = await query
+    .order('created_at', { ascending: false })
     .limit(40)
-  return data ?? []
+  return (data ?? []).reverse()
 }
 
 async function getMemories(supabase: ReturnType<typeof createSupabaseClient>, userId: string) {
@@ -157,7 +162,8 @@ export async function buildContext(
   supabase: ReturnType<typeof createSupabaseClient>,
   userId: string,
   conversationId: string,
-  includeFullScanHistory: boolean
+  includeFullScanHistory: boolean,
+  historicoAntesDe?: string,
 ): Promise<UserContext> {
   const promises = [
     getProfile(supabase, userId),
@@ -165,7 +171,7 @@ export async function buildContext(
     includeFullScanHistory ? getScanHistory(supabase, userId) : Promise.resolve(null),
     getProtocol(supabase, userId),
     getRecentFoodScans(supabase, userId),
-    getHistory(supabase, userId),
+    getHistory(supabase, userId, historicoAntesDe),
     getMemories(supabase, userId),
     getPendingSuggestion(supabase, userId, conversationId),
     getUltimaMudanca(supabase, userId),
