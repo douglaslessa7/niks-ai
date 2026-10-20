@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Folha "Escolher produto" (plano da Rotina, Fase 2 — decisão 5). Abre de baixo na
 // Rotina, para UM passo da Minha rotina: passo vazio ("Escolher produto") ou "Trocar".
-// As três seções são FILEIRAS horizontais com "Ver todos" (lista completa na aba
+// No topo (20/out/2026), "<Tipo> pra você": só os RECOMENDADOS do tipo do passo
+// (protetores solares num passo de protetor solar…), sem filtros nem "Ver todos".
+// As três seções seguintes são FILEIRAS horizontais com "Ver todos" (lista completa na aba
 // Produtos, em modo escolha — `escolhaParaPasso`):
 //   · Da sua estante  — todos os produtos dela (colecao_produtos), com filtros de categoria
 //   · Seus escaneados — o que ela já escaneou, um card por produto (lib/productMatch),
@@ -58,7 +60,20 @@ type Candidato = {
   texto: string | null;        // texto do detalhe (o que a análise/recomendação disse)
 };
 
-type Dados = { pele: PeleParaAviso; estante: Candidato[]; escaneados: Candidato[]; recomendados: Candidato[] };
+type Dados = {
+  pele: PeleParaAviso; estante: Candidato[]; escaneados: Candidato[]; recomendados: Candidato[];
+  catPasso: string | null;   // categoria do passo (pelo nome) — null quando o nome não diz
+  doPasso: Candidato[];      // recomendados SÓ desse tipo de produto (seção do topo)
+};
+
+// Título da seção do topo, pela categoria do passo.
+const TITULO_DO_PASSO: Record<string, string> = {
+  'Limpeza': 'Limpezas pra você',
+  'Tônico': 'Tônicos pra você',
+  'Sérum': 'Séruns pra você',
+  'Hidratante': 'Hidratantes pra você',
+  'Protetor solar': 'Protetores solares pra você',
+};
 
 async function carregar(passo: PassoRotina): Promise<Dados> {
   const uid = await getUserId();
@@ -154,7 +169,16 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
       texto: copyPorId.get(p.id) || p.porque_e_especial || null,
     };
   });
-  return { pele, estante, escaneados, recomendados };
+  // Seção do topo (20/out/2026, pedido do produto): ao abrir um passo de protetor solar,
+  // o primeiro produto da folha tem que ser um protetor solar. Só RECOMENDADOS (o que a
+  // IA indicou pra pele dela) do tipo do passo — a categoria sai do nome do passo (ou do
+  // passo da ideal de onde veio). Nome que não diz o tipo → os recomendados daquele
+  // passo da ideal (`primeiros`), se houver.
+  const catPasso = catOf(passo.nome) ?? catOf(passo.passoIdealNome);
+  const doPasso = catPasso
+    ? recomendados.filter((c) => c.cat === catPasso)
+    : recomendados.filter((c) => c.ref.origem === 'catalogo' && primeiros.includes(c.ref.id));
+  return { pele, estante, escaneados, recomendados, catPasso, doPasso };
 }
 
 export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
@@ -360,15 +384,25 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
           </View>
         ) : (
           <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+            {/* Recomendados SÓ do tipo do passo (ex.: protetores solares) — primeira seção,
+                sem filtros e sem "Ver todos" (a lista é curta). */}
+            {(dados?.doPasso.length ?? 0) > 0 && (
+              <>
+                <Text style={s.secTitle}>{(dados!.catPasso && TITULO_DO_PASSO[dados!.catPasso]) || 'Recomendados pra este passo'}</Text>
+                <Text style={s.secSub}>Os que a NIKS recomenda pra sua pele.</Text>
+                {fileira(dados!.doPasso)}
+              </>
+            )}
+
             {/* Da sua estante — filtros em cima da fileira */}
             {(dados?.estante.length ?? 0) === 0 ? (
               <>
-                <Text style={s.secTitle}>Da sua estante</Text>
+                <Text style={[s.secTitle, (dados?.doPasso.length ?? 0) > 0 && { marginTop: 26 }]}>Da sua estante</Text>
                 <Text style={s.vazio}>Sua estante está vazia. Escaneie um produto que você tem em casa.</Text>
               </>
             ) : (
               <>
-                {cabecalho('Da sua estante', 'estante', 8)}
+                {cabecalho('Da sua estante', 'estante', (dados?.doPasso.length ?? 0) > 0 ? 26 : 8)}
                 {filtros(tags, cat, setCat)}
                 {fileira(estanteFiltrada)}
               </>
@@ -425,6 +459,7 @@ const s = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: INK },
   subtitle: { marginTop: 1, fontSize: 14, letterSpacing: -0.2, color: MUTED },
   secTitle: { marginTop: 8, fontSize: 18, fontWeight: '600', letterSpacing: -0.4, color: INK },
+  secSub: { marginTop: 2, fontSize: 14, letterSpacing: -0.2, color: MUTED },
   secRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   verTodos: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: PINK_TEXT },
   vazio: { marginTop: 8, fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: SOFT },
