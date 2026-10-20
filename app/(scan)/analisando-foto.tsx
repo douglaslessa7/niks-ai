@@ -9,6 +9,7 @@ import { useAppStore } from '../../store/onboarding';
 import { OB_STEPS, obStep, useOnMount } from '../../components/onboarding/kit';
 import { ScanLoadingView, useDemandNotice } from '../../components/scan/ScanLoadingView';
 import { awaitSkinReport } from '../../lib/onboardingPrefetch';
+import ProvaSocial from '../../components/onboarding/ProvaSocial';
 
 // Loading do SCAN DE ROSTO do ONBOARDING — entre a câmera (7) e o resultado (8).
 // Visual = tela 50a do Claude Design (`components/scan/ScanLoadingView`), a MESMA do
@@ -100,6 +101,7 @@ export default function AnalisandoFoto() {
         countdownPaused={demand.countdownPaused}
         showError={failed}
         onRetry={() => router.replace('/(scan)/camera?retake=1' as any)}
+        footer={<ProvaSocial />}   // só no onboarding (o scan do app não passa)
       />
     </View>
   );
