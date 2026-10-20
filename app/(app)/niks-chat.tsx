@@ -381,6 +381,7 @@ function splitBubbles(text: string): string[] {
   return text.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean)
 }
 const FIRST_BUBBLE_MS = 900 // mínimo de "digitando" antes da 1ª bolha (conta a espera da rede)
+const SEM_TEXTO_MS = 500    // resposta ao vivo sem texto novo por esse tempo → "digitando" volta
 function typingMs(text: string): number {
   return Math.min(1600, Math.max(700, 350 + text.length * 12))
 }
@@ -423,6 +424,19 @@ export default function NiksChat() {
   const [userId,         setUserId]         = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages,       setMessages]       = useState<Message[]>([]);
+
+  // Resposta ao vivo PARADA (sem texto novo há SEM_TEXTO_MS): os pontinhos voltam embaixo
+  // da última bolha — ex.: a NIKS escreveu "Vou olhar…" e está consultando. Texto novo
+  // chegando zera o relógio e os pontinhos somem; ao terminar a resposta, somem de vez.
+  const [semTextoNovo, setSemTextoNovo] = useState(false);
+  const aoVivo = messages.find(m => m.role === 'assistant' && m.isStreaming);
+  const aoVivoTamanho = aoVivo ? aoVivo.content.length : -1;
+  useEffect(() => {
+    setSemTextoNovo(false);
+    if (aoVivoTamanho < 0) return;
+    const t = setTimeout(() => setSemTextoNovo(true), SEM_TEXTO_MS);
+    return () => clearTimeout(t);
+  }, [aoVivo?.id, aoVivoTamanho]);
   const [pendingImages,        setPendingImages]        = useState<Array<{ base64: string; mimeType: string; uri: string }>>([]);
   const [historyVisible,       setHistoryVisible]       = useState(false);
   const [historyConversations, setHistoryConversations] = useState<HistoryConversation[]>([]);
@@ -1062,9 +1076,12 @@ export default function NiksChat() {
           suggestion: last ? m.suggestion : undefined, msgId: m.id,
         })
       })
-      // "Digitando" só enquanto não há nada novo na tela: antes da 1ª bolha ou com bolha na
-      // fila. O parágrafo crescendo ao vivo já mostra que ela está escrevendo.
-      if (!finished && (n < parts.length || n === 0)) rows.push({ kind: 'typing', key: `${m.id}-typing` })
+      // "Digitando": antes da 1ª bolha, com bolha na fila, ou com a resposta ao vivo parada
+      // (sem texto novo há SEM_TEXTO_MS). Enquanto o parágrafo cresce, o texto já mostra
+      // que ela está escrevendo.
+      if (!finished && (n < parts.length || n === 0 || (m.isStreaming && semTextoNovo))) {
+        rows.push({ kind: 'typing', key: `${m.id}-typing` })
+      }
     }
   }
   // Card FIXO da sugestão pendente, no fim da conversa (também com a conversa vazia, depois
