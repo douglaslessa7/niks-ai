@@ -1716,7 +1716,36 @@ O acesso ao app é verificado em 3 pontos de assinatura + 1 guard de nome, em or
 
 **Consequência esperada:** assinante que cair no paywall por um timeout do guard do `(app)/_layout` (rede lenta) precisa tocar em "Restaurar compra" (ou em pagar, que a Apple devolve como compra já existente) — o fechamento não libera mais sozinho.
 
-**Logs temporários `[PWGUARD]`** (marcados `// TEMP-PWGUARD`, para remover depois da validação no iPhone): `lib/subscriptionGate.ts` (`pwlog` + cada tentativa do `confirmPremium` e os logOut), `app/(onboarding)/paywall-soft.tsx` (cada `registerPlacement`, `onDismiss`/`onSkip`/`onError`, `transactionAbandon`, confirmação), `app/(onboarding)/signup.tsx` (trava na abertura e depois da conta) e `app/+native-intent.tsx` (link bloqueado). Remover: `grep -rn "TEMP-PWGUARD" app lib hooks` e apagar as linhas (o `pwlog` em si também).
+**Logs temporários `[PWGUARD]`** (marcados `// TEMP-PWGUARD`, para remover depois da validação no iPhone): `lib/subscriptionGate.ts` (`pwlog` + cada tentativa do `confirmPremium` e os logOut), `app/(onboarding)/paywall-soft.tsx` (cada `registerPlacement`, `onDismiss`/`onSkip`/`onError`, `transactionAbandon`, confirmação), `app/(onboarding)/signup.tsx` (trava na abertura e depois da conta) e `app/+native-intent.tsx` (link bloqueado). Remover: `grep -rn "TEMP-PWGUARD" app lib hooks` e apagar as linhas (o `pwlog` em si também). Cada linha do `pwlog` também vira um passo do "caminho" do diagnóstico abaixo; sem elas o diagnóstico continua funcionando, só sem os passos intermediários.
+
+#### Diagnóstico do paywall no TestFlight (`lib/paywallDebug.ts`, out/2026)
+
+**Para que serve:** testar no iPhone, em build de TestFlight (não é `__DEV__`), e ver **no momento** em que o app decide entre "paywall de novo" e "cadastro/home" o que ele viu e por quê. O fluxo **pausa** num painel por cima da tela e só segue no "Continuar". O painel mostra:
+- a decisão e o gatilho (`onDismiss(declined)`, `onSkip(NoAudienceMatch)`, `transactionAbandon`, a trava do cadastro…);
+- o `premium` no RevenueCat: produto, validade, se renova e **se é sandbox (compra de teste) ou produção**;
+- o que o **Superwall vê no Apple ID** (StoreKit);
+- a sessão e o ID do RevenueCat (anônimo ou identificado);
+- os passos `[PWGUARD]` até a decisão.
+
+As últimas 40 decisões ficam salvas no aparelho.
+
+- **Invisível para as usuárias:** desligado por padrão. **Liga** abrindo `niks-ai://pwdiag-n1k5` no Safari (ou tocando o link no app Notas); **desliga** com `niks-ai://pwdiag-n1k5-off` ou pelo botão "Desligar diagnóstico". Não há botão, gesto nem tela que leve até ele. Ligado, aparece a pílula **"diag PW"** no topo, que abre o histórico e as ações: ler o estado agora, cancelar a assinatura de teste (folha da Apple), zerar como usuária nova, limpar o histórico e desligar.
+- **Só lê** (`getCustomerInfo` e `SuperwallExpoModule.getSubscriptionStatus`). Nunca restaura nem sincroniza: não pode mudar o resultado que está medindo.
+- **Onde decide:** em `paywall-soft.tsx` (`onDismiss`, `onSkip`, `onError`, `transactionAbandon`, compra/restauração confirmada ou não) e em `signup.tsx` (trava da abertura e conferência depois da conta). Uma decisão nova passa por `pwDecisao(gatilho, decisão, destino, explicação?)` **antes** de agir.
+- **"Zerar como usuária nova"** faz o seguinte e reabre o app (`Updates.reloadAsync`):
+  - sai da conta;
+  - troca o RevenueCat por um anônimo NOVO (um anônimo passa por um id descartável `pwdiag-…` antes do `logOut`, porque o `logOut` não existe para anônimo);
+  - zera o Superwall;
+  - limpa o AsyncStorage (consentimento, tutoriais, store, cache);
+  - cancela os lembretes.
+
+  ⚠️ **Não apaga a assinatura de teste do Apple ID.** Ela continua ativa para a Apple e para o Superwall, então o downsell e o cupom (que só aparecem para quem o Superwall vê sem assinatura) continuam pulados até ela expirar. Ver "Como testar o paywall/cupom".
+- ⚠️ **Gotcha descoberto aqui — `Superwall.shared` (compat) e `awaitConfig()`:** o app configura o Superwall pelo `SuperwallProvider`, nunca pelo `configure` da compat. Por isso os métodos da compat que fazem `awaitConfig()` **ficam esperando para sempre**: `getSubscriptionStatus`, `reset`, `handleDeepLink`, `preloadAllPaywalls`, `register`, entre outros. Conferido no simulador: `getSubscriptionStatus` não volta nunca. Consequências:
+  - o `Superwall.shared.preloadAllPaywalls()` do `app/_layout.tsx` nunca rodou;
+  - o `Superwall.shared.handleDeepLink(url)` (prévia de paywall por QR code) **provavelmente nunca funcionou**;
+  - **`dismiss()` não espera**, e é por isso que o cupom e o downsell funcionam.
+
+  Para ler ou zerar, use `SuperwallExpoModule` e `useSuperwallStore` (exportados por `expo-superwall`). Não foi corrigido nas duas chamadas antigas (fora do escopo).
 
 **Dados (19/out/2026, só leitura):** a tabela `subscriptions` **não é prova de pagamento** — a compra acontece antes da conta, com o RevenueCat anônimo, e o webhook descarta eventos anônimos; 139 contas dos últimos 30 dias usaram o app (passaram pelo guard) sem linha nela. Das 374 contas sem linha e sem uso, 363 vieram do **"Entrar" com Apple/Google** (cria conta de quem nunca teve uma e a manda ao paywall, pulando o onboarding — não é brecha, mas é volume) e 11 do cadastro (a conferir no RevenueCat). Botão "Restaurar compra" do Superwall em 7 dias: 2 sucessos, 68 falhas ("Transactions Failed to Restore") — com o restore automático fora, ele é o único caminho de quem já assina: validar no iPhone.
 
@@ -1834,7 +1863,7 @@ Cada influenciadora tem um cupom próprio (o primeiro é `MAISENA10`). Quem digi
 
 > ⚠️ **Segurança — esta tela não pode virar rota de fuga do paywall.** O guard de assinatura de `(app)/_layout.tsx` **não foi alterado** (continua fail closed). A tela de cupom vive só em `(onboarding)` e **não tem nenhuma navegação para dentro do app** — as únicas saídas são paywall com desconto (válido) ou paywall normal (voltar). A supressão é de uso único e em memória. Quem não assinou não entra no app por nenhum caminho.
 
-> ⚠️ **Como testar o paywall/cupom (não é trivial):** você precisa de um Apple ID **sem assinatura ativa** — senão o app corretamente detecta a assinatura e pula o paywall. **TestFlight não usa a "Conta de Sandbox" dos Ajustes** (essa é só pra build de dev do Xcode). O jeito confiável: `npx expo run:ios --device --configuration Release` (**Release obrigatório** — em Debug o `__DEV__` pula o paywall direto pro signup) + um **Sandbox Tester novo** que nunca comprou. **Atalho para cair no paywall sem refazer o onboarding** (app aberto, deslogado ou sem assinatura): `xcrun simctl openurl booted "niks-ai://paywall-soft"` — o fluxo de cancelamento/downsell dá para testar assim no **simulador** em Release. O build Release local exige o `ENTRY_FILE` no `ios/.xcode.env.local` (ver "QUANDO O BUILD FALHA"). 🐛 **Sintoma comum que NÃO é bug:** "cliquei no cupom e caí no signup em vez do paywall de desconto" = a conta já é assinante (o único caminho pro signup em produção está dentro de `if (isSubscribed)`; não-assinante volta pro paywall, nunca signup). Assinaturas de sandbox persistem e renovam sozinhas — qualquer compra de teste anterior deixa o entitlement ativo.
+> ⚠️ **Como testar o paywall/cupom (não é trivial):** você precisa de um Apple ID **sem assinatura ativa** — senão o app corretamente detecta a assinatura e pula o paywall. **TestFlight não usa a "Conta de Sandbox" dos Ajustes** (essa é só pra build de dev do Xcode). O jeito confiável: `npx expo run:ios --device --configuration Release` (**Release obrigatório** — em Debug o `__DEV__` pula o paywall direto pro signup) + um **Sandbox Tester novo** que nunca comprou. **Atalho para cair no paywall sem refazer o onboarding** (app aberto, deslogado ou sem assinatura): `xcrun simctl openurl booted "niks-ai://paywall-soft"` — o fluxo de cancelamento/downsell dá para testar assim no **simulador** em Release. O build Release local exige o `ENTRY_FILE` no `ios/.xcode.env.local` (ver "QUANDO O BUILD FALHA"). 🐛 **Sintoma comum que NÃO é bug:** "cliquei no cupom e caí no signup em vez do paywall de desconto" = a conta já é assinante (o único caminho pro signup em produção está dentro de `if (isSubscribed)`; não-assinante volta pro paywall, nunca signup). Assinaturas de sandbox persistem e renovam sozinhas — qualquer compra de teste anterior deixa o entitlement ativo. **No TestFlight**, ligue o "Diagnóstico do paywall" (acima) para ver em cada decisão se o aparelho tem assinatura de teste ativa, de qual produto e até quando.
 
 **Consulta de desempenho:** `select * from cupom_desempenho` no SQL editor do Supabase — aplicações, conversões e taxa por cupom.
 

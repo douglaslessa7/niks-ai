@@ -1,3 +1,5 @@
+import { PWDIAG_LINK, ligarDiagnostico } from '../lib/paywallDebug';
+
 // Links do sistema que o expo-router NÃO deve tentar rotear.
 //
 // A Share Extension ("Compartilhar com o NIKS") abre o app com
@@ -13,9 +15,17 @@
 // ⚠️ PENDENTE (fora desta mudança): os links para as telas de `(scan)`, `(share)` e
 // `(foto)` continuam abrindo direto, sem guard — ver "Guard de assinatura" no README.
 const CADASTRO = /^\/?(?:\(onboarding\)\/)?signup(?:[/?#]|$)/i;
+// Link secreto do diagnóstico do paywall (lib/paywallDebug.ts): liga/desliga e não
+// navega para lugar nenhum.
+const DIAGNOSTICO = new RegExp(`^/?${PWDIAG_LINK}(-off)?(?:[/?#]|$)`, 'i');
 
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }) {
   if (path.includes('dataUrl=')) {
+    return initial ? '/' : null;
+  }
+  const diag = pathSemScheme(path).match(DIAGNOSTICO);
+  if (diag) {
+    ligarDiagnostico(!diag[1]);
     return initial ? '/' : null;
   }
   if (CADASTRO.test(pathSemScheme(path))) {

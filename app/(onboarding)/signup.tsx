@@ -15,6 +15,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { saveOnboardingProtocol } from '../../lib/onboardingPrefetch';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { pwDecisao } from '../../lib/paywallDebug';
 import { haptics } from '../../lib/haptics';
 import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
 
@@ -51,9 +52,14 @@ export default function Signup() {
       const ok = await confirmPremium({ label: 'cadastro:abertura' });
       if (!ativo) return;
       if (ok) {
+        await pwDecisao('Tela de cadastro abriu (trava da abertura)', 'CADASTRO liberado', 'cadastro',
+          'O RevenueCat confirmou o premium de novo ao abrir o cadastro.');
+        if (!ativo) return;
         setLiberado(true);
       } else {
         pwlog('cadastro aberto sem premium → paywall'); // TEMP-PWGUARD
+        await pwDecisao('Tela de cadastro abriu (trava da abertura)', 'PAYWALL — cadastro bloqueado', 'paywall',
+          'Chegou ao cadastro sem premium confirmado no RevenueCat. Voltou ao paywall.');
         router.replace('/(onboarding)/paywall-soft');
       }
     })();
@@ -75,9 +81,12 @@ export default function Signup() {
       const ok = await confirmPremium({ attempts: 2, label: 'cadastro:conta_criada' });
       if (!ok) {
         pwlog('conta criada sem premium na identidade nova → paywall'); // TEMP-PWGUARD
+        await pwDecisao('Conta criada (confere na identidade nova)', 'PAYWALL — conta criada sem premium', 'paywall',
+          'Depois do Purchases.logIn a conta nova não tinha o premium.');
         router.replace('/(onboarding)/paywall-soft');
         return;
       }
+      await pwDecisao('Conta criada (confere na identidade nova)', 'HOME — conta com premium', 'home');
       setSubscriptionVerified(true);
     }
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));

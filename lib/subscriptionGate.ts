@@ -14,11 +14,18 @@ import Purchases from 'react-native-purchases';
 import type { CustomerInfo } from 'react-native-purchases';
 import { isSubscribed } from './revenuecat';
 import { supabase } from './supabase';
+import { registrarPasso } from './paywallDebug'; // TEMP-PWGUARD
 
 // TEMP-PWGUARD: log temporário para conferir o guard no iPhone (Console do Mac,
 // filtro "[PWGUARD]"). Remover junto com todas as linhas marcadas TEMP-PWGUARD.
-export const pwlog = (...args: unknown[]) => // TEMP-PWGUARD
-  console.log('[PWGUARD]', ...args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))); // TEMP-PWGUARD
+// Cada linha também entra no "caminho" do diagnóstico do paywall (lib/paywallDebug.ts,
+// só com ele ligado). Ao remover os TEMP-PWGUARD, o diagnóstico continua funcionando,
+// só sem esses passos intermediários.
+export const pwlog = (...args: unknown[]) => { // TEMP-PWGUARD
+  const texto = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '); // TEMP-PWGUARD
+  console.log('[PWGUARD]', texto); // TEMP-PWGUARD
+  registrarPasso(texto); // TEMP-PWGUARD
+}; // TEMP-PWGUARD
 
 /** Teto de espera de uma consulta ao RevenueCat. Estourou = sem premium. */
 export const RC_TIMEOUT_MS = 8000;

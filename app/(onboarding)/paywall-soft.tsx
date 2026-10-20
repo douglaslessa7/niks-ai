@@ -19,6 +19,7 @@ import {
   subscribeDownsellRequest,
 } from '../../lib/paywallFlow';
 import { confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { pwDecisao } from '../../lib/paywallDebug';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { haptics } from '../../lib/haptics';
 import { OB, ObPillButton } from '../../components/onboarding/kit';
@@ -48,20 +49,26 @@ export default function PaywallSoft() {
       await registerPlacement({ placement });
     } catch (e) {
       pwlog(`registerPlacement ${placement} lançou`, String(e)); // TEMP-PWGUARD
-      paywallNaoApareceu('paywall_onboarding', 'register_lancou');
+      void paywallNaoApareceu('paywall_onboarding', `registerPlacement(${placement}) lançou`);
     }
   };
 
   // Fail closed para "o paywall não apareceu": pede de novo; depois de
   // MAX_FALHAS_SEGUIDAS para e mostra "Tentar de novo". NUNCA consulta o RevenueCat
   // para liberar — o cadastro só abre por compra/restauração confirmada.
-  const paywallNaoApareceu = (placement: string, motivo: string) => {
+  const paywallNaoApareceu = async (placement: string, motivo: string) => {
     falhasRef.current += 1;
     if (falhasRef.current > MAX_FALHAS_SEGUIDAS) {
       pwlog(`paywall não apareceu ${falhasRef.current - 1}x seguidas (${motivo}) → "Tentar de novo"`); // TEMP-PWGUARD
+      await pwDecisao(motivo, 'PARADO em "Não conseguimos carregar agora"', 'parado',
+        `O paywall não apareceu ${MAX_FALHAS_SEGUIDAS}x seguidas. Nunca libera o cadastro.`);
       setSemPaywall(true);
       return;
     }
+    await pwDecisao(motivo, `PAYWALL de novo (${placement})`, 'paywall',
+      motivo.includes('NoAudienceMatch')
+        ? 'O Superwall não mostrou este paywall porque a campanha só aparece para quem ele vê SEM assinatura no Apple ID (downsell e cupom). Confira "Superwall vê".'
+        : undefined);
     setTimeout(() => { void present(placement, motivo); }, 600);
   };
 
@@ -77,10 +84,16 @@ export default function PaywallSoft() {
     }
     if (!ok) {
       pwlog(`paywall:${tipo} sem premium confirmado → paywall`); // TEMP-PWGUARD
+      await pwDecisao(`onDismiss(${tipo})`, 'PAYWALL de novo (paywall_onboarding)', 'paywall',
+        'O Superwall disse que houve compra/restauração, mas o RevenueCat não confirmou o premium.');
       void present('paywall_onboarding', `${tipo}_sem_premium`);
       return;
     }
     const { data: { session } } = await supabase.auth.getSession();
+    await pwDecisao(`onDismiss(${tipo})`, session?.user ? 'HOME (já tinha conta)' : 'CADASTRO', session?.user ? 'home' : 'cadastro',
+      tipo === 'restored'
+        ? 'Ela tocou em "Restaurar compra" e o RevenueCat confirmou o premium.'
+        : 'O Superwall devolveu "comprou" e o RevenueCat confirmou o premium.');
     if (session?.user) {
       // Já tem conta (reengajamento): o RevenueCat já está logado nesta conta (o
       // guard do (app)/_layout fez o loginRevenueCat antes de mandar para cá), então
@@ -117,18 +130,20 @@ export default function PaywallSoft() {
       // Recusou (X) ou resultado desconhecido: nada de RevenueCat, nada de restore
       // automático. Paywall de novo — na 1ª saída da sessão, o downsell (mesmo flag
       // do cancelamento da folha da Apple).
-      void present(nextPaywallPlacement(), 'dismiss_recusou');
+      const placement = nextPaywallPlacement();
+      await pwDecisao(`onDismiss(${result?.type ?? 'sem resultado'}) — fechou sem pagar`, `PAYWALL de novo (${placement})`, 'paywall');
+      void present(placement, 'dismiss_recusou');
     },
     onSkip: (reason) => {
       // Superwall não apresentou (holdout, sem público — ex.: o downsell para quem o
       // Superwall vê com assinatura no Apple ID). Antes liberava se o RevenueCat
       // dissesse premium; agora é sempre paywall (restaurar é pelo botão).
       pwlog('onSkip', reason); // TEMP-PWGUARD
-      paywallNaoApareceu(nextPaywallPlacement(), 'onSkip');
+      void paywallNaoApareceu(nextPaywallPlacement(), `onSkip(${reason?.type ?? '?'})`);
     },
     onError: (error) => {
       pwlog('onError', String(error)); // TEMP-PWGUARD
-      paywallNaoApareceu('paywall_onboarding', 'onError');
+      void paywallNaoApareceu('paywall_onboarding', `onError(${String(error)})`);
     },
   });
 
@@ -168,6 +183,7 @@ export default function PaywallSoft() {
       markDownsellShown();
       armSuppressReapresentar();
       try { await Superwall.shared.dismiss(); } catch {}
+      await pwDecisao('transactionAbandon — desistiu na folha da Apple', 'DOWNSELL (paywall_downsell)', 'paywall');
       requestDownsell();
     },
   });

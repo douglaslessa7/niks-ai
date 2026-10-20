@@ -20,6 +20,7 @@ import { ShareIntentProvider } from 'expo-share-intent';
 import { ShareIntentBridge } from '../components/share/ShareIntentBridge';
 import * as SplashScreen from 'expo-splash-screen';
 import SplashOverlay from '../components/SplashOverlay';
+import PaywallDiagnostico from '../components/debug/PaywallDiagnostico';
 
 // Segura a splash NATIVA até a cópia JS (SplashOverlay) desenhar o 1º quadro —
 // é ela quem esconde a nativa, sem fade (as duas são idênticas). Precisa rodar no
@@ -313,6 +314,9 @@ export default function RootLayout() {
                     <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
                   </Stack>
                 </AppShell>
+                {/* Diagnóstico do paywall: `null` a menos que ligado pelo link secreto
+                    (lib/paywallDebug.ts). Por cima de todas as telas. */}
+                <PaywallDiagnostico />
               </SafeAreaProvider>
             </GestureHandlerRootView>
           </CustomPurchaseControllerProvider>
