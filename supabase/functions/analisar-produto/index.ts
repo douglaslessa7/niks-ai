@@ -1,6 +1,7 @@
 import { createSupabaseClient, buildContext } from './context.ts'
 import { ANALISAR_PRODUTO_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
 import { ensureScanCutout } from '../_shared/scanCutout.ts'
+import { analisar } from './roteador.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,8 +83,6 @@ async function verifyJWT(token: string): Promise<{ sub: string } | null> {
   }
 }
 
-// Parse defensivo: localiza o primeiro `{` e o último `}` para tolerar qualquer
-// preâmbulo/markdown que o modelo eventualmente adicione.
 const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 function normalizarDias(v: unknown): string[] | null {
   if (!Array.isArray(v)) return null
@@ -91,15 +90,6 @@ function normalizarDias(v: unknown): string[] | null {
   const pedidos = new Set(v.map(chave))
   const ok = DIAS.filter((d) => pedidos.has(chave(d)))
   return ok.length && ok.length < 7 ? ok : null
-}
-
-function extractJSON(text: string): any {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('Nenhum objeto JSON encontrado na resposta do modelo')
-  }
-  return JSON.parse(text.slice(start, end + 1))
 }
 
 Deno.serve(async (req) => {
@@ -169,82 +159,28 @@ Deno.serve(async (req) => {
     const contextPack = buildContextPack(context)
     const skinScanId = (context.lastScan?.id as string | undefined) ?? null
 
-    // Mensagem do usuário = context pack + instrução final + as partes de imagem.
-    // Ambas as fotos vão ao modelo (produto e, se houver, ingredientes); mesmo
-    // formato de visão do analyze-skin (image_url com data URL base64).
-    const userContent: any[] = [
-      {
-        type: 'text',
-        text: `${contextPack}\n\nAnalise o produto na(s) foto(s) segundo o contexto acima.` +
-          (productNameHint
-            ? `\n\nContexto extra (não verificado — título da página de onde a usuária compartilhou o produto): "${productNameHint}".\n` +
-              `Regras para esse título:\n` +
-              `- Ele só pode ajudar a identificar \`produto.nome\` e \`produto.marca\`. Se a foto contradizer o título, vale a foto.\n` +
-              `- \`produto.ativos_detectados\` vem SOMENTE do que estiver legível na foto (rótulo ou lista de ingredientes). Nunca inclua um ativo porque ele aparece no título ou porque o título sugere a fórmula. Se nenhum ativo estiver legível na foto, retorne \`ativos_detectados\` vazio.\n` +
-              `- O título não aumenta a \`confianca\`: ela continua calibrada só pelo que a foto mostra.`
-            : ''),
-      },
-    ]
-    for (const img of images) {
-      if (!img?.base64) continue
-      userContent.push({
-        type: 'image_url',
-        image_url: { url: `data:${img.mimeType || 'image/jpeg'};base64,${img.base64}` },
-      })
-    }
+    // Mensagem do usuário = context pack + instrução final + as fotos (produto e, se
+    // houver, ingredientes) — o roteador monta no formato de cada modelo.
+    const texto = `${contextPack}\n\nAnalise o produto na(s) foto(s) segundo o contexto acima.` +
+      (productNameHint
+        ? `\n\nContexto extra (não verificado — título da página de onde a usuária compartilhou o produto): "${productNameHint}".\n` +
+          `Regras para esse título:\n` +
+          `- Ele só pode ajudar a identificar \`produto.nome\` e \`produto.marca\`. Se a foto contradizer o título, vale a foto.\n` +
+          `- \`produto.ativos_detectados\` vem SOMENTE do que estiver legível na foto (rótulo ou lista de ingredientes). Nunca inclua um ativo porque ele aparece no título ou porque o título sugere a fórmula. Se nenhum ativo estiver legível na foto, retorne \`ativos_detectados\` vazio.\n` +
+          `- O título não aumenta a \`confianca\`: ela continua calibrada só pelo que a foto mostra.`
+        : '')
+    const imagens = images
+      .filter((img) => img?.base64)
+      .map((img) => ({ base64: img.base64, mimeType: img.mimeType || 'image/jpeg' }))
 
-    // Chamada de visão à OpenAI — mesmos parâmetros do analyze-skin (família GPT-5:
-    // max_completion_tokens, NUNCA max_tokens), retry 3x em HTTP 500/503, sem stream.
-    const openaiUrl = 'https://api.openai.com/v1/chat/completions'
-    const openaiKey = Deno.env.get('OPENAI_API_KEY')
+    // Claude Sonnet 5.5 com o gpt-5.4-mini como reserva (roteador.ts). O custo vai para
+    // `ia_custos` em segundo plano, sem atrasar a resposta.
+    const { result, registrarCusto } = await analisar({
+      supabase, userId, systemPrompt: ANALISAR_PRODUTO_SYSTEM_PROMPT, texto, imagens,
+    })
+    EdgeRuntime.waitUntil(registrarCusto())
 
-    let data: any = null
-    let lastError = ''
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const response = await fetch(openaiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-5.4-mini',
-          max_completion_tokens: 4096,
-          stream: false,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: ANALISAR_PRODUTO_SYSTEM_PROMPT },
-            { role: 'user', content: userContent },
-          ],
-        }),
-      })
-
-      data = await response.json()
-      const isUnavailable = !response.ok && (response.status === 503 || response.status === 500)
-      if (isUnavailable) {
-        lastError = JSON.stringify(data)
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 3000))
-          continue
-        }
-      }
-      break
-    }
-
-    if (!data?.choices || data.choices.length === 0) {
-      console.error('analisar-produto: OpenAI sem choices. Resposta:', JSON.stringify(data), lastError)
-      return new Response(
-        JSON.stringify({ error: 'Erro interno ao analisar o produto' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      )
-    }
-
-    const rawText = data.choices[0].message.content
-    let result: any
-    try {
-      result = extractJSON(rawText)
-    } catch (e) {
-      console.error('analisar-produto: falha ao parsear JSON do modelo:', e, '| raw:', rawText)
+    if (!result) {
       return new Response(
         JSON.stringify({ error: 'Erro interno ao analisar o produto' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

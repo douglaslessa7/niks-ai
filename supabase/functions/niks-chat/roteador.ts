@@ -1,9 +1,11 @@
 import { geminiModel, type ChamadaFerramenta, type Uso } from './model.ts'
 import { ClaudeModel, temChaveAnthropic, type ConfigClaude, type Consultas, type RegistroFerramenta } from './claude.ts'
+import { custoUsd, MODELO_OPENAI, tetoAnthropicAtingido } from '../_shared/ia-custos.ts'
 
 // Escolhe quem responde a mensagem do NIKS Chat (out/2026):
 //   1. `chat_config.provedor = 'openai'`        → gpt-5.4-mini (chave de troca SEM deploy);
-//   2. gasto da Anthropic no mês ≥ teto         → gpt-5.4-mini até o dia 1º seguinte;
+//   2. gasto da Anthropic no mês (TODAS as funções) ≥ teto global (ia_config, _shared/ia-custos.ts)
+//                                               → gpt-5.4-mini até o dia 1º seguinte;
 //   3. senão Claude; erro/recusa antes do primeiro texto ou demora > espera_primeiro_texto_ms
 //      → a MESMA mensagem vai para o gpt-5.4-mini, sem a usuária perceber.
 // Cada chamada vira uma linha em `ia_custos` (registrarCusto, chamado no waitUntil).
@@ -14,7 +16,6 @@ type Supabase = any
 
 type ChatConfig = ConfigClaude & {
   provedor: 'anthropic' | 'openai'
-  limiteMensalUsd: number
   esperaPrimeiroTextoMs: number
 }
 
@@ -23,32 +24,16 @@ const PADRAO: ChatConfig = {
   modelo: 'claude-sonnet-5-5',
   esforco: 'low',
   cacheTtl: '5m',
-  limiteMensalUsd: 120,
   esperaPrimeiroTextoMs: 20000,
 }
-
-const MODELO_OPENAI = 'gpt-5.4-mini'
 
 // Espera máxima pelo 1º texto quando o Claude já está consultando (cabe nos 90 s do app,
 // com folga para um eventual fallback).
 const ESPERA_COM_CONSULTA_MS = 45_000
 
-// US$ por 1 milhão de tokens. Sonnet 5.5: leitura de cache = 5% da entrada (doc, out/2026).
-const PRECOS: Record<string, { input: number; output: number; cacheWrite: number; cacheWrite1h: number; cacheRead: number }> = {
-  'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite: 2.5, cacheWrite1h: 4, cacheRead: 0.10 },
-  [MODELO_OPENAI]: { input: 0.75, output: 4.5, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0 },
-}
-
-export function custoUsd(modelo: string, u: Uso): number {
-  const p = PRECOS[modelo] ?? PRECOS['claude-sonnet-5-5'] // modelo desconhecido: preço do Sonnet (nunca 0)
-  return (u.input * p.input + u.output * p.output + u.cacheWrite * p.cacheWrite +
-    u.cacheWrite1h * p.cacheWrite1h + u.cacheRead * p.cacheRead) / 1_000_000
-}
-
-// Leituras guardadas por 60 s em cada instância da função: a troca de provedor vale em ≤ 1 min.
+// Leitura guardada por 60 s em cada instância da função: a troca de provedor vale em ≤ 1 min.
 const CACHE_MS = 60_000
 let configCache: { em: number; valor: ChatConfig } | null = null
-let gastoCache: { em: number; valor: number } | null = null
 
 async function lerConfig(supabase: Supabase): Promise<ChatConfig> {
   if (configCache && Date.now() - configCache.em < CACHE_MS) return configCache.valor
@@ -62,7 +47,6 @@ async function lerConfig(supabase: Supabase): Promise<ChatConfig> {
         modelo: data.anthropic_modelo ?? PADRAO.modelo,
         esforco: data.esforco ?? PADRAO.esforco,
         cacheTtl: data.cache_ttl === '1h' ? '1h' : '5m',
-        limiteMensalUsd: Number(data.limite_mensal_usd ?? PADRAO.limiteMensalUsd),
         esperaPrimeiroTextoMs: Number(data.espera_primeiro_texto_ms ?? PADRAO.esperaPrimeiroTextoMs),
       }
     }
@@ -70,20 +54,6 @@ async function lerConfig(supabase: Supabase): Promise<ChatConfig> {
     console.error('niks-chat/roteador: chat_config ilegível, usando o padrão', e)
   }
   configCache = { em: Date.now(), valor }
-  return valor
-}
-
-async function gastoAnthropicMes(supabase: Supabase): Promise<number> {
-  if (gastoCache && Date.now() - gastoCache.em < CACHE_MS) return gastoCache.valor
-  let valor = 0
-  try {
-    const { data, error } = await supabase.rpc('gasto_ia_mes', { p_provedor: 'anthropic' })
-    if (error) throw error
-    valor = Number(data ?? 0)
-  } catch (e) {
-    console.error('niks-chat/roteador: gasto do mês ilegível (segue sem teto nesta leitura)', e)
-  }
-  gastoCache = { em: Date.now(), valor }
   return valor
 }
 
@@ -122,7 +92,7 @@ export async function responder(args: {
   let motivo: string | null = null
   if (cfg.provedor === 'openai') motivo = 'config_openai'
   else if (!temChaveAnthropic()) motivo = 'sem_chave_anthropic'
-  else if ((await gastoAnthropicMes(supabase)) >= cfg.limiteMensalUsd) motivo = 'teto_mensal'
+  else if (await tetoAnthropicAtingido(supabase)) motivo = 'teto_mensal'
 
   let escolhido: { stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> } | null = null
 
