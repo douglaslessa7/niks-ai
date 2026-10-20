@@ -325,6 +325,8 @@ export default function RecomendacaoProdutos() {
       .maybeSingle();
 
     try {
+      // A função confere que a sessão é da mesma usuária do `user_id` (out/2026).
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/recomendar-produtos',
         {
@@ -332,7 +334,7 @@ export default function RecomendacaoProdutos() {
           headers: {
             'Content-Type': 'application/json',
             'apikey': ANON_KEY,
-            'Authorization': `Bearer ${ANON_KEY}`,
+            'Authorization': `Bearer ${session?.access_token ?? ANON_KEY}`,
           },
           body: JSON.stringify({ user_id: userId, scan_id: scan?.id ?? null }),
         },

@@ -7,6 +7,7 @@
 // por passo, marca o principal e escreve a copy pt-BR → salva o JSON e retorna.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { verifyJWT } from '../_shared/jwt.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -314,6 +315,23 @@ Deno.serve(async (req) => {
   try {
     const { user_id, scan_id, regenerate } = await req.json().catch(() => ({}))
     if (!user_id) return json({ error: 'user_id é obrigatório' }, 400)
+
+    // Segurança (out/2026), em transição. Até aqui a função aceitava qualquer `user_id`
+    // com a chave pública do app. Passo 1: a build nova manda a SESSÃO da usuária — aí o
+    // token tem de ser da mesma usuária do `user_id`. Passo 2 (agora): as builds antigas
+    // ainda mandam a chave pública e continuam funcionando, mas ficam no log
+    // RECOMENDAR_LEGADO. Passo 3 (quando o log zerar): recusar o caminho legado com 401.
+    const auth = req.headers.get('authorization') ?? ''
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
+    const sessao = token ? await verifyJWT(token) : null
+    if (sessao?.sub) {
+      if (sessao.sub !== user_id) {
+        console.warn('RECOMENDAR_RECUSADO', JSON.stringify({ motivo: 'sessao-de-outra-usuaria', user_id }))
+        return json({ error: 'Forbidden' }, 403)
+      }
+    } else {
+      console.warn('RECOMENDAR_LEGADO', JSON.stringify({ user_id, regenerate: !!regenerate }))
+    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
