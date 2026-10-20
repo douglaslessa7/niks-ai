@@ -269,7 +269,7 @@ export default function PaywallSoft() {
           <ObPillButton label="Tentar de novo" onPress={tentarDeNovo} />
         </>
       ) : (
-        <ActivityIndicator color="#FB7B6B" />
+        <ActivityIndicator color={OB.pink} />
       )}
     </View>
   );
