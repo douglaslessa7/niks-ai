@@ -28,7 +28,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // "ou", Google e Apple, termos) no VISUAL do kit (fonte do sistema, #FF5EA8, campos
 // #F0F0F0), sem o X e sem a etiqueta "sua conta" (pedido do produto, out/2026). A tela
 // "#1 app de skincare com IA" (modelo 10a) saiu; `SignupHeroText.tsx` ficou no repo.
-// Lógica de cadastro intacta. → notificações.
+// Lógica de cadastro intacta. → compromisso → home (20/out/2026).
 const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
 
 export default function Signup() {
@@ -66,10 +66,12 @@ export default function Signup() {
     return () => { ativo = false; };
   }, []);
 
-  // Conta criada → home. A permissão de notificação é pedida ANTES da conta (depois do
-  // horário da rotina; o token vai no `saveToSupabase`), então a tela de notificações
-  // pós-cadastro saiu do fluxo (out/2026). Este é agora o ÚNICO ponto em que uma usuária
-  // NOVA entra no app — por isso o tutorial de primeiro acesso da home é armado AQUI
+  // Conta criada → compromisso → home (20/out/2026: o compromisso saiu de antes do
+  // paywall e virou a última tela antes do app; ele só leva à home). A permissão de
+  // notificação é pedida ANTES da conta (depois do horário da rotina; o token vai no
+  // `saveToSupabase`), então a tela de notificações pós-cadastro saiu do fluxo
+  // (out/2026). Este é agora o ÚNICO ponto em que uma usuária NOVA entra no app — por
+  // isso o tutorial de primeiro acesso da home é armado AQUI
   // (conta existente que refaz o onboarding também passa; quem barra é o servidor,
   // `users.home_tutorial_seen_at`).
   // ⚠️ Confere o `premium` DE NOVO, já com a identidade da conta nova (o
@@ -91,7 +93,8 @@ export default function Signup() {
     }
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
     armHomeTutorial();
-    router.replace('/(app)/home');
+    // `replace`: o cadastro sai da pilha — do compromisso não se volta para cá.
+    router.replace('/(onboarding)/compromisso' as any);
   };
 
   const startProtocolGeneration = (userId: string) => {

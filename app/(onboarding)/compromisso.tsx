@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Text, Image, Pressable, Animated, Easing, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import Svg, { Defs, RadialGradient, Stop, Circle } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -9,8 +9,11 @@ import {
   OB, OB_STEPS, ObScreen, useObFrame, useObName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Onboarding — compromisso, depois da rotina pronta e última antes do
-// paywall. Repouso = RÉPLICA da tela "28 Compromisso" de "NIKS Onboarding - fluxo
+// Onboarding — compromisso, ÚLTIMA tela antes do app: vem depois da conta criada
+// (`signup.tsx` → `finishOnboarding`, com o premium já confirmado) e leva à home
+// (20/out/2026, pedido do produto — antes ficava entre a rotina pronta e o paywall).
+// Sem voltar (gesto desligado): atrás dele na pilha ficam telas que já passaram.
+// Repouso = RÉPLICA da tela "28 Compromisso" de "NIKS Onboarding - fluxo
 // completo.dc.html" (Claude Design): círculo rosa Ø144 com a DIGITAL BRANCA no meio
 // (`digital-branca.png`, 54 × 75 — o mesmo arquivo do design), halo Ø216, centro em
 // y 509. Os estados de segurar/completo (21b/21c) vêm do handoff anterior
@@ -25,7 +28,7 @@ import {
 //   vibração a cada 0,25 s ficando mais forte (leve → média → forte).
 //   Soltar antes → volta ao 21a com mola suave (~450 ms, sem overshoot).
 // 21c (completo): rosa na tela inteira, vibração de sucesso, "Bem-vinda ao NIKS!"
-//   com fade de 300 ms; ~1 s depois, paywall.
+//   com fade de 300 ms; ~1 s depois, home.
 const STEP = OB_STEPS.compromisso;
 const STEP_NAME = 'Compromisso';
 
@@ -92,7 +95,8 @@ export default function Compromisso() {
     // da rotina pré-gerada e a faria ser gerada de novo.
     track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), commitment_accepted_at: new Date().toISOString() });
     Animated.timing(done, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-    setTimeout(() => router.replace('/(onboarding)/paywall-soft' as any), 1000 + 300);
+    // `replace`: a home não pode voltar para o compromisso.
+    setTimeout(() => router.replace('/(app)/home'), 1000 + 300);
   };
 
   const onPressIn = () => {
@@ -133,6 +137,7 @@ export default function Compromisso() {
 
   return (
     <ObScreen>
+      <Stack.Screen options={{ gestureEnabled: false }} />
       <StatusBar style={finished ? 'light' : 'dark'} />
 
       {/* Textos do 21a — a aura cresce POR CIMA deles (cobertos, não desbotados) */}
