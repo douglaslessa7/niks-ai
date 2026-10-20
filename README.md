@@ -34,7 +34,7 @@ App mobile de análise de pele por IA.
 | Estilo | NativeWind v4 + Tailwind CSS (sempre `className`, nunca `StyleSheet`) |
 | Navegação | Expo Router v3 (`useRouter`, `router.push`, `router.back`) |
 | Backend | Supabase (PostgreSQL + Edge Functions + Storage) |
-| IA | OpenAI (`analyze-skin`, `generate-protocol`, `niks-chat`, `generate-skin-preview`) / Gemini 2.5 Pro (`analyze-food`) via Supabase Edge Functions |
+| IA | Anthropic Claude Sonnet 5.5 (`niks-chat`, com reserva no gpt-5.4-mini) / OpenAI (`analyze-skin`, `generate-protocol`, `generate-skin-preview`) / Gemini 2.5 Pro (`analyze-food`) via Supabase Edge Functions |
 | Pagamentos | RevenueCat (verificação de entitlement) + Superwall (apresentação do paywall) |
 | Analytics | Mixpanel (`mixpanel-react-native`, `useNative=true`) — `lib/mixpanel/` |
 | Camera | expo-camera + expo-image-picker |
@@ -43,7 +43,7 @@ App mobile de análise de pele por IA.
 | Estado global | Zustand (`useAppStore` em `store/onboarding.ts`) |
 
 **Localização do projeto:** `~/Developer/niks-ai/` (pasta oficial desde set/2026).
-> ✅ **13/out/2026: neste Mac, `cd ~/Desktop/niks-ai && npx expo run:ios --device` builda e instala normalmente a partir da Área de Trabalho** (conferido pelo Douglas) — o aviso abaixo é de outra situação/máquina; não mandar mover a pasta sem antes confirmar que o build trava.
+> ⚠️ **20/out/2026: o iCloud voltou a quebrar o build na Área de Trabalho.** A Mesa é sincronizada pelo iCloud, que cria cópias de conflito com **" 2" no nome** (`glog 2`, `ReactNativeDependencies 2`…) e às vezes some com o original — o build iOS falha com `'glog/logging.h' file not found` (código 65). **Solução definitiva: mover o projeto para fora da Mesa/Documentos** (ex.: `~/Developer/niks-ai`). Correção imediata e o diagnóstico: "Caso real: 'glog/logging.h' file not found" em "QUANDO O BUILD FALHA". *(Em 13/out/2026 o build na Mesa tinha funcionado — o problema é intermitente, aparece quando o iCloud gera o conflito.)*
 > ⚠️ *(Histórico)* **Não trabalhar em pasta sincronizada pelo iCloud Drive** (a Área de Trabalho deste Mac está no iCloud, com "otimizar armazenamento"). Ali o `xcodebuild` trava para sempre em "Planning build" e o Xcode não abre o projeto — ver "Caso real: build parado em Planning build" em "QUANDO O BUILD FALHA". A cópia antiga em `~/Desktop/billion-dollar/niks-ai` está desatualizada.
 
 **Para rodar localmente:**
@@ -598,6 +598,8 @@ Chamada via `supabase.rpc('delete_user')` no client. O `SECURITY DEFINER` permit
 - `coach_conversations` — criada por `niks-chat.tsx` em `sendMessage` (quando não há conversa ativa ou `mode === 'empty'`) e em `handleSuggestionPress` (respostas pré-definidas); o `useFocusEffect` apenas busca a conversa mais recente — **nunca cria**; agrupa mensagens em `coach_messages`
 - `coach_messages` — histórico de mensagens do chat com a NIKS (lido e escrito por `niks-chat`)
 - `coach_memories` — memórias de longo prazo extraídas das conversas pelo `niks-chat`
+- `chat_config` — **1 linha** que diz ao `niks-chat` qual IA usar (`provedor` anthropic/openai, modelo, esforço, teto mensal, TTL do cache, espera pelo 1º texto). RLS sem policy (só service role). Trocar aqui vale em ≤ 1 min, sem deploy
+- `ia_custos` — uma linha por chamada do `niks-chat` ao modelo (tokens, `custo_usd`, `fallback_motivo`); `gasto_ia_mes(provedor)` soma o mês em horário de Brasília. RLS sem policy
 - `coach_protocol_suggestions` — propostas de alteração de rotina feitas pela NIKS no chat (ver "Coach — alteração de protocolo (v3)")
 - `minha_rotina_passos` — a rotina que ela FAZ, um registro por passo (ver decisão **6b**)
 - `rotina_lotes` — um registro por "Montar minha rotina com meus produtos" (scan em lote): `status` processando/pronto/erro, `caminhos`/`tem_rotulo` (imagens no bucket `rotina-lotes`), `resultado` (JSON da IA + o `colecao_item_id` de cada produto), `notificado_em`/`visto_em`/`aplicado_em`. RLS: ela lê e marca visto; **só a função cria** (sem policy de insert). Migration `20261009180000` (ver **6b**)
@@ -835,7 +837,12 @@ supabase functions deploy <nome> --no-verify-jwt --project-ref utpljvwmeyeqwrful
     - ⚠️ **Pendência:** a chamada à OpenAI **não tem timeout**, e a função **não registra os cabeçalhos da OpenAI** (`x-request-id`, `openai-processing-ms`). A correção proposta, ainda não feita: um `AbortController` de ~30 s com nova tentativa dentro do laço de 3, e registrar esses cabeçalhos. Para medir de novo, use a consulta "Duração e status" em "Ler os logs das Edge Functions".
 - `analyze-food`: `gemini-2.5-pro` (mais preciso para tarefas complexas)
 - `generate-protocol`: **`gpt-5.4-mini` (OpenAI, desde out/2026 — era `gpt-4.1-mini`)** — `response_format: json_object`, `max_completion_tokens: 16000` (o teto inclui o raciocínio; com 8192 o JSON podia voltar cortado — NÃO baixar), não usa streaming, retorna `text/plain; charset=utf-8` para compatibilidade com `response.text()` + `JSON.parse()` no cliente
-- `niks-chat`: **`gpt-5.4-mini` (OpenAI, desde out/2026 — era `gpt-4.1-mini`)**, `max_completion_tokens: 6000` (resposta) — streaming principal (1ª palavra em ~3,6 s, medido na publicação) + pós-stream via `waitUntil`: 1 chamada não-streaming (`extractAndSave`, memórias). `checkForSuggestion` **não chama LLM** (parseia o bloco `[[PROTOCOL_PATCH]]` que a NIKS emite); `checkApprovalIntent` (1 chamada) só em build antigo sem card
+- `niks-chat`: **Claude Sonnet 5.5 (`claude-sonnet-5-5`, Anthropic, out/2026) com o `gpt-5.4-mini` como reserva automática** — `niks-chat/roteador.ts` escolhe quem responde; `claude.ts` (SDK `npm:@anthropic-ai/sdk@0.131.0`, raciocínio adaptativo, **esforço `low`** — `output_config.effort`, lido da `chat_config`; testado contra `medium` em 20/out/2026: mesma qualidade, ~27% mais barato, tempo igual —, `max_tokens: 8000`, cache no prompt de sistema + ferramenta, ~16 mil tokens; ~US$ 0,016/mensagem com cache e ~US$ 0,06 com o cache expirado) e `model.ts` (gpt, `max_completion_tokens: 6000`) devolvem o MESMO stream de texto, então o app não muda.
+  - **Vai para o gpt-5.4-mini quando:** `chat_config.provedor = 'openai'`; gasto da Anthropic no mês (Brasília) ≥ `limite_mensal_usd` (US$ 120); falta `ANTHROPIC_API_KEY`; ou o Claude falha/recusa **antes do primeiro texto** ou passa de `espera_primeiro_texto_ms` (20 s) sem texto. Erro **depois** que o texto começou não troca (repetiria texto na tela): a resposta termina com o que saiu.
+  - **Trocar de modelo sem deploy:** `update public.chat_config set provedor = 'openai';` (ou `'anthropic'`) — vale em ≤ 1 min (a função guarda a config por 60 s). Esforço, modelo, teto, TTL do cache (`5m`/`1h`) e espera também ficam nessa linha.
+  - **Custo:** cada chamada vira uma linha em `ia_custos` (tokens que a API devolveu + `custo_usd` + `fallback_motivo`; tentativa do Claude abandonada também entra). `gasto_ia_mes('anthropic')` soma o mês. Sem fallback do servidor da Anthropic (`fallbacks`) de propósito: recusa cai no nosso gpt.
+  - **Histórico do contexto:** as 40 mensagens MAIS RECENTES dos últimos 3 dias, em ordem cronológica, sem a mensagem atual (até out/2026 entravam as 40 mais antigas).
+  - Pós-stream via `waitUntil`: custo em `ia_custos`, resposta em `coach_messages`, `extractAndSave` (memórias, **continua no `gpt-5.4-mini`**). `checkForSuggestion` **não chama LLM**; `checkApprovalIntent` (gpt, 1 chamada) só em build antigo sem card
 - `generate-skin-preview`: **`gpt-image-2` via OpenAI Images Edit API**
 - `recomendar-produtos`: **`gpt-5.4-mini` (OpenAI, desde out/2026 — era `gpt-4.1-mini`)** — `response_format: json_object`, `max_completion_tokens: 16000`, retry em HTTP 500/503 (mesmo padrão do `generate-protocol`)
 - `montar-rotina-com-produtos`: **`gpt-5.4-mini`**, `reasoning_effort: 'low'`, `detail: 'high'` nas imagens, `max_completion_tokens: 16000`. ⚠️ **O raciocínio importa aqui:** sem ele (padrão = 0 tokens) a IA leu bem os rótulos mas cortou 6 de 7 produtos (até o único protetor); com `medium` julgou certo mas levou **~100 s** (perto do limite de 150 s da Edge Function); `low` manteve o julgamento em **~23 s / US$ 0,028 por lote de 7** (medido em out/2026).
@@ -847,6 +854,7 @@ Secret `GEMINI_API_KEY` configurado no Supabase Dashboard (Project Settings → 
 **Secrets necessários no Supabase Dashboard (Project Settings → Edge Functions → Secrets):**
 - `GEMINI_API_KEY` — usado por `analyze-food`
 - `OPENAI_API_KEY` — usado por `analyze-skin`, `analyze-skin-app`, `generate-protocol`, `niks-chat`, `generate-skin-preview`, `recomendar-produtos`, `analisar-produto` e `montar-rotina-com-produtos`
+- `ANTHROPIC_API_KEY` — usado por `niks-chat` (Claude Sonnet 5.5). Sem ela, o chat responde só com o `gpt-5.4-mini`
 - `REVENUECAT_WEBHOOK_SECRET` — usado por `revenuecat-webhook` para validar o header `Authorization`
 - `NIKS_JWT_SECRET` — usado por `niks-chat` para verificar JWTs HS256 (legacy JWT secret do Supabase). Valor: JWT secret do projeto (Supabase Dashboard → Project Settings → API → JWT Secret). **⚠️ O nome não pode começar com `SUPABASE_` — a CLI do Supabase bloqueia secrets com esse prefixo. Por isso o nome é `NIKS_JWT_SECRET` e não `SUPABASE_JWT_SECRET`.**
 - `REPLICATE_API_TOKEN` — recorte sem fundo (`recortar-catalogo`, `recortar-produto`, `analisar-produto`). `CATALOG_CUTOUT_SECRET` — trava admin da `recortar-catalogo`. `ORPHAN_CLEANUP_SECRET` / `ORPHAN_CLEANUP_REMOVE` — `cleanup-orphan-storage`. (`FAL_API_KEY` e `REPLICATE_API_KEY` estão sobrando — ninguém lê.)
@@ -2485,6 +2493,24 @@ brctl download <arquivo>                                              # para cad
 ```
 Duas coisas que a cópia não resolve sozinha: o `ios/build/generated` (codegen do RN — ver o aviso de `ios/build` na seção do splash) e o `ios/build/generated/autolinking/autolinking.json`, que guarda **caminhos absolutos** da pasta antiga (reescrever com `sed` ou regenerar com `pod install`). ⚠️ **O CocoaPods não está instalado neste Mac** (`pod` não existe) — foi por isso que o codegen foi copiado em vez de regenerado.
 
+### Caso real: `'glog/logging.h' file not found` (cópias " 2" do iCloud)
+
+**Sintoma (20/out/2026):** `npx expo run:ios` falha com `'glog/logging.h' file not found` em `ios/Pods/RCT-Folly/folly/concurrency/CacheLocality.cpp` e `xcodebuild exited with error code 65`.
+
+**Causa:** o projeto estava na Área de Trabalho, sincronizada pelo iCloud. O iCloud criou cópias de conflito com " 2" no nome e, em 5 pastas de `ios/Pods`, o original sumiu — o atalho `ios/Pods/Headers/Public/glog` virou `glog 2`. O `node_modules` tinha mais 220 cópias " 2" (com os originais ainda lá). Diagnóstico, 5 segundos:
+```bash
+find node_modules ios/Pods -name "* 2" -prune | head   # achou = é o iCloud
+```
+(⚠️ `ios/Pods/SuperwallKit/.../StoreKit 2` se chama assim mesmo — não é cópia.)
+
+**Correção (só pastas geradas — não toca na `ios/`, na NIKSAction/NIKSShare nem no `.xcodeproj`; sem `prebuild`):**
+```bash
+rm -rf ios/Pods ~/Library/Developer/Xcode/DerivedData/NIKSAI-* node_modules
+npm ci                      # reaplica os patches (postinstall: patch-package)
+cd ios && pod install       # de dentro de ios/ (ver a nota do MediaPipe); regenera também o codegen
+```
+Conferido: nenhum arquivo versionado mudou, o `NiksMediaPipe.xcframework` (no git) ficou intacto e o app abriu no simulador. O `pod` (CocoaPods) **está instalado** neste Mac desde out/2026. **Para não voltar: mover o projeto para fora da Mesa** (ou desligar "Mesa e Documentos" no iCloud Drive).
+
 ### Instalar build Release no iPhone sem abrir o Xcode
 
 ```bash
@@ -3083,6 +3109,8 @@ Tela dedicada acessada via "Ver resultado" na home. Usa `Animated.ScrollView` co
 **Dados lidos do Zustand:** `selectedScan` (carrossel da home) com fallback para `scanResult`/`scanImageUri` (scan flow direto). `selectedScan` é limpo no `useEffect` de desmontagem.
 
 ### Tela NIKS Chat (`app/(app)/niks-chat.tsx`)
+
+> ✅ **20/out/2026 — a resposta cresce palavra por palavra (vai na próxima build).** Continua **uma bolha por parágrafo**, mas o parágrafo em andamento aparece assim que começa a chegar e cresce na bolha; **sem "digitando" entre as bolhas enquanto o texto chega ao vivo** (só a espera curta antes da 1ª, `FIRST_BUBBLE_MS`). Os pontinhos só aparecem antes da 1ª bolha ou com bolha na fila. Se a resposta já chegou inteira (rede rápida), as bolhas que faltam saem no ritmo de digitação (`typingMs`), como antes. **Antes:** só parágrafos COMPLETOS apareciam, cada um depois de 0,7–1,6 s de "digitando" — por isso a resposta parecia chegar inteira. O servidor e o `XMLHttpRequest` + `onprogress` sempre entregaram aos poucos (medido: 67 pedaços em 3,3 s com o Claude); o "de uma vez" era só o jeito de desenhar.
 
 > ✅ **12/out/2026:** a opção **"Analisar o impacto da minha refeição na minha pele"** voltou à folha de opções, no lugar de "Estou vendo o resultado com o meu protocolo?": ação direta (negrito + setinha, como a do lote, com a bolinha das outras opções à esquerda) que abre `/(scan)/food-camera` → `food-report`, sem virar conversa (`OPCAO_REFEICAO`).
 
