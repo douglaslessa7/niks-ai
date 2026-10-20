@@ -547,16 +547,18 @@ export default function NiksChat() {
   }, [])
 
   // Agenda a próxima bolha de cada resposta ao vivo. Enquanto o texto ainda chega
-  // (streaming), só parágrafos COMPLETOS podem aparecer — o último pode estar pela metade.
+  // (streaming), o parágrafo em andamento também aparece e cresce palavra por palavra, sem
+  // "digitando" entre as bolhas — só a espera curta antes da 1ª. Se a resposta já chegou
+  // inteira (rede rápida), as bolhas que faltam saem no ritmo de digitação, como antes.
   useEffect(() => {
     for (const m of messages) {
       if (m.role !== 'assistant' || !m.live || revealTimers.current[m.id]) continue
       const parts = splitBubbles(m.content)
-      const ready = m.isStreaming ? Math.max(0, parts.length - 1) : parts.length
       const n = revealed[m.id] ?? 0
-      if (n >= ready) continue
+      if (n >= parts.length) continue
       const delay = reduceMotion.current ? 0
         : n === 0 ? Math.max(0, FIRST_BUBBLE_MS - (Date.now() - (m.createdAt ?? 0)))
+        : m.isStreaming ? 0
         : typingMs(parts[n])
       revealTimers.current[m.id] = setTimeout(() => {
         delete revealTimers.current[m.id]
@@ -1060,7 +1062,9 @@ export default function NiksChat() {
           suggestion: last ? m.suggestion : undefined, msgId: m.id,
         })
       })
-      if (!finished) rows.push({ kind: 'typing', key: `${m.id}-typing` })
+      // "Digitando" só enquanto não há nada novo na tela: antes da 1ª bolha ou com bolha na
+      // fila. O parágrafo crescendo ao vivo já mostra que ela está escrevendo.
+      if (!finished && (n < parts.length || n === 0)) rows.push({ kind: 'typing', key: `${m.id}-typing` })
     }
   }
   // Card FIXO da sugestão pendente, no fim da conversa (também com a conversa vazia, depois
