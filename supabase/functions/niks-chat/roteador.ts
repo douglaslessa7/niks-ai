@@ -127,7 +127,8 @@ export async function responder(args: {
       chamada.primeiroTextoMs = Date.now() - inicio
       escolhido = c
     } catch (e) {
-      c.abortar()
+      // Desiste de esperar, mas a chamada termina em segundo plano: o custo fica exato.
+      c.abandonar()
       const msg = (e as Error)?.message ?? String(e)
       const status = (e as { status?: number })?.status
       motivo = msg === 'demora' ? 'demora' : `erro_anthropic${status ? `_${status}` : ''}: ${msg.slice(0, 200)}`
@@ -168,6 +169,7 @@ export async function responder(args: {
           duracao_ms: fim - c.inicio,
           fallback_motivo: c.motivo,
           rodadas: c.rodadas ? await c.rodadas : 1,
+          uso_estimado: !!u.estimado,
         }
       }))
       const { error } = await supabase.from('ia_custos').insert(linhas)

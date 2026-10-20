@@ -37,7 +37,9 @@ export type RegistroFerramenta = {
 
 export type RespostaClaude = RespostaModelo & {
   primeiro: Promise<void>
-  abortar: () => void
+  // Ninguém mais vai ler a resposta (o roteador desistiu dela): para de enviar e não começa
+  // outra ida ao modelo, mas a ida em andamento termina — para o custo sair exato.
+  abandonar: () => void
   // Já pediu alguma consulta? O roteador espera mais pelo 1º texto quando ela está trabalhando.
   pediuConsulta: () => boolean
   registros: Promise<RegistroFerramenta[]>
@@ -48,6 +50,10 @@ export type RespostaClaude = RespostaModelo & {
 const MAX_RODADAS = 3
 const MAX_CONSULTAS = 4
 const TEMPO_MAX_MS = 60_000
+// Resposta que ninguém lê (a usuária fechou o chat, ou o roteador foi para o gpt) termina em
+// segundo plano para o custo ser o que a Anthropic cobrou. Passou disto, aí sim é cortada e o
+// uso em `ia_custos` fica marcado como estimado.
+const LIMITE_ABANDONADA_MS = 60_000
 const AVISO_INTERROMPIDO = '\n\nNão consegui terminar agora. Me pergunta de novo?'
 
 // Ferramenta no formato OpenAI ({ type:'function', function:{ name, description, parameters } })
@@ -120,6 +126,19 @@ export class ClaudeModel {
     let algoSaiu = false   // texto ou proposta — depois disso não há mais troca de modelo
     let houveTexto = false // já foi texto para a tela
     let pediuConsulta = false
+    let abandonada = false
+    let timerAbandono: ReturnType<typeof setTimeout> | undefined
+    // Ida ao modelo em andamento: o uso dela só entra em `usoTotal` quando ela termina. Se for
+    // cortada no meio, entra no `finally` (entrada e cache já são conhecidos; a saída é estimada
+    // pelo texto que saiu — o raciocínio não aparece, então o número é um piso).
+    let rodadaAberta = false
+    let usoRodadaAberta: Uso = { ...USO_ZERO }
+    let charsRodada = 0
+    const abandonar = () => {
+      if (abandonada) return
+      abandonada = true
+      timerAbandono = setTimeout(() => controller.abort(), LIMITE_ABANDONADA_MS)
+    }
 
     let resolverPrimeiro!: () => void
     let rejeitarPrimeiro!: (e: unknown) => void
@@ -156,7 +175,10 @@ export class ClaudeModel {
 
     const stream = new ReadableStream<Uint8Array>({
       async start(ctrl) {
-        const enviar = (s: string) => ctrl.enqueue(encoder.encode(s))
+        const enviar = (s: string) => {
+          if (abandonada) return
+          try { ctrl.enqueue(encoder.encode(s)) } catch { abandonar() /* stream fechado */ }
+        }
         try {
           while (true) {
             rodada++
@@ -188,6 +210,9 @@ export class ClaudeModel {
             // Argumentos da PROPOSTA, juntados por índice do bloco (igual a antes).
             const blocos = new Map<number, { name: string; arguments: string }>()
             let usoRodada: Uso = { ...USO_ZERO }
+            rodadaAberta = true
+            usoRodadaAberta = { ...USO_ZERO }
+            charsRodada = 0
             let textoNestaRodada = false
             let recusou = false
 
@@ -195,6 +220,7 @@ export class ClaudeModel {
               switch (ev.type) {
                 case 'message_start':
                   usoRodada = lerUso(usoRodada, ev.message?.usage)
+                  usoRodadaAberta = usoRodada
                   break
                 case 'content_block_start':
                   if (ev.content_block?.type === 'tool_use') {
@@ -214,6 +240,7 @@ export class ClaudeModel {
                     textoNestaRodada = true
                     houveTexto = true
                     marcarSaida()
+                    charsRodada += ev.delta.text.length
                     enviar(ev.delta.text)
                   } else if (ev.delta?.type === 'input_json_delta') {
                     const b = blocos.get(ev.index)
@@ -227,6 +254,7 @@ export class ClaudeModel {
                 }
                 case 'message_delta':
                   usoRodada = lerUso(usoRodada, ev.usage)
+                  usoRodadaAberta = usoRodada
                   if (ev.delta?.stop_reason === 'refusal') {
                     recusou = true
                     // Recusa antes de qualquer texto → o roteador manda para o gpt-5.4-mini.
@@ -238,7 +266,8 @@ export class ClaudeModel {
               }
             }
             usoTotal = somarUso(usoTotal, usoRodada)
-            if (recusou) break
+            rodadaAberta = false
+            if (recusou || abandonada) break // ninguém lê: não começa outra ida
 
             // O que o modelo pediu nesta ida. A proposta é terminal (vai para o cartão no
             // flush do index.ts, como antes); só consulta faz o loop continuar.
@@ -268,7 +297,7 @@ export class ClaudeModel {
             messages.push({ role: 'assistant', content: final.content }, { role: 'user', content: resultados })
           }
           if (!algoSaiu) rejeitarPrimeiro(new Error('resposta-vazia'))
-          ctrl.close()
+          try { ctrl.close() } catch { /* a usuária já fechou o chat */ }
         } catch (err) {
           // Antes do primeiro texto: o roteador troca de modelo. Depois: a resposta termina
           // com o que já foi enviado (não dá para trocar sem repetir texto na tela) — e, se
@@ -283,13 +312,25 @@ export class ClaudeModel {
           try { ctrl.close() } catch { /* já fechado/cancelado */ }
         } finally {
           resolverFerramentas(chamadas)
-          resolverUso(usoTotal)
+          clearTimeout(timerAbandono)
+          let estimado = false
+          if (rodadaAberta) {
+            // Ida cortada no meio (limite da resposta abandonada, ou erro da API no meio do
+            // stream): soma o que já se sabe e marca a linha como estimada.
+            estimado = true
+            usoTotal = somarUso(usoTotal, {
+              ...usoRodadaAberta,
+              output: Math.max(usoRodadaAberta.output, Math.ceil(charsRodada / 3)),
+            })
+          }
+          resolverUso({ ...usoTotal, estimado })
           resolverRegistros(registros)
           resolverRodadas(rodada)
         }
       },
+      // A usuária fechou o chat: a resposta termina em segundo plano (custo exato).
       cancel() {
-        controller.abort()
+        abandonar()
       },
     })
 
@@ -298,7 +339,7 @@ export class ClaudeModel {
       ferramentas,
       uso: usoPromise,
       primeiro,
-      abortar: () => controller.abort(),
+      abandonar,
       pediuConsulta: () => pediuConsulta,
       registros: registrosPromise,
       rodadas: rodadasPromise,

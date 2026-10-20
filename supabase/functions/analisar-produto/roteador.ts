@@ -6,7 +6,8 @@ import { custoUsd, MODELO_OPENAI, tetoAnthropicAtingido, USO_ZERO, type Uso } fr
 //   2. gasto da Anthropic no mês (TODAS as funções) ≥ teto global (ia_config) → gpt-5.4-mini
 //      até o dia 1º seguinte;
 //   3. senão Claude; erro, recusa, resposta cortada, JSON ilegível ou demora > espera_ms →
-//      a MESMA análise vai para o gpt-5.4-mini, sem a usuária perceber.
+//      a MESMA análise vai para o gpt-5.4-mini, sem a usuária perceber. Na demora, o Claude
+//      NÃO é cortado: termina em segundo plano e o custo gravado é o que a Anthropic cobrou.
 // Cada chamada vira uma linha em `ia_custos` (registrarCusto, chamado no waitUntil).
 
 // deno-lint-ignore no-explicit-any
@@ -81,12 +82,22 @@ type Imagem = { base64: string; mimeType: string }
 
 const TIPOS_IMAGEM = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
+// Claude que passou de `espera_ms` continua em segundo plano até este limite a mais; depois é
+// cortado e o uso fica estimado (a API não chega a informar os tokens).
+const LIMITE_ABANDONADA_MS = 60_000
+// Estimativa só para chamada cortada: ~3 caracteres por token e ~400 tokens por foto de 512 px.
+const estimarUso = (systemPrompt: string, texto: string, imagens: Imagem[]): Uso => ({
+  ...USO_ZERO,
+  input: Math.ceil((systemPrompt.length + texto.length) / 3) + imagens.length * 400,
+  estimado: true,
+})
+
 async function chamarClaude(cfg: Config, systemPrompt: string, texto: string, imagens: Imagem[]): Promise<{ texto: string; uso: Uso }> {
   const cache = cfg.cacheTtl === '1h'
     ? { type: 'ephemeral' as const, ttl: '1h' as const }
     : { type: 'ephemeral' as const }
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), cfg.esperaMs)
+  const timer = setTimeout(() => controller.abort(), cfg.esperaMs + LIMITE_ABANDONADA_MS)
   try {
     const msg: any = await anthropic.messages.create(
       {
@@ -129,7 +140,9 @@ async function chamarClaude(cfg: Config, systemPrompt: string, texto: string, im
     if (msg?.stop_reason === 'max_tokens') throw Object.assign(new Error('cortada'), { uso })
     return { texto: saida, uso }
   } catch (e) {
-    if (controller.signal.aborted) throw new Error('demora')
+    if (controller.signal.aborted) {
+      throw Object.assign(new Error('cortada_no_limite'), { uso: estimarUso(systemPrompt, texto, imagens) })
+    }
     throw e
   } finally {
     clearTimeout(timer)
@@ -192,8 +205,9 @@ type Chamada = {
   provedor: 'anthropic' | 'openai'
   modelo: string
   esforco: string | null
-  uso: Uso
-  duracaoMs: number
+  // Promessa: o Claude abandonado por demora só informa o uso quando termina.
+  uso: Promise<Uso>
+  duracaoMs: Promise<number>
   motivo: string | null
 }
 
@@ -221,14 +235,21 @@ export async function analisar(args: {
 
   if (!motivo) {
     const inicio = Date.now()
+    // A chamada segue até o fim mesmo se pararmos de esperar por ela (custo exato).
+    const promessa = chamarClaude(cfg, systemPrompt, texto, imagens)
     const chamada: Chamada = {
-      provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco, uso: { ...USO_ZERO },
-      duracaoMs: 0, motivo: null,
+      provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco,
+      uso: promessa.then((c) => c.uso, (e) => (e as { uso?: Uso })?.uso ?? { ...USO_ZERO }),
+      duracaoMs: promessa.then(() => Date.now() - inicio, () => Date.now() - inicio),
+      motivo: null,
     }
     chamadas.push(chamada)
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const c = await chamarClaude(cfg, systemPrompt, texto, imagens)
-      chamada.uso = c.uso
+      const c = await Promise.race([
+        promessa,
+        new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error('demora')), cfg.esperaMs) }),
+      ])
       try {
         result = lerResultado(c.texto)
       } catch (e) {
@@ -237,55 +258,56 @@ export async function analisar(args: {
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e)
       const status = (e as { status?: number })?.status
-      const usoErro = (e as { uso?: Uso })?.uso
-      if (usoErro) chamada.uso = usoErro
       motivo = msg === 'demora' || msg === 'recusa' || msg === 'cortada' || msg.startsWith('json_ilegivel')
         ? msg.slice(0, 200)
         : `erro_anthropic${status ? `_${status}` : ''}: ${msg.slice(0, 200)}`
       chamada.motivo = `abandonada: ${motivo}`
       console.warn('analisar-produto/roteador: Claude falhou, indo para o gpt-5.4-mini —', motivo)
     } finally {
-      chamada.duracaoMs = Date.now() - inicio
+      clearTimeout(timer)
     }
   }
 
   if (!result) {
     const inicio = Date.now()
-    const chamada: Chamada = {
-      provedor: 'openai', modelo: MODELO_OPENAI, esforco: null, uso: { ...USO_ZERO },
-      duracaoMs: 0, motivo,
-    }
-    chamadas.push(chamada)
+    let uso: Uso = { ...USO_ZERO }
     try {
       const o = await chamarOpenAI(systemPrompt, texto, imagens)
-      chamada.uso = o.uso
+      uso = o.uso
       result = extractJSON(o.texto) // como antes da troca: sem conferir o `status`
     } catch (e) {
       const usoErro = (e as { uso?: Uso })?.uso
-      if (usoErro) chamada.uso = usoErro
+      if (usoErro) uso = usoErro
       console.error('analisar-produto/roteador: gpt-5.4-mini também falhou', e)
-    } finally {
-      chamada.duracaoMs = Date.now() - inicio
     }
+    chamadas.push({
+      provedor: 'openai', modelo: MODELO_OPENAI, esforco: null,
+      uso: Promise.resolve(uso), duracaoMs: Promise.resolve(Date.now() - inicio), motivo,
+    })
   }
 
   const registrarCusto = async () => {
     try {
-      const { error } = await supabase.from('ia_custos').insert(chamadas.map((c) => ({
-        funcao: 'analisar-produto',
-        user_id: userId,
-        provedor: c.provedor,
-        modelo: c.modelo,
-        esforco: c.esforco,
-        input_tokens: c.uso.input,
-        cache_write_tokens: c.uso.cacheWrite + c.uso.cacheWrite1h,
-        cache_read_tokens: c.uso.cacheRead,
-        output_tokens: c.uso.output,
-        custo_usd: Number(custoUsd(c.modelo, c.uso).toFixed(6)),
-        duracao_ms: c.duracaoMs,
-        fallback_motivo: c.motivo,
-        rodadas: 1,
-      })))
+      const linhas = await Promise.all(chamadas.map(async (c) => {
+        const u = await c.uso
+        return {
+          funcao: 'analisar-produto',
+          user_id: userId,
+          provedor: c.provedor,
+          modelo: c.modelo,
+          esforco: c.esforco,
+          input_tokens: u.input,
+          cache_write_tokens: u.cacheWrite + u.cacheWrite1h,
+          cache_read_tokens: u.cacheRead,
+          output_tokens: u.output,
+          custo_usd: Number(custoUsd(c.modelo, u).toFixed(6)),
+          duracao_ms: await c.duracaoMs,
+          fallback_motivo: c.motivo,
+          rodadas: 1,
+          uso_estimado: !!u.estimado,
+        }
+      }))
+      const { error } = await supabase.from('ia_custos').insert(linhas)
       if (error) console.error('analisar-produto/roteador: falha ao gravar ia_custos', error)
     } catch (e) {
       console.error('analisar-produto/roteador: registrarCusto falhou', e)

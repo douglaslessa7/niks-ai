@@ -6,7 +6,8 @@
 // deno-lint-ignore no-explicit-any
 type Supabase = any
 
-export type Uso = { input: number; cacheWrite: number; cacheWrite1h: number; cacheRead: number; output: number }
+// `estimado`: a chamada foi cortada antes de a API informar o uso — os números são um piso.
+export type Uso = { input: number; cacheWrite: number; cacheWrite1h: number; cacheRead: number; output: number; estimado?: boolean }
 export const USO_ZERO: Uso = { input: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 }
 
 export const MODELO_OPENAI = 'gpt-5.4-mini'
