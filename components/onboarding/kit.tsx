@@ -51,26 +51,33 @@ export const OB_STEPS = {
   ola: 1, seusDados: 2, nome: 3, prazer: 4, idade: 5, gravidez: 6,
   // Alergias logo depois da gravidez (out/2026, pedido do produto).
   alergias: 7, alergiaDetalhe: 8, incomoda: 9, potencial: 10,
-  tipoPele: 11, sol: 12, aguaSono: 13, rotinaAtual: 14, rotinaDetalhe: 15,
+  // Água e sono em DUAS telas de novo (20/out/2026, pedido do produto) — os passos
+  // seguintes andaram uma casa e o total foi de 26 para 27.
+  // O detalhe da rotina atual saiu do fluxo no mesmo dia (20/out/2026): os passos
+  // seguintes voltaram uma casa e o total voltou a 26.
+  tipoPele: 11, sol: 12, hidratacao: 13, sono: 14, rotinaAtual: 15,
   // Horário → notificações ("Continuar" + "Já ativei!") logo depois da rotina atual
   // (16/out/2026, pedido do produto). A permissão sai ANTES da conta (token em
   // `pendingPushToken`, gravado no signup).
-  horarioRotina: 16, notificacoes: 17,
-  objetivo: 18, comSemNiks: 19,
-  prepScan: 20, camera: 21, analisando: 22, resultadoScan: 23, rotinaPronta: 24,
-  compromisso: 25,
-  // Paywall (Superwall) entre o compromisso e a conta — não é tela nossa, não conta.
+  // Horário em duas ETAPAS (manhã → noite) desde 20/out/2026, numa tela só
+  // (`horario.tsx`): cada etapa conta um passo — os seguintes andaram uma casa.
+  horarioManha: 16, horarioNoite: 17, notificacoes: 18,
+  objetivo: 19, comSemNiks: 20,
+  prepScan: 21, camera: 22, analisando: 23, resultadoScan: 24, rotinaPronta: 25,
+  // Paywall (Superwall) entre a rotina pronta e a conta — não é tela nossa, não conta.
+  // O compromisso passou para DEPOIS da conta (20/out/2026, pedido do produto): é a
+  // última tela antes da home. Total continua 27.
   // ⚠️ A última tela precisa valer OB_STEP_TOTAL: é o que marca o fim do onboarding
   // no Paywallo (`lib/mixpanel/MixpanelProvider.tsx`).
-  criarConta: 26,
+  criarConta: 26, compromisso: 27,
   // Telas FORA do fluxo (arquivos ficaram no repo, nada navega até elas): o 0
   // garante que nada delas entra no funil se alguém navegar até lá.
   avisoLembretes: 0, pedidoNotificacao: 0, entendi: 0, idadePele: 0, transicaoRotina: 0,
-  hidratacao: 0, sono: 0, empatia: 0,
+  aguaSono: 0, rotinaDetalhe: 0, horarioRotina: 0, empatia: 0,
   loadingRotina: 0, incomodaRotina: 0,
   loading: 0, relatorio: 0, planPreview: 0, apresentacao: 0,
 } as const;
-export const OB_STEP_TOTAL = 26;
+export const OB_STEP_TOTAL = 27;
 
 /** Evento de Mixpanel no padrão do onboarding (`step_total` fixo do funil novo). */
 export function obStep(step: number, name: string) {

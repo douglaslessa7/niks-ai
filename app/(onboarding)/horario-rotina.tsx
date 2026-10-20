@@ -9,6 +9,8 @@ import {
   useObFrame, useObName, withName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
+// ⚠️ FORA DO FLUXO desde 20/out/2026: substituída por `horario.tsx` (uma tela, etapas
+// manhã → noite, réplica da "Novo 20" do design). Nada navega até aqui; passo do Mixpanel = 0.
 // Tela 21 do onboarding — horário da rotina: duas rodas lado a lado, sobre UMA faixa,
 // como o seletor de hora do iOS. Vem DEPOIS de "Como está sua rotina de skincare
 // hoje?" (e do detalhe dela) e leva às notificações ("Sua próxima rotina é hoje às…",

@@ -9,6 +9,8 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
+// ⚠️ FORA DO FLUXO desde 20/out/2026 (pedido do produto): "completar" e "prescritos"
+// seguem direto para o horário. Nada navega até aqui; o passo do Mixpanel vale 0.
 // Onboarding — detalhe da rotina atual (condicional: `skincare_routine_type`
 // 'complement' ou 'prescribed', como na versão B). Textos da versão B no visual do kit;
 // mesmo esqueleto do detalhe da alergia (título → 9 → subtítulo → 21 → campo → 39 →
