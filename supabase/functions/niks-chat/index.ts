@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildContext } from './context.ts'
 import { NIKS_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
 import { responder } from './roteador.ts'
+import { criarConsultas } from './consultas.ts'
 import { detectEvolutionIntent } from './safety.ts'
 import { extractAndSave } from './memory.ts'
 import { checkApprovalIntent, extractJSON } from './protocol-actions.ts'
@@ -170,6 +171,8 @@ Deno.serve(async (req) => {
       contextPack,
       images,
       tools: ferramentaProposta(v2),
+      // Agente: consultas só de leitura, sempre da usuária do token (consultas.ts).
+      consultas: criarConsultas(supabase, userId),
     })
 
     // Intercepta chunks inline (sem tee) e CORTA o bloco [[PROTOCOL_PATCH]]…[[/PROTOCOL_PATCH]]

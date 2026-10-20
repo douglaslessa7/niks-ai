@@ -1,5 +1,5 @@
 import { geminiModel, type ChamadaFerramenta, type Uso } from './model.ts'
-import { ClaudeModel, temChaveAnthropic, type ConfigClaude } from './claude.ts'
+import { ClaudeModel, temChaveAnthropic, type ConfigClaude, type Consultas, type RegistroFerramenta } from './claude.ts'
 
 // Escolhe quem responde a mensagem do NIKS Chat (out/2026):
 //   1. `chat_config.provedor = 'openai'`        → gpt-5.4-mini (chave de troca SEM deploy);
@@ -92,6 +92,9 @@ type Chamada = {
   primeiroTextoMs: number | null
   fim: Promise<number>
   motivo: string | null
+  // Só no Claude: consultas feitas e idas ao modelo. O gpt (reserva) não consulta.
+  registros?: Promise<RegistroFerramenta[]>
+  rodadas?: Promise<number>
 }
 
 export async function responder(args: {
@@ -101,12 +104,14 @@ export async function responder(args: {
   contextPack: string
   images?: Array<{ base64: string; mimeType: string }>
   tools: unknown[]
+  // Consultas do agente (só o Claude usa; a reserva gpt-5.4-mini segue no modo de antes).
+  consultas?: Consultas
 }): Promise<{
   stream: ReadableStream<Uint8Array>
   ferramentas: Promise<ChamadaFerramenta[]>
   registrarCusto: () => Promise<void>
 }> {
-  const { supabase, userId, systemPrompt, contextPack, images, tools } = args
+  const { supabase, userId, systemPrompt, contextPack, images, tools, consultas } = args
   const cfg = await lerConfig(supabase)
   const chamadas: Chamada[] = []
 
@@ -119,10 +124,11 @@ export async function responder(args: {
 
   if (!motivo) {
     const inicio = Date.now()
-    const c = new ClaudeModel(cfg).stream(systemPrompt, contextPack, images, tools)
+    const c = new ClaudeModel(cfg).stream(systemPrompt, contextPack, images, tools, consultas)
     const chamada: Chamada = {
       provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco, uso: c.uso, inicio,
       primeiroTextoMs: null, fim: c.uso.then(() => Date.now()), motivo: null,
+      registros: c.registros, rodadas: c.rodadas,
     }
     chamadas.push(chamada)
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -174,10 +180,27 @@ export async function responder(args: {
           primeiro_texto_ms: c.primeiroTextoMs,
           duracao_ms: fim - c.inicio,
           fallback_motivo: c.motivo,
+          rodadas: c.rodadas ? await c.rodadas : 1,
         }
       }))
       const { error } = await supabase.from('ia_custos').insert(linhas)
       if (error) console.error('niks-chat/roteador: falha ao gravar ia_custos', error)
+
+      // Consultas do agente (uma linha por consulta), inclusive as de um Claude abandonado.
+      const consultasFeitas = (await Promise.all(chamadas.map((c) => c.registros ?? Promise.resolve([])))).flat()
+      if (consultasFeitas.length) {
+        const { error: errF } = await supabase.from('ia_ferramentas').insert(consultasFeitas.map((r) => ({
+          funcao: 'niks-chat',
+          user_id: userId,
+          ferramenta: r.ferramenta,
+          rodada: r.rodada,
+          entrada: r.entrada,
+          duracao_ms: r.duracaoMs,
+          tamanho_resultado: r.tamanhoResultado,
+          erro: r.erro,
+        })))
+        if (errF) console.error('niks-chat/roteador: falha ao gravar ia_ferramentas', errF)
+      }
     } catch (e) {
       console.error('niks-chat/roteador: registrarCusto falhou', e)
     }
