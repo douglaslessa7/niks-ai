@@ -29,6 +29,10 @@ const PADRAO: ChatConfig = {
 
 const MODELO_OPENAI = 'gpt-5.4-mini'
 
+// Espera máxima pelo 1º texto quando o Claude já está consultando (cabe nos 90 s do app,
+// com folga para um eventual fallback).
+const ESPERA_COM_CONSULTA_MS = 45_000
+
 // US$ por 1 milhão de tokens. Sonnet 5.5: leitura de cache = 5% da entrada (doc, out/2026).
 const PRECOS: Record<string, { input: number; output: number; cacheWrite: number; cacheWrite1h: number; cacheRead: number }> = {
   'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite: 2.5, cacheWrite1h: 4, cacheRead: 0.10 },
@@ -133,9 +137,22 @@ export async function responder(args: {
     chamadas.push(chamada)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
+      // Espera pelo 1º texto: `espera_primeiro_texto_ms` (20 s); se ela já pediu uma consulta,
+      // até ESPERA_COM_CONSULTA_MS — consultando sem a frase antes (e com o cache frio) ela
+      // passava dos 20 s e o trabalho ia fora, com o gpt respondendo sem os dados.
       await Promise.race([
         c.primeiro,
-        new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error('demora')), cfg.esperaPrimeiroTextoMs) }),
+        new Promise<never>((_, rej) => {
+          const checar = () => {
+            const prazo = inicio + (c.pediuConsulta()
+              ? Math.max(cfg.esperaPrimeiroTextoMs, ESPERA_COM_CONSULTA_MS)
+              : cfg.esperaPrimeiroTextoMs)
+            const falta = prazo - Date.now()
+            if (falta <= 0) rej(new Error('demora'))
+            else timer = setTimeout(checar, falta)
+          }
+          timer = setTimeout(checar, cfg.esperaPrimeiroTextoMs)
+        }),
       ])
       chamada.primeiroTextoMs = Date.now() - inicio
       escolhido = c

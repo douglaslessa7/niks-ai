@@ -189,10 +189,29 @@ Deno.serve(async (req) => {
     let resolveResult!: (r: { visible: string; blocks: string[] }) => void
     const resultPromise = new Promise<{ visible: string; blocks: string[] }>(res => { resolveResult = res })
 
+    // Rede de segurança contra markdown (out/2026): o app mostra texto puro, então "**"
+    // aparece como sujeira na tela. Tira os "**" antes de enviar E de salvar no histórico
+    // (assim a NIKS também não volta a imitar). Asteriscos no fim de um pedaço ficam
+    // guardados até o próximo — o par pode chegar partido entre pedaços.
+    let asteriscoPendente = ''
+    const semNegrito = (s: string) => {
+      s = asteriscoPendente + s
+      asteriscoPendente = ''
+      const fim = s.match(/\*+$/)
+      if (fim) { asteriscoPendente = fim[0]; s = s.slice(0, -fim[0].length) }
+      return s.replace(/\*\*/g, '')
+    }
     const emit = (controller: TransformStreamDefaultController<Uint8Array>, s: string) => {
+      s = semNegrito(s)
       if (!s) return
       visibleText += s
       controller.enqueue(encoder.encode(s))
+    }
+    // Fim do texto do modelo: solta o que ficou guardado (um "*" sozinho é texto de verdade).
+    const soltarPendente = (controller: TransformStreamDefaultController<Uint8Array>) => {
+      const resto = asteriscoPendente.replace(/\*\*/g, '')
+      asteriscoPendente = ''
+      if (resto) { visibleText += resto; controller.enqueue(encoder.encode(resto)) }
     }
 
     const process = (controller: TransformStreamDefaultController<Uint8Array>, isFinal: boolean) => {
@@ -257,6 +276,7 @@ Deno.serve(async (req) => {
       async flush(controller) {
         holdBuffer += decoder.decode()
         process(controller, true)
+        soltarPendente(controller)
         let resultado: ResultadoProposta | null = null
         let propostaRaw: unknown = null
         try {

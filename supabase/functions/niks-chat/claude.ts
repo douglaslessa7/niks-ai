@@ -38,6 +38,8 @@ export type RegistroFerramenta = {
 export type RespostaClaude = RespostaModelo & {
   primeiro: Promise<void>
   abortar: () => void
+  // Já pediu alguma consulta? O roteador espera mais pelo 1º texto quando ela está trabalhando.
+  pediuConsulta: () => boolean
   registros: Promise<RegistroFerramenta[]>
   rodadas: Promise<number>
 }
@@ -117,6 +119,7 @@ export class ClaudeModel {
     let rodada = 0
     let algoSaiu = false   // texto ou proposta — depois disso não há mais troca de modelo
     let houveTexto = false // já foi texto para a tela
+    let pediuConsulta = false
 
     let resolverPrimeiro!: () => void
     let rejeitarPrimeiro!: (e: unknown) => void
@@ -194,9 +197,13 @@ export class ClaudeModel {
                   usoRodada = lerUso(usoRodada, ev.message?.usage)
                   break
                 case 'content_block_start':
-                  if (ev.content_block?.type === 'tool_use' && !nomesConsulta.has(ev.content_block.name)) {
-                    blocos.set(ev.index, { name: ev.content_block.name, arguments: '' })
-                    marcarSaida()
+                  if (ev.content_block?.type === 'tool_use') {
+                    if (nomesConsulta.has(ev.content_block.name)) {
+                      pediuConsulta = true
+                    } else {
+                      blocos.set(ev.index, { name: ev.content_block.name, arguments: '' })
+                      marcarSaida()
+                    }
                   }
                   break
                 case 'content_block_delta':
@@ -292,6 +299,7 @@ export class ClaudeModel {
       uso: usoPromise,
       primeiro,
       abortar: () => controller.abort(),
+      pediuConsulta: () => pediuConsulta,
       registros: registrosPromise,
       rodadas: rodadasPromise,
     }
