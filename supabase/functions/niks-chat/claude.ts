@@ -12,10 +12,6 @@ import { USO_ZERO, type ChamadaFerramenta, type RespostaModelo, type Uso } from 
 // pode pedir CONSULTAS (só leitura). A função executa a consulta, devolve o resultado ao
 // modelo e continua a resposta no MESMO stream — o app não percebe diferença.
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
-
-export const temChaveAnthropic = () => ANTHROPIC_API_KEY.length > 0
-
 export type ConfigClaude = { modelo: string; esforco: string; cacheTtl: '5m' | '1h' }
 
 // Consultas que a NIKS pode pedir no meio da resposta. `definicoes` já no formato Anthropic.
@@ -77,9 +73,12 @@ const somarUso = (a: Uso, b: Uso): Uso => ({
 })
 
 export class ClaudeModel {
-  private client = new Anthropic({ apiKey: ANTHROPIC_API_KEY, maxRetries: 0 })
+  private client: Anthropic
 
-  constructor(private cfg: ConfigClaude) {}
+  // `apiKey`: a chave da conta da Anthropic escolhida para esta resposta (_shared/anthropic-contas.ts).
+  constructor(private cfg: ConfigClaude, apiKey: string) {
+    this.client = new Anthropic({ apiKey, maxRetries: 0 })
+  }
 
   stream(
     systemPrompt: string,

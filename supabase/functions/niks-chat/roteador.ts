@@ -1,13 +1,15 @@
 import { geminiModel, type ChamadaFerramenta, type Uso } from './model.ts'
-import { ClaudeModel, temChaveAnthropic, type ConfigClaude, type Consultas, type RegistroFerramenta } from './claude.ts'
-import { custoUsd, MODELO_OPENAI, tetoAnthropicAtingido } from '../_shared/ia-custos.ts'
+import { ClaudeModel, type ConfigClaude, type Consultas, type RegistroFerramenta } from './claude.ts'
+import { custoUsd, MODELO_OPENAI } from '../_shared/ia-custos.ts'
+import { contasDisponiveis, marcarProblema, problemaDaConta } from '../_shared/anthropic-contas.ts'
 
 // Escolhe quem responde a mensagem do NIKS Chat (out/2026):
 //   1. `chat_config.provedor = 'openai'`        → gpt-5.4-mini (chave de troca SEM deploy);
-//   2. gasto da Anthropic no mês (TODAS as funções) ≥ teto global (ia_config, _shared/ia-custos.ts)
-//                                               → gpt-5.4-mini até o dia 1º seguinte;
-//   3. senão Claude; erro/recusa antes do primeiro texto ou demora > espera_primeiro_texto_ms
-//      → a MESMA mensagem vai para o gpt-5.4-mini, sem a usuária perceber.
+//   2. Claude pela conta da Anthropic da vez (_shared/anthropic-contas.ts: limite por ciclo,
+//      crédito, chave); nenhuma conta disponível → gpt-5.4-mini;
+//   3. erro de crédito ou de chave → a MESMA mensagem vai para a próxima conta; outro
+//      erro/recusa antes do primeiro texto ou demora > espera_primeiro_texto_ms → gpt-5.4-mini,
+//      sem a usuária perceber.
 // Cada chamada vira uma linha em `ia_custos` (registrarCusto, chamado no waitUntil).
 
 // Cliente sem schema tipado (como em protocol-actions.ts): as tabelas novas não existem nos tipos.
@@ -61,6 +63,7 @@ type Chamada = {
   provedor: 'anthropic' | 'openai'
   modelo: string
   esforco: string | null
+  conta: number | null // conta da Anthropic (null no gpt)
   uso: Promise<Uso>
   inicio: number
   primeiroTextoMs: number | null
@@ -89,18 +92,22 @@ export async function responder(args: {
   const cfg = await lerConfig(supabase)
   const chamadas: Chamada[] = []
 
-  let motivo: string | null = null
-  if (cfg.provedor === 'openai') motivo = 'config_openai'
-  else if (!temChaveAnthropic()) motivo = 'sem_chave_anthropic'
-  else if (await tetoAnthropicAtingido(supabase)) motivo = 'teto_mensal'
-
   let escolhido: { stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> } | null = null
 
-  if (!motivo) {
+  let motivo: string | null = null
+  let contas: Awaited<ReturnType<typeof contasDisponiveis>>['contas'] = []
+  if (cfg.provedor === 'openai') motivo = 'config_openai'
+  else {
+    const disp = await contasDisponiveis(supabase)
+    contas = disp.contas
+    if (contas.length === 0) motivo = `sem_conta_anthropic: ${disp.motivo ?? ''}`
+  }
+
+  for (const conta of contas) {
     const inicio = Date.now()
-    const c = new ClaudeModel(cfg).stream(systemPrompt, contextPack, images, tools, consultas)
+    const c = new ClaudeModel(cfg, conta.apiKey).stream(systemPrompt, contextPack, images, tools, consultas)
     const chamada: Chamada = {
-      provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco, uso: c.uso, inicio,
+      provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco, conta: conta.id, uso: c.uso, inicio,
       primeiroTextoMs: null, fim: c.uso.then(() => Date.now()), motivo: null,
       registros: c.registros, rodadas: c.rodadas,
     }
@@ -126,14 +133,25 @@ export async function responder(args: {
       ])
       chamada.primeiroTextoMs = Date.now() - inicio
       escolhido = c
+      break
     } catch (e) {
       // Desiste de esperar, mas a chamada termina em segundo plano: o custo fica exato.
       c.abandonar()
       const msg = (e as Error)?.message ?? String(e)
       const status = (e as { status?: number })?.status
+      const problema = problemaDaConta(e)
+      if (problema) {
+        // Problema da CONTA (crédito ou chave): sai da fila e a mesma mensagem vai para a próxima.
+        await marcarProblema(supabase, conta.id, problema, `${status ?? ''} ${msg}`.trim())
+        motivo = `${problema}_conta_${conta.id}`
+        chamada.motivo = `abandonada: ${motivo}`
+        console.warn('niks-chat/roteador: conta da Anthropic fora da fila —', conta.id, problema)
+        continue
+      }
       motivo = msg === 'demora' ? 'demora' : `erro_anthropic${status ? `_${status}` : ''}: ${msg.slice(0, 200)}`
       chamada.motivo = `abandonada: ${motivo}`
       console.warn('niks-chat/roteador: Claude falhou, indo para o gpt-5.4-mini —', motivo)
+      break
     } finally {
       clearTimeout(timer)
     }
@@ -143,7 +161,7 @@ export async function responder(args: {
     const inicio = Date.now()
     const o = await geminiModel.stream(systemPrompt, contextPack, images, tools)
     chamadas.push({
-      provedor: 'openai', modelo: MODELO_OPENAI, esforco: null, uso: o.uso, inicio,
+      provedor: 'openai', modelo: MODELO_OPENAI, esforco: null, conta: null, uso: o.uso, inicio,
       primeiroTextoMs: null, fim: o.uso.then(() => Date.now()), motivo,
     })
     escolhido = o
@@ -170,6 +188,7 @@ export async function responder(args: {
           fallback_motivo: c.motivo,
           rodadas: c.rodadas ? await c.rodadas : 1,
           uso_estimado: !!u.estimado,
+          anthropic_conta: c.conta,
         }
       }))
       const { error } = await supabase.from('ia_custos').insert(linhas)

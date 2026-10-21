@@ -1,12 +1,14 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@0.131.0'
-import { custoUsd, MODELO_OPENAI, tetoAnthropicAtingido, USO_ZERO, type Uso } from '../_shared/ia-custos.ts'
+import { custoUsd, MODELO_OPENAI, USO_ZERO, type Uso } from '../_shared/ia-custos.ts'
+import { contasDisponiveis, marcarProblema, problemaDaConta } from '../_shared/anthropic-contas.ts'
 
 // Escolhe quem analisa o produto (out/2026) — mesmo esquema do niks-chat:
 //   1. `analise_produto_config.provedor = 'openai'` → gpt-5.4-mini (chave SÓ desta função, sem deploy);
-//   2. gasto da Anthropic no mês (TODAS as funções) ≥ teto global (ia_config) → gpt-5.4-mini
-//      até o dia 1º seguinte;
-//   3. senão Claude; erro, recusa, resposta cortada, JSON ilegível ou demora > espera_ms →
-//      a MESMA análise vai para o gpt-5.4-mini, sem a usuária perceber. Na demora, o Claude
+//   2. Claude pela conta da Anthropic da vez (_shared/anthropic-contas.ts: limite por ciclo,
+//      crédito, chave); nenhuma conta disponível → gpt-5.4-mini;
+//   3. erro de crédito ou de chave → a MESMA análise vai para a próxima conta; outro erro,
+//      recusa, resposta cortada, JSON ilegível ou demora > espera_ms → gpt-5.4-mini, sem a
+//      usuária perceber. Na demora, o Claude
 //      NÃO é cortado: termina em segundo plano e o custo gravado é o que a Anthropic cobrou.
 // Cada chamada vira uma linha em `ia_custos` (registrarCusto, chamado no waitUntil).
 
@@ -29,8 +31,13 @@ const PADRAO: Config = {
   esperaMs: 30_000,
 }
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? ''
-const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY, maxRetries: 0 })
+// Um cliente por chave (uma por conta da Anthropic), criado na primeira vez que a conta é usada.
+const clientes = new Map<string, Anthropic>()
+const clientePara = (apiKey: string) => {
+  let c = clientes.get(apiKey)
+  if (!c) { c = new Anthropic({ apiKey, maxRetries: 0 }); clientes.set(apiKey, c) }
+  return c
+}
 
 // Leitura guardada por 60 s em cada instância da função: a troca de provedor vale em ≤ 1 min.
 const CACHE_MS = 60_000
@@ -92,14 +99,14 @@ const estimarUso = (systemPrompt: string, texto: string, imagens: Imagem[]): Uso
   estimado: true,
 })
 
-async function chamarClaude(cfg: Config, systemPrompt: string, texto: string, imagens: Imagem[]): Promise<{ texto: string; uso: Uso }> {
+async function chamarClaude(cfg: Config, apiKey: string, systemPrompt: string, texto: string, imagens: Imagem[]): Promise<{ texto: string; uso: Uso }> {
   const cache = cfg.cacheTtl === '1h'
     ? { type: 'ephemeral' as const, ttl: '1h' as const }
     : { type: 'ephemeral' as const }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), cfg.esperaMs + LIMITE_ABANDONADA_MS)
   try {
-    const msg: any = await anthropic.messages.create(
+    const msg: any = await clientePara(apiKey).messages.create(
       {
         model: cfg.modelo,
         // Raciocínio adaptativo (padrão do modelo) + esforço da config. O teto cobre
@@ -205,6 +212,7 @@ type Chamada = {
   provedor: 'anthropic' | 'openai'
   modelo: string
   esforco: string | null
+  conta: number | null // conta da Anthropic (null no gpt)
   // Promessa: o Claude abandonado por demora só informa o uso quando termina.
   uso: Promise<Uso>
   duracaoMs: Promise<number>
@@ -229,16 +237,20 @@ export async function analisar(args: {
   let result: any = null
 
   let motivo: string | null = null
+  let contas: Awaited<ReturnType<typeof contasDisponiveis>>['contas'] = []
   if (cfg.provedor === 'openai') motivo = 'config_openai'
-  else if (!ANTHROPIC_API_KEY) motivo = 'sem_chave_anthropic'
-  else if (await tetoAnthropicAtingido(supabase)) motivo = 'teto_mensal'
+  else {
+    const disp = await contasDisponiveis(supabase)
+    contas = disp.contas
+    if (contas.length === 0) motivo = `sem_conta_anthropic: ${disp.motivo ?? ''}`
+  }
 
-  if (!motivo) {
+  for (const conta of contas) {
     const inicio = Date.now()
     // A chamada segue até o fim mesmo se pararmos de esperar por ela (custo exato).
-    const promessa = chamarClaude(cfg, systemPrompt, texto, imagens)
+    const promessa = chamarClaude(cfg, conta.apiKey, systemPrompt, texto, imagens)
     const chamada: Chamada = {
-      provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco,
+      provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco, conta: conta.id,
       uso: promessa.then((c) => c.uso, (e) => (e as { uso?: Uso })?.uso ?? { ...USO_ZERO }),
       duracaoMs: promessa.then(() => Date.now() - inicio, () => Date.now() - inicio),
       motivo: null,
@@ -255,14 +267,25 @@ export async function analisar(args: {
       } catch (e) {
         throw new Error(`json_ilegivel: ${(e as Error)?.message ?? e}`)
       }
+      break
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e)
       const status = (e as { status?: number })?.status
+      const problema = problemaDaConta(e)
+      if (problema) {
+        // Problema da CONTA (crédito ou chave): sai da fila e a mesma análise vai para a próxima.
+        await marcarProblema(supabase, conta.id, problema, `${status ?? ''} ${msg}`.trim())
+        motivo = `${problema}_conta_${conta.id}`
+        chamada.motivo = `abandonada: ${motivo}`
+        console.warn('analisar-produto/roteador: conta da Anthropic fora da fila —', conta.id, problema)
+        continue
+      }
       motivo = msg === 'demora' || msg === 'recusa' || msg === 'cortada' || msg.startsWith('json_ilegivel')
         ? msg.slice(0, 200)
         : `erro_anthropic${status ? `_${status}` : ''}: ${msg.slice(0, 200)}`
       chamada.motivo = `abandonada: ${motivo}`
       console.warn('analisar-produto/roteador: Claude falhou, indo para o gpt-5.4-mini —', motivo)
+      break
     } finally {
       clearTimeout(timer)
     }
@@ -281,7 +304,7 @@ export async function analisar(args: {
       console.error('analisar-produto/roteador: gpt-5.4-mini também falhou', e)
     }
     chamadas.push({
-      provedor: 'openai', modelo: MODELO_OPENAI, esforco: null,
+      provedor: 'openai', modelo: MODELO_OPENAI, esforco: null, conta: null,
       uso: Promise.resolve(uso), duracaoMs: Promise.resolve(Date.now() - inicio), motivo,
     })
   }
@@ -305,6 +328,7 @@ export async function analisar(args: {
           fallback_motivo: c.motivo,
           rodadas: 1,
           uso_estimado: !!u.estimado,
+          anthropic_conta: c.conta,
         }
       }))
       const { error } = await supabase.from('ia_custos').insert(linhas)
