@@ -131,6 +131,7 @@ export class ClaudeModel {
     // cortada no meio, entra no `finally` (entrada e cache já são conhecidos; a saída é estimada
     // pelo texto que saiu — o raciocínio não aparece, então o número é um piso).
     let rodadaAberta = false
+    let inicioRecebido = false // a API começou a ida (message_start) — só então há cobrança
     let usoRodadaAberta: Uso = { ...USO_ZERO }
     let charsRodada = 0
     const abandonar = () => {
@@ -210,6 +211,7 @@ export class ClaudeModel {
             const blocos = new Map<number, { name: string; arguments: string }>()
             let usoRodada: Uso = { ...USO_ZERO }
             rodadaAberta = true
+            inicioRecebido = false
             usoRodadaAberta = { ...USO_ZERO }
             charsRodada = 0
             let textoNestaRodada = false
@@ -220,6 +222,7 @@ export class ClaudeModel {
                 case 'message_start':
                   usoRodada = lerUso(usoRodada, ev.message?.usage)
                   usoRodadaAberta = usoRodada
+                  inicioRecebido = true
                   break
                 case 'content_block_start':
                   if (ev.content_block?.type === 'tool_use') {
@@ -313,7 +316,8 @@ export class ClaudeModel {
           resolverFerramentas(chamadas)
           clearTimeout(timerAbandono)
           let estimado = false
-          if (rodadaAberta) {
+          // Recusada antes de começar (erro da API, ex.: chave): nada foi cobrado, o 0 é exato.
+          if (rodadaAberta && (inicioRecebido || controller.signal.aborted)) {
             // Ida cortada no meio (limite da resposta abandonada, ou erro da API no meio do
             // stream): soma o que já se sabe e marca a linha como estimada.
             estimado = true

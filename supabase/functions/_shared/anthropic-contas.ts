@@ -97,6 +97,9 @@ export function problemaDaConta(e: unknown): ProblemaConta | null {
   const msg = `${(e as Error)?.message ?? ''} ${JSON.stringify((e as { error?: unknown })?.error ?? '')}`
   if (/credit balance|insufficient.{0,20}credit/i.test(msg) || status === 402) return 'sem_credito'
   if (status === 401 || status === 403) return 'chave_invalida'
+  // 400 que fala da CHAVE, não da pergunta — ex.: chave sem workspace ("must include the
+  // anthropic-workspace-id header"), visto em 21/10/2026 na conta 2.
+  if (status === 400 && /api key|workspace/i.test(msg)) return 'chave_invalida'
   return null
 }
 
