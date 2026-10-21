@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, Animated, Easing, Pressable,
   type NativeSyntheticEvent, type NativeScrollEvent, type GestureResponderEvent,
@@ -150,7 +150,8 @@ export default function Horario() {
             key={etapa}
             labels={e.horarios}
             initialIndex={e.horarios.indexOf(valores.current[etapa])}
-            onChange={(i) => { valores.current[etapa] = e.horarios[i]; setSelecionado(e.horarios[i]); }}
+            onChange={(i) => { valores.current[etapa] = e.horarios[i]; }}
+            onSettle={(i) => setSelecionado(e.horarios[i])}
           />
           <View style={{ marginTop: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={OB.pink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -224,14 +225,19 @@ const OP_CLARO = [0, 1, 0, 0, 0, 1, 0];            // #C7C7CC nas pontas
 const OP_MEDIO = [0, 0, 1, 0, 1, 0, 0];            // #818181 nas vizinhas
 const OP_TINTA = [0, 0, 0, 1, 0, 0, 0];            // #121212 no meio
 
-function RodaHorario({ labels, initialIndex, onChange }: {
-  labels: string[]; initialIndex: number; onChange: (i: number) => void;
+// ⚠️ Durante a rolagem a roda NÃO re-renderiza nada: `onChange` só grava num ref do pai,
+// e o estado (lembrete "às HH:MM") só muda em `onSettle`, quando a roda para — como o
+// seletor nativo do iOS. Um commit do React no meio do arraste dava um tranco a cada
+// linha (Fabric + scroll animado no nativo) e a roda parecia travada.
+function RodaHorario({ labels, initialIndex, onChange, onSettle }: {
+  labels: string[]; initialIndex: number; onChange: (i: number) => void; onSettle: (i: number) => void;
 }) {
   const start = Math.max(0, Math.min(labels.length - 1, initialIndex));
   const scrollY = useRef(new Animated.Value(start * PASSO)).current;
   const offsetAtual = useRef(start * PASSO);
   const ultimo = useRef(start);
   const scrollRef = useRef<any>(null);
+  const assentarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const indiceEm = (yy: number) => Math.max(0, Math.min(labels.length - 1, Math.round(yy / PASSO)));
 
@@ -251,12 +257,27 @@ function RodaHorario({ labels, initialIndex, onChange }: {
     },
   ), [labels]);
 
-  const assentar = (ev: NativeSyntheticEvent<NativeScrollEvent>) => {
-    offsetAtual.current = ev.nativeEvent.contentOffset.y;
-    const i = indiceEm(ev.nativeEvent.contentOffset.y);
+  const assentar = (yy: number) => {
+    if (assentarTimer.current) { clearTimeout(assentarTimer.current); assentarTimer.current = null; }
+    offsetAtual.current = yy;
+    const i = indiceEm(yy);
     ultimo.current = i;
     onChange(i);
+    onSettle(i);
   };
+
+  // Soltou o dedo: se a roda ainda vai deslizar, o `onMomentumScrollBegin` cancela e quem
+  // assenta é o `onMomentumScrollEnd`. Soltou parada (sem impulso, o iOS não manda
+  // momentum) → assenta aqui, depois de um instante.
+  const fimDoArraste = (ev: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const yy = ev.nativeEvent.contentOffset.y;
+    if (assentarTimer.current) clearTimeout(assentarTimer.current);
+    assentarTimer.current = setTimeout(() => assentar(yy), 120);
+  };
+  const inicioDoImpulso = () => {
+    if (assentarTimer.current) { clearTimeout(assentarTimer.current); assentarTimer.current = null; }
+  };
+  useEffect(() => () => { if (assentarTimer.current) clearTimeout(assentarTimer.current); }, []);
 
   // Toque numa linha: qual faixa da roda foi tocada (pontas 48, vizinhas 56, meio 72).
   const tocar = (ev: GestureResponderEvent) => {
@@ -267,6 +288,26 @@ function RodaHorario({ labels, initialIndex, onChange }: {
     scrollRef.current?.scrollTo({ y: i * PASSO, animated: true });
   };
 
+  // Linhas montadas UMA vez. A roda re-renderiza a cada horário que passa no meio
+  // (o lembrete "às HH:MM" acompanha); recriar as interpolações aqui religava ~55 nós
+  // animados no nativo no meio do arraste — era o engasgo da rolagem.
+  const linhas = useMemo(() => labels.map((label, k) => {
+    const inputRange = OFFSETS.map((_, j) => (k - 3 + j) * PASSO);
+    const interp = (outputRange: number[]) => scrollY.interpolate({ inputRange, outputRange, extrapolate: 'clamp' });
+    const num = { fontSize: 44, lineHeight: 48, letterSpacing: -0.8, fontVariant: ['tabular-nums' as const] };
+    return (
+      <Animated.View key={label} style={{
+        position: 'absolute', left: 0, right: 0, top: RODA_H / 2 - 36, height: 72,
+        alignItems: 'center', justifyContent: 'center',
+        transform: [{ translateY: interp(OFFSETS) }, { scale: interp(ESCALAS) }],
+      }}>
+        <Animated.Text style={[num, { fontWeight: '500', color: '#C7C7CC', opacity: interp(OP_CLARO) }]}>{label}</Animated.Text>
+        <Animated.Text style={[num, { position: 'absolute', fontWeight: '600', color: OB.sub, opacity: interp(OP_MEDIO) }]}>{label}</Animated.Text>
+        <Animated.Text style={[num, { position: 'absolute', fontWeight: '700', color: OB.ink, opacity: interp(OP_TINTA) }]}>{label}</Animated.Text>
+      </Animated.View>
+    );
+  }), [labels, scrollY]);
+
   return (
     <View style={{ height: RODA_H, marginHorizontal: 17 }}>
       <View pointerEvents="none" style={{
@@ -274,22 +315,7 @@ function RodaHorario({ labels, initialIndex, onChange }: {
       }} />
 
       <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-        {labels.map((label, k) => {
-          const inputRange = OFFSETS.map((_, j) => (k - 3 + j) * PASSO);
-          const interp = (outputRange: number[]) => scrollY.interpolate({ inputRange, outputRange, extrapolate: 'clamp' });
-          const num = { fontSize: 44, lineHeight: 48, letterSpacing: -0.8, fontVariant: ['tabular-nums' as const] };
-          return (
-            <Animated.View key={label} style={{
-              position: 'absolute', left: 0, right: 0, top: RODA_H / 2 - 36, height: 72,
-              alignItems: 'center', justifyContent: 'center',
-              transform: [{ translateY: interp(OFFSETS) }, { scale: interp(ESCALAS) }],
-            }}>
-              <Animated.Text style={[num, { fontWeight: '500', color: '#C7C7CC', opacity: interp(OP_CLARO) }]}>{label}</Animated.Text>
-              <Animated.Text style={[num, { position: 'absolute', fontWeight: '600', color: OB.sub, opacity: interp(OP_MEDIO) }]}>{label}</Animated.Text>
-              <Animated.Text style={[num, { position: 'absolute', fontWeight: '700', color: OB.ink, opacity: interp(OP_TINTA) }]}>{label}</Animated.Text>
-            </Animated.View>
-          );
-        })}
+        {linhas}
       </View>
 
       {/* Gesto. ⚠️ Sem `overflow: 'hidden'` no pai (decisão 24 do README: no Fabric
@@ -300,11 +326,14 @@ function RodaHorario({ labels, initialIndex, onChange }: {
         contentOffset={{ x: 0, y: start * PASSO }}
         showsVerticalScrollIndicator={false}
         snapToInterval={PASSO}
-        decelerationRate="fast"
+        // 'normal' = desaceleração da roda nativa do iOS (desliza e assenta). 'fast'
+        // freava seco ao soltar e a roda parecia travada.
+        decelerationRate="normal"
         scrollEventThrottle={16}
         onScroll={onScroll}
-        onMomentumScrollEnd={assentar}
-        onScrollEndDrag={assentar}
+        onScrollEndDrag={fimDoArraste}
+        onMomentumScrollBegin={inicioDoImpulso}
+        onMomentumScrollEnd={(ev) => assentar(ev.nativeEvent.contentOffset.y)}
       >
         <Pressable onPress={tocar} style={{ height: (labels.length - 1) * PASSO + RODA_H }} />
       </Animated.ScrollView>
