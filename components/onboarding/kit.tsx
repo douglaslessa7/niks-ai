@@ -67,8 +67,8 @@ export const OB_STEPS = {
   // Paywall (Superwall) entre a rotina pronta e a conta — não é tela nossa, não conta.
   // O compromisso passou para DEPOIS da conta (20/out/2026, pedido do produto): é a
   // última tela antes da home. Total continua 27.
-  // ⚠️ A última tela precisa valer OB_STEP_TOTAL: é o que marca o fim do onboarding
-  // no Paywallo (`lib/mixpanel/MixpanelProvider.tsx`).
+  // Conta e compromisso ficam só no Mixpanel: o funil do Paywallo termina na rotina
+  // pronta (`OB_PAYWALLO_LAST`, abaixo).
   criarConta: 26, compromisso: 27,
   // Telas FORA do fluxo (arquivos ficaram no repo, nada navega até elas): o 0
   // garante que nada delas entra no funil se alguém navegar até lá.
@@ -78,6 +78,12 @@ export const OB_STEPS = {
   loading: 0, relatorio: 0, planPreview: 0, apresentacao: 0,
 } as const;
 export const OB_STEP_TOTAL = 27;
+/**
+ * Último passo repassado ao funil do Paywallo (tela Dropout). Os passos depois dele
+ * (paywall → conta → compromisso) ficam só no Mixpanel; o `onboardingManager.complete()`
+ * sai no "Vamos começar" desta tela — ver `lib/mixpanel/MixpanelProvider.tsx`.
+ */
+export const OB_PAYWALLO_LAST = OB_STEPS.rotinaPronta;
 
 /** Evento de Mixpanel no padrão do onboarding (`step_total` fixo do funil novo). */
 export function obStep(step: number, name: string) {

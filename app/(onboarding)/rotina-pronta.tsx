@@ -287,6 +287,7 @@ export default function RotinaPronta() {
 
   const handleContinue = () => {
     haptics.action();
+    // Este evento também marca o fim do onboarding no Paywallo (`OB_PAYWALLO_LAST`).
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
     // Direto para o paywall (20/out/2026): o compromisso passou para DEPOIS da conta.
     router.push('/(onboarding)/paywall-soft' as any);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, useWindowDimensions,
   type NativeSyntheticEvent, type NativeScrollEvent,
@@ -8,7 +8,6 @@ import { useRouter } from 'expo-router';
 import { Sun, CalendarClock, Glasses, Sparkles } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { Image as ExpoImage } from 'expo-image';
-import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 
@@ -93,7 +92,6 @@ function ProgressDots({ active }: { active: number }) {
 
 export default function ScanPrepApp() {
   const router = useRouter();
-  const { track } = useMixpanel();
   const setScanTutorialSeen = useAppStore((s) => s.setScanTutorialSeen);
   const { width, height } = useWindowDimensions();
 
@@ -103,10 +101,6 @@ export default function ScanPrepApp() {
 
   const listRef = useRef<FlatList>(null);
   const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 13, step_name: 'Análise com IA', step_total: 23 });
-  }, []);
 
   // No New Architecture, `onMomentumScrollEnd` sozinho perde o swipe curto —
   // por isso os dois handlers apontam para a mesma função.
@@ -128,7 +122,6 @@ export default function ScanPrepApp() {
 
   const handleOpenCamera = () => {
     haptics.action();
-    track('onboarding_step_completed', { step_number: 13, step_name: 'Análise com IA', step_total: 23 });
     // Tutorial concluído: marca como visto (persistido) para que os próximos scans
     // pulem esta tela e vão direto à câmera — ver hooks/useFaceScan.
     setScanTutorialSeen(true);

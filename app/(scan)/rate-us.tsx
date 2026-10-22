@@ -8,7 +8,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFonts } from 'expo-font';
 // Tela desativada: fora do fluxo de onboarding (política da Apple).
 // import { requestAppReview } from '../../lib/storeReview';
-import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 
@@ -107,7 +106,6 @@ export default function RateUs() {
     'PlayfairDisplay-Italic': require('../../assets/fonts/PlayfairDisplay-Italic.ttf'),
   });
   const router = useRouter();
-  const { track } = useMixpanel();
   const { scanSource, setScanSource } = useAppStore();
 
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -116,10 +114,6 @@ export default function RateUs() {
   // useEffect(() => {
   //   requestAppReview();
   // }, []);
-
-  useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
-  }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -134,7 +128,6 @@ export default function RateUs() {
 
   const handleContinue = () => {
     haptics.action();
-    track('onboarding_step_completed', { step_number: 16, step_name: 'Avalie Nos', step_total: 23 });
     if (scanSource === 'app') {
       setScanSource('onboarding');
       router.replace('/(app)/skin-result' as any);

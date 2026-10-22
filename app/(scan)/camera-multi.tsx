@@ -22,7 +22,6 @@ import { useFonts } from 'expo-font';
 import {
   Nunito_800ExtraBold, Nunito_700Bold, Nunito_600SemiBold, Nunito_400Regular,
 } from '@expo-google-fonts/nunito';
-import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
 import { haptics } from '../../lib/haptics';
 import { ScanCollage, scanCollageHeight } from '../../components/scan/ScanCollage';
@@ -133,7 +132,6 @@ export default function CameraMulti() {
   const setSkinScanImages = useAppStore((s) => s.setSkinScanImages);
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
-  const { track } = useMixpanel();
 
   const [photos, setPhotos] = useState<(string | null)[]>(Array(TOTAL).fill(null));
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -155,10 +153,6 @@ export default function CameraMulti() {
   // frame. Derivada da tela (o app roda em 393pt e 402pt), nunca hardcoded.
   const { width: winW } = useWindowDimensions();
   const reviewW = Math.min(winW, 393) - 48 - 2;
-
-  useEffect(() => {
-    track('onboarding_step_viewed', { step_number: 14, step_name: 'Scan - Câmera (6 fotos)', step_total: 23 });
-  }, []);
 
   // Índice ativo DERIVADO do array — nunca um state paralelo, que dessincronizaria
   // do `photos` a cada retake. -1 = as 6 estão prontas.
@@ -470,7 +464,6 @@ export default function CameraMulti() {
         `layoutB ${kb(b.base64)}KB · total ${kb(neutral.base64) + kb(a.base64) + kb(b.base64)}KB`,
       );
 
-      track('onboarding_step_completed', { step_number: 14, step_name: 'Scan - Câmera (6 fotos)', step_total: 23 });
       // `photos[0]` (e não `neutral.uri`) é exatamente a foto que a revisão mostrou.
       setSkinScanImages({ base64: neutral.base64, uri: photos[0]! }, [neutral.base64, a.base64, b.base64]);
       router.push('/(scan)/loading-dentro-app' as any);
