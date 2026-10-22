@@ -13,11 +13,11 @@ import {
 // logo depois, e a tela segue sozinha para a 0.2 "Seus dados" (consentimento LGPD),
 // que leva ao nome. `replace`: não há para onde voltar daqui.
 //
-// 1,5 s VISÍVEL: a Olá monta ainda POR BAIXO da splash (mínimo de 1 s + fade de
+// 2,5 s VISÍVEL: a Olá monta ainda POR BAIXO da splash (mínimo de 1 s + fade de
 // 300 ms), então o tempo só começa a contar quando a splash termina de sumir
 // (`splashDone`). Entrada sem splash (ex.: depois de sair da conta, `splashDone` já
 // é true) conta do mount.
-const HOLD_MS = 1500;
+const HOLD_MS = 2500;
 const STEP = OB_STEPS.ola;
 const STEP_NAME = 'Olá';
 
