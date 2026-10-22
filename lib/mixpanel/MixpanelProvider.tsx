@@ -29,6 +29,14 @@ import { getOnboardingAttempt } from '../onboardingAttempt';
  *   `lib/onboardingAttempt.ts`): quem reabre o app sem conta refaz o onboarding do
  *   zero, e repassar de novo contaria essa pessoa outra vez no passo 1. Vale para o
  *   funil inteiro (passos e `complete()`); as reaberturas ficam só no Mixpanel.
+ * - Envio forçado: os passos são eventos "normais" do SDK, que ficam numa fila em memória
+ *   e só saem 10 s depois do 1º evento (ou com 25). O SDK esvazia essa fila ao ir para
+ *   segundo plano só na transição EXATA `active → background` — no iOS o app passa por
+ *   `inactive` antes, então isso nunca acontece, e quem saía nos primeiros segundos
+ *   perdia o pacote inteiro (instalação sem nenhum passo). Por isso a fila é enviada logo
+ *   depois de cada passo e quando o app fica `inactive`/`background`
+ *   (`enviarFilaPaywallo`). Nada sai em dobro: o SDK tira os eventos da fila antes de
+ *   enviar. Os envios podem correr em paralelo, mas cada evento leva a ordem do passo.
  * - Fire-and-forget: nada aqui é aguardado pela tela e nenhum erro sai daqui.
  */
 const PAYWALLO_READY_TIMEOUT_MS = 10_000;
@@ -45,6 +53,15 @@ function paywalloReadyOrTimeout(): Promise<void> {
   );
 }
 
+/** Envia agora a fila de eventos "normais" do SDK. Sem SDK iniciado não faz nada. */
+function enviarFilaPaywallo() {
+  try {
+    PaywalloClient.getApiClient()?.flushEventBatch().catch(() => {});
+  } catch {
+    // Nunca derruba quem chamou.
+  }
+}
+
 async function completePaywalloOnboardingOnce(): Promise<void> {
   // A fila é serial: um 2º toque só lê a trava depois de o 1º ter gravado.
   if ((await AsyncStorage.getItem(PAYWALLO_COMPLETED_KEY)) === 'true') return;
@@ -52,6 +69,7 @@ async function completePaywalloOnboardingOnce(): Promise<void> {
   // Falhou (ex.: SDK sem init) → lança, a trava não é gravada e um novo toque em
   // "Vamos começar" tenta de novo.
   await onboardingManager.complete();
+  enviarFilaPaywallo();
   await AsyncStorage.setItem(PAYWALLO_COMPLETED_KEY, 'true');
 }
 
@@ -67,6 +85,7 @@ function forwardOnboardingStepToPaywallo(event: string, properties?: Record<stri
     paywalloQueue = paywalloQueue
       .then(paywalloReadyOrTimeout)
       .then(() => PaywalloClient.onboardingStep(step, name))
+      .then(enviarFilaPaywallo)
       .catch(() => {});
   } else if (event === 'onboarding_step_completed' && step === OB_PAYWALLO_LAST) {
     paywalloQueue = paywalloQueue.then(completePaywalloOnboardingOnce).catch(() => {});
@@ -171,8 +190,10 @@ export function MixpanelProvider({ children }: { children: ReactNode }) {
 
   // Segundo plano → manda o que estiver guardado no SDK (quem sai rápido não perde os
   // eventos). Antes do init não há nada no SDK; a fila em memória espera o init.
+  // Paywallo também no `inactive`: é o 1º estado ao sair no iOS (ver o topo do arquivo).
   useEffect(() => {
     const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'inactive' || estado === 'background') enviarFilaPaywallo();
       if (estado === 'background' && mixpanelPronto) mixpanel.flush();
     });
     return () => sub.remove();
