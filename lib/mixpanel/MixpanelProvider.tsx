@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PaywalloClient, onboardingManager } from '@virex-tech/paywallo-sdk';
 import { mixpanel, initMixpanel } from './mixpanelClient';
@@ -72,6 +73,76 @@ function forwardOnboardingStepToPaywallo(event: string, properties?: Record<stri
   }
 }
 
+/**
+ * Fila até o Mixpanel iniciar. O `initMixpanel()` é assíncrono e a 1ª tela (Olá) monta
+ * junto com o provider: antes, tudo o que chegava nesse intervalo era DESCARTADO
+ * (`if (!isReady) return`), e o passo 1 do onboarding quase não aparecia no Mixpanel.
+ *
+ * - Antes de iniciar, cada chamada entra na fila, na ordem em que aconteceu. O evento
+ *   guarda o horário original (`time`, em ms — o formato do SDK nativo, e as
+ *   propriedades do evento sobrescrevem o horário que o SDK poria na hora do envio).
+ * - Iniciou → a fila é esvaziada de uma vez, na ordem, e daí em diante tudo vai direto.
+ *   O esvaziamento é síncrono e tira os itens da fila antes de enviar: nada sai em dobro.
+ * - Teto de `MIXPANEL_FILA_MAX` itens (se o init nunca terminar, a fila não cresce sem
+ *   fim); o que passar disso é descartado.
+ * - `timeEvent` na fila começa a contar quando a fila esvazia, não no horário original.
+ * - Estado de módulo, não de componente: telas que guardam o `track` do 1º render
+ *   (`useOnMount`) também passam a enviar.
+ */
+type MixpanelPendente =
+  | { tipo: 'track'; evento: string; props?: Record<string, unknown>; quando: number }
+  | { tipo: 'identify'; userId: string }
+  | { tipo: 'reset' }
+  | { tipo: 'timeEvent'; evento: string }
+  | { tipo: 'people'; props: Record<string, unknown> }
+  | { tipo: 'super'; props: Record<string, unknown> };
+
+const MIXPANEL_FILA_MAX = 200;
+let mixpanelPronto = false;
+const mixpanelFila: MixpanelPendente[] = [];
+
+function executarNoMixpanel(item: MixpanelPendente, daFila: boolean) {
+  switch (item.tipo) {
+    case 'track':
+      mixpanel.track(item.evento, daFila ? { ...item.props, time: item.quando } : item.props);
+      break;
+    case 'identify':
+      mixpanel.identify(item.userId);
+      break;
+    case 'reset':
+      mixpanel.reset();
+      break;
+    case 'timeEvent':
+      mixpanel.timeEvent(item.evento);
+      break;
+    case 'people':
+      mixpanel.getPeople().set(item.props);
+      break;
+    case 'super':
+      mixpanel.registerSuperProperties(item.props);
+      break;
+  }
+}
+
+function enviarAoMixpanel(item: MixpanelPendente) {
+  if (mixpanelPronto) {
+    executarNoMixpanel(item, false);
+    return;
+  }
+  if (mixpanelFila.length < MIXPANEL_FILA_MAX) mixpanelFila.push(item);
+}
+
+function esvaziarFilaMixpanel() {
+  const itens = mixpanelFila.splice(0, mixpanelFila.length);
+  for (const item of itens) {
+    try {
+      executarNoMixpanel(item, true);
+    } catch (erro) {
+      console.error('[mixpanel] falha ao enviar item da fila:', erro);
+    }
+  }
+}
+
 interface MixpanelContextValue {
   track: (event: string, properties?: Record<string, unknown>) => void;
   identify: (userId: string) => void;
@@ -90,8 +161,21 @@ export function MixpanelProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     initMixpanel()
-      .then(() => setIsReady(true))
+      .then(() => {
+        esvaziarFilaMixpanel();
+        mixpanelPronto = true;
+        setIsReady(true);
+      })
       .catch(console.error);
+  }, []);
+
+  // Segundo plano → manda o que estiver guardado no SDK (quem sai rápido não perde os
+  // eventos). Antes do init não há nada no SDK; a fila em memória espera o init.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'background' && mixpanelPronto) mixpanel.flush();
+    });
+    return () => sub.remove();
   }, []);
 
   const value: MixpanelContextValue = {
@@ -99,36 +183,19 @@ export function MixpanelProvider({ children }: { children: ReactNode }) {
       // Todo evento de onboarding leva a tentativa (1 = primeira vez nesta instalação).
       const attempt = event.startsWith('onboarding_') ? getOnboardingAttempt() : null;
       const props = attempt !== null ? { ...properties, onboarding_attempt: attempt } : properties;
-      // Antes do `isReady`: o funil do Paywallo não depende do Mixpanel ter iniciado
+      // Na hora, fora da fila: o funil do Paywallo não depende do Mixpanel ter iniciado
       // (senão a 1ª tela, que monta cedo, poderia se perder).
       forwardOnboardingStepToPaywallo(event, props);
-      if (!isReady) return;
-      mixpanel.track(event, props);
+      enviarAoMixpanel({ tipo: 'track', evento: event, props, quando: Date.now() });
     },
-    identify: (userId) => {
-      if (!isReady) return;
-      mixpanel.identify(userId);
-    },
-    reset: () => {
-      if (!isReady) return;
-      mixpanel.reset();
-    },
+    identify: (userId) => enviarAoMixpanel({ tipo: 'identify', userId }),
+    reset: () => enviarAoMixpanel({ tipo: 'reset' }),
     flush: () => {
-      if (!isReady) return;
-      mixpanel.flush();
+      if (mixpanelPronto) mixpanel.flush();
     },
-    timeEvent: (event) => {
-      if (!isReady) return;
-      mixpanel.timeEvent(event);
-    },
-    setUserProperties: (properties) => {
-      if (!isReady) return;
-      mixpanel.getPeople().set(properties);
-    },
-    registerSuperProperties: (properties) => {
-      if (!isReady) return;
-      mixpanel.registerSuperProperties(properties);
-    },
+    timeEvent: (event) => enviarAoMixpanel({ tipo: 'timeEvent', evento: event }),
+    setUserProperties: (properties) => enviarAoMixpanel({ tipo: 'people', props: properties }),
+    registerSuperProperties: (properties) => enviarAoMixpanel({ tipo: 'super', props: properties }),
     isReady,
   };
 

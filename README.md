@@ -2005,6 +2005,16 @@ lib/mixpanel/
           <Stack />
 ```
 
+**Fila até o Mixpanel iniciar (out/2026):** o `initMixpanel()` é assíncrono e a 1ª tela monta junto com o provider. Antes, o `track` do `MixpanelProvider` **descartava** tudo o que chegava nesse intervalo (`if (!isReady) return`): o `app_opened` nunca chegava e o passo 1 do onboarding (Olá) se perdia com frequência. Agora:
+- **Antes de iniciar:** `track`, `identify`, `reset`, `timeEvent`, `setUserProperties` e `registerSuperProperties` entram numa **fila em memória**, na ordem em que aconteceram. O evento guarda o **horário original** (`time`, em ms — o formato do SDK nativo; a propriedade do evento sobrescreve o horário que o SDK poria no envio).
+- **Iniciou:** a fila é esvaziada de uma vez, na ordem (depois das super properties do init), e daí em diante tudo vai direto. O esvaziamento é síncrono e tira os itens antes de enviar: nada sai em dobro.
+- **Teto de 200 itens** (`MIXPANEL_FILA_MAX`): se o init nunca terminar, a fila não cresce sem fim; o que passar disso é descartado.
+- **`timeEvent` que passou pela fila** começa a contar quando a fila esvazia, não no horário original (o `$duration` fica um pouco menor).
+- **Estado de módulo, não de componente:** telas que guardam o `track` do 1º render (`useOnMount`) também passam a enviar. O `isReady` continua existindo para quem precisa esperar o init (ex.: `onboarding_started` no `(onboarding)/_layout`).
+- **Segundo plano:** com o app indo para background, o provider chama `mixpanel.flush()` (o SDK do iOS já faz isso sozinho; fica explícito). Se o app sair **antes** de o Mixpanel iniciar, a fila em memória se perde.
+- **O repasse ao Paywallo não mudou:** continua saindo na hora, antes da fila, uma vez por evento.
+- Chamadas diretas ao `mixpanel` fora do provider (ex.: `lib/revenuecat.ts`) não passam pela fila.
+
 **Super properties registradas no init** (enviadas em todos os eventos automaticamente):
 `platform`, `app_version`, `data_source: 'app'`
 
