@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PaywalloClient, onboardingManager } from '@virex-tech/paywallo-sdk';
 import { mixpanel, initMixpanel } from './mixpanelClient';
 import { OB_STEP_TOTAL, OB_PAYWALLO_LAST } from '../../components/onboarding/kit';
+import { getOnboardingAttempt } from '../onboardingAttempt';
 
 /**
  * Paywallo: funil de onboarding (tela Dropout). O SDK só monta o funil com
@@ -23,6 +24,10 @@ import { OB_STEP_TOTAL, OB_PAYWALLO_LAST } from '../../components/onboarding/kit
  *   do passo `OB_PAYWALLO_LAST` ("Vamos começar", logo antes do paywall), na MESMA
  *   fila — sai sempre depois do passo 25. No máximo uma vez por instalação: a trava
  *   fica no AsyncStorage (`PAYWALLO_COMPLETED_KEY`), gravada só depois do sucesso.
+ * - Só na 1ª tentativa de onboarding desta instalação (`onboarding_attempt === 1`,
+ *   `lib/onboardingAttempt.ts`): quem reabre o app sem conta refaz o onboarding do
+ *   zero, e repassar de novo contaria essa pessoa outra vez no passo 1. Vale para o
+ *   funil inteiro (passos e `complete()`); as reaberturas ficam só no Mixpanel.
  * - Fire-and-forget: nada aqui é aguardado pela tela e nenhum erro sai daqui.
  */
 const PAYWALLO_READY_TIMEOUT_MS = 10_000;
@@ -50,6 +55,7 @@ async function completePaywalloOnboardingOnce(): Promise<void> {
 }
 
 function forwardOnboardingStepToPaywallo(event: string, properties?: Record<string, unknown>) {
+  if (getOnboardingAttempt() !== 1) return;
   if (properties?.step_total !== OB_STEP_TOTAL) return;
   const step = properties.step_number;
   if (typeof step !== 'number' || step <= 0 || step > OB_PAYWALLO_LAST) return;
@@ -90,11 +96,14 @@ export function MixpanelProvider({ children }: { children: ReactNode }) {
 
   const value: MixpanelContextValue = {
     track: (event, properties) => {
+      // Todo evento de onboarding leva a tentativa (1 = primeira vez nesta instalação).
+      const attempt = event.startsWith('onboarding_') ? getOnboardingAttempt() : null;
+      const props = attempt !== null ? { ...properties, onboarding_attempt: attempt } : properties;
       // Antes do `isReady`: o funil do Paywallo não depende do Mixpanel ter iniciado
       // (senão a 1ª tela, que monta cedo, poderia se perder).
-      forwardOnboardingStepToPaywallo(event, properties);
+      forwardOnboardingStepToPaywallo(event, props);
       if (!isReady) return;
-      mixpanel.track(event, properties);
+      mixpanel.track(event, props);
     },
     identify: (userId) => {
       if (!isReady) return;

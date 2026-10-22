@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { startOnboardingAttempt } from '../lib/onboardingAttempt';
 
 // Ponto de entrada — SÓ decide o destino da abertura, sem UI própria. A splash de
 // abertura (tela 0 do design "NIKS Onboarding - fluxo completo": logo #FF5EA8 no
@@ -20,7 +21,13 @@ export default function Index() {
       if (event !== 'INITIAL_SESSION') return;
       // Usuária logada — delega a verificação de assinatura para (app)/_layout.tsx
       // (evita race condition: loginRevenueCat pode não ter completado ainda).
-      router.replace(session ? '/(app)/home' : '/(onboarding)/ola');
+      if (session) {
+        router.replace('/(app)/home');
+        return;
+      }
+      // Sem sessão: nova tentativa de onboarding (`lib/onboardingAttempt.ts`). Somada
+      // ANTES de navegar, para o Olá já mandar o passo 1 com o número certo.
+      startOnboardingAttempt().finally(() => router.replace('/(onboarding)/ola'));
     });
     return () => subscription.unsubscribe();
   }, []);
