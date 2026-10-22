@@ -17,7 +17,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, Image, TouchableOpacity, Animated, Easing, Modal, Alert,
-  ActivityIndicator, StyleSheet, LayoutAnimation, Platform, UIManager,
+  ActivityIndicator, StyleSheet, LayoutAnimation, Platform, UIManager, useWindowDimensions,
   type StyleProp, type TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -219,38 +219,166 @@ function BalancedText({ text, style }: { text: string; style: StyleProp<TextStyl
   );
 }
 
-// Card "O que esperar" que vira no toque (frente colorida / verso com o texto).
-function FlipCard({ label, body, bg }: { label: string; body: string; bg: string }) {
-  const [flipped, setFlipped] = useState(false);
+// Card "O que esperar" (frente colorida). No toque ele sai do lugar, cresce até o meio
+// da tela girando e mostra o verso com o texto INTEIRO (antes o verso era do tamanho do
+// card e cortava o texto). Fechar (X ou toque fora) gira de volta e pousa no lugar.
+const FLIP_CARD_W = 160;
+const FLIP_CARD_H = 176;
+
+function FlipFront({ label }: { label: string }) {
+  return (
+    <>
+      <View style={{ gap: 1 }}>
+        <Text style={styles.flipEm}>Em</Text>
+        <Text style={styles.flipLabel}>{label}</Text>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={styles.flipEm}>Toque para ver</Text>
+        <View style={styles.flipBtn}>
+          <Svg width={15} height={15} viewBox="0 0 24 24">
+            {['M3 12a9 9 0 0 1 15.5-6.2L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-15.5 6.2L3 16', 'M3 21v-5h5'].map((d) => (
+              <Path key={d} d={d} fill="none" stroke={PINK_TEXT} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
+            ))}
+          </Svg>
+        </View>
+      </View>
+    </>
+  );
+}
+
+// Cores de cada card de "O que esperar": `bg` = fundo (frente E verso), `bd` = borda do
+// verso, `tom` = "Em …" e o X — sempre o mesmo matiz do card (rosa, lilás, verde).
+type FlipCores = { bg: string; bd: string; tom: string };
+
+// 2 semanas (rosa) · 1 mês (lilás) · 3 meses (verde). `bg` são os fundos que os cards já tinham.
+const FLIP_CORES: FlipCores[] = [
+  { bg: '#FFE3EE', bd: '#F4A6C6', tom: PINK_DEEP },
+  { bg: '#F1E4F7', bd: '#CDAEDE', tom: '#7A4A94' },
+  { bg: '#E2F1EF', bd: '#A6D3CC', tom: '#2E7A6E' },
+];
+
+// Tamanhos de letra tentados, do maior para o menor, até o texto caber no quadrado.
+const FLIP_FONTES = [17, 16, 15, 14, 13, 12, 11];
+
+// Conteúdo do verso. Usado duas vezes: invisível, para MEDIR a altura do texto antes
+// de animar, e no card aberto.
+function FlipBackContent({ label, body, tom, fonte }: { label: string; body: string; tom: string; fonte: number }) {
+  return (
+    <View style={{ paddingTop: 20, paddingHorizontal: 20, paddingBottom: 20 }}>
+      <Text style={{ fontSize: 15, fontWeight: '600', color: tom, marginRight: 44 }}>Em {label}</Text>
+      <Text style={{ marginTop: 10, fontSize: fonte, lineHeight: Math.round(fonte * 1.4), letterSpacing: -0.3, color: INK }} lineBreakStrategyIOS="push-out">
+        {body}
+      </Text>
+    </View>
+  );
+}
+
+type FlipOrigem = { x: number; y: number; w: number; h: number };
+
+function FlipCardAberto({ origem, label, body, cores, onFechado }: {
+  origem: FlipOrigem; label: string; body: string; cores: FlipCores; onFechado: () => void;
+}) {
+  const { width: W, height: H } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  // QUADRADO e sem rolagem (pedido do produto): o texto inteiro cabe no lado do
+  // quadrado — se não couber, a letra diminui (FLIP_FONTES) até caber.
+  const lado = Math.min(W - 48, 360, H - insets.top - insets.bottom - 80);
+  const [iFonte, setIFonte] = useState(0);
+  const [pronto, setPronto] = useState(false);
   const v = useRef(new Animated.Value(0)).current;
+  const fechando = useRef(false);
+
+  const finalX = (W - lado) / 2;
+  const finalY = (H - lado) / 2;
+
+  // Abre só depois de achar a letra que cabe. Tamanho e posição animam no JS (layout),
+  // então o giro vai no mesmo driver.
   useEffect(() => {
-    Animated.timing(v, { toValue: flipped ? 1 : 0, duration: 550, easing: Easing.bezier(0.3, 0.7, 0.2, 1), useNativeDriver: true }).start();
-  }, [flipped, v]);
+    if (!pronto) return;
+    Animated.timing(v, { toValue: 1, duration: 600, easing: Easing.bezier(0.3, 0.7, 0.2, 1), useNativeDriver: false }).start();
+  }, [pronto, v]);
+
+  const fechar = (comToque: boolean) => {
+    if (fechando.current) return;
+    fechando.current = true;
+    if (comToque) haptics.tap();
+    Animated.timing(v, { toValue: 0, duration: 500, easing: Easing.bezier(0.3, 0.7, 0.2, 1), useNativeDriver: false })
+      .start(() => onFechado());
+  };
+
+  const faixa = (de: number, para: number) => v.interpolate({ inputRange: [0, 1], outputRange: [de, para] });
   const front = v.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
   const back = v.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '360deg'] });
+  const raio = faixa(13, 22);
+
   return (
-    <TouchableOpacity activeOpacity={1} onPress={() => { haptics.tap(); setFlipped((f) => !f); }} style={{ width: 160, height: 176 }}>
-      <Animated.View style={[styles.flipFace, { backgroundColor: bg, padding: 14, justifyContent: 'space-between', transform: [{ perspective: 900 }, { rotateY: front }] }]}>
-        <View style={{ gap: 1 }}>
-          <Text style={styles.flipEm}>Em</Text>
-          <Text style={styles.flipLabel}>{label}</Text>
+    <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={() => fechar(false)}>
+      {/* Fundo escurecido: tocar fora fecha (sem vibração — é o backdrop). */}
+      <TouchableOpacity activeOpacity={1} onPress={() => fechar(false)} style={StyleSheet.absoluteFill}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(26,8,18,0.5)', opacity: v }]} />
+      </TouchableOpacity>
+
+      {/* Medição invisível: remonta (key) a cada tamanho de letra, até caber no quadrado. */}
+      {!pronto && (
+        <View
+          key={iFonte}
+          pointerEvents="none"
+          style={{ position: 'absolute', left: 0, top: 0, width: lado - 4, opacity: 0 }}
+          onLayout={(e) => {
+            const cabe = e.nativeEvent.layout.height <= lado - 4;
+            if (cabe || iFonte >= FLIP_FONTES.length - 1) setPronto(true);
+            else setIFonte(iFonte + 1);
+          }}
+        >
+          <FlipBackContent label={label} body={body} tom={cores.tom} fonte={FLIP_FONTES[iFonte]} />
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={styles.flipEm}>Toque para ver</Text>
-          <View style={styles.flipBtn}>
-            <Svg width={15} height={15} viewBox="0 0 24 24">
-              {['M3 12a9 9 0 0 1 15.5-6.2L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-15.5 6.2L3 16', 'M3 21v-5h5'].map((d) => (
-                <Path key={d} d={d} fill="none" stroke={PINK_TEXT} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
-              ))}
-            </Svg>
+      )}
+
+      <Animated.View
+        pointerEvents="box-none"
+        style={{ position: 'absolute', left: faixa(origem.x, finalX), top: faixa(origem.y, finalY), width: faixa(origem.w, lado), height: faixa(origem.h, lado) }}
+      >
+        <Animated.View style={[styles.flipFace, { borderRadius: raio, backgroundColor: cores.bg, padding: 14, justifyContent: 'space-between', transform: [{ perspective: 900 }, { rotateY: front }] }]}>
+          <FlipFront label={label} />
+        </Animated.View>
+        <Animated.View style={[styles.flipFace, { borderRadius: raio, backgroundColor: cores.bg, borderWidth: 2, borderColor: cores.bd, overflow: 'hidden', transform: [{ perspective: 900 }, { rotateY: back }] }]}>
+          {/* Tamanho fixo (o final): o texto não muda de quebra enquanto o card cresce. */}
+          <View style={{ width: lado - 4, height: lado - 4 }}>
+            <FlipBackContent label={label} body={body} tom={cores.tom} fonte={FLIP_FONTES[iFonte]} />
+            <TouchableOpacity
+              onPress={() => fechar(true)}
+              hitSlop={10}
+              accessibilityLabel="Fechar"
+              style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Svg width={14} height={14} viewBox="0 0 24 24">
+                <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={cores.tom} strokeWidth={2.6} strokeLinecap="round" />
+              </Svg>
+            </TouchableOpacity>
           </View>
+        </Animated.View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+function FlipCard({ label, body, cores }: { label: string; body: string; cores: FlipCores }) {
+  const ref = useRef<View>(null);
+  const [aberto, setAberto] = useState<FlipOrigem | null>(null);
+  const abrir = () => {
+    haptics.tap();
+    ref.current?.measureInWindow((x, y, w, h) => setAberto({ x, y, w: w || FLIP_CARD_W, h: h || FLIP_CARD_H }));
+  };
+  return (
+    <>
+      <TouchableOpacity activeOpacity={1} onPress={abrir} style={{ width: FLIP_CARD_W, height: FLIP_CARD_H }}>
+        {/* O card do lugar some enquanto a cópia está aberta e reaparece quando ela pousa. */}
+        <View ref={ref} collapsable={false} style={[styles.flipFace, { backgroundColor: cores.bg, padding: 14, justifyContent: 'space-between', opacity: aberto ? 0 : 1 }]}>
+          <FlipFront label={label} />
         </View>
-      </Animated.View>
-      <Animated.View style={[styles.flipFace, styles.flipBack, { transform: [{ perspective: 900 }, { rotateY: back }] }]}>
-        <Text style={{ fontSize: 13, fontWeight: '600', color: PINK_DEEP }}>Em {label}</Text>
-        <Text style={{ fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: INK }} numberOfLines={6} lineBreakStrategyIOS="push-out">{body}</Text>
-      </Animated.View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      {aberto && <FlipCardAberto origem={aberto} label={label} body={body} cores={cores} onFechado={() => setAberto(null)} />}
+    </>
   );
 }
 
@@ -865,8 +993,8 @@ export default function Protocolo() {
     { l: '2 semanas', b: dicas[1] },
     { l: '1 mês', b: dicas[2] },
     { l: '3 meses', b: dicas[3] },
-  ].map((m, i) => ({ ...m, bg: ['#FFE3EE', '#F1E4F7', '#E2F1EF'][i] }))
-    .filter((m): m is { l: string; b: string; bg: string } => !!(m.b ?? '').trim());
+  ].map((m, i) => ({ ...m, cores: FLIP_CORES[i] }))
+    .filter((m): m is { l: string; b: string; cores: FlipCores } => !!(m.b ?? '').trim());
   const cron = parseCronograma(dicas[4]);
   const alert = (dicas[0] ?? '').trim();
 
@@ -1274,7 +1402,7 @@ export default function Protocolo() {
               <>
                 <Text style={[styles.sectionTitle, { marginTop: 30, paddingHorizontal: 18 }]}>O que esperar</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 9 }} contentContainerStyle={{ gap: 9, paddingHorizontal: 18 }}>
-                  {marcos.map((m) => <FlipCard key={m.l} label={m.l} body={m.b} bg={m.bg} />)}
+                  {marcos.map((m) => <FlipCard key={m.l} label={m.l} body={m.b} cores={m.cores} />)}
                 </ScrollView>
               </>
             )}
@@ -1704,10 +1832,6 @@ const styles = StyleSheet.create({
   stepInstruction: { paddingTop: 12, fontSize: 16, lineHeight: 22, letterSpacing: -0.3, color: BODY },
 
   flipFace: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 13, backfaceVisibility: 'hidden' },
-  flipBack: {
-    backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: PINK,
-    paddingTop: 13, paddingHorizontal: 13, paddingBottom: 12, gap: 6,
-  },
   flipEm: { fontSize: 13, fontWeight: '500', color: SOFT },
   flipLabel: { fontSize: 24, fontWeight: '700', lineHeight: 28, letterSpacing: -0.7, color: INK },
   flipBtn: {

@@ -77,10 +77,14 @@ type Props = {
    *  mostra as fotos alternando rosto ↔ produto — as mesmas da revelação. Sem esta
    *  prop, o disco mostra a porcentagem, como nas outras telas. */
   center?: ReactNode;
+  /** Linha embaixo dos pontinhos. Hoje só o scan do ONBOARDING (`analisando-foto`) usa,
+   *  com a prova social (`components/onboarding/ProvaSocial`); os scans de dentro do app
+   *  não passam nada (pedido do produto). */
+  footer?: ReactNode;
 };
 
 export function ScanLoadingView({
-  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry, plainBackground = false, center,
+  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry, plainBackground = false, center, footer,
 }: Props) {
   const { width } = useWindowDimensions();
   const { y } = useObFrame();
@@ -215,6 +219,13 @@ export function ScanLoadingView({
               <StepDot key={i} active={i === stepIdx} done={i <= stepIdx} />
             ))}
           </View>
+
+          {/* Rodapé opcional — só o loading do ONBOARDING passa (prova social). */}
+          {footer && (
+            <View style={{ position: 'absolute', left: 32, right: 32, top: y(736), alignItems: 'center' }}>
+              {footer}
+            </View>
+          )}
         </>
       )}
     </View>

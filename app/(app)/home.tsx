@@ -413,11 +413,11 @@ export default function Home() {
   // Scan de rosto a cada 7 dias (51a): bloqueado enquanto faltam dias.
   const scanDays = scanDaysLeft(d.lastScanAt, now);
 
-  // Cards "Pra você · Hoje" da 51a: depois do card de scan vem Progresso e então a
-  // lista PC2 do design (sem o progresso repetido).
+  // Cards "Pra você · Hoje" da 51a: depois do card de scan vem o NIKS Chat e então
+  // Progresso (ordem trocada em 20/10/2026, decisão do Douglas) e o resto da lista PC2.
   const cards: { text: string; icon: CardIcon; onPress?: () => void }[] = [
-    { text: 'Progresso', icon: 'prog', onPress: () => go('/progresso') },
     { text: 'NIKS Chat', icon: 'chat', onPress: () => go('/niks-chat') },
+    { text: 'Progresso', icon: 'prog', onPress: () => go('/progresso') },
     { text: 'Escanear produto', icon: 'prod', onPress: () => go('/(scan)/product-camera') },
     // Alarme de rotina OCULTADO por enquanto (11/10/2026, decisão do Douglas) até a
     // função ser repensada. A tela /alarme segue existindo; para voltar, descomentar.

@@ -6,14 +6,28 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 // ("phrase-without-block"). Os argumentos chegam em pedaços no stream e são juntados.
 export type ChamadaFerramenta = { name: string; arguments: string }
 
+// Tokens que a API devolveu (para o custo em `ia_custos`). `input` = entrada SEM cache.
+// `estimado`: a chamada foi cortada antes de a API informar o uso — os números são um piso.
+export type Uso = { input: number; cacheWrite: number; cacheWrite1h: number; cacheRead: number; output: number; estimado?: boolean }
+export const USO_ZERO: Uso = { input: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0, output: 0 }
+
+export type RespostaModelo = {
+  stream: ReadableStream<Uint8Array>
+  ferramentas: Promise<ChamadaFerramenta[]>
+  uso: Promise<Uso>
+}
+
 export interface ChatModel {
   stream(
     systemPrompt: string,
     userMessage: string,
     images?: Array<{ base64: string; mimeType: string }>,
     tools?: unknown[],
-  ): Promise<{ stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> }>
+  ): Promise<RespostaModelo>
 }
+
+// Resposta que ninguém lê termina em segundo plano até este limite (ver claude.ts).
+const LIMITE_ABANDONADA_MS = 60_000
 
 export class OpenAIModel implements ChatModel {
   async stream(
@@ -21,7 +35,7 @@ export class OpenAIModel implements ChatModel {
     userMessage: string,
     images?: Array<{ base64: string; mimeType: string }>,
     tools?: unknown[],
-  ): Promise<{ stream: ReadableStream<Uint8Array>; ferramentas: Promise<ChamadaFerramenta[]> }> {
+  ): Promise<RespostaModelo> {
     let userContent: unknown
     if (images && images.length > 0) {
       userContent = [
@@ -42,6 +56,8 @@ export class OpenAIModel implements ChatModel {
       model: 'gpt-5.4-mini',
       max_completion_tokens: 6000,
       stream: true,
+      // O último chunk traz o `usage` (choices vazio) — vai para `ia_custos`.
+      stream_options: { include_usage: true },
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
@@ -89,7 +105,18 @@ export class OpenAIModel implements ChatModel {
     const chamadas: { name: string; arguments: string }[] = []
     let resolverFerramentas!: (c: ChamadaFerramenta[]) => void
     const ferramentas = new Promise<ChamadaFerramenta[]>((r) => { resolverFerramentas = r })
+    let uso: Uso = { ...USO_ZERO }
+    let usoLido = false
+    let resolverUso!: (u: Uso) => void
+    const usoPromise = new Promise<Uso>((r) => { resolverUso = r })
     const lerDelta = (parsed: any) => {
+      const u = parsed?.usage
+      if (u) {
+        // Sem desconto de cache no custo (preço do cache não confirmado): `cached_tokens`
+        // fica dentro de `input`, para o custo nunca sair subestimado.
+        uso = { ...USO_ZERO, input: u.prompt_tokens ?? 0, output: u.completion_tokens ?? 0 }
+        usoLido = true
+      }
       const tcs = parsed?.choices?.[0]?.delta?.tool_calls
       if (!Array.isArray(tcs)) return
       for (const tc of tcs) {
@@ -100,9 +127,23 @@ export class OpenAIModel implements ChatModel {
       }
     }
 
+    // A usuária fechou o chat: a leitura continua até o último chunk (é nele que vem o
+    // `usage`), sem enviar nada. Passou de LIMITE_ABANDONADA_MS, corta e o uso fica estimado.
+    const reader = openaiResponse!.body!.getReader()
+    let abandonada = false
+    let timerAbandono: ReturnType<typeof setTimeout> | undefined
+    const abandonar = () => {
+      if (abandonada) return
+      abandonada = true
+      timerAbandono = setTimeout(() => { reader.cancel().catch(() => {}) }, LIMITE_ABANDONADA_MS)
+    }
+
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const reader = openaiResponse!.body!.getReader()
+        const enviar = (text: string) => {
+          if (abandonada) return
+          try { controller.enqueue(encoder.encode(text)) } catch { abandonar() /* stream fechado */ }
+        }
         let sseBuffer = ''
 
         try {
@@ -120,7 +161,7 @@ export class OpenAIModel implements ChatModel {
                   const parsed = JSON.parse(payload)
                   lerDelta(parsed)
                   const text = parsed?.choices?.[0]?.delta?.content ?? ''
-                  if (text) controller.enqueue(encoder.encode(text))
+                  if (text) enviar(text)
                 } catch { /* chunk malformado */ }
               }
               break
@@ -139,22 +180,27 @@ export class OpenAIModel implements ChatModel {
                 const parsed = JSON.parse(payload)
                 lerDelta(parsed)
                 const text = parsed?.choices?.[0]?.delta?.content ?? ''
-                if (text) controller.enqueue(encoder.encode(text))
+                if (text) enviar(text)
               } catch {
                 // chunk SSE malformado, ignora
               }
             }
           }
-          controller.close()
+          try { controller.close() } catch { /* a usuária já fechou o chat */ }
         } catch (err) {
-          controller.error(err)
+          try { controller.error(err) } catch { /* já fechado */ }
         } finally {
+          clearTimeout(timerAbandono)
           reader.releaseLock()
           resolverFerramentas(chamadas.filter(Boolean))
+          resolverUso(usoLido ? uso : { ...uso, estimado: true })
         }
       },
+      cancel() {
+        abandonar()
+      },
     })
-    return { stream, ferramentas }
+    return { stream, ferramentas, uso: usoPromise }
   }
 }
 

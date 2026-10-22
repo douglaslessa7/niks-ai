@@ -13,6 +13,7 @@ const SCREEN_NAMES: Record<string, string> = {
   '/goal-validation': 'Seu Potencial',
   '/skincare-routine': 'Rotina Atual',
   '/horario-rotina': 'Horário da Rotina',
+  '/horario': 'Horário da Rotina (manhã → noite)',
   '/aviso-lembretes': 'Aviso de Lembretes',
   '/permitir-notificacoes': 'Pedido de Notificação',
   '/allergies': 'Alergias',

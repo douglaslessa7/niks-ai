@@ -44,3 +44,9 @@ yarn-error.*
 # Arquivos de trabalho da CLI do Supabase (project-ref, versões, pooler url).
 # Regenerados por `supabase link` — ver "Migrations" no README.
 supabase/.temp/
+
+# Teste comparativo de modelos (fotos pessoais, saídas de API) — nunca versionar.
+teste-modelos/
+
+# Códigos de oferta da App Store (uso único) — nunca versionar.
+OfferCodeOneTimeUseCodes_*.csv

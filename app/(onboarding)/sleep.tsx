@@ -5,10 +5,11 @@ import {
   OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount, useObName, withName,
 } from '../../components/onboarding/kit';
 
-// Tela 14 do fluxo completo — sono (escolha única, padrão do sol). Era a metade de
-// baixo da antiga `hydration-sleep`. Grava `onboarding.sleep` com os MESMOS valores de
-// antes ('4–5', '6', '7', '8', '9+'); " horas" é só do rótulo. No fluxo completo a
-// análise de pele já saiu (logo depois da foto): o sono alimenta só a rotina.
+// Onboarding — sono (escolha única, opções no centro da tela como a rotina atual).
+// Vem logo depois da hidratação (`hydration.tsx`); as duas eram a antiga
+// `hydration-sleep`, dividida de novo a pedido do produto (20/out/2026). Sem
+// subtítulo. Grava `onboarding.sleep` com os MESMOS valores de sempre
+// ('4–5', '6', '7', '8', '9+'); " horas" é só do rótulo.
 const OPTIONS: ObChoice<string>[] = ['4–5', '6', '7', '8', '9+'].map((v) => ({ label: `${v} horas`, value: v }));
 
 const STEP = OB_STEPS.sono;
@@ -17,7 +18,7 @@ const STEP_NAME = 'Sono';
 export default function Sleep() {
   const router = useRouter();
   const { track } = useMixpanel();
-  const setOnboardingField = useAppStore((s) => s.setOnboardingField);
+  const { onboarding, setOnboardingField } = useAppStore();
   const name = useObName();
 
   useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
@@ -25,13 +26,14 @@ export default function Sleep() {
   return (
     <ObChoiceScreen<string>
       title={withName(name, 'quantas horas você dorme por noite?')}
-      subtitle="É enquanto você dorme que a sua pele se regenera."
+      centerOptions
       options={OPTIONS}
+      initial={onboarding.sleep ?? null}
       onBack={() => router.back()}
       onSelect={(v) => setOnboardingField('sleep', v)}
       onContinue={() => {
         track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-        router.push('/(onboarding)/pregnancy');
+        router.push('/(onboarding)/skincare-routine');
       }}
     />
   );

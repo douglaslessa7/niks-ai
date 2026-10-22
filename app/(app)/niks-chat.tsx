@@ -381,6 +381,7 @@ function splitBubbles(text: string): string[] {
   return text.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean)
 }
 const FIRST_BUBBLE_MS = 900 // mínimo de "digitando" antes da 1ª bolha (conta a espera da rede)
+const SEM_TEXTO_MS = 500    // resposta ao vivo sem texto novo por esse tempo → "digitando" volta
 function typingMs(text: string): number {
   return Math.min(1600, Math.max(700, 350 + text.length * 12))
 }
@@ -423,6 +424,19 @@ export default function NiksChat() {
   const [userId,         setUserId]         = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages,       setMessages]       = useState<Message[]>([]);
+
+  // Resposta ao vivo PARADA (sem texto novo há SEM_TEXTO_MS): os pontinhos voltam embaixo
+  // da última bolha — ex.: a NIKS escreveu "Vou olhar…" e está consultando. Texto novo
+  // chegando zera o relógio e os pontinhos somem; ao terminar a resposta, somem de vez.
+  const [semTextoNovo, setSemTextoNovo] = useState(false);
+  const aoVivo = messages.find(m => m.role === 'assistant' && m.isStreaming);
+  const aoVivoTamanho = aoVivo ? aoVivo.content.length : -1;
+  useEffect(() => {
+    setSemTextoNovo(false);
+    if (aoVivoTamanho < 0) return;
+    const t = setTimeout(() => setSemTextoNovo(true), SEM_TEXTO_MS);
+    return () => clearTimeout(t);
+  }, [aoVivo?.id, aoVivoTamanho]);
   const [pendingImages,        setPendingImages]        = useState<Array<{ base64: string; mimeType: string; uri: string }>>([]);
   const [historyVisible,       setHistoryVisible]       = useState(false);
   const [historyConversations, setHistoryConversations] = useState<HistoryConversation[]>([]);
@@ -547,16 +561,18 @@ export default function NiksChat() {
   }, [])
 
   // Agenda a próxima bolha de cada resposta ao vivo. Enquanto o texto ainda chega
-  // (streaming), só parágrafos COMPLETOS podem aparecer — o último pode estar pela metade.
+  // (streaming), o parágrafo em andamento também aparece e cresce palavra por palavra, sem
+  // "digitando" entre as bolhas — só a espera curta antes da 1ª. Se a resposta já chegou
+  // inteira (rede rápida), as bolhas que faltam saem no ritmo de digitação, como antes.
   useEffect(() => {
     for (const m of messages) {
       if (m.role !== 'assistant' || !m.live || revealTimers.current[m.id]) continue
       const parts = splitBubbles(m.content)
-      const ready = m.isStreaming ? Math.max(0, parts.length - 1) : parts.length
       const n = revealed[m.id] ?? 0
-      if (n >= ready) continue
+      if (n >= parts.length) continue
       const delay = reduceMotion.current ? 0
         : n === 0 ? Math.max(0, FIRST_BUBBLE_MS - (Date.now() - (m.createdAt ?? 0)))
+        : m.isStreaming ? 0
         : typingMs(parts[n])
       revealTimers.current[m.id] = setTimeout(() => {
         delete revealTimers.current[m.id]
@@ -1060,7 +1076,12 @@ export default function NiksChat() {
           suggestion: last ? m.suggestion : undefined, msgId: m.id,
         })
       })
-      if (!finished) rows.push({ kind: 'typing', key: `${m.id}-typing` })
+      // "Digitando": antes da 1ª bolha, com bolha na fila, ou com a resposta ao vivo parada
+      // (sem texto novo há SEM_TEXTO_MS). Enquanto o parágrafo cresce, o texto já mostra
+      // que ela está escrevendo.
+      if (!finished && (n < parts.length || n === 0 || (m.isStreaming && semTextoNovo))) {
+        rows.push({ kind: 'typing', key: `${m.id}-typing` })
+      }
     }
   }
   // Card FIXO da sugestão pendente, no fim da conversa (também com a conversa vazia, depois

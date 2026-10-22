@@ -9,6 +9,8 @@ import {
   useObFrame, useObName, withName, obStep, useOnMount, ObPress, ObFill, useObFillText
 } from '../../components/onboarding/kit';
 
+// ⚠️ FORA DO FLUXO desde 20/out/2026: dividida de novo em `hydration.tsx` + `sleep.tsx`
+// (pedido do produto). Nada navega até aqui; o passo do Mixpanel vale 0.
 // Tela 9 do onboarding — água E sono numa tela só, como na versão B (título de B com o
 // nome dela antes, do kit; sem subtítulo, a pedido do produto). Dois grupos de chips; "Continuar" só com
 // os dois escolhidos. Grava `onboarding.hydration` e `onboarding.sleep` com os mesmos

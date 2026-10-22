@@ -15,7 +15,7 @@ const STOPS: TutStop[] = [
   { t: 'Cada skincare feito marca o dia no calendário e te faz acumular pontos de beleza.', a: { u: ['home-week'], pad: 4, r: 20 }, b: { u: ['home-streak'], pad: 6, r: 'pill' } },
   { t: 'A cada 7 dias, escaneie seu rosto e veja sua pele evoluir.', a: { u: ['home-scan'], pad: 5, r: 22 } },
   // "alarme" saiu da frase enquanto o card de alarme está ocultado na home (11/10/2026).
-  { t: 'Deslize para o lado e descubra mais: seu progresso, a NIKS, scan de produtos e dica do dia.', a: { u: ['home-rowTitle', 'home-row'], pad: 6, r: 22 } },
+  { t: 'Deslize para o lado e descubra mais: a NIKS, seu progresso, scan de produtos e dica do dia.', a: { u: ['home-rowTitle', 'home-row'], pad: 6, r: 22 } },
 ];
 
 export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {
