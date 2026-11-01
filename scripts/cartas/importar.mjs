@@ -22,7 +22,7 @@
 //   serie         código da série (só colecionável; ex.: flores-do-niks)
 //   serie_nome    nome da série — cria a série se ela ainda não existir
 //   nome          nome da carta
-//   raridade      normal | rara
+//   raridade      normal | rara (rara só em colecionável)
 //   arte          arquivo da arte dentro da pasta (png/jpg/webp, até 2 MB) — opcional
 //   texto         texto da carta (nas 'momento' pode ter {uv}, {cidade}…)
 //   efeito        JSON do poder, ex.: {"dias":2} — opcional
@@ -98,6 +98,14 @@ async function req(metodo, caminho, corpo, extra = {}) {
 
 const linhas = lerCsv(readFileSync(csvPath, 'utf8'));
 console.log(`${linhas.length} cartas no CSV.`);
+
+// Só colecionável pode ser rara (o banco também recusa: cartas_catalogo_rara_so_colecionavel).
+for (const [i, l] of linhas.entries()) {
+  if ((l.raridade || 'normal') === 'rara' && l.familia !== 'colecionavel') {
+    console.error(`Linha ${i + 2} (${l.codigo}): só colecionável pode ser rara — dicas e poderes são sempre normais.`);
+    process.exit(1);
+  }
+}
 
 // Modo sem chave: gera o SQL de upsert e os comandos `storage cp` (CLI logada).
 if (saidaSql) {

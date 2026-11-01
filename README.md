@@ -3267,6 +3267,40 @@ Lógica e dados das cartas (o visual é o das telas 77/78/67a). **O sorteio é f
 - **O gatilho em `skin_scans` nunca bloqueia o scan:** o `update` fica num bloco `exception when others`, então qualquer erro vira só um aviso no log. Foi testado no Postgres local derrubando a tabela de poderes e, em produção, com um INSERT real como usuária comum, desfeito com `rollback`.
 - ⚠️ **Aplicar cada migration sozinha**, na ordem `20261101120000` → `130000` → `140000` → `150000`. Para cada uma: `supabase db query --linked -f supabase/migrations/<arquivo>.sql`, depois `supabase migration repair --status applied <timestamp>`. **Nunca `db push`**: as 3 de agosto (`202608172…`) continuam pendentes. O remoto tem uma `20261025120000` que não está neste branch.
 
+#### Motor de cartas calculado (migration `20261102120000_motor_cartas.sql`)
+A carta da rotina **não é mais sorteada por família**. O servidor olha o momento da usuária e decide o tipo de carta que ela precisa; para ela continua parecendo surpresa.
+- **Momentos** (`momento_usuaria`), em ordem de prioridade. Os dias antes da 1ª rotina não contam como falta.
+  - `voltando`: 3+ dias inteiros sem rotina → **Sequência em dobro garantida**.
+  - `em_risco`: faltou ≥ 1 dia nos 3 anteriores → **Poder garantido**, pela necessidade.
+  - `nova`: primeiros 7 dias desde a 1ª rotina → 70% Poder.
+  - `constante`: 7+ dias seguidos de rotina de verdade → 50% Poder.
+  - `padrao`: o resto → 50% Poder.
+
+  Quando não é poder: **70% Colecionável · 30% Dica** (Conhecimento educativa).
+- **Qual poder** (`escolher_poder`), em ordem:
+  1. Acabou de perder a sequência → Sequência em dobro (`registrar_rotina` devolve `zerou`).
+  2. Sequência ≥ 3 sem proteção armada → Proteção.
+  3. A 1–2 dias de um marco ainda não ganho → Carta extra.
+  4. Engajada (rotina em 5 dos últimos 7 dias) e com o scan travado → Scan antecipado.
+  5. Senão, o poder recebido há mais tempo (nunca recebido vem primeiro).
+- **Limites:**
+  - no máximo 2 proteções armadas, contando as ainda não raspadas;
+  - 1 Sequência em dobro e 1 Scan antecipado a cada 7 dias, contados pelo `dia` da carta.
+
+  Se o escolhido bate no limite, vai o próximo da lista; se todos batem, Colecionável ou Dica. "Voltando" também respeita o limite do dobro.
+- **Carta extra:** só a 1ª carta do dia tem a garantia do momento; a 2ª segue só a %.
+- **Marcos 7/14/30:** **Colecionável rara garantida** (`motivo = 'marco:rara'`).
+- **Raridade (o único ponto de sorte):** só colecionável pode ser rara, com `rara_pct` de chance. O banco recusa rara em dica ou poder (`cartas_catalogo_rara_so_colecionavel`), e o importador também.
+- **Registro:** cada carta da rotina grava `cartas_usuario.motivo` e `cartas_usuario.decisao`.
+  - `motivo`: `em_risco:protecao`, `voltando:dobro`, `voltando:limite→mais_antigo:protecao_sequencia`, `nova:sorte→poder:carta_extra`, `constante:sorte→colecionavel`, `nova:limites→dica`…
+  - `decisao` (jsonb): momento, faltas, sequência, sorteios, % aplicada e os poderes bloqueados.
+  - Exemplo de análise: `select motivo, count(*) from cartas_usuario group by 1`.
+- **Configuração:** tudo em `cartas_config.motor` (jsonb, sem deploy): `nova`, `em_risco`, `voltando`, `constante`, `padrao`, `nao_poder`, `engajada`, `marco_perto` e `limites`. O `pesos` antigo ficou só para as origens futuras (surpresa, grupo, SOS).
+- **Testado no Postgres local:**
+  - 32 verificações do motor: nova ~70% poder, constante ~50%, em risco sempre poder, voltando → dobro (e o limite), cada item da lista de necessidade, os 3 limites, "todos no limite", carta extra, marco raro, e raridade de 10% em 1000 colecionáveis;
+  - as 48 da F1–F3 continuam passando.
+- A Edge Function `cartas` não mudou (mesma assinatura de `concluir_rotina`), então não houve deploy.
+
 ### Tab Bar / Navbar (`app/(app)/_layout.tsx` — `GlobalBottomBar`)
 
 > ✅ **NAVBAR "splitHouse" (12/out/2026) — réplica da tela 57d** (Claude Design, projeto "NIKS home redesign", `NiksHomeFlo.dc.html`, `nav="splitHouse"`). Barra FLUTUANTE a 26 pt da base: círculo branco Ø64 com a **casa** (Home; rosa `#FF5EA8` quando ativa, cinza `#7A7076` fora dela) + pílula branca de 60 pt com borda de 1,5 pt em degradê `#FFC2DB → #FF5EA8 → #F86B79`, com três ícones line 27 pt: Rotina (rosto) · Produtos (frasco) · Perfil (pessoa); aba ativa = ícone rosa + ponto rosa embaixo. Véu de 130 pt atrás (`rgba(249,242,245,0 → .85)`). **O NIKS Chat SAIU da navbar** (abre pelo card "NIKS Chat" da home). Modo noturno da rotina mantido (fundo `#1A1F2E`). A altura total (~90 pt da base) é a mesma da barra anterior (53 + home indicator), então os espaçamentos das telas continuam valendo. Tudo abaixo desta nota sobre a barra antiga é histórico.
