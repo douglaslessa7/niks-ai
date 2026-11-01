@@ -1,0 +1,46 @@
+codigo,familia,subtipo,serie,serie_nome,nome,raridade,arte,texto,efeito,ativa,apenas_teste
+teste-niacinamida,colecionavel,,teste-ativos,Ativos,Niacinamida,normal,teste-niacinamida.png,,,sim,sim
+teste-acido-hialuronico,colecionavel,,teste-ativos,Ativos,Ácido hialurônico,normal,teste-acido-hialuronico.png,,,sim,sim
+teste-retinol,colecionavel,,teste-ativos,Ativos,Retinol,rara,teste-retinol.png,,,sim,sim
+teste-vitamina-c,colecionavel,,teste-ativos,Ativos,Vitamina C,rara,teste-vitamina-c.png,,,sim,sim
+teste-acido-salicilico,colecionavel,,teste-ativos,Ativos,Ácido salicílico,normal,teste-acido-salicilico.png,,,sim,sim
+teste-ceramidas,colecionavel,,teste-ativos,Ativos,Ceramidas,normal,teste-ceramidas.png,,,sim,sim
+teste-peptideos,colecionavel,,teste-ativos,Ativos,Peptídeos,normal,teste-peptideos.png,,,sim,sim
+teste-centella,colecionavel,,teste-ativos,Ativos,Centella asiática,normal,teste-centella.png,,,sim,sim
+teste-acido-azelaico,colecionavel,,teste-ativos,Ativos,Ácido azelaico,normal,teste-acido-azelaico.png,,,sim,sim
+teste-pantenol,colecionavel,,teste-ativos,Ativos,Pantenol,normal,teste-pantenol.png,,,sim,sim
+teste-bakuchiol,colecionavel,,teste-ativos,Ativos,Bakuchiol,rara,teste-bakuchiol.png,,,sim,sim
+teste-esqualano,colecionavel,,teste-ativos,Ativos,Esqualano,normal,teste-esqualano.png,,,sim,sim
+teste-rosa,colecionavel,,teste-flores,Flores do NIKS,Rosa,normal,teste-rosa.png,,,sim,sim
+teste-camomila,colecionavel,,teste-flores,Flores do NIKS,Camomila,normal,teste-camomila.png,,,sim,sim
+teste-lavanda,colecionavel,,teste-flores,Flores do NIKS,Lavanda,normal,teste-lavanda.png,,,sim,sim
+teste-calendula,colecionavel,,teste-flores,Flores do NIKS,Calêndula,normal,teste-calendula.png,,,sim,sim
+teste-hibisco,colecionavel,,teste-flores,Flores do NIKS,Hibisco,normal,teste-hibisco.png,,,sim,sim
+teste-jasmim,colecionavel,,teste-flores,Flores do NIKS,Jasmim,normal,teste-jasmim.png,,,sim,sim
+teste-lotus,colecionavel,,teste-flores,Flores do NIKS,Lótus,rara,teste-lotus.png,,,sim,sim
+teste-cerejeira,colecionavel,,teste-flores,Flores do NIKS,Flor de cerejeira,normal,teste-cerejeira.png,,,sim,sim
+teste-magnolia,colecionavel,,teste-flores,Flores do NIKS,Magnólia,normal,teste-magnolia.png,,,sim,sim
+teste-peonia,colecionavel,,teste-flores,Flores do NIKS,Peônia,rara,teste-peonia.png,,,sim,sim
+teste-orquidea,colecionavel,,teste-flores,Flores do NIKS,Orquídea,rara,teste-orquidea.png,,,sim,sim
+teste-girassol,colecionavel,,teste-flores,Flores do NIKS,Girassol,normal,teste-girassol.png,,,sim,sim
+teste-protetor-todo-dia,conhecimento,educativa,,,Protetor todo dia,normal,,"Mesmo em dia nublado, boa parte dos raios UV atravessa as nuvens. O protetor é o passo que mais previne manchas.",,sim,sim
+teste-vitamina-c-de-manha,conhecimento,educativa,,,Vitamina C de manhã,normal,,"Ela reforça a proteção contra os radicais livres. Use antes do protetor, na rotina da manhã.",,sim,sim
+teste-retinol-a-noite,conhecimento,educativa,,,Retinol à noite,normal,,"O retinol é sensível à luz do sol. Use à noite e reforce o protetor no dia seguinte.",,sim,sim
+teste-niacinamida-coringa,conhecimento,educativa,,,Niacinamida coringa,normal,,"Ajuda a controlar a oleosidade, uniformizar o tom e fortalecer a barreira da pele.",,sim,sim
+teste-pele-umida,conhecimento,educativa,,,Hidratante na pele úmida,normal,,"Aplicar o hidratante com a pele ainda levemente úmida ajuda a segurar mais água.",,sim,sim
+teste-alterne-os-acidos,conhecimento,educativa,,,Alterne os ácidos,normal,,"Retinol e ácidos esfoliantes na mesma noite aumentam a irritação. Alterne os dias.",,sim,sim
+teste-fronha-limpa,conhecimento,educativa,,,Fronha limpa,normal,,"Trocar a fronha uma ou duas vezes por semana diminui óleo e bactérias em contato com o rosto.",,sim,sim
+teste-agua-morna,conhecimento,educativa,,,Água morna,normal,,"Água quente demais tira a oleosidade natural da pele. Lave o rosto com água morna.",,sim,sim
+teste-ceramidas-barreira,conhecimento,educativa,,,Ceramidas e barreira,rara,,"As ceramidas são uma parte grande da barreira da pele. Repor ajuda a pele a segurar água.",,sim,sim
+teste-espere-entre-camadas,conhecimento,educativa,,,Espere entre camadas,rara,,"Dar um minuto entre o sérum e o hidratante ajuda cada camada a assentar sem embolar.",,sim,sim
+teste-uv-alto,conhecimento,momento,,,UV alto,normal,,"UV {uv} em {cidade}. Reaplique o protetor agora e de novo daqui a 2 horas.",,sim,sim
+teste-ar-seco,conhecimento,momento,,,Ar seco,normal,,"Umidade do ar em {umidade}% em {cidade}. Hoje vale um hidratante mais denso à noite.",,sim,sim
+teste-calor,conhecimento,momento,,,Calor,normal,,"{temperatura} °C em {cidade}. Água termal no meio da tarde e protetor de novo.",,sim,sim
+teste-frio,conhecimento,momento,,,Frio,normal,,"{temperatura} °C em {cidade}. No frio a pele perde água mais rápido: capriche no hidratante.",,sim,sim
+teste-espinha-leve,conhecimento,pessoal,,,Espinha leve,normal,,,,sim,sim
+teste-espinha-moderada,conhecimento,pessoal,,,Espinha moderada,normal,,,,sim,sim
+teste-scan-antecipado,poder,scan_antecipado,,,Scan antecipado,rara,,"Seu próximo scan de pele está liberado agora, sem esperar os 7 dias.",,sim,sim
+teste-carta-extra,poder,carta_extra,,,Carta extra,normal,,"Amanhã você ganha 2 cartas em vez de 1.",,sim,sim
+teste-protecao-sequencia,poder,protecao_sequencia,,,Proteção de sequência,normal,,"Se você falhar um dia, sua sequência não zera. A proteção fica armada até ser usada.",,sim,sim
+teste-sequencia-dobro,poder,sequencia_dobro,,,Sequência em dobro,normal,,"Nos próximos 2 dias, cada dia de rotina soma +2 na sua sequência.","{""dias"":2}",sim,sim
+teste-xp-grupo-dobro,poder,xp_grupo_dobro,,,XP em dobro para o grupo,normal,,"Por 2 dias, seus check-ins rendem XP dobrado para o grupo.","{""dias"":2}",nao,sim

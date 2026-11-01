@@ -3219,6 +3219,54 @@ Chat com a NIKS AI (4ª aba "niks" do menu inferior). Redesenhada para o novo de
 
 ---
 
+### Sistema de cartas — servidor (F1–F3, nov/2026)
+
+Lógica e dados das cartas (o visual é o das telas 77/78/67a). **O sorteio é feito no servidor**, nunca no app. Plano completo em fases: F1 catálogo · F2 sequência no servidor · F3 sorteio e poderes · F4 app · F5 surpresa/"do momento" · F6 SOS espinha com IA · F7 grupos.
+- **Famílias:** Colecionáveis (só arte, em séries; a maioria), Conhecimento (`educativa` = texto fixo · `pessoal` = da foto, SOS · `momento` = UV/clima, texto com `{uv}`/`{cidade}`) e Poderes (valem **na hora de raspar**). Raridade: `normal` ou `rara`. Repetidas = várias linhas em `cartas_usuario`; o álbum conta pela view `cartas_colecao` (`vezes` → "x2").
+- **Tabelas:**
+  - `cartas_series` e `cartas_catalogo` (`codigo` único, `ativa`, `apenas_teste`);
+  - `cartas_config`: 1 linha, igual à `chat_config`. Guarda pesos por origem (rotina 70/20/10), `rara_pct` 10, `rara_grupo_pct` 25, `cartas_por_dia` 1, `marcos` {7,14,30} e `testers`. **Muda sem deploy.**
+  - `cartas_usuario` e `poderes_usuario` (`inicio`/`fim`/`consumido_em`);
+  - `rotinas_concluidas` e `sequencias` (a sequência agora mora aqui);
+  - `users.historico_migrado_em`.
+
+  RLS: ela só lê as próprias linhas, e quem escreve é só a função (service role). O catálogo é legível nas cartas ativas que não são de teste, mais as que ela já ganhou.
+- **Bucket público `cartas`:** artes em `<serie ou familia>/<codigo>.png`.
+- **Funções SQL (só service role):**
+  - `dia_sessao` — o dia vira às **04:00** em Brasília, igual ao `sessionDate` do app;
+  - `registrar_rotina`, `avaliar_sequencia`, `sincronizar_historico`;
+  - `dar_carta`, `concluir_rotina`, `raspar_carta`, `estado_cartas`, `tem_carta_extra`;
+  - gatilho `skin_scans_consumir_scan_antecipado`.
+- **Regras:**
+  - **1 carta por dia:** a 1ª rotina do dia leva a cota e a 2ª não dá carta. Com Carta extra, o dia seguinte dá 2.
+  - **Sequência:** um número só (dias ativos seguidos): +1 por dia, ou +2 com Sequência em dobro nos 2 dias seguintes.
+  - **Proteção:** cobre 1 dia perdido e é consumida sozinha. Com 2 ou mais dias perdidos, ela é gasta e a sequência zera.
+  - **Marcos 7/14/30:** rara garantida, inclusive quando a sequência pula o marco com o dobro.
+  - **Scan antecipado:** armado até o próximo `skin_scans`.
+  - **XP em dobro para o grupo:** fica no catálogo **inativa** até existirem grupos.
+- **Edge Function `cartas`** (`verify_jwt = false` no `config.toml` + JWT local `_shared/jwt.ts`):
+  - ações `estado` (sobe o histórico do celular uma vez, até 60 dias, sem cartas retroativas; e a fila offline de até 48 h), `concluir_rotina`, `carta`, `raspar`;
+  - cliente no app: `lib/cartasServidor.ts`.
+  - Deploy: `supabase functions deploy cartas --no-verify-jwt --project-ref utpljvwmeyeqwrfulbfr`.
+- **Importar cartas** (`scripts/cartas/importar.mjs`): faz upsert por `codigo` (reimportar atualiza; uma linha sem arte não apaga a arte que já existe) e cria a série nova, sem build. Colunas e valores aceitos estão no topo do script.
+  - **Sem chave** (CLI logada, o jeito usado em produção):
+    1. `node scripts/cartas/importar.mjs cartas.csv pasta-das-artes/ --sql /tmp/import` gera `subir-artes.sh`, `cartas-series.sql` e `cartas-catalogo.sql`;
+    2. `bash /tmp/import/subir-artes.sh` sobe cada arte com `supabase storage cp … ss:///cartas/<serie>/<codigo>.png --linked --experimental`;
+    3. `supabase db query --linked -f /tmp/import/cartas-series.sql`;
+    4. `supabase db query --linked -f /tmp/import/cartas-catalogo.sql` (um arquivo por chamada).
+  - **Com a chave:** `SUPABASE_SERVICE_ROLE_KEY=… node scripts/cartas/importar.mjs cartas.csv pasta-das-artes/` vai direto pela API.
+- **Cartas de exemplo (dev):** `scripts/cartas/exemplo/cartas-teste.csv` tem 45 cartas com `apenas_teste`: 24 colecionáveis em 2 séries, 10 educativas, 4 "do momento", 2 pessoais e 5 poderes. Só quem está em `cartas_config.testers` recebe. Artes provisórias: `bash scripts/cartas/exemplo/gerar-artes.sh <pasta>`.
+- **Testado num Postgres local (PGlite, fora do repo)** com 46 verificações: virada às 04:00, cota, marcos, proteção, dobro, carta extra, pesos (≈70/20/10, rara ≈25% no grupo), histórico, scan antecipado e RLS.
+- ✅ **Aplicado em produção (01/nov/2026):**
+  - As 4 migrations, uma por vez, cada uma conferida antes da próxima (tabelas, RLS, políticas, funções só do service role, leitura e escrita sem login negadas) e registrada com `migration repair`.
+  - Deploy da `cartas` (v1, `verify_jwt: false`). Não havia versão anterior para backup: o `functions download` devolveu 404.
+  - `cartas_config.testers` = a conta do simulador (Geralda, `ef4e3f2b-4802-41ff-8fc2-d4ee39303128`).
+  - Teste real com o JWT dela: `estado` → 200; `concluir_rotina` → sequência 1; a 2ª chamada não faz nada.
+  - Isolamento conferido com dados reais: outra usuária vê 0 linhas.
+  - **Catálogo de teste importado pela CLI** (sem a service role key): as 45 cartas `apenas_teste`, as 2 séries e as 24 artes provisórias no bucket. Uma usuária comum não vê nenhuma; só a tester as recebe.
+- **O gatilho em `skin_scans` nunca bloqueia o scan:** o `update` fica num bloco `exception when others`, então qualquer erro vira só um aviso no log. Foi testado no Postgres local derrubando a tabela de poderes e, em produção, com um INSERT real como usuária comum, desfeito com `rollback`.
+- ⚠️ **Aplicar cada migration sozinha**, na ordem `20261101120000` → `130000` → `140000` → `150000`. Para cada uma: `supabase db query --linked -f supabase/migrations/<arquivo>.sql`, depois `supabase migration repair --status applied <timestamp>`. **Nunca `db push`**: as 3 de agosto (`202608172…`) continuam pendentes. O remoto tem uma `20261025120000` que não está neste branch.
+
 ### Tab Bar / Navbar (`app/(app)/_layout.tsx` — `GlobalBottomBar`)
 
 > ✅ **NAVBAR "splitHouse" (12/out/2026) — réplica da tela 57d** (Claude Design, projeto "NIKS home redesign", `NiksHomeFlo.dc.html`, `nav="splitHouse"`). Barra FLUTUANTE a 26 pt da base: círculo branco Ø64 com a **casa** (Home; rosa `#FF5EA8` quando ativa, cinza `#7A7076` fora dela) + pílula branca de 60 pt com borda de 1,5 pt em degradê `#FFC2DB → #FF5EA8 → #F86B79`, com três ícones line 27 pt: Rotina (rosto) · Produtos (frasco) · Perfil (pessoa); aba ativa = ícone rosa + ponto rosa embaixo. Véu de 130 pt atrás (`rgba(249,242,245,0 → .85)`). **O NIKS Chat SAIU da navbar** (abre pelo card "NIKS Chat" da home). Modo noturno da rotina mantido (fundo `#1A1F2E`). A altura total (~90 pt da base) é a mesma da barra anterior (53 + home indicator), então os espaçamentos das telas continuam valendo. Tudo abaixo desta nota sobre a barra antiga é histórico.

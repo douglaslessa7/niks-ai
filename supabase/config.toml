@@ -53,6 +53,13 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/recortar-produto/index.ts"
 
+[functions.cartas]
+enabled = true
+# Sistema de cartas: o sorteio é feito aqui. Mesmo padrão da recortar-produto — o gateway
+# não barra, a função verifica o JWT localmente e o user_id vem do token.
+verify_jwt = false
+entrypoint = "./functions/cartas/index.ts"
+
 [functions.recortar-catalogo]
 enabled = true
 # Lote de recorte do catálogo — só administrador: a trava é o header x-admin-secret
