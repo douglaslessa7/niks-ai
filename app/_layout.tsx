@@ -312,6 +312,11 @@ export default function RootLayout() {
                 <AppShell>
                   <Stack screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+                    {/* Carta de raspar: abre POR CIMA do app (o app desfocado fica atrás) */}
+                    <Stack.Screen
+                      name="(carta)"
+                      options={{ presentation: 'transparentModal', animation: 'none', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }}
+                    />
                   </Stack>
                 </AppShell>
                 {/* Diagnóstico do paywall: `null` a menos que ligado pelo link secreto

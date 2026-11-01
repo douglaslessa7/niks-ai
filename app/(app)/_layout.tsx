@@ -23,7 +23,7 @@ import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 //   • à esquerda, círculo branco Ø64 com a CASA (Home) — sombra 0 8 22 rgba(192,32,106,.16);
 //   • ao lado (gap 14), pílula branca de 60 pt com borda de 1,5 pt em degradê
 //     #FFC2DB → #FF5EA8 → #F86B79 (100°), padding 0 10, três ícones line 27 pt em
-//     caixas de 60 × 46 (gap 4): rosto (Rotina) · frasco (Produtos) · pessoa (Perfil).
+//     caixas de 60 × 46 (gap 4): rosto (Rotina) · frasco (Produtos) · Grupos (abre o Perfil).
 //   • atrás, véu de 130 pt rgba(249,242,245,0) → .85 (70%).
 // O NIKS Chat SAIU da navbar (out/2026). Ícones inativos #7A7076; a aba ativa fica
 // rosa #FF5EA8 com o ponto rosa embaixo (como antes); a casa ativa é a casa rosa do
@@ -36,12 +36,12 @@ const NAV_INACTIVE_DARK = '#8B93A8';
 const NAV_BG_DARK = '#1A1F2E';
 const NAV_ICON = 27;
 
-type NavKey = 'rotina' | 'produtos' | 'perfil';
+type NavKey = 'rotina' | 'produtos' | 'grupos';
 
 function NavGlyph({ name, color, active }: { name: NavKey; color: string; active: boolean }) {
   const c = {
     stroke: color,
-    strokeWidth: active ? 1.7 : 1.6,
+    strokeWidth: active ? 1.9 : 1.6, // ativo = traço 1,9 (design 75)
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
     fill: 'none',
@@ -63,18 +63,30 @@ function NavGlyph({ name, color, active }: { name: NavKey; color: string; active
           <Path d="M12 5.5V8.5M8 15.5h4" {...c} />
         </>
       )}
-      {name === 'perfil' && (
+      {name === 'grupos' && (
         <>
-          <Circle cx={12} cy={8} r={4} {...c} />
-          <Path d="M4.5 20a7.5 7.5 0 0 1 15 0" {...c} />
+          <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" {...c} />
+          <Circle cx={9} cy={7} r={4} {...c} />
+          <Path d="M22 21v-2a4 4 0 0 0-3-3.87" {...c} />
+          <Path d="M16 3.13a4 4 0 0 1 0 7.75" {...c} />
         </>
       )}
     </Svg>
   );
 }
 
-// Casa do design (32 pt): chaminé, telhado em traço 2,5 e corpo preenchido.
-function HouseGlyph({ color }: { color: string }) {
+// Casa do design: ativa (32 pt) = chaminé, telhado em traço 2,5 e corpo preenchido;
+// inativa (30 pt, design 75) = só o contorno, traço 1,6.
+function HouseGlyph({ color, active }: { color: string; active: boolean }) {
+  if (!active) {
+    return (
+      <Svg width={30} height={30} viewBox="0 0 24 24">
+        <Path d="M2.4 11.4 12 3.4l9.6 8" fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="M16.3 5.6V4.2h2.4v3.4" fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="M5 11.6v8a1.6 1.6 0 0 0 1.6 1.6h3.1v-5a1 1 0 0 1 1-1h2.6a1 1 0 0 1 1 1v5h3.1a1.6 1.6 0 0 0 1.6-1.6v-8" fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    );
+  }
   return (
     <Svg width={32} height={32} viewBox="0 0 24 24">
       <Rect x={16} y={4} width={2.7} height={5} rx={0.6} fill={color} />
@@ -84,11 +96,13 @@ function HouseGlyph({ color }: { color: string }) {
   );
 }
 
-// Ordem da pílula, esquerda→direita: rosto (Rotina) · frasco (Produtos) · pessoa (Perfil).
+// Ordem da pílula, esquerda→direita: rosto (Rotina) · frasco (Produtos) · duas pessoas
+// (Grupos — aba "Seus grupos", telas 75b–75e). O Perfil abre pela foto ao lado de
+// "Olá, Nome" na home e pela engrenagem da aba Seus grupos.
 const NAV_ITEMS: { key: NavKey; route: string }[] = [
   { key: 'rotina',   route: '/protocolo' },
   { key: 'produtos', route: '/recomendacao-produtos' },
-  { key: 'perfil',   route: '/perfil' },
+  { key: 'grupos',   route: '/grupos' },
 ];
 
 function GlobalBottomBar() {
@@ -129,7 +143,7 @@ function GlobalBottomBar() {
           style={[styles.homeBtn, { backgroundColor: surface }]}
           accessibilityLabel="Início"
         >
-          <HouseGlyph color={homeActive ? activeColor : inactiveColor} />
+          <HouseGlyph color={homeActive ? activeColor : inactiveColor} active={homeActive} />
         </TouchableOpacity>
 
         {/* Pílula com borda em degradê */}
@@ -150,8 +164,8 @@ function GlobalBottomBar() {
                   onPress={() => { haptics.tap(); router.push(it.route as any); }}
                   style={styles.item}
                 >
+                  {/* Sem o ponto embaixo da aba ativa: no design 75 a aba ativa é só o ícone rosa. */}
                   <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
-                  {active && <View style={[styles.dot, { backgroundColor: activeColor }]} />}
                 </TouchableOpacity>
               );
             })}
@@ -360,9 +374,11 @@ export default function AppLayout() {
         <Tabs.Screen name="protocolo" />
         <Tabs.Screen name="niks-chat" />
         <Tabs.Screen name="perfil" />
+        <Tabs.Screen name="grupos" />
         <Tabs.Screen name="set-name" options={{ href: null }} />
         <Tabs.Screen name="skin-result" options={{ href: null }} />
         <Tabs.Screen name="calendario" options={{ href: null }} />
+        <Tabs.Screen name="conquistas" options={{ href: null }} />
         <Tabs.Screen name="alarme" options={{ href: null }} />
         <Tabs.Screen name="progresso" options={{ href: null }} />
         <Tabs.Screen name="dica-do-dia" options={{ href: null }} />
@@ -432,13 +448,5 @@ const styles = StyleSheet.create({
     height: 46,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  // Ponto da aba ativa, logo abaixo do ícone (como na navbar anterior).
-  dot: {
-    position: 'absolute',
-    bottom: 1,
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
   },
 });

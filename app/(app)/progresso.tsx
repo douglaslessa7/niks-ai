@@ -36,6 +36,7 @@ import { metricColor, type MetricKey } from '../../lib/metricColor';
 import { sessionDate, dateKey } from '../../lib/routineProgress';
 import { BG_STOPS } from '../../lib/homeTheme';
 import { getScoreTheme, getScoreScreenTheme } from '../../lib/scoreTheme';
+import { useEstadoCartas } from '../../lib/cartasServidor';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -97,6 +98,7 @@ function metricOf(scan: ScanRow | undefined, key: 'score' | MetricKey): number |
 }
 
 export default function Progresso() {
+  const { data: estadoCartas } = useEstadoCartas();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -152,7 +154,8 @@ export default function Progresso() {
     : `${signed(score - prev.skin_score)} desde o último scan`;
 
   // ── Próximo scan (de 7 em 7 dias a partir do último) ──
-  const daysLeft = last ? Math.max(0, SCAN_INTERVAL_DAYS - daysBetween(new Date(last.created_at), now)) : 0;
+  // Poder "Scan antecipado" armado: o próximo scan já está liberado.
+  const daysLeft = estadoCartas?.poderes.scan_antecipado || !last ? 0 : Math.max(0, SCAN_INTERVAL_DAYS - daysBetween(new Date(last.created_at), now));
   const nextT = daysLeft === 0 ? 'liberado' : daysLeft === 1 ? 'amanhã' : `em ${daysLeft} dias`;
   const lockedT = daysLeft === 0
     ? 'Seu gráfico começa no segundo scan.'

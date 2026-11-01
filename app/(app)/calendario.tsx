@@ -11,11 +11,12 @@
 import { useCallback, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Path } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
+import { useEstadoCartas } from '../../lib/cartasServidor';
 import { haptics } from '../../lib/haptics';
 import {
   getRoutineHistory, routineDayStreak, routinesDoneOn, sessionDate, dateKey, type RoutineHistory,
@@ -44,6 +45,8 @@ function chunkWeeks(cells: Cell[]): Cell[][] {
 
 export default function Calendario() {
   const router = useRouter();
+  // Aberto pelo "Ver todos os check-ins" do hub de conquistas: o X volta para lá.
+  const { de } = useLocalSearchParams<{ de?: string }>();
   const insets = useSafeAreaInsets();
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const [hist, setHist] = useState<RoutineHistory>({});
@@ -78,7 +81,9 @@ export default function Calendario() {
   const todayKey = dateKey(today);
   // Só os DIAS SEGUIDOS (dias com alguma rotina) — o streak em pontos fica no selo
   // da chama da home e da Rotina.
-  const dayStreak = routineDayStreak(hist, now);
+  // A sequência vem do servidor (um número só, o mesmo da chama e do hub); sem ele, o celular.
+  const { data: estado } = useEstadoCartas();
+  const dayStreak = estado?.sequencia.atual ?? routineDayStreak(hist, now);
 
   const months = [];
   for (let i = MONTHS_BACK; i >= -1; i--) {
@@ -109,7 +114,7 @@ export default function Calendario() {
       >
         <View style={styles.bar}>
           <TouchableOpacity
-            onPress={() => { haptics.tap(); router.navigate('/home' as any); }}
+            onPress={() => { haptics.tap(); router.navigate((de === 'conquistas' ? '/conquistas' : '/home') as any); }}
             activeOpacity={0.85}
             style={styles.close}
             accessibilityLabel="Fechar"

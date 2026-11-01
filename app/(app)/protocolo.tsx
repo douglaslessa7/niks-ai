@@ -37,7 +37,7 @@ import { supabase } from '../../lib/supabase';
 import { generateAndSaveProtocol } from '../../lib/generateProtocol';
 import { buildOnboardingDataFromUserRow } from '../../lib/buildOnboardingDataFromUserRow';
 import {
-  markStepCompleted, markRoutineDone, getCompletedSteps, getRoutineHistory, routineStreak, routineDayStreak,
+  markStepCompleted, markRoutineDone, getCompletedSteps, getRoutineHistory, routineDayStreak,
   sessionDate, dateKey, type RoutineHistory, type StepKey,
   getRoutineFlow, saveRoutineFlow, clearRoutineFlow, type RoutineFlowState,
 } from '../../lib/routineProgress';
@@ -63,6 +63,7 @@ import { getPhotoJourney, saveRoutinePhoto } from '../../lib/routinePhotos';
 import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
+import { useEstadoCartas, concluirRotina } from '../../lib/cartasServidor';
 
 // LayoutAnimation no Android (iOS já vem ligado) — expandir "Como introduzir os ativos".
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -790,7 +791,11 @@ export default function Protocolo() {
   const finToday = !!finAt;
   // "Feita às 7:18" (design 41f) — horário real em que a cerimônia gravou a rotina.
   const finLabel = finAt ? `Feita às ${new Date(finAt).getHours()}:${String(new Date(finAt).getMinutes()).padStart(2, '0')}` : '';
-  const streak = routineStreak(hist, now);
+  // Sequência = um número só (dias ativos seguidos), do SERVIDOR. Logo depois de concluir,
+  // vale o número que o servidor devolveu (seqServidor); sem rede, o do celular.
+  const { data: estadoCartas } = useEstadoCartas();
+  const [seqServidor, setSeqServidor] = useState<number | null>(null);
+  const streak = seqServidor ?? estadoCartas?.sequencia.atual ?? routineDayStreak(hist, now);
 
   const stepsAll = rawList.map((raw, i) => {
     const name = (raw?.name ?? '').trim();
@@ -847,6 +852,11 @@ export default function Protocolo() {
     keys.forEach((key) => markStepCompleted(period, key));
     setDoneSteps((d) => ({ ...d, [period]: [...new Set([...d[period], ...keys])] }));
     markRoutineDone(period).then(() => getRoutineHistory().then(setHist));
+    // Servidor: sequência + carta do dia (sorteio). Sem rede, fica na fila e sobe depois.
+    void concluirRotina(period).then((r) => {
+      const atual = (r?.sequencia as { atual?: number } | undefined)?.atual;
+      if (typeof atual === 'number') setSeqServidor(atual);
+    });
     // Já fez: o lembrete "ainda dá tempo" de hoje não vai mais.
     cancelLateReminder(period);
     setPhotoUri(null);
@@ -1094,7 +1104,7 @@ export default function Protocolo() {
     [todayKey]: { ...hist[todayKey], [period]: hist[todayKey]?.[period] ?? Date.now() },
   };
   // "N dias seguidos" conta DIAS (routineDayStreak), não os pontos do streak.
-  const doneStreak = routineDayStreak(histNow, now);
+  const doneStreak = seqServidor ?? routineDayStreak(histNow, now);
   const doneStreakLine = `${doneStreak} ${doneStreak === 1 ? 'dia seguido' : 'dias seguidos'}`;
 
   // ── Render ─────────────────────────────────────────────────────────────────
