@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image as ExpoImage } from 'expo-image';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -72,28 +72,17 @@ function useReduceMotion(): boolean {
   return rm;
 }
 
-// Barra de XP do grupo: enche ao abrir a aba (700 ms, 80 ms entre os cards).
-function XpBar({ value, index, run, rm }: { value: number; index: number; run: number; rm: boolean }) {
-  const s = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (run === 0) return;
-    if (rm) { s.setValue(value); return; }
-    s.setValue(0);
-    const t = setTimeout(() => {
-      Animated.timing(s, { toValue: value, duration: 700, delay: index * 80, easing: EO, useNativeDriver: true }).start();
-    }, 350);
-    return () => clearTimeout(t);
-  }, [run, value, index, rm, s]);
-  return (
-    <View style={styles.xpTrack}>
-      <Animated.View style={[styles.xpFill, { transform: [{ scaleX: s }] }]} />
-    </View>
-  );
-}
-
 type UserInfo = { nome: string; fotoUrl: string | null };
 
+// Grupos ainda não existem no banco (lib/grupos.ts = exemplo): a aba só existe em __DEV__.
+// Em produção, um link direto para /grupos volta para a home. O grupo também não tem
+// nível (o nível é individual, por NIKS Points — ver "Sua caminhada").
 export default function Grupos() {
+  if (!__DEV__) return <Redirect href="/home" />;
+  return <GruposTela />;
+}
+
+function GruposTela() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
@@ -309,11 +298,6 @@ export default function Grupos() {
                     </View>
                     <Icon d="M9 6l6 6-6 6" size={16} color={PINK} sw={2.4} />
                   </View>
-                  <View style={styles.gLevelRow}>
-                    <Text style={styles.gLevel}>Nível {g.lvl} · {g.lvlName}</Text>
-                    <Text style={styles.gXp}>{g.xp} / {g.max} XP</Text>
-                  </View>
-                  <XpBar value={g.xp / g.max} index={i} run={run} rm={rm} />
                   <View style={styles.gFoot}>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
                       {g.members.map((m) => (
@@ -368,7 +352,7 @@ export default function Grupos() {
               ))}
             </View>
             <Text style={styles.emptyTitle}>Faça skincare com suas amigas</Text>
-            <Text style={styles.emptySub} lineBreakStrategyIOS="push-out">Grupos que fazem juntas sobem de nível e liberam cartas para todas</Text>
+            <Text style={styles.emptySub} lineBreakStrategyIOS="push-out">Grupos que fazem juntas liberam cartas para todas</Text>
             <View style={styles.emptyBtns}>
               <TouchableOpacity activeOpacity={0.85} onPress={openSheet} style={styles.emptyCreate}>
                 <Icon d="M12 5v14M5 12h14" size={16} color="#fff" sw={2.6} />
@@ -542,11 +526,6 @@ const styles = StyleSheet.create({
   },
   gName: { fontSize: 20, fontWeight: '700', lineHeight: 24, letterSpacing: -0.5, color: INK },
   gDay: { marginTop: 3, fontSize: 14, lineHeight: 18, color: MUTE, letterSpacing: -0.1 },
-  gLevelRow: { marginTop: 14, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
-  gLevel: { fontSize: 14, fontWeight: '600', color: '#515151', letterSpacing: -0.2 },
-  gXp: { fontSize: 13, color: MUTE, letterSpacing: -0.1, fontVariant: ['tabular-nums'] },
-  xpTrack: { marginTop: 7, height: 8, borderRadius: 100, backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden' },
-  xpFill: { ...StyleSheet.absoluteFillObject, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'left center' },
   gFoot: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   gCount: { fontSize: 14, color: MUTE, letterSpacing: -0.1 },
   news: {

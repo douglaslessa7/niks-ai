@@ -2,11 +2,13 @@
 // Cliente da Edge Function `cartas` (sistema de cartas + sequência no servidor).
 // O sorteio acontece no servidor; aqui só chamamos e guardamos o que não pôde subir.
 //
-//   estadoCartas()          sequência, cartas a raspar, poderes armados, cota do dia.
+//   estadoCartas()          sequência, cartas a raspar, poderes armados, cota do dia,
+//                           NIKS Points (total, nível) e a tabela de níveis.
 //                           Na 1ª vez sobe o histórico do celular (routine_history) e,
 //                           sempre, as rotinas que ficaram na fila sem internet.
 //   concluirRotina(periodo) registra a rotina; sem rede, entra na fila e volta depois.
-//   cartaDetalhe(id) / rasparCarta(id)
+//   cartaDetalhe(id) / rasparCarta(id) (devolve os NIKS Points da carta)
+//   marcarNivelVisto(nivel) ela viu a celebração do nível
 //
 // Fetch direto com o token da sessão (padrão do app: nunca functions.invoke).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,13 +40,34 @@ export type CartaCatalogo = {
 
 export type CartaGanha = {
   id: string;
-  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco';
+  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco' | 'volta' | 'scan_rosto' | 'checkin_grupo' | 'produto_grupo';
   dia: string;
   ganha_em: string;
   raspada_em: string | null;
   conteudo: Record<string, unknown> | null;
+  /** NIKS Points da carta (sorteados ao raspar; null antes disso). */
+  pontos?: number | null;
   carta: CartaCatalogo | null;
 };
+
+/** NIKS Points e nível da usuária (o nível é só status: não libera nem bloqueia nada). */
+export type PontosUsuaria = {
+  total: number;
+  nivel: number;
+  titulo: string;
+  /** Pontos do início do nível atual e do próximo nível. */
+  piso: number;
+  teto: number;
+  titulo_proximo: string;
+  nivel_visto: number;
+  /** Subiu de nível e ainda não viu a celebração. */
+  celebrar: boolean;
+  /** A celebração pendente é a dos pontos retroativos ("Você já é…"). */
+  retro: boolean;
+  retro_pontos: number | null;
+};
+
+export type NivelTabela = { n: number; titulo: string; pontos: number };
 
 export type Sequencia = { atual: number; recorde: number; ultimo_dia: string | null };
 
@@ -59,8 +82,31 @@ export type EstadoCartas = {
     scan_antecipado: boolean;
     carta_extra_amanha: boolean;
     sequencia_dobro_dias: string[];
+    pontos_dobro_dias?: string[];
   };
+  pontos?: PontosUsuaria;
+  /** Os 11 níveis (Cara Lavada → Ícone) com os pontos de cada um. */
+  niveis?: NivelTabela[];
+  /** Depois do Ícone: o Ícone II pede `passo` e cada seguinte +`incremento`. */
+  icone?: { passo: number; incremento: number };
+  /** Faixas de pontos das ações ativas (ex.: { rotina: {min:15, max:30} }). */
+  faixas?: Record<string, { min: number; max: number }>;
+  /** Carta de volta entregue nesta abertura (gancho do push da fase 2). */
+  carta_volta?: string | null;
   cartas_novas: string[];
+};
+
+/** Resultado dos pontos ao raspar uma carta. */
+export type PontosRaspados = {
+  ganhos: number;
+  base: number;
+  rara: boolean;
+  dobro: boolean;
+  total_antes: number;
+  total: number;
+  nivel_antes: number;
+  nivel: number;
+  titulo: string;
 };
 
 export type Poder = { tipo: string; fim: string | null; dados: Record<string, unknown> | null };
@@ -224,9 +270,9 @@ export async function vezesRaspada(cartaId: string, excetoId: string): Promise<n
 export const PODER_INFO: Record<string, { nome: string; efeito: string; icone: string }> = {
   sequencia_dobro: { nome: 'Sequência em dobro', efeito: 'Nos próximos 2 dias, cada dia vale +2', icone: 'M13 2 3 14h9l-1 8 10-12h-9l1-8z' },
   protecao_sequencia: { nome: 'Proteção de sequência', efeito: 'Se você falhar 1 dia, sua sequência não zera', icone: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z' },
-  carta_extra: { nome: 'Carta extra', efeito: 'Amanhã você ganha 2 cartas', icone: 'M12 5v14M5 12h14' },
+  carta_extra: { nome: 'Carta extra', efeito: 'Amanhã você ganha 1 carta a mais', icone: 'M12 5v14M5 12h14' },
   scan_antecipado: { nome: 'Scan antecipado', efeito: 'Seu próximo scan já está liberado', icone: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8 12h8' },
-  xp_grupo_dobro: { nome: 'XP em dobro para o grupo', efeito: 'Por 2 dias, seus check-ins rendem XP dobrado', icone: 'M13 2 3 14h9l-1 8 10-12h-9l1-8z' },
+  pontos_dobro: { nome: 'Pontos em dobro', efeito: 'Por 2 dias, suas cartas valem o dobro de NIKS Points', icone: 'M12 3l2.3 6.2L21 9.6l-5.2 4.3L17.6 21 12 17.3 6.4 21l1.8-7.1L3 9.6l6.7-.4z' },
 };
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -272,15 +318,29 @@ export function estadoPoder(p: PoderRow | null, tipo: string, hoje: string): Est
 /** Etiqueta da carta (topo do verso): poder → "Carta de poder"; o resto, pela origem. */
 export function etiquetaCarta(familia: string, origem: string): string {
   if (familia === 'poder') return 'Carta de poder';
-  return ({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo' } as Record<string, string>)[origem] ?? 'Carta do dia';
+  return ({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo', scan_rosto: 'Carta do scan', checkin_grupo: 'Carta do grupo', produto_grupo: 'Carta do grupo', volta: 'Carta de volta' } as Record<string, string>)[origem] ?? 'Carta do dia';
 }
 
 export async function cartaDetalhe(id: string): Promise<CartaGanha> {
   return (await chamar<{ carta: CartaGanha }>({ acao: 'carta', id })).carta;
 }
 
-export async function rasparCarta(id: string): Promise<{ carta: CartaGanha; poder: Poder | null }> {
-  const r = await chamar<{ carta: CartaGanha; poder: Poder | null }>({ acao: 'raspar', id });
+export async function rasparCarta(id: string): Promise<{ carta: CartaGanha; poder: Poder | null; pontos: PontosRaspados | null }> {
+  const r = await chamar<{ carta: CartaGanha; poder: Poder | null; pontos?: PontosRaspados | null }>({ acao: 'raspar', id });
   await invalidarCartas();
-  return r;
+  return { ...r, pontos: r.pontos ?? null };
+}
+
+/** Ela viu a celebração do nível `nivel` (subida ou retroativo): o servidor para de pedir. */
+export async function marcarNivelVisto(nivel: number): Promise<void> {
+  try {
+    await chamar({ acao: 'nivel_visto', nivel });
+  } finally {
+    await invalidarCartas();
+  }
+}
+
+/** 1234 → '1.234' (pontos sempre no formato brasileiro). */
+export function fmtPontos(n: number): string {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }

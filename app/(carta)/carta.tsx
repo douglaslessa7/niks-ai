@@ -253,10 +253,14 @@ export default function CartaScreen() {
   const [srv, setSrv] = useState<{ carta: CartaGanha; antes: number } | null>(null);
   const [poderTxt, setPoderTxt] = useState('');
   const [revelada, setRevelada] = useState(false);
+  // NIKS Points da carta (sorteados no servidor ao raspar; a rara já vem ×3).
+  const [pontos, setPontos] = useState<number | null>(null);
+  // Subiu de nível em alguma carta desta sequência → o "Continuar" final abre a caminhada (68d/68e).
+  const subiuNivel = useRef(false);
   useEffect(() => {
     if (!srvId) return;
     let vivo = true;
-    setSrv(null); setPoderTxt(''); setRevelada(false);
+    setSrv(null); setPoderTxt(''); setRevelada(false); setPontos(null);
     cartaDetalhe(srvId)
       .then(async (carta) => {
         const antes = carta.carta?.familia === 'colecionavel' && carta.carta ? await vezesRaspada(carta.carta.id, carta.id) : 0;
@@ -519,6 +523,10 @@ export default function CartaScreen() {
       const id = srvId!;
       rasparCarta(id)
         .then((r) => {
+          if (r.pontos) {
+            setPontos(r.pontos.ganhos);
+            if (r.pontos.nivel > r.pontos.nivel_antes) subiuNivel.current = true;
+          }
           if (!r.poder) return;
           const hoje = dateKey(sessionDate(new Date()));
           setPoderTxt(estadoPoder({ id: '', tipo: r.poder.tipo, inicio: '', fim: r.poder.fim, consumido_em: null, dados: r.poder.dados }, r.poder.tipo, hoje).texto);
@@ -731,15 +739,20 @@ export default function CartaScreen() {
     if (!unlocked) return;
     haptics.action();
     if (srvMode) {
-      // Próxima carta a raspar (Carta extra, marco); sem mais nenhuma, volta.
+      // Próxima carta a raspar (Carta extra, marco); sem mais nenhuma, volta — ou, se ela
+      // subiu de nível, vai para a "Sua caminhada", que anima os pontos e celebra (68d/68e).
       const atual = srvId;
+      const sair = () => {
+        if (router.canGoBack()) router.back(); else router.replace('/(app)/home' as any);
+        if (subiuNivel.current) { subiuNivel.current = false; router.push('/(app)/caminhada' as any); }
+      };
       estadoCartas()
         .then((e) => {
           const prox = e.a_raspar.find((x) => x.id !== atual);
           if (prox) { setSrvId(prox.id); setRun((r) => r + 1); }
-          else if (router.canGoBack()) router.back(); else router.replace('/(app)/home' as any);
+          else sair();
         })
-        .catch(() => { if (router.canGoBack()) router.back(); else router.replace('/(app)/home' as any); });
+        .catch(sair);
       return;
     }
     const i = ORDEM_CARTAS.indexOf(tipo);
@@ -831,7 +844,7 @@ export default function CartaScreen() {
                 {srv && kindSrv && (
                   <FrenteServidor
                     kind={kindSrv} carta={srv.carta} dup={isDup} vezes={(srv.antes ?? 0) + 1} poderTxt={poderTxt}
-                    label={origemLabel} chipSt={chipSt} chipGlowSt={chipGlowSt}
+                    label={origemLabel} chipSt={chipSt} chipGlowSt={chipGlowSt} pontos={pontos} rm={rm}
                   />
                 )}
               </View>
@@ -888,11 +901,13 @@ export default function CartaScreen() {
             {/* 5. A camada de raspar (Skia): o traço apaga a camada (BlendMode.Clear) */}
             <Canvas style={StyleSheet.absoluteFill}>
               <Group transform={[{ scaleX: (CW - 3) / CW }, { scaleY: (CH - 3) / CH }]}>
+                {/* A opacidade vai na Paint da camada: o <Picture> desenha com as próprias
+                    paints e ignora o `opacity` do Group — a camada ficava por cima, desfocada,
+                    depois da revelação. */}
                 <Group
-                  opacity={foilO}
                   origin={vec(CW / 2, CH / 2)}
                   transform={foilTransform}
-                  layer={<Paint><Blur blur={foilBlur} /></Paint>}
+                  layer={<Paint opacity={foilO}><Blur blur={foilBlur} /></Paint>}
                 >
                   <Picture picture={foilPic} />
                   <SkiaPath
@@ -1005,11 +1020,38 @@ export default function CartaScreen() {
 const COPY = ['M5.5 6h8A2.5 2.5 0 0 1 16 8.5v11a2.5 2.5 0 0 1-2.5 2.5h-8A2.5 2.5 0 0 1 3 19.5v-11A2.5 2.5 0 0 1 5.5 6z', 'M8 3h11a2 2 0 0 1 2 2v13'];
 const SPARK_PLUS = 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
 
+// Selo de NIKS Points abaixo do chip (proposta aprovada: o selo branco de borda rosa do
+// 68d, na altura dos chips da carta). Entra com fade e o número conta em 900 ms.
+const EO_FN = Easing.bezierFn(0.23, 1, 0.32, 1);
+function SeloPontos({ valor, rm }: { valor: number; rm: boolean }) {
+  const [n, setN] = useState(rm ? valor : 0);
+  const o = useSharedValue(rm ? 1 : 0);
+  useEffect(() => {
+    o.set(withDelay(rm ? 0 : 260, withTiming(1, { duration: rm ? 200 : 320, easing: EO })));
+    if (rm) { setN(valor); return; }
+    let raf = 0;
+    const t0 = Date.now() + 260;
+    const passo = () => {
+      const t = Math.min(1, Math.max(0, (Date.now() - t0) / 900));
+      setN(Math.round(valor * EO_FN(t)));
+      if (t < 1) raf = requestAnimationFrame(passo);
+    };
+    raf = requestAnimationFrame(passo);
+    return () => cancelAnimationFrame(raf);
+  }, [valor, rm, o]);
+  const st = useAnimatedStyle(() => ({ opacity: o.get(), transform: [{ translateY: 6 * (1 - o.get()) }] }));
+  return (
+    <Animated.View style={[styles.selo, st]}>
+      <Text style={styles.seloText}>{`+${n} NIKS Points`}</Text>
+    </Animated.View>
+  );
+}
+
 function FrenteServidor({
-  kind, carta, dup, vezes, poderTxt, label, chipSt, chipGlowSt,
+  kind, carta, dup, vezes, poderTxt, label, chipSt, chipGlowSt, pontos, rm,
 }: {
   kind: 'coll' | 'power' | 'conh'; carta: CartaGanha; dup: boolean; vezes: number; poderTxt: string; label: string;
-  chipSt: object; chipGlowSt: object;
+  chipSt: object; chipGlowSt: object; pontos: number | null; rm: boolean;
 }) {
   const cat = carta.carta!;
   if (kind === 'conh') {
@@ -1027,6 +1069,7 @@ function FrenteServidor({
           <Text style={styles.conhTitle} lineBreakStrategyIOS="standard">{titulo}</Text>
           {!!texto && <Text style={styles.conhText} lineBreakStrategyIOS="standard">{String(texto)}</Text>}
         </View>
+        {pontos != null && <View style={{ alignItems: 'center', marginBottom: 6 }}><SeloPontos valor={pontos} rm={rm} /></View>}
       </>
     );
   }
@@ -1079,6 +1122,7 @@ function FrenteServidor({
             </Animated.View>
           </View>
         )}
+        {pontos != null && <SeloPontos valor={pontos} rm={rm} />}
       </View>
       {power && <Text style={styles.foot}>{poderTxt}</Text>}
     </>
@@ -1147,6 +1191,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: PINK, flexDirection: 'row', alignItems: 'center', gap: 6,
   },
   srvChipText: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
+  selo: {
+    marginTop: 8, height: 30, paddingHorizontal: 14, borderRadius: 100, backgroundColor: '#fff',
+    borderWidth: 1.5, borderColor: PINK, boxShadow: '0px 8px 18px rgba(255,94,168,0.28)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  seloText: { color: PINK, fontSize: 15, fontWeight: '700', letterSpacing: -0.2, fontVariant: ['tabular-nums'] },
   conhTitle: { fontSize: 22, lineHeight: 26, fontWeight: '700', letterSpacing: -0.6, color: INK },
   conhText: { marginTop: 10, fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: INK },
   back: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.9)', boxShadow: '0px 18px 40px rgba(200,60,120,0.18)' },

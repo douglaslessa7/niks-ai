@@ -40,7 +40,7 @@ teste-frio,conhecimento,momento,,,Frio,normal,,"{temperatura} °C em {cidade}. N
 teste-espinha-leve,conhecimento,pessoal,,,Espinha leve,normal,,,,sim,sim
 teste-espinha-moderada,conhecimento,pessoal,,,Espinha moderada,normal,,,,sim,sim
 teste-scan-antecipado,poder,scan_antecipado,,,Scan antecipado,normal,,"Seu próximo scan de pele está liberado agora, sem esperar os 7 dias.",,sim,sim
-teste-carta-extra,poder,carta_extra,,,Carta extra,normal,,"Amanhã você ganha 2 cartas em vez de 1.",,sim,sim
+teste-carta-extra,poder,carta_extra,,,Carta extra,normal,,"Amanhã você ganha 1 carta a mais.",,sim,sim
 teste-protecao-sequencia,poder,protecao_sequencia,,,Proteção de sequência,normal,,"Se você falhar um dia, sua sequência não zera. A proteção fica armada até ser usada.",,sim,sim
 teste-sequencia-dobro,poder,sequencia_dobro,,,Sequência em dobro,normal,,"Nos próximos 2 dias, cada dia de rotina soma +2 na sua sequência.","{""dias"":2}",sim,sim
-teste-xp-grupo-dobro,poder,xp_grupo_dobro,,,XP em dobro para o grupo,normal,,"Por 2 dias, seus check-ins rendem XP dobrado para o grupo.","{""dias"":2}",nao,sim
+teste-pontos-dobro,poder,pontos_dobro,,,Pontos em dobro,normal,,"Por 2 dias, suas cartas valem o dobro de NIKS Points.","{""dias"":2}",sim,sim

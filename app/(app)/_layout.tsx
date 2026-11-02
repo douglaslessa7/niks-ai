@@ -36,7 +36,7 @@ const NAV_INACTIVE_DARK = '#8B93A8';
 const NAV_BG_DARK = '#1A1F2E';
 const NAV_ICON = 27;
 
-type NavKey = 'rotina' | 'produtos' | 'grupos';
+type NavKey = 'rotina' | 'produtos' | 'grupos' | 'perfil';
 
 function NavGlyph({ name, color, active }: { name: NavKey; color: string; active: boolean }) {
   const c = {
@@ -71,6 +71,12 @@ function NavGlyph({ name, color, active }: { name: NavKey; color: string; active
           <Path d="M16 3.13a4 4 0 0 1 0 7.75" {...c} />
         </>
       )}
+      {name === 'perfil' && (
+        <>
+          <Circle cx={12} cy={8} r={4} {...c} />
+          <Path d="M4.5 20a7.5 7.5 0 0 1 15 0" {...c} />
+        </>
+      )}
     </Svg>
   );
 }
@@ -99,10 +105,12 @@ function HouseGlyph({ color, active }: { color: string; active: boolean }) {
 // Ordem da pílula, esquerda→direita: rosto (Rotina) · frasco (Produtos) · duas pessoas
 // (Grupos — aba "Seus grupos", telas 75b–75e). O Perfil abre pela foto ao lado de
 // "Olá, Nome" na home e pela engrenagem da aba Seus grupos.
+// ⚠️ Grupos ainda não existem no banco (lib/grupos.ts = dados de exemplo): em PRODUÇÃO
+// o último ícone volta a ser o Perfil (como na 57d) até a fase dos grupos.
 const NAV_ITEMS: { key: NavKey; route: string }[] = [
   { key: 'rotina',   route: '/protocolo' },
   { key: 'produtos', route: '/recomendacao-produtos' },
-  { key: 'grupos',   route: '/grupos' },
+  __DEV__ ? { key: 'grupos', route: '/grupos' } : { key: 'perfil', route: '/perfil' },
 ];
 
 function GlobalBottomBar() {
@@ -382,6 +390,7 @@ export default function AppLayout() {
         <Tabs.Screen name="alarme" options={{ href: null }} />
         <Tabs.Screen name="progresso" options={{ href: null }} />
         <Tabs.Screen name="dica-do-dia" options={{ href: null }} />
+        <Tabs.Screen name="caminhada" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa

@@ -3,16 +3,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { verifyJWT } from '../_shared/jwt.ts'
 
 // Sistema de cartas do NIKS — o SORTEIO é feito aqui (no banco, via funções SQL com
-// service role), nunca no app. Ver migrations 20261101120000…150000.
+// service role), nunca no app. Ver migrations 20261101120000…150000, o motor
+// (20261102120000) e os NIKS Points (20261103120000/130000).
 //
 // Entrada (POST, JSON) — sempre com o JWT da usuária; o user_id vem do token:
 //   { acao: 'estado', historico?: [{dia,am,pm}], pendentes?: [{periodo, quando}] }
-//       → sobe o histórico do celular UMA vez, registra rotinas da fila offline e
-//         devolve sequência, cartas a raspar, poderes armados e a cota do dia.
+//       → sobe o histórico do celular UMA vez, aplica os NIKS Points retroativos (uma vez),
+//         registra rotinas da fila offline e devolve sequência, cartas a raspar, poderes,
+//         a cota do dia, os pontos/nível, a tabela de níveis e a Carta de volta (se saiu).
 //   { acao: 'concluir_rotina', periodo: 'am'|'pm' }
-//       → sequência + carta(s) do dia + rara dos marcos 7/14/30.
+//       → sequência + a carta da rotina (+ Carta extra) + rara dos marcos 7/14/30.
 //   { acao: 'carta', id }      → conteúdo de uma carta dela (para a tela de raspar).
-//   { acao: 'raspar', id }     → marca raspada e aplica o Poder na hora.
+//   { acao: 'raspar', id }     → marca raspada, sorteia os NIKS Points e aplica o Poder.
+//   { acao: 'nivel_visto', nivel } → ela viu a celebração do nível (subida ou retroativo).
 // Saída: 200 JSON · 400 entrada inválida · 401 sem JWT válido · 404 carta não é dela.
 
 const corsHeaders = {
@@ -36,7 +39,7 @@ async function detalhes(supabase: Supa, userId: string, ids: string[]) {
   if (!ids.length) return []
   const { data, error } = await supabase
     .from('cartas_usuario')
-    .select('id, origem, dia, ganha_em, raspada_em, conteudo, carta:cartas_catalogo(id, codigo, familia, subtipo, serie, nome, raridade, arte_path, texto, efeito)')
+    .select('id, origem, dia, ganha_em, raspada_em, conteudo, pontos, carta:cartas_catalogo(id, codigo, familia, subtipo, serie, nome, raridade, arte_path, texto, efeito)')
     .eq('user_id', userId)
     .in('id', ids)
   if (error) throw error
@@ -66,7 +69,12 @@ serve(async (req) => {
         const { error } = await supabase.rpc('sincronizar_historico', { p_uid: userId, p_dias: body.historico.slice(0, 400) })
         if (error) throw error
       }
-      // 2. Rotinas feitas sem internet.
+      // 2. NIKS Points retroativos (uma vez por conta; depois do histórico, que conta nele).
+      {
+        const { error } = await supabase.rpc('aplicar_pontos_retro', { p_uid: userId })
+        if (error) throw error
+      }
+      // 3. Rotinas feitas sem internet.
       const novas: string[] = []
       if (Array.isArray(body?.pendentes)) {
         const agora = Date.now()
@@ -100,7 +108,19 @@ serve(async (req) => {
       if (acao === 'carta') return json({ carta })
       const { data, error } = await supabase.rpc('raspar_carta', { p_uid: userId, p_id: id })
       if (error) throw error
-      return json({ carta: { ...carta, raspada_em: carta.raspada_em ?? new Date().toISOString() }, poder: data?.poder ?? null })
+      return json({
+        carta: { ...carta, raspada_em: carta.raspada_em ?? new Date().toISOString(), pontos: data?.pontos?.ganhos ?? carta.pontos ?? null },
+        poder: data?.poder ?? null,
+        pontos: data?.pontos ?? null,
+      })
+    }
+
+    if (acao === 'nivel_visto') {
+      const nivel = Number(body?.nivel)
+      if (!Number.isInteger(nivel) || nivel < 1) return json({ error: 'nivel inválido' }, 400)
+      const { data, error } = await supabase.rpc('marcar_nivel_visto', { p_uid: userId, p_nivel: nivel })
+      if (error) throw error
+      return json(data)
     }
 
     return json({ error: 'acao inválida' }, 400)

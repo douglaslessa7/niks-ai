@@ -18,7 +18,7 @@
 //   codigo        único, minúsculas-com-hífen (ex.: rosa-de-damasco)
 //   familia       colecionavel | conhecimento | poder
 //   subtipo       vazio (colecionável) · educativa | pessoal | momento (conhecimento) ·
-//                 scan_antecipado | carta_extra | protecao_sequencia | sequencia_dobro | xp_grupo_dobro (poder)
+//                 scan_antecipado | carta_extra | protecao_sequencia | sequencia_dobro | pontos_dobro (poder)
 //   serie         código da série (só colecionável; ex.: flores-do-niks)
 //   serie_nome    nome da série — cria a série se ela ainda não existir
 //   nome          nome da carta

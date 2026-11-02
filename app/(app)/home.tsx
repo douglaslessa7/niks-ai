@@ -19,7 +19,7 @@ import { contarPassosMinhaRotina } from '../../lib/minhaRotina';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { scheduleRoutineReminders } from '../../lib/routineReminders';
 import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
-import { DEMO_GRUPO, MEMBROS, gruposDemo, fezHoje as membroFez } from '../../lib/grupos';
+import { MEMBROS, gruposDemo, fezHoje as membroFez } from '../../lib/grupos';
 import Avatar from '../../components/grupos/Avatar';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import SeloProtegida, { EscudoChama } from '../../components/conquistas/SeloProtegida';
@@ -37,10 +37,11 @@ import {
 // 72 = barra de status do frame (54) + 18, por isso aqui é `insets.top + 18`.
 // Fonte = SF Pro (fonte do sistema, sem fontFamily), como no design.
 //
-// Dados reais: nome, foto, sequência, semana, horário/duração do skincare e produtos.
-// GRUPO e CARTA DO DIA ainda não existem no app: o grupo usa o conteúdo do design
-// (lib/grupos.ts — DEMO_GRUPO) e a carta segue a rotina de hoje (trancada → pronta
-// quando ela conclui um skincare; "Raspar agora" marca como resgatada até a próxima sessão).
+// Dados reais: nome, foto, sequência, semana, horário/duração do skincare, produtos,
+// NÍVEL (NIKS Points, do servidor — a linha sob o "Olá" abre a "Sua caminhada") e a
+// CARTA DO DIA (servidor: 1 carta por rotina, manhã e noite).
+// GRUPO ainda não existe no app: o card "Seu grupo" usa o conteúdo do design
+// (lib/grupos.ts — DEMO_GRUPO) e só aparece em __DEV__.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INK = '#121212';
@@ -425,8 +426,15 @@ export default function Home() {
   const card: CardState = estado
     ? (aRaspar.length ? 'ready' : estado.rotina_hoje ? 'claimed' : 'locked')
     : (fezHoje ? 'claimed' : 'locked');
-  const cota = estado?.cartas_hoje.cota ?? 1;
+  const cota = estado?.cartas_hoje.cota ?? 2;
   const dadas = card === 'locked' ? 0 : (estado?.cartas_hoje.dadas ?? 1);
+  // 1 carta por rotina: fez só a da manhã → a próxima vem na rotina da noite.
+  const hojeHist = hist[dateKey(sessionDate(now))];
+  const proximaNaNoite = dadas < cota && !!hojeHist?.am && !hojeHist?.pm;
+
+  // Nível (NIKS Points): "Nível 4 · Sem Filtro" + barra até o próximo nível.
+  const pontos = estado?.pontos;
+  const fracNivel = pontos ? Math.max(0, Math.min(1, (pontos.total - pontos.piso) / Math.max(1, pontos.teto - pontos.piso))) : 0;
   const claimCard = () => {
     const prox = aRaspar[0];
     if (!prox) return;
@@ -438,6 +446,7 @@ export default function Home() {
   // rotinas — 1 ponto por rotina; agora dias, do servidor).
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const [aviso, setAviso] = useState<{ antes: number; agora: number } | null>(null);
+  const [avisoResolvido, setAvisoResolvido] = useState(false); // decidiu (não precisa) ou ela fechou
   const avisoChecado = useRef(false);
   useEffect(() => {
     if (!estado || !histPronto || avisoChecado.current) return;
@@ -445,20 +454,31 @@ export default function Home() {
     const antes = routineStreak(hist, now);
     const agora = estado.sequencia.atual;
     AsyncStorage.getItem(AVISO_SEQ_KEY).then((visto) => {
-      if (visto) return;
+      if (visto) { setAvisoResolvido(true); return; }
       if (antes > agora) { setAviso({ antes, agora }); setTabBarVisible(false); }
-      else AsyncStorage.setItem(AVISO_SEQ_KEY, '1').catch(() => {});
-    }).catch(() => {});
+      else { AsyncStorage.setItem(AVISO_SEQ_KEY, '1').catch(() => {}); setAvisoResolvido(true); }
+    }).catch(() => setAvisoResolvido(true));
   }, [estado, histPronto, hist, now, setTabBarVisible]);
   const fecharAviso = () => {
     AsyncStorage.setItem(AVISO_SEQ_KEY, '1').catch(() => {});
     setAviso(null);
     setTabBarVisible(true);
+    setAvisoResolvido(true);
   };
+
+  // Celebração de nível pendente (pontos retroativos ou uma subida que ela não viu):
+  // abre a "Sua caminhada" uma vez por sessão do app, depois do aviso 79l e fora do
+  // tutorial de primeiro acesso. A caminhada celebra e confirma no servidor.
+  const tutorialPendente = useAppStore((s) => s.homeTutorialPending && !s.homeTutorialSeen);
+  const celebrou = useRef(false);
+  useEffect(() => {
+    if (celebrou.current || !pontos?.celebrar || !avisoResolvido || tutorialPendente) return;
+    celebrou.current = true;
+    router.push('/caminhada?celebrar=1' as any);
+  }, [pontos?.celebrar, avisoResolvido, tutorialPendente, router]);
 
   const grupo = gruposDemo()[0];
   const temGrupo = !!grupo;
-  const doisGrupos = DEMO_GRUPO === 'dois';
   const fezHojeGrupo = new Set(MEMBROS.filter((m) => grupo && membroFez(grupo, m.k, fezHoje)).map((m) => m.k));
 
   const go = (path: string) => { haptics.tap(); router.push(path as any); };
@@ -498,7 +518,7 @@ export default function Home() {
 
   const veil = useRef(new Animated.Value(card === 'locked' ? 1 : 0)).current;
   const bar = useRef(new Animated.Value(card === 'locked' ? 0 : 1)).current;
-  const gxp = useRef(new Animated.Value(fezHoje ? 0.64 : 0.58)).current;
+  const gxp = useRef(new Animated.Value(fracNivel)).current;
   const pop = useRef(new Animated.Value(1)).current;
   const sheen = useRef(new Animated.Value(0)).current;
   const sparks = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
@@ -506,11 +526,10 @@ export default function Home() {
   const firstGxp = useRef(true);
 
   useEffect(() => {
-    if (firstGxp.current) { firstGxp.current = false; return; }
-    const to = fezHoje ? 0.64 : 0.58;
-    if (rm) Animated.timing(gxp, { toValue: to, duration: 240, easing: Easing.ease, useNativeDriver: true }).start();
-    else Animated.timing(gxp, { toValue: to, duration: 700, delay: 200, easing: EO, useNativeDriver: true }).start();
-  }, [fezHoje, rm, gxp]);
+    if (firstGxp.current) { firstGxp.current = false; gxp.setValue(fracNivel); return; }
+    if (rm) Animated.timing(gxp, { toValue: fracNivel, duration: 240, easing: Easing.ease, useNativeDriver: true }).start();
+    else Animated.timing(gxp, { toValue: fracNivel, duration: 700, delay: 200, easing: EO, useNativeDriver: true }).start();
+  }, [fracNivel, rm, gxp]);
 
   const runSheen = useCallback(() => {
     sheen.setValue(0);
@@ -588,22 +607,18 @@ export default function Home() {
             </TouchableOpacity>
             <View style={{ gap: 1 }}>
               <Text style={styles.greet}>{d.firstName ? `Olá, ${d.firstName}` : 'Olá'}</Text>
-              {temGrupo ? (
-                <TouchableOpacity activeOpacity={0.7} onPress={() => go('/grupos')} style={styles.groupLine}>
-                  <Text style={styles.groupLineText}>{grupo.name} · Nível {grupo.lvl}</Text>
+              {/* Nível individual (NIKS Points) → "Sua caminhada". Antes de o estado chegar,
+                  a linha fica vazia com a mesma altura (a tela não pula). */}
+              {pontos ? (
+                <TouchableOpacity activeOpacity={0.7} onPress={() => go('/caminhada')} style={styles.groupLine} accessibilityLabel={`Nível ${pontos.nivel}, ${pontos.titulo}. Abrir sua caminhada`}>
+                  <Text style={styles.groupLineText}>Nível {pontos.nivel} · {pontos.titulo}</Text>
                   <View style={styles.miniTrack}>
                     <Animated.View style={[styles.miniFill, { transform: [{ scaleX: gxp }] }]} />
                   </View>
-                  {doisGrupos && (
-                    <View style={styles.plusOne}><Text style={styles.plusOneText}>+1</Text></View>
-                  )}
                   <Icon d={CHEVRON} size={10} color={MUTE} sw={2.6} />
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity activeOpacity={0.7} onPress={() => go('/grupos')} style={[styles.groupLine, { gap: 4 }]}>
-                  <Text style={styles.groupCta}>Entre em um grupo</Text>
-                  <Icon d={CHEVRON} size={10} color={PINK} sw={2.8} />
-                </TouchableOpacity>
+                <View style={styles.groupLine} />
               )}
             </View>
           </View>
@@ -717,7 +732,7 @@ export default function Home() {
                   <Circle cx={12} cy={13} r={8} fill="none" stroke={MUTE} strokeWidth={2.2} />
                   <Path d="M12 9v4l2.5 1.5M9 2h6M12 2v3" fill="none" stroke={MUTE} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
                 </Svg>
-                <Text style={styles.cartaSubInline}>Próxima carta em {nextCardIn(now)}</Text>
+                <Text style={styles.cartaSubInline}>{proximaNaNoite ? 'Próxima carta na rotina da noite' : `Próxima carta em ${nextCardIn(now)}`}</Text>
               </View>
             </Animated.View>
           </View>
@@ -851,15 +866,16 @@ export default function Home() {
           </ScrollView>
         </View>
 
-        {/* ── Seu grupo ────────────────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Seu grupo</Text>
-        {temGrupo ? (
+        {/* ── Seu grupo ─────────────────────────────────────────────────
+            Grupos ainda não existem no banco: o card (dados de exemplo) só em __DEV__. */}
+        {__DEV__ && <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Seu grupo</Text>}
+        {!__DEV__ ? null : temGrupo ? (
           // O design leva à tela do grupo (76a, ainda não feita); por enquanto abre a aba Seus grupos.
           <TouchableOpacity activeOpacity={0.85} onPress={() => go('/grupos')} style={styles.groupCard}>
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.groupName}>{grupo.name}</Text>
-                <Text style={styles.groupSub}>Nível {grupo.lvl} · {grupo.members.length} integrantes</Text>
+                <Text style={styles.groupSub}>{grupo.members.length} integrantes</Text>
               </View>
               <Icon d={CHEVRON} size={16} color={PINK} sw={2.4} />
             </View>
@@ -877,7 +893,7 @@ export default function Home() {
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.groupName}>{'Faça skincare\ncom suas amigas'}</Text>
-                <Text style={styles.groupSub}>Vocês sobem de nível juntas</Text>
+                <Text style={styles.groupSub}>Vocês liberam cartas juntas</Text>
               </View>
               <View style={styles.inviteIcon}>
                 <Svg width={22} height={22} viewBox="0 0 24 24">
@@ -966,14 +982,8 @@ const styles = StyleSheet.create({
   greet: { fontSize: 17, fontWeight: '400', lineHeight: 20, letterSpacing: -0.3, color: INK },
   groupLine: { height: 15, flexDirection: 'row', alignItems: 'center', gap: 7 },
   groupLineText: { fontSize: 12, fontWeight: '500', letterSpacing: -0.1, color: '#515151' },
-  groupCta: { fontSize: 12, fontWeight: '600', letterSpacing: -0.1, color: PINK },
   miniTrack: { width: 38, height: 4, borderRadius: 100, backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden' },
   miniFill: { ...StyleSheet.absoluteFillObject, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'left center' },
-  plusOne: {
-    height: 15, paddingHorizontal: 5, borderRadius: 100, backgroundColor: '#fff',
-    borderWidth: 1, borderColor: 'rgba(255,94,168,0.4)', justifyContent: 'center',
-  },
-  plusOneText: { fontSize: 10, fontWeight: '700', color: PINK, letterSpacing: 0 },
   streakBtn: {
     width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF',
     alignItems: 'center', justifyContent: 'center',

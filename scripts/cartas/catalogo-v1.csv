@@ -1,0 +1,8 @@
+codigo,familia,subtipo,serie,serie_nome,nome,raridade,arte,texto,efeito,ativa,apenas_teste
+niks-flor,colecionavel,,niks-essencial,NIKS Essencial,Flor NIKS,normal,score-logo-pink.png,,,nao,nao
+niks-flor-rara,colecionavel,,niks-essencial,NIKS Essencial,Flor NIKS rara,rara,score-logo-pink.png,,,nao,nao
+niks-sequencia-dobro,poder,sequencia_dobro,,,Sequência em dobro,normal,score-logo-pink.png,"Nos próximos 2 dias, cada dia vale +2","{""dias"":2}",nao,nao
+niks-protecao-sequencia,poder,protecao_sequencia,,,Proteção de sequência,normal,score-logo-pink.png,"Se você falhar 1 dia, sua sequência não zera",,nao,nao
+niks-carta-extra,poder,carta_extra,,,Carta extra,normal,score-logo-pink.png,Amanhã você ganha 1 carta a mais,,nao,nao
+niks-scan-antecipado,poder,scan_antecipado,,,Scan antecipado,normal,score-logo-pink.png,Seu próximo scan já está liberado,,nao,nao
+niks-pontos-dobro,poder,pontos_dobro,,,Pontos em dobro,normal,score-logo-pink.png,"Por 2 dias, suas cartas valem o dobro de NIKS Points","{""dias"":2}",nao,nao
