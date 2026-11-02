@@ -10,12 +10,13 @@
 //     voltar para ele.
 //   · Toque no PUSH do lote (`data.type === 'rotina_lote'`), com o app aberto, em
 //     segundo plano ou fechado → abre o resultado (ou a tela de erro / "Montando…").
+//     O toque chega pelo roteador único lib/pushToque.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, Animated, Easing, AppState, PanResponder, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
-import * as Notifications from 'expo-notifications';
+import { registrarToque } from '../../lib/pushToque';
 import { useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 import { invalidateCache } from '../../lib/cache';
@@ -63,21 +64,13 @@ export default function AvisoLote() {
     return () => clearInterval(t);
   }, [lote?.status, conferir]);
 
-  // Toque no push do lote (inclusive o que abriu o app do zero).
-  useEffect(() => {
-    const tratar = async (r: Notifications.NotificationResponse | null) => {
-      const d = r?.notification.request.content.data as { type?: string; lote_id?: string } | undefined;
-      if (d?.type !== 'rotina_lote' || !d.lote_id) return;
-      const l = await buscarLote(d.lote_id).catch(() => null);
-      if (l) { setLote(null); abrir(l); }
-    };
-    Notifications.getLastNotificationResponseAsync().then((r) => {
-      void tratar(r);
-      if (r) void Notifications.clearLastNotificationResponseAsync?.();
-    }).catch(() => {});
-    const sub = Notifications.addNotificationResponseReceivedListener((r) => { void tratar(r); });
-    return () => sub.remove();
-  }, [abrir]);
+  // Toque no push do lote (inclusive o que abriu o app do zero) — chega pelo roteador
+  // único (lib/pushToque.ts), que guarda o toque enquanto este aviso não está montado.
+  useEffect(() => registrarToque('rotina_lote', async (d) => {
+    if (typeof d.lote_id !== 'string') return;
+    const l = await buscarLote(d.lote_id).catch(() => null);
+    if (l) { setLote(null); abrir(l); }
+  }), [abrir]);
 
   const visivel = !!lote && lote.status !== 'processando' && !lote.visto_em;
 

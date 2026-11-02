@@ -151,6 +151,11 @@ function enviarAoMixpanel(item: MixpanelPendente) {
   if (mixpanelFila.length < MIXPANEL_FILA_MAX) mixpanelFila.push(item);
 }
 
+/** Evento de fora do React (libs, roteador de push): mesma fila do `track`. */
+export function trackFora(event: string, properties?: Record<string, unknown>) {
+  enviarAoMixpanel({ tipo: 'track', evento: event, props: properties, quando: Date.now() });
+}
+
 function esvaziarFilaMixpanel() {
   const itens = mixpanelFila.splice(0, mixpanelFila.length);
   for (const item of itens) {

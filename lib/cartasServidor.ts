@@ -18,6 +18,7 @@ import { supabase } from './supabase';
 import { getRoutineHistory, type RoutinePeriod } from './routineProgress';
 import { useCachedQuery, invalidateCache, writeCache, peekCache } from './cache';
 import { getUserId, useUserId } from './currentUser';
+import { trackFora } from './mixpanel/MixpanelProvider';
 
 const FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/cartas`;
 const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -76,7 +77,8 @@ export type EstadoCartas = {
   sequencia: Sequencia;
   rotina_hoje: boolean;
   cartas_hoje: { cota: number; dadas: number };
-  a_raspar: { id: string; origem: CartaGanha['origem']; ganha_em: string }[];
+  /** `tipo` ('familia:subtipo[:rara]') e `motivo` do motor: só para medição. */
+  a_raspar: { id: string; origem: CartaGanha['origem']; ganha_em: string; tipo?: string; motivo?: string | null }[];
   poderes: {
     protecao: number;
     scan_antecipado: boolean;
@@ -91,10 +93,18 @@ export type EstadoCartas = {
   icone?: { passo: number; incremento: number };
   /** Faixas de pontos das ações ativas (ex.: { rotina: {min:15, max:30} }). */
   faixas?: Record<string, { min: number; max: number }>;
-  /** Carta de volta entregue nesta abertura (gancho do push da fase 2). */
+  /** Carta de volta entregue nesta abertura (a carta misteriosa do push). */
   carta_volta?: string | null;
+  /**
+   * Próxima Carta de volta: o dia em que ela sai se não houver rotina depois de
+   * `ultimo_dia`, e se vai mesmo sair (`ok`). Agenda o push da carta misteriosa.
+   */
+  proxima_volta?: { dia: string; ultimo_dia: string; ok: boolean } | null;
   cartas_novas: string[];
 };
+
+/** Recompensa da primeira semana gravada na carta (o motor dá por trás; parece comum). */
+export type Semana1 = { dia: number; tipo: string; pontos?: number; subtipo?: string; fallback?: boolean; marco?: boolean };
 
 /** Resultado dos pontos ao raspar uma carta. */
 export type PontosRaspados = {
@@ -102,6 +112,9 @@ export type PontosRaspados = {
   base: number;
   rara: boolean;
   dobro: boolean;
+  /** Pontos extras da primeira semana (já somados em `ganhos`). */
+  bonus?: number;
+  semana1?: Semana1 | null;
   total_antes: number;
   total: number;
   nivel_antes: number;
@@ -165,7 +178,23 @@ export async function estadoCartas(): Promise<EstadoCartas> {
   // Só limpa o que foi enviado com sucesso.
   if (!enviado) await AsyncStorage.setItem(HIST_KEY, new Date().toISOString()).catch(() => {});
   if (fila.length) await AsyncStorage.removeItem(FILA_KEY).catch(() => {});
+  void medirRecebidas(estado.a_raspar);
   return estado;
+}
+
+// Medição: `carta_recebida` uma vez por carta, quando ela aparece para raspar (toda
+// carta nasce de algo feito no app, então passa por aqui). Ids já enviados no aparelho.
+const RECEBIDAS_KEY = 'mx:cartas_recebidas';
+async function medirRecebidas(lista: EstadoCartas['a_raspar']) {
+  if (!lista?.length) return;
+  try {
+    const raw = await AsyncStorage.getItem(RECEBIDAS_KEY);
+    const vistos: string[] = raw ? JSON.parse(raw) : [];
+    const novas = lista.filter((c) => !vistos.includes(c.id));
+    if (!novas.length) return;
+    for (const c of novas) trackFora('carta_recebida', { origem: c.origem, tipo: c.tipo ?? null, motivo: c.motivo ?? null });
+    await AsyncStorage.setItem(RECEBIDAS_KEY, JSON.stringify([...vistos, ...novas.map((c) => c.id)].slice(-200)));
+  } catch {}
 }
 
 /**
@@ -328,7 +357,18 @@ export async function cartaDetalhe(id: string): Promise<CartaGanha> {
 export async function rasparCarta(id: string): Promise<{ carta: CartaGanha; poder: Poder | null; pontos: PontosRaspados | null }> {
   const r = await chamar<{ carta: CartaGanha; poder: Poder | null; pontos?: PontosRaspados | null }>({ acao: 'raspar', id });
   await invalidarCartas();
-  return { ...r, pontos: r.pontos ?? null };
+  const p = r.pontos;
+  if (p) {
+    // Medição (o que traz ela de volta): a carta, a subida de nível e a recompensa da semana 1.
+    const c = r.carta?.carta;
+    trackFora('carta_raspada', {
+      pontos: p.ganhos, rara: p.rara, origem: r.carta?.origem ?? null,
+      tipo: c ? `${c.familia}${c.subtipo ? `:${c.subtipo}` : ''}` : null,
+    });
+    if (p.nivel > p.nivel_antes) trackFora('nivel_subiu', { nivel: p.nivel, origem: 'carta' });
+    if (p.semana1) trackFora('semana1_recompensa', { dia: p.semana1.dia, tipo: p.semana1.tipo, fallback: !!p.semana1.fallback });
+  }
+  return { ...r, pontos: p ?? null };
 }
 
 /** Ela viu a celebração do nível `nivel` (subida ou retroativo): o servidor para de pedir. */

@@ -41,7 +41,7 @@ import {
   sessionDate, dateKey, type RoutineHistory, type StepKey,
   getRoutineFlow, saveRoutineFlow, clearRoutineFlow, type RoutineFlowState,
 } from '../../lib/routineProgress';
-import { cancelLateReminder } from '../../lib/routineReminders';
+import { reagendarLembretes } from '../../lib/routineReminders';
 import { requestAppReview } from '../../lib/storeReview';
 import {
   listarMinhaRotina, garantirMinhaRotina, temProdutosNoCelular, diaDaSemana, passoValeNoDia,
@@ -851,14 +851,15 @@ export default function Protocolo() {
     const keys = steps.map((st) => st.key);
     keys.forEach((key) => markStepCompleted(period, key));
     setDoneSteps((d) => ({ ...d, [period]: [...new Set([...d[period], ...keys])] }));
-    markRoutineDone(period).then(() => getRoutineHistory().then(setHist));
+    const feita = markRoutineDone(period).then(() => getRoutineHistory().then(setHist));
     // Servidor: sequência + carta do dia (sorteio). Sem rede, fica na fila e sobe depois.
-    void concluirRotina(period).then((r) => {
+    const noServidor = concluirRotina(period).then((r) => {
       const atual = (r?.sequencia as { atual?: number } | undefined)?.atual;
       if (typeof atual === 'number') setSeqServidor(atual);
     });
-    // Já fez: o lembrete "ainda dá tempo" de hoje não vai mais.
-    cancelLateReminder(period);
+    // Já fez: o "ainda dá tempo" de hoje e a carta misteriosa não vão mais; o de amanhã
+    // ganha a sequência nova (depois do histórico e da sequência gravados).
+    void Promise.allSettled([feita, noServidor]).then(() => reagendarLembretes());
     setPhotoUri(null);
     if (am) {
       getUserId().then((uid) => { if (uid) void getPhotoJourney(uid).then(setJourney); });

@@ -18,6 +18,7 @@ import { useCachedQuery } from '../../lib/cache';
 import { contarPassosMinhaRotina } from '../../lib/minhaRotina';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { scheduleRoutineReminders } from '../../lib/routineReminders';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
 import { MEMBROS, gruposDemo, fezHoje as membroFez } from '../../lib/grupos';
 import Avatar from '../../components/grupos/Avatar';
@@ -381,16 +382,6 @@ export default function Home() {
     if (cached) setStoreSkinScore(cached.skinScore ?? null);
   }, [cached, setStoreSkinScore]);
 
-  // Lembretes diários da rotina no horário dela (notificação local; não reagenda se
-  // nada mudou). Ver lib/routineReminders.ts.
-  useEffect(() => {
-    if (!cached) return;
-    scheduleRoutineReminders({
-      am: { minutes: d.amTime },
-      pm: { minutes: d.pmTime },
-    });
-  }, [cached]);
-
   // ── Tutorial de primeiro acesso: aplica o "já viu" do servidor e SÓ DEPOIS
   // libera o palco, no mesmo efeito (ver README → "Quem vê").
   const homeTutorialSeenAt = cached?.homeTutorialSeenAt;
@@ -418,6 +409,18 @@ export default function Home() {
   const streak = dayStreak;
   const protegida = (estado?.poderes.protecao ?? 0) > 0;
   const products = d.products[hero.focus];
+
+  // Lembretes da rotina no horário dela, o "ainda dá tempo" com a sequência e a carta
+  // misteriosa (notificações locais; não reagenda se nada mudou). Reagenda quando o
+  // estado do servidor chega. Ver lib/routineReminders.ts.
+  const pv = estado?.proxima_volta;
+  useEffect(() => {
+    if (!cached) return;
+    scheduleRoutineReminders({
+      am: { minutes: d.amTime },
+      pm: { minutes: d.pmTime },
+    });
+  }, [cached, estado?.sequencia.atual, estado?.sequencia.ultimo_dia, pv?.dia, pv?.ok]);
   const fezHoje = routinesDoneOn(hist, sessionDate(now)) > 0;
 
   // Carta do dia (servidor): pronta enquanto houver carta a raspar; resgatada depois da
@@ -474,6 +477,8 @@ export default function Home() {
   useEffect(() => {
     if (celebrou.current || !pontos?.celebrar || !avisoResolvido || tutorialPendente) return;
     celebrou.current = true;
+    // A subida pelos pontos retroativos (a de carta é medida ao raspar).
+    if (pontos.retro) trackFora('nivel_subiu', { nivel: pontos.nivel, origem: 'retro' });
     router.push('/caminhada?celebrar=1' as any);
   }, [pontos?.celebrar, avisoResolvido, tutorialPendente, router]);
 

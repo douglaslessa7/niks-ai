@@ -16,6 +16,7 @@ import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
 import { finishProdutosTutorial, useProdutosTutorialPending } from '../../lib/produtosTutorial';
 import AvisoLote from '../../components/rotina/AvisoLote';
+import ToquePush from '../../components/ToquePush';
 import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
 // ── Bottom navbar — réplica da `nav` "splitHouse" da tela 57d do Claude Design
@@ -403,6 +404,9 @@ export default function AppLayout() {
       {/* Aviso "Sua rotina está pronta" do lote "Montar minha rotina" (Fase 6) + toque
           no push dele. Irmão da navbar pelo mesmo motivo: fica por cima de qualquer aba. */}
       {!showCoachMarks && !showProdutosCoachMarks && <AvisoLote />}
+      {/* Toque em qualquer push (inclusive o que abriu o app) → lib/pushToque.ts. Fora do
+          tutorial também: o toque do lote espera o aviso montar. */}
+      <ToquePush />
     </View>
   );
 }
