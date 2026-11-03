@@ -6,6 +6,7 @@
 // despacha por `data.type` para quem se registrou (`registrarToque`):
 //   · 'rotina_lote'      → components/rotina/AvisoLote.tsx (abre o resultado do lote)
 //   · 'carta_misteriosa' → components/ToquePush.tsx (abre a Carta de volta para raspar)
+//   · 'grupo_checkin' / 'grupo_falta' (avisos do grupo, servidor) → ToquePush abre o grupo
 //   · 'routine_reminder' → só a medição (abre o app, como sempre).
 // Um toque de um tipo sem ninguém registrado ainda (ex.: o aviso do lote não monta
 // durante o tutorial) fica guardado e é entregue quando o tipo se registrar.
@@ -17,7 +18,7 @@ import { trackFora } from './mixpanel/MixpanelProvider';
 export type DadosPush = { type?: string; [k: string]: unknown };
 type Tratador = (dados: DadosPush) => void | Promise<void>;
 
-const COM_TELA = new Set(['rotina_lote', 'carta_misteriosa']);
+const COM_TELA = new Set(['rotina_lote', 'carta_misteriosa', 'grupo_checkin', 'grupo_falta']);
 const tratadores = new Map<string, Tratador>();
 const pendentes = new Map<string, DadosPush>();
 const tratados = new Set<string>();

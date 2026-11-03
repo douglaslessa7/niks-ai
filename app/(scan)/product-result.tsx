@@ -16,6 +16,9 @@ import { definirProdutoDoPasso, garantirMinhaRotina } from '../../lib/minhaRotin
 import { adicionarDoScan, desfazerAdicao, type Desfazer } from '../../lib/adicionarDoScan';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
+import { compartilharProduto, invalidarGrupos } from '../../lib/gruposServidor';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 
 // Tela de RESULTADO do scan de produto (fluxo da câmera → loading → aqui).
 // O layout inteiro vive em `components/product/ProductAnalysis` — o MESMO componente que o
@@ -188,6 +191,38 @@ export default function ProductResult() {
     return () => { alive = false; };
   }, [r?.scan_id, r?.status]);
 
+  // 80o/80p · "Compartilhar com o grupo?" no FIM do scan: abre quando ela fecha o
+  // resultado (aberta por cima da análise, cobriria o que ela acabou de escanear). Uma
+  // vez por resultado; não abre no fluxo "Escolher produto" da Rotina. Compartilhar põe
+  // o produto no mural ("Escaneou …", foto do scan) e dá a carta produto_grupo (1/dia).
+  // `pedirAvaliacao: false` depois de compartilhar: o pedido da App Store cairia em cima da carta.
+  const fechar = (pedirAvaliacao = true) => { if (pedirAvaliacao) requestAppReview(); router.replace((veioDaRotina ? '/(app)/protocolo' : '/(app)/recomendacao-produtos') as any); };
+  const folhaVista = useRef(false);
+  const [folhaGrupo, setFolhaGrupo] = useState(false);
+  const [compartilhando, setCompartilhando] = useState(false);
+  const podeCompartilhar = !veioDaRotina && !alvo && r?.status === 'ok' && !!r?.scan_id;
+  const aoFechar = () => {
+    if (podeCompartilhar && !folhaVista.current) { folhaVista.current = true; setFolhaGrupo(true); return; }
+    fechar();
+  };
+  const compartilhar = async (grupos: string[]) => {
+    setCompartilhando(true);
+    try {
+      const res = await compartilharProduto(r.scan_id, grupos);
+      if (!res.ok) { Alert.alert('Não deu para compartilhar agora', 'Tente de novo em instantes.'); return; }
+      trackFora('compartilhado', { origem: 'produto', grupos: res.grupos.length, carta: Boolean(res.carta_id) });
+      await Promise.all(res.grupos.map((g) => invalidarGrupos(g)));
+      haptics.success();
+      setFolhaGrupo(false);
+      fechar(false);
+      if (res.carta_id) setTimeout(() => router.push(`/(carta)/carta?id=${res.carta_id}` as any), 350);
+    } catch {
+      Alert.alert('Não deu para compartilhar agora', 'Confira a internet e tente de novo.');
+    } finally {
+      setCompartilhando(false);
+    }
+  };
+
   return (
     <View style={{ flex: 1 }}>
     <ProductAnalysis
@@ -195,7 +230,7 @@ export default function ProductResult() {
       photoUri={photoUri}
       cutoutUri={cutoutUri}
       // Veio da folha "Escolher produto" → fecha de volta na Rotina.
-      onClose={() => { requestAppReview(); router.replace((veioDaRotina ? '/(app)/protocolo' : '/(app)/recomendacao-produtos') as any); }}
+      onClose={aoFechar}
       onRescan={() => router.replace('/(scan)/product-camera' as any)}
       rescanLabel={productScanResult?.status === 'precisa_foto' ? 'Escanear os ingredientes' : 'Escanear outro produto'}
       colecao={colecaoSrc && col.owned !== null ? { owned: col.owned, busy: col.busy, onToggle: col.toggle } : undefined}
@@ -217,6 +252,14 @@ export default function ProductResult() {
         </TouchableOpacity>
       </Animated.View>
     )}
+    <FolhaCompartilhar
+      aberta={folhaGrupo}
+      ocupado={compartilhando}
+      sub="O produto entra no mural do grupo, com a foto do scan."
+      onCompartilhar={(grupos) => { void compartilhar(grupos); }}
+      onCriarGrupo={() => { setFolhaGrupo(false); router.replace('/(app)/seus-grupos?criar=1' as any); }}
+      onFechar={() => { setFolhaGrupo(false); fechar(); }}
+    />
     </View>
   );
 }

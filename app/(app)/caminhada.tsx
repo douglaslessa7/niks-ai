@@ -32,7 +32,8 @@ import {
 // redesign", NiksCaminhada.dc.html), com "XP" trocado por "NIKS Points":
 //   68b · abrir: entra da direita (420 ms, gaveta) já no "Você está aqui"; 350 ms depois
 //         a trilha sobe até o Ícone (mola ζ1 .6 s) e volta (ζ1 .75 s); o marcador pulsa.
-//         Qualquer toque interrompe o passeio.
+//         O passeio só acontece na PRIMEIRA abertura (`caminhada:passeio_visto:<uid>`);
+//         depois, só o pulso do marcador. Qualquer toque interrompe o passeio.
 //   68c · tocar numa carta trancada: tremida de 380 ms e, 220 ms depois, a folha
 //         "quanto falta" (gaveta 420 ms + véu).
 //   68d · ganhar pontos: o selo "+N NIKS Points" sai do rodapé e voa em arco até a barra
@@ -55,6 +56,7 @@ const eo = Easing.bezier(...EO);
 const eio = Easing.bezier(...EIO);
 const gaveta = Easing.bezier(...GAVETA);
 const VISTO_KEY = (uid: string) => `caminhada:total_visto:${uid}`;
+const PASSEIO_KEY = (uid: string) => `caminhada:passeio_visto:${uid}`;
 
 // Mola do design (ζ, resposta em s) → física do Reanimated.
 function spr(z: number, r: number, velocity = 0, eps = 0.5) {
@@ -183,9 +185,13 @@ export default function Caminhada() {
     pulse.set(withTiming(1, { duration: 760, easing: eo }));
   }, [rm, pulse]);
 
-  // 68b · passeio de abertura.
-  const passeio = useCallback(() => {
+  // 68b · passeio de abertura — só na PRIMEIRA vez que ela abre a tela (por conta).
+  // Nas outras, abre direto no "Você está aqui" e só o marcador pulsa.
+  const passeio = useCallback(async () => {
     if (rm) return;
+    const ja = uid ? await AsyncStorage.getItem(PASSEIO_KEY(uid)).catch(() => null) : '1';
+    if (ja) { pulsar(); return; }
+    if (uid) AsyncStorage.setItem(PASSEIO_KEY(uid), '1').catch(() => {});
     touring.current = true;
     later(350, () => {
       if (!touring.current) return;
@@ -194,7 +200,7 @@ export default function Caminhada() {
         rolar(sMark(xp.get(), D.current.lim, D.current.ic, vph), 1, 0.75, () => { touring.current = false; pulsar(); });
       }));
     });
-  }, [rm, later, rolar, xp, vph, pulsar]);
+  }, [rm, uid, later, rolar, xp, vph, pulsar]);
 
   // ── 68e · celebração ───────────────────────────────────────────────────────
   const mostrarCel = useCallback((c: Cel, done?: () => void) => {

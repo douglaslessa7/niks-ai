@@ -1,8 +1,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Rede de segurança: apaga as pastas `{user_id}/` dos 4 buckets cujo dono não
-// existe mais em auth.users. Builds antigas do app apagam a conta pela RPC
+// Rede de segurança: apaga as pastas `{user_id}/` dos buckets de usuária cujo dono não
+// existe mais em auth.users. A lista de buckets vem da RPC `orphan_storage_folders`
+// (última versão: migration 20261106120000 — scans, product-scans, coach-images,
+// routine-photos, colecao, rotina-lotes e grupos). Builds antigas do app apagam a conta pela RPC
 // `delete_user` (só auth.users) e deixam as fotos para trás; a delete-account
 // atual já apaga os arquivos antes — esta função pega o que escapar.
 // Roda 1x/dia via pg_cron. Migration: 20261001130000_cleanup_orphan_storage.sql.

@@ -18,7 +18,7 @@ const corsHeaders = {
 // `skin-previews` NÃO entra: os arquivos lá são 'preview_{timestamp}.jpg', sem o
 // user id no caminho, e a URL nunca é gravada em tabela — não há como saber de
 // quem é cada um. Quem cuida deles é a `cleanup-skin-previews`, por idade (2h).
-const USER_BUCKETS = ['scans', 'product-scans', 'coach-images', 'routine-photos', 'colecao', 'rotina-lotes'] as const
+const USER_BUCKETS = ['scans', 'product-scans', 'coach-images', 'routine-photos', 'colecao', 'rotina-lotes', 'grupos'] as const
 
 const LIST_PAGE_SIZE = 1000
 const DELETE_BATCH_SIZE = 100

@@ -64,6 +64,8 @@ import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 import { useEstadoCartas, concluirRotina } from '../../lib/cartasServidor';
+import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 
 // LayoutAnimation no Android (iOS já vem ligado) — expandir "Como introduzir os ativos".
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -1089,6 +1091,22 @@ export default function Protocolo() {
     setLit((l) => (l.includes(i) ? l.filter((x) => x !== i) : [...l, i]));
   };
 
+  // 80o/80p · "Compartilhar com o grupo?" sobe 500 ms depois da concluída (45c), a cada
+  // rotina. Com grupo, vira um check-in (Novo check-in já com a rotina, os grupos e, de
+  // manhã, a Foto do dia); sem grupo, convida a criar um.
+  const [folhaGrupo, setFolhaGrupo] = useState(false);
+  useEffect(() => {
+    if (flow !== 'done') { setFolhaGrupo(false); return; }
+    const t = setTimeout(() => setFolhaGrupo(true), 500);
+    return () => clearTimeout(t);
+  }, [flow]);
+  const sairParaGrupo = (destino: object | string) => {
+    setFolhaGrupo(false);
+    parkFlow();
+    closeFlow('compartilhar com o grupo');
+    setTimeout(() => router.push(destino as any), 320);
+  };
+
   const rs = flow === 'guide' ? steps[Math.min(run, n - 1)] : null;
   const modalVisible = flow != null;
   const doneSub = photoUri
@@ -1703,6 +1721,16 @@ export default function Protocolo() {
                 <Text style={styles.heroBtnText}>Voltar para a rotina</Text>
               </TouchableOpacity>
             </View>
+            <FolhaCompartilhar
+              aberta={folhaGrupo}
+              sub={`Sua rotina da ${am ? 'manhã' : 'noite'} entra no mural, com a foto do check-in.`}
+              onCompartilhar={(grupos) => {
+                trackFora('compartilhado', { origem: 'rotina', grupos: grupos.length, com_foto: Boolean(photoUri) });
+                sairParaGrupo({ pathname: '/checkin', params: { rotina: period, grupos: grupos.join(','), foto: photoUri ?? '', de: 'rotina' } });
+              }}
+              onCriarGrupo={() => sairParaGrupo('/seus-grupos?criar=1')}
+              onFechar={() => setFolhaGrupo(false)}
+            />
           </View>
         )}
       </Modal>

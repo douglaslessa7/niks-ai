@@ -20,7 +20,7 @@ import { getUserId, useUserId } from '../../lib/currentUser';
 import { scheduleRoutineReminders } from '../../lib/routineReminders';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
-import { MEMBROS, gruposDemo, fezHoje as membroFez } from '../../lib/grupos';
+import { useMeusGrupos } from '../../lib/gruposServidor';
 import Avatar from '../../components/grupos/Avatar';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import SeloProtegida, { EscudoChama } from '../../components/conquistas/SeloProtegida';
@@ -41,8 +41,8 @@ import {
 // Dados reais: nome, foto, sequência, semana, horário/duração do skincare, produtos,
 // NÍVEL (NIKS Points, do servidor — a linha sob o "Olá" abre a "Sua caminhada") e a
 // CARTA DO DIA (servidor: 1 carta por rotina, manhã e noite).
-// GRUPO ainda não existe no app: o card "Seu grupo" usa o conteúdo do design
-// (lib/grupos.ts — DEMO_GRUPO) e só aparece em __DEV__.
+// GRUPO: o card "Seu grupo" mostra o primeiro grupo dela (função `grupos`) e abre a
+// tela do grupo; sem grupo, o convite para criar um.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INK = '#121212';
@@ -482,9 +482,8 @@ export default function Home() {
     router.push('/caminhada?celebrar=1' as any);
   }, [pontos?.celebrar, avisoResolvido, tutorialPendente, router]);
 
-  const grupo = gruposDemo()[0];
-  const temGrupo = !!grupo;
-  const fezHojeGrupo = new Set(MEMBROS.filter((m) => grupo && membroFez(grupo, m.k, fezHoje)).map((m) => m.k));
+  const { data: meusGrupos } = useMeusGrupos();
+  const grupo = meusGrupos?.[0] ?? null;
 
   const go = (path: string) => { haptics.tap(); router.push(path as any); };
 
@@ -871,26 +870,24 @@ export default function Home() {
           </ScrollView>
         </View>
 
-        {/* ── Seu grupo ─────────────────────────────────────────────────
-            Grupos ainda não existem no banco: o card (dados de exemplo) só em __DEV__. */}
-        {__DEV__ && <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Seu grupo</Text>}
-        {!__DEV__ ? null : temGrupo ? (
-          // O design leva à tela do grupo (76a, ainda não feita); por enquanto abre a aba Seus grupos.
-          <TouchableOpacity activeOpacity={0.85} onPress={() => go('/grupos')} style={styles.groupCard}>
+        {/* ── Seu grupo ───────────────────────────────────────────────── */}
+        {meusGrupos && <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Seu grupo</Text>}
+        {!meusGrupos ? null : grupo ? (
+          <TouchableOpacity activeOpacity={0.85} onPress={() => go(`/grupo?id=${grupo.id}&de=home`)} style={styles.groupCard}>
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.groupName}>{grupo.name}</Text>
-                <Text style={styles.groupSub}>{grupo.members.length} integrantes</Text>
+                <Text style={styles.groupName} numberOfLines={2}>{grupo.nome}</Text>
+                <Text style={styles.groupSub}>{grupo.total === 1 ? 'Só você · convide amigas' : `${grupo.total} integrantes`}</Text>
               </View>
               <Icon d={CHEVRON} size={16} color={PINK} sw={2.4} />
             </View>
             <View style={styles.groupFoot}>
               <View style={{ flexDirection: 'row', gap: 6 }}>
-                {grupo.members.map((m) => (
-                  <Avatar key={m.k} img={m.img} uri={m.k === 'voce' ? d.fotoUrl : null} done={fezHojeGrupo.has(m.k)} size={40} />
+                {grupo.integrantes.slice(0, 5).map((m) => (
+                  <Avatar key={m.user_id} img={null} uri={m.voce ? (d.fotoUrl ?? m.foto) : m.foto} done={m.fez_hoje} size={40} />
                 ))}
               </View>
-              <Text style={styles.groupCount}>{fezHojeGrupo.size} de {grupo.members.length} hoje</Text>
+              <Text style={styles.groupCount}>{grupo.feitos_hoje} de {grupo.total} hoje</Text>
             </View>
           </TouchableOpacity>
         ) : (
@@ -908,7 +905,7 @@ export default function Home() {
               </View>
             </View>
             <View style={styles.inviteBtns}>
-              <TouchableOpacity activeOpacity={0.85} onPress={() => go('/grupos?criar=1')} style={styles.criarBtn}>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => go('/seus-grupos?criar=1')} style={styles.criarBtn}>
                 <Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={2.6} />
                 <Text style={styles.criarText}>Criar grupo</Text>
               </TouchableOpacity>

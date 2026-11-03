@@ -280,9 +280,18 @@ export default function CartaScreen() {
   const kindSrv: 'coll' | 'power' | 'conh' | null = !srv ? null : fam === 'poder' ? 'power' : fam === 'colecionavel' ? 'coll' : 'conh';
   const isPower = kindSrv === 'power';
   const isDup = kindSrv === 'coll' && (srv?.antes ?? 0) >= 1;
-  const origemLabel = srv ? etiquetaCarta('x', srv.carta.origem) : 'Carta do dia';
+  // Grupo (NiksGrupoV2): a carta do check-in diz "Check-in feito" (80e); a da campeã da
+  // semana leva o nome do grupo e "Você foi a mais constante da semana" (80h).
+  const campea = srv?.carta.origem === 'campea';
+  const grupoCampea = String((srv?.carta.conteudo as any)?.grupo ?? '');
+  const origemLabel = !srv ? 'Carta do dia'
+    : srv.carta.origem === 'checkin_grupo' ? 'Check-in feito'
+    : campea && grupoCampea ? `Campeã da semana · ${grupoCampea}`
+    : etiquetaCarta('x', srv.carta.origem);
   const headLabel = srvMode ? (revelada && isPower ? 'Carta de poder' : origemLabel) : c.label;
-  const headLine = srvMode ? (revelada && isPower ? 'Um poder saiu na sua carta' : 'Sua carta de hoje chegou') : c.headline;
+  const headLine = srvMode
+    ? (revelada && isPower ? 'Um poder saiu na sua carta' : campea ? 'Você foi a mais constante da semana' : 'Sua carta de hoje chegou')
+    : c.headline;
   // Reflexo perolado: .5 na carta comum, .85 no poder (sHolo do design); antes de raspar, o de hoje.
   const holoK = !srvMode ? c.holo : !revelada ? 1 : isPower ? 0.85 / 0.55 : 0.5 / 0.55;
 
@@ -1073,6 +1082,44 @@ function FrenteServidor({
       </>
     );
   }
+  if (carta.origem === 'campea' && kind === 'coll') {
+    // 80h · carta rara da campeã: selo Rara, "Campeã da semana", check-ins e a semana.
+    const ct = carta.conteudo as { checkins?: number; semana?: string } | null;
+    const ini = ct?.semana ? new Date(`${ct.semana}T12:00:00`) : null;
+    const fim = ini ? new Date(ini.getTime() + 6 * 86400000) : null;
+    const curta = (d: Date) => `${d.getDate()} de ${['jan.', 'fev.', 'mar.', 'abr.', 'maio', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'][d.getMonth()]}`;
+    const n = Number(ct?.checkins ?? 0);
+    const sub = [n ? `${n} ${n === 1 ? 'check-in' : 'check-ins'}` : '', ini && fim ? `${curta(ini)} a ${curta(fim)}` : ''].filter(Boolean).join(' · ');
+    return (
+      <>
+        <View style={styles.frontTop}>
+          <Image source={LOGO} style={{ width: 18, height: 18 }} />
+          <Text style={styles.frontLabel}>Carta rara</Text>
+          <View style={styles.rarePill}>
+            <Svg width={11} height={11} viewBox="0 0 24 24"><Path d={SPARK_PLUS} fill="#fff" /></Svg>
+            <Text style={styles.rarePillText}>Rara</Text>
+          </View>
+        </View>
+        <View style={styles.frontMid}>
+          <View style={[styles.srvArt, { boxShadow: '0px 0px 24px rgba(255,94,168,0.35)' }]}>
+            <Image source={LOGO} style={{ width: 56, height: 57 }} />
+          </View>
+          <Text style={styles.srvName} lineBreakStrategyIOS="standard">{'Campeã\nda semana'}</Text>
+          {!!sub && <Text style={[styles.srvSub, { color: '#C99BC4' }]} lineBreakStrategyIOS="standard">{sub}</Text>}
+          {dup ? null : (
+            <View style={{ marginTop: 16 }}>
+              <Animated.View style={[styles.srvChip, chipSt]}>
+                <Icon d={['M12 5v14M5 12h14']} size={14} color="#fff" sw={2.6} />
+                <Text style={[styles.srvChipText, { color: '#fff' }]}>Nova na sua coleção!</Text>
+              </Animated.View>
+            </View>
+          )}
+          {pontos != null && <SeloPontos valor={pontos} rm={rm} />}
+        </View>
+        <Text style={styles.foot}>Vai para o seu deck de Raras</Text>
+      </>
+    );
+  }
   const power = kind === 'power';
   const info = power ? PODER_INFO[cat.subtipo ?? ''] ?? { nome: cat.nome, efeito: cat.texto ?? '', icone: PODER_INFO.sequencia_dobro.icone } : null;
   return (
@@ -1223,6 +1270,8 @@ const styles = StyleSheet.create({
   frontTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   frontLabel: { fontSize: 13, fontWeight: '600', color: PINK, letterSpacing: -0.1 },
   frontWhen: { marginLeft: 'auto', fontSize: 12, color: MUTE },
+  rarePill: { marginLeft: 'auto', height: 24, paddingHorizontal: 9, borderRadius: 100, backgroundColor: PINK, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rarePillText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   frontMid: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   meterTitle: { fontSize: 27, lineHeight: 31, fontWeight: '700', letterSpacing: -0.8, maxWidth: 190, textAlign: 'center', color: INK },
   meterTrack: { marginTop: 18, width: 150, height: 8, borderRadius: 100, backgroundColor: '#F0F0F0', overflow: 'hidden' },

@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { getCustomerInfo, isSubscribed, loginRevenueCat } from '../../lib/revenuecat';
+import { vincularAssinatura } from '../../lib/assinaturaServidor';
 import { useAppStore } from '../../store/onboarding';
 import NameCapture from '../../components/onboarding/NameCapture';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -16,6 +17,7 @@ import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
 import { finishProdutosTutorial, useProdutosTutorialPending } from '../../lib/produtosTutorial';
 import AvisoLote from '../../components/rotina/AvisoLote';
+import ConvitePendente from '../../components/grupos/ConvitePendente';
 import ToquePush from '../../components/ToquePush';
 import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 
@@ -104,14 +106,12 @@ function HouseGlyph({ color, active }: { color: string; active: boolean }) {
 }
 
 // Ordem da pílula, esquerda→direita: rosto (Rotina) · frasco (Produtos) · duas pessoas
-// (Grupos — aba "Seus grupos", telas 75b–75e). O Perfil abre pela foto ao lado de
-// "Olá, Nome" na home e pela engrenagem da aba Seus grupos.
-// ⚠️ Grupos ainda não existem no banco (lib/grupos.ts = dados de exemplo): em PRODUÇÃO
-// o último ícone volta a ser o Perfil (como na 57d) até a fase dos grupos.
+// (Grupos — aba Grupos, 80q: perfil + calendário de check-ins). O Perfil abre pela foto
+// ao lado de "Olá, Nome" na home e pela engrenagem da aba Grupos (fase 3, grupos reais).
 const NAV_ITEMS: { key: NavKey; route: string }[] = [
   { key: 'rotina',   route: '/protocolo' },
   { key: 'produtos', route: '/recomendacao-produtos' },
-  __DEV__ ? { key: 'grupos', route: '/grupos' } : { key: 'perfil', route: '/perfil' },
+  { key: 'grupos',   route: '/grupos' },
 ];
 
 function GlobalBottomBar() {
@@ -126,7 +126,8 @@ function GlobalBottomBar() {
   // é o topo da aba Produtos.) "Seu nome" (set-name) abre pelo Perfil e o mantém ativo.
   const isActive = (route: string) => pathname === route || pathname.startsWith(`${route}/`)
     || (route === '/protocolo' && (pathname === '/alarme' || pathname === '/progresso'))
-    || (route === '/perfil' && pathname === '/set-name');
+    || (route === '/perfil' && pathname === '/set-name')
+    || (route === '/grupos' && ['/seus-grupos', '/grupo', '/grupo-ranking', '/grupo-jornada'].includes(pathname));
 
   const activeColor = isDark ? NAV_ACTIVE_DARK : NAV_ACTIVE;
   const inactiveColor = isDark ? NAV_INACTIVE_DARK : NAV_INACTIVE;
@@ -223,6 +224,8 @@ export default function AppLayout() {
 
       // Pula o check de assinatura se já foi verificado nesta sessão (evita tela branca no remount)
       if (__DEV__ || subscriptionVerified) {
+        // Servidor: liga as compras anônimas do RevenueCat à conta (uma vez; não bloqueia).
+        void vincularAssinatura(session.user.id);
         setReady(true);
         return;
       }
@@ -253,6 +256,9 @@ export default function AppLayout() {
       }
 
       setSubscriptionVerified(true);
+      // Servidor: liga as compras anônimas do RevenueCat à conta (uma vez; não bloqueia).
+      // Depois do loginRevenueCat: o originalAppUserId já é o da compra.
+      void vincularAssinatura(session.user.id);
       setReady(true);
     });
   }, []);
@@ -392,6 +398,11 @@ export default function AppLayout() {
         <Tabs.Screen name="progresso" options={{ href: null }} />
         <Tabs.Screen name="dica-do-dia" options={{ href: null }} />
         <Tabs.Screen name="caminhada" options={{ href: null }} />
+        <Tabs.Screen name="seus-grupos" options={{ href: null }} />
+        <Tabs.Screen name="grupo" options={{ href: null }} />
+        <Tabs.Screen name="grupo-ranking" options={{ href: null }} />
+        <Tabs.Screen name="grupo-jornada" options={{ href: null }} />
+        <Tabs.Screen name="checkin" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
@@ -404,6 +415,8 @@ export default function AppLayout() {
       {/* Aviso "Sua rotina está pronta" do lote "Montar minha rotina" (Fase 6) + toque
           no push dele. Irmão da navbar pelo mesmo motivo: fica por cima de qualquer aba. */}
       {!showCoachMarks && !showProdutosCoachMarks && <AvisoLote />}
+      {/* Convite de grupo aberto pelo link (lib/convitePendente.ts): só depois do guard. */}
+      {!showCoachMarks && !showProdutosCoachMarks && <ConvitePendente />}
       {/* Toque em qualquer push (inclusive o que abriu o app) → lib/pushToque.ts. Fora do
           tutorial também: o toque do lote espera o aviso montar. */}
       <ToquePush />

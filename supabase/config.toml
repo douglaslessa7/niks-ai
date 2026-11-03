@@ -73,3 +73,31 @@ enabled = true
 # localmente (_shared/jwt.ts) — o user_id vem do token, nunca do corpo.
 verify_jwt = false
 entrypoint = "./functions/montar-rotina-com-produtos/index.ts"
+
+[functions.superwall-webhook]
+enabled = true
+# Eventos de loja do Superwall → assinaturas_loja. Sem sessão: a trava é a assinatura
+# Svix (SUPERWALL_WEBHOOK_SECRET), conferida sobre o corpo cru.
+verify_jwt = false
+entrypoint = "./functions/superwall-webhook/index.ts"
+
+[functions.assinatura]
+enabled = true
+# Assinatura conferida no servidor (vincular o id anônimo do RevenueCat, status). Mesmo
+# padrão da cartas: o gateway não barra, a função verifica o JWT localmente.
+verify_jwt = false
+entrypoint = "./functions/assinatura/index.ts"
+
+[functions.grupos]
+enabled = true
+# Grupos (fase 3): o banco não tem política para o app; tudo passa por aqui. Mesmo padrão
+# da cartas: o gateway não barra, a função verifica o JWT localmente.
+verify_jwt = false
+entrypoint = "./functions/grupos/index.ts"
+
+[functions.convite]
+enabled = true
+# Link do convite: só um 302 para niks-ai://convite/<token>. Público (o link é clicado
+# fora do app); não lê nem grava nada.
+verify_jwt = false
+entrypoint = "./functions/convite/index.ts"

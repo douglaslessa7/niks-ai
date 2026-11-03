@@ -1,4 +1,5 @@
 import { PWDIAG_LINK, ligarDiagnostico } from '../lib/paywallDebug';
+import { guardarConvite } from '../lib/convitePendente';
 
 // Links do sistema que o expo-router NÃO deve tentar rotear.
 //
@@ -18,6 +19,10 @@ const CADASTRO = /^\/?(?:\(onboarding\)\/)?signup(?:[/?#]|$)/i;
 // Link secreto do diagnóstico do paywall (lib/paywallDebug.ts): liga/desliga e não
 // navega para lugar nenhum.
 const DIAGNOSTICO = new RegExp(`^/?${PWDIAG_LINK}(-off)?(?:[/?#]|$)`, 'i');
+// Convite de grupo (niks-ai://convite/<token>, vindo da função `convite`): não é rota.
+// O token fica guardado e o `ConvitePendente` do (app)/_layout trata depois do guard
+// de assinatura — o link nunca pula o paywall.
+const CONVITE = /^\/?convite\/([A-Za-z0-9_-]{16,64})(?:[/?#]|$)/i;
 
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }) {
   if (path.includes('dataUrl=')) {
@@ -26,6 +31,11 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   const diag = pathSemScheme(path).match(DIAGNOSTICO);
   if (diag) {
     ligarDiagnostico(!diag[1]);
+    return initial ? '/' : null;
+  }
+  const convite = pathSemScheme(path).match(CONVITE);
+  if (convite) {
+    guardarConvite(convite[1]);
     return initial ? '/' : null;
   }
   if (CADASTRO.test(pathSemScheme(path))) {

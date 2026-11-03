@@ -41,7 +41,7 @@ export type CartaCatalogo = {
 
 export type CartaGanha = {
   id: string;
-  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco' | 'volta' | 'scan_rosto' | 'checkin_grupo' | 'produto_grupo';
+  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco' | 'volta' | 'scan_rosto' | 'checkin_grupo' | 'produto_grupo' | 'campea';
   dia: string;
   ganha_em: string;
   raspada_em: string | null;
@@ -347,7 +347,7 @@ export function estadoPoder(p: PoderRow | null, tipo: string, hoje: string): Est
 /** Etiqueta da carta (topo do verso): poder → "Carta de poder"; o resto, pela origem. */
 export function etiquetaCarta(familia: string, origem: string): string {
   if (familia === 'poder') return 'Carta de poder';
-  return ({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo', scan_rosto: 'Carta do scan', checkin_grupo: 'Carta do grupo', produto_grupo: 'Carta do grupo', volta: 'Carta de volta' } as Record<string, string>)[origem] ?? 'Carta do dia';
+  return ({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo', scan_rosto: 'Carta do scan', checkin_grupo: 'Carta do grupo', produto_grupo: 'Carta do grupo', volta: 'Carta de volta', campea: 'Campeã da semana' } as Record<string, string>)[origem] ?? 'Carta do dia';
 }
 
 export async function cartaDetalhe(id: string): Promise<CartaGanha> {

@@ -45,7 +45,7 @@ function chunkWeeks(cells: Cell[]): Cell[][] {
 
 export default function Calendario() {
   const router = useRouter();
-  // Aberto pelo "Ver todos os check-ins" do hub de conquistas: o X volta para lá.
+  // Aberto pelo "Ver todos os check-ins" do hub de conquistas ou da aba Grupos: o X volta para lá.
   const { de } = useLocalSearchParams<{ de?: string }>();
   const insets = useSafeAreaInsets();
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
@@ -114,7 +114,7 @@ export default function Calendario() {
       >
         <View style={styles.bar}>
           <TouchableOpacity
-            onPress={() => { haptics.tap(); router.navigate((de === 'conquistas' ? '/conquistas' : '/home') as any); }}
+            onPress={() => { haptics.tap(); router.navigate((de === 'conquistas' ? '/conquistas' : de === 'grupos' ? '/grupos' : '/home') as any); }}
             activeOpacity={0.85}
             style={styles.close}
             accessibilityLabel="Fechar"
