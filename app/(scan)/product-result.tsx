@@ -191,7 +191,7 @@ export default function ProductResult() {
     return () => { alive = false; };
   }, [r?.scan_id, r?.status]);
 
-  // 80o/80p · "Compartilhar com o grupo?" no FIM do scan: abre quando ela fecha o
+  // 81t/81u · "Compartilhar com o grupo?" no FIM do scan: abre quando ela fecha o
   // resultado (aberta por cima da análise, cobriria o que ela acabou de escanear). Uma
   // vez por resultado; não abre no fluxo "Escolher produto" da Rotina. Compartilhar põe
   // o produto no mural ("Escaneou …", foto do scan) e dá a carta produto_grupo (1/dia).
@@ -199,14 +199,15 @@ export default function ProductResult() {
   const fechar = (pedirAvaliacao = true) => { if (pedirAvaliacao) requestAppReview(); router.replace((veioDaRotina ? '/(app)/protocolo' : '/(app)/recomendacao-produtos') as any); };
   const folhaVista = useRef(false);
   const [folhaGrupo, setFolhaGrupo] = useState(false);
-  const [compartilhando, setCompartilhando] = useState(false);
+  const [compartilhando, setCompartilhando] = useState<string | null>(null);
   const podeCompartilhar = !veioDaRotina && !alvo && r?.status === 'ok' && !!r?.scan_id;
   const aoFechar = () => {
     if (podeCompartilhar && !folhaVista.current) { folhaVista.current = true; setFolhaGrupo(true); return; }
     fechar();
   };
-  const compartilhar = async (grupos: string[]) => {
-    setCompartilhando(true);
+  const compartilhar = async (grupo: string) => {
+    const grupos = [grupo];
+    setCompartilhando(grupo);
     try {
       const res = await compartilharProduto(r.scan_id, grupos);
       if (!res.ok) { Alert.alert('Não deu para compartilhar agora', 'Tente de novo em instantes.'); return; }
@@ -219,7 +220,7 @@ export default function ProductResult() {
     } catch {
       Alert.alert('Não deu para compartilhar agora', 'Confira a internet e tente de novo.');
     } finally {
-      setCompartilhando(false);
+      setCompartilhando(null);
     }
   };
 
@@ -255,8 +256,7 @@ export default function ProductResult() {
     <FolhaCompartilhar
       aberta={folhaGrupo}
       ocupado={compartilhando}
-      sub="O produto entra no mural do grupo, com a foto do scan."
-      onCompartilhar={(grupos) => { void compartilhar(grupos); }}
+      onCompartilhar={(grupo) => { void compartilhar(grupo); }}
       onCriarGrupo={() => { setFolhaGrupo(false); router.replace('/(app)/seus-grupos?criar=1' as any); }}
       onFechar={() => { setFolhaGrupo(false); fechar(); }}
     />

@@ -19,8 +19,10 @@ import {
 import { haptics } from '../../lib/haptics';
 import { CARTAS, ORDEM_CARTAS, REC_ICONS, type CartaTipo } from '../../lib/cartas';
 import {
-  cartaDetalhe, rasparCarta, estadoCartas, vezesRaspada, estadoPoder, etiquetaCarta, PODER_INFO, type CartaGanha,
+  cartaDetalhe, rasparCarta, estadoCartas, vezesRaspada, estadoPoder, etiquetaCarta, useEstadoCartas, type CartaGanha, type EstadoPoder,
 } from '../../lib/cartasServidor';
+import Carta, { sombraCarta, visualDe } from '../../components/cartas/Carta';
+import PacotePontos from '../../components/cartas/PacotePontos';
 import { dateKey, sessionDate } from '../../lib/routineProgress';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +136,48 @@ function rng(seed: number) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+// Camada de raspar das cartas do servidor = o verso da rodada 84a (NiksCartaFlo): borda
+// branca de 3, degradê perolado de 165°, brilho branco no meio, a flor (78 pt com sombra
+// rosa) a 46% e o fio branco por dentro. Medidas do design (220 × 308) escaladas para
+// 252 × 360; a borda é desenhada aqui porque a camada cobre a carta inteira.
+function drawVerso84(img: SkImage | null) {
+  return createPicture((c) => {
+    const W = CW, H = CH, sx = W / 220, b = 3 * sx;
+    const R = 22 * sx;
+    const outer = Skia.RRectXY(Skia.XYWHRect(0, 0, W, H), R, R);
+    const white = Skia.Paint(); white.setColor(Skia.Color('#FFFFFF'));
+    c.drawRRect(outer, white);
+    const iw = W - 2 * b, ih = H - 2 * b;
+    const inner = Skia.RRectXY(Skia.XYWHRect(b, b, iw, ih), R - b, R - b);
+    // 165° no CSS: a direção é (sin 165°, −cos 165°); os extremos cobrem a caixa toda.
+    const a = (165 * Math.PI) / 180, dx = Math.sin(a), dy = -Math.cos(a);
+    const half = (Math.abs(iw * dx) + Math.abs(ih * dy)) / 2, cx = b + iw / 2, cy = b + ih / 2;
+    const g = Skia.Paint();
+    g.setShader(Skia.Shader.MakeLinearGradient(
+      vec(cx - dx * half, cy - dy * half), vec(cx + dx * half, cy + dy * half),
+      ['#FFE6F1', '#FCD6E8', '#EFDDFB'].map((x) => Skia.Color(x)), [0, 0.48, 1], TileMode.Clamp,
+    ));
+    c.drawRRect(inner, g);
+    // radial-gradient(55% 40% at 50% 46%): elipse de raios 55% × 40% da caixa.
+    const gx = b + iw * 0.5, gy = b + ih * 0.46, rx = iw * 0.55, ry = ih * 0.4;
+    const rg = Skia.Paint();
+    rg.setShader(Skia.Shader.MakeRadialGradient(
+      vec(gx, gy), rx, [Skia.Color('rgba(255,255,255,0.85)'), Skia.Color('rgba(255,255,255,0)')], null, TileMode.Clamp,
+      Skia.Matrix().translate(gx, gy).scale(1, ry / rx).translate(-gx, -gy),
+    ));
+    c.drawRRect(inner, rg);
+    if (img) {
+      const lw = 78 * sx, lh = 79 * sx;
+      const lp = Skia.Paint();
+      lp.setImageFilter(Skia.ImageFilter.MakeDropShadow(0, 6 * sx, 6 * sx, 6 * sx, Skia.Color('rgba(255,94,168,0.35)'), null));
+      c.drawImageRect(img, Skia.XYWHRect(0, 0, img.width(), img.height()), Skia.XYWHRect(gx - lw / 2, gy - lh / 2, lw, lh), lp);
+    }
+    const ins = b + 9 * sx;
+    const fio = Skia.Paint(); fio.setStyle(PaintStyle.Stroke); fio.setStrokeWidth(1.5 * sx); fio.setColor(Skia.Color('rgba(255,255,255,0.85)'));
+    c.drawRRect(Skia.RRectXY(Skia.XYWHRect(ins, ins, W - 2 * ins, H - 2 * ins), 15 * sx, 15 * sx), fio);
+  }, Skia.XYWHRect(0, 0, CW, CH));
 }
 
 // A camada de raspar (drawFoil do design), em coordenadas da carta 252 × 360.
@@ -251,16 +295,23 @@ export default function CartaScreen() {
   const [srvId, setSrvId] = useState<string | null>(params.id ?? null);
   const srvMode = srvId != null;
   const [srv, setSrv] = useState<{ carta: CartaGanha; antes: number } | null>(null);
-  const [poderTxt, setPoderTxt] = useState('');
+  const [poderEst, setPoderEst] = useState<EstadoPoder | null>(null);
   const [revelada, setRevelada] = useState(false);
   // NIKS Points da carta (sorteados no servidor ao raspar; a rara já vem ×3).
   const [pontos, setPontos] = useState<number | null>(null);
   // Subiu de nível em alguma carta desta sequência → o "Continuar" final abre a caminhada (68d/68e).
   const subiuNivel = useRef(false);
+  // Pacote de pontos depois da revelação (total antes → depois); a tabela de níveis vem do
+  // estado das cartas, para a barra piso→teto.
+  const [pacote, setPacote] = useState<{ de: number; para: number } | null>(null);
+  const reveladaEm = useRef(0);
+  const { data: estado } = useEstadoCartas();
+  const tabela = useRef(estado);
+  tabela.current = estado;
   useEffect(() => {
     if (!srvId) return;
     let vivo = true;
-    setSrv(null); setPoderTxt(''); setRevelada(false); setPontos(null);
+    setSrv(null); setPoderEst(null); setRevelada(false); setPontos(null); setPacote(null);
     cartaDetalhe(srvId)
       .then(async (carta) => {
         const antes = carta.carta?.familia === 'colecionavel' && carta.carta ? await vezesRaspada(carta.carta.id, carta.id) : 0;
@@ -280,6 +331,8 @@ export default function CartaScreen() {
   const kindSrv: 'coll' | 'power' | 'conh' | null = !srv ? null : fam === 'poder' ? 'power' : fam === 'colecionavel' ? 'coll' : 'conh';
   const isPower = kindSrv === 'power';
   const isDup = kindSrv === 'coll' && (srv?.antes ?? 0) >= 1;
+  // Rodada 84: o visual sai da família, subtipo, rara, origem e (no poder) do estado.
+  const visual = srv ? visualDe(srv.carta, poderEst) : null;
   // Grupo (NiksGrupoV2): a carta do check-in diz "Check-in feito" (80e); a da campeã da
   // semana leva o nome do grupo e "Você foi a mais constante da semana" (80h).
   const campea = srv?.carta.origem === 'campea';
@@ -328,7 +381,7 @@ export default function CartaScreen() {
   const fp = useSharedValue(0), fs = useSharedValue(0), fr = useSharedValue(0);
   const fx0 = useSharedValue(0), fy0 = useSharedValue(0), fs0 = useSharedValue(0.3);
   const glow = useSharedValue(0), raysO = useSharedValue(0), raysRot = useSharedValue(0);
-  const chipP = useSharedValue(1), chipGlow = useSharedValue(0), auraO = useSharedValue(0), auraBreath = useSharedValue(0);
+  const auraO = useSharedValue(0), auraBreath = useSharedValue(0);
   const flashPeak = useSharedValue(0.9), burstN = useSharedValue(56);
 
   // Raspagem: traço (Skia) + grade de cobertura para medir quanto foi raspado.
@@ -348,7 +401,7 @@ export default function CartaScreen() {
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
   const numRaf = useRef(0);
 
-  const foilPic = useMemo(() => drawFoil(tipo === 'idade', logoImg ?? null), [tipo, logoImg]);
+  const foilPic = useMemo(() => (srvMode ? drawVerso84(logoImg ?? null) : drawFoil(tipo === 'idade', logoImg ?? null)), [srvMode, tipo, logoImg]);
 
   const setPhase = useCallback((p: Phase) => setPhaseJS(p), []);
 
@@ -357,14 +410,14 @@ export default function CartaScreen() {
     clearTimers();
     cancelAnimationFrame(numRaf.current);
     const cfg = CARTAS[tipo];
-    setPhaseJS('enter'); setProgress(0); setHint(false); setRecs(false); setBtnShown(false);
+    setPhaseJS('enter'); setProgress(0); setHint(false); setRecs(false); setBtnShown(false); setPacote(null);
     setNum(cfg.to ?? 0); setSecs(6720);
     scratch.set(Skia.Path.Make()); last.set(null);
     grid.set(new Array(COLS * ROWS).fill(0)); cleared.set(0); moves.set(0); down.set(false);
     foilO.set(1); foilS.set(1); foilBlur.set(0); flash.set(0); sheen.set(0);
     meter.set(0.667); oldY.set(0); newY.set(-54); prefixO.set(0); numScale.set(1);
     lift.set(0); tx.set(0); ty.set(0); sheet.set(110); sheetO.set(1);
-    chipP.set(1); chipGlow.set(0); auraO.set(0); auraBreath.set(0);
+    auraO.set(0); auraBreath.set(0);
     ph.set(PH_ENTER);
     y.set(0); s.set(1); ry.set(0); rz.set(0); veil.set(0); head.set(0); glow.set(0); raysO.set(0);
     if (rm) {
@@ -528,6 +581,7 @@ export default function CartaScreen() {
     haptics.success();
     if (srvMode) {
       setRevelada(true);
+      reveladaEm.current = Date.now();
       // O servidor marca a carta como raspada e, se for Poder, já aplica (79k: "Ativado agora").
       const id = srvId!;
       rasparCarta(id)
@@ -535,18 +589,22 @@ export default function CartaScreen() {
           if (r.pontos) {
             setPontos(r.pontos.ganhos);
             if (r.pontos.nivel > r.pontos.nivel_antes) subiuNivel.current = true;
+            // As mini cartas saem do selo depois que ele aparece (~600 ms da revelação).
+            const p = r.pontos;
+            if (p.ganhos > 0 && tabela.current?.niveis?.length && tabela.current.icone) {
+              later(Math.max(0, 600 - (Date.now() - reveladaEm.current)), () => {
+                head.set(withTiming(0, { duration: 180, easing: EO }));
+                setPacote({ de: p.total_antes, para: p.total });
+              });
+            }
           }
           if (!r.poder) return;
           const hoje = dateKey(sessionDate(new Date()));
-          setPoderTxt(estadoPoder({ id: '', tipo: r.poder.tipo, inicio: '', fim: r.poder.fim, consumido_em: null, dados: r.poder.dados }, r.poder.tipo, hoje).texto);
+          setPoderEst(estadoPoder({ id: '', tipo: r.poder.tipo, inicio: '', fim: r.poder.fim, consumido_em: null, dados: r.poder.dados }, r.poder.tipo, hoje));
         })
         .catch(() => {});
-      // Chip: aparece com mola (ζ.6 r.42, de 50%) 120 ms depois; no poder, um pulso de glow aos 300 ms.
-      chipP.set(0);
-      chipP.set(rm ? withDelay(120, withTiming(1, { duration: 220 })) : withDelay(120, withSpring(1, spr(0.6, 0.42, 0, 0.002))));
+      // Poder: a aura rosa respira atrás da carta.
       if (isPower && !rm) {
-        chipGlow.set(0);
-        chipGlow.set(withDelay(300, withSequence(withTiming(1, { duration: 560, easing: EO }), withTiming(0, { duration: 840, easing: EO }))));
         auraO.set(withTiming(1, { duration: 460, easing: EO }));
         auraBreath.set(withRepeat(withTiming(1, { duration: 2400, easing: Easing.bezier(0.42, 0, 0.58, 1) }), -1, true));
       } else if (isPower) auraO.set(withTiming(1, { duration: 220 }));
@@ -712,11 +770,6 @@ export default function CartaScreen() {
   const cardGlowStyle = useAnimatedStyle(() => ({ opacity: fp.get() > 0.98 ? glow.get() : 0 }));
   const raysStyle = useAnimatedStyle(() => ({ opacity: raysO.get(), transform: [{ rotate: `${raysRot.get()}deg` }] }));
   const { holo, glare } = useHolo(tx, ty, ry, holoK);
-  const chipSt = useAnimatedStyle(() => {
-    const v = chipP.get();
-    return { opacity: Math.min(1, v * 2), transform: [{ scale: 0.5 + 0.5 * v }] };
-  });
-  const chipGlowSt = useAnimatedStyle(() => ({ opacity: chipGlow.get() }));
   const auraSt = useAnimatedStyle(() => ({
     opacity: auraO.get() * (0.8 + 0.2 * auraBreath.get()),
     transform: [{ scale: 0.97 + 0.06 * auraBreath.get() }],
@@ -833,7 +886,12 @@ export default function CartaScreen() {
               <Animated.View style={[styles.aura, auraSt]} />
             </Animated.View>
           )}
-          {/* Verso (aparece durante o giro da entrada) */}
+          {/* Verso (aparece durante o giro da entrada). Servidor: o verso da rodada 84a. */}
+          {srvMode ? (
+            <Animated.View pointerEvents="none" style={[styles.faceSrv, backStyle]}>
+              <Carta v={VERSO} w={CW} h={CH} />
+            </Animated.View>
+          ) : (
           <Animated.View pointerEvents="none" style={[styles.face, styles.back, backStyle]}>
             <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)' }]} />
             <View style={styles.backInner} />
@@ -844,19 +902,17 @@ export default function CartaScreen() {
             <Animated.View style={[styles.holo, holo]} />
             <Animated.View style={[styles.glare, glare]} />
           </Animated.View>
+          )}
 
-          {/* Frente */}
-          <Animated.View pointerEvents="none" style={[styles.face, styles.front, isPower && styles.frontPower, frontStyle]}>
-            <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(160deg, #FFFFFF 0%, #FFF7FB 58%, #FCEEF6 100%)' }]} />
+          {/* Frente. Servidor: a carta da rodada 84 (recortada nos cantos para a camada de
+              raspar; a sombra vai na própria face e as faíscas de fora numa camada à parte). */}
+          <Animated.View
+            pointerEvents="none"
+            style={[srvMode ? [styles.faceSrv, styles.faceSrvClip, { boxShadow: visual ? sombraCarta(visual) : undefined }] : [styles.face, styles.front, isPower && styles.frontPower], frontStyle]}
+          >
+            {!srvMode && <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(160deg, #FFFFFF 0%, #FFF7FB 58%, #FCEEF6 100%)' }]} />}
             {srvMode ? (
-              <View style={styles.frontPad}>
-                {srv && kindSrv && (
-                  <FrenteServidor
-                    kind={kindSrv} carta={srv.carta} dup={isDup} vezes={(srv.antes ?? 0) + 1} poderTxt={poderTxt}
-                    label={origemLabel} chipSt={chipSt} chipGlowSt={chipGlowSt} pontos={pontos} rm={rm}
-                  />
-                )}
-              </View>
+              visual ? <Carta v={visual} w={CW} h={CH} semSombra faiscasFora={false} selo={pontos != null ? <SeloPontos valor={pontos} rm={rm} /> : undefined} /> : null
             ) : (
             <View style={styles.frontPad}>
               <View style={styles.frontTop}>
@@ -945,9 +1001,16 @@ export default function CartaScreen() {
               <Icon d={HAND} size={17} color={PINK} sw={1.9} />
               <Text style={styles.hintText}>Raspe para ver</Text>
             </Animated.View>
-            <Animated.View style={[styles.holo, holo]} />
-            <Animated.View style={[styles.glare, glare]} />
+            {/* Reflexo e brilho do 67a só nas cartas de exemplo: as da rodada 84 têm o próprio. */}
+            {!srvMode && <Animated.View style={[styles.holo, holo]} />}
+            {!srvMode && <Animated.View style={[styles.glare, glare]} />}
           </Animated.View>
+
+          {srvMode && visual?.k === 'rara' && revelada && (
+            <Animated.View pointerEvents="none" style={[styles.faceSrv, frontStyle]}>
+              <Carta v={visual} w={CW} h={CH} apenasFaiscas />
+            </Animated.View>
+          )}
 
           {/* Flash da revelação */}
           <Animated.View pointerEvents="none" style={[styles.flash, flashStyle]} />
@@ -1020,14 +1083,27 @@ export default function CartaScreen() {
           </Animated.Text>
         </Animated.View>
       </Pressable>
+
+      {/* Pacote de NIKS Points: cabeçalho de nível no lugar da headline + mini cartas.
+          Por cima de tudo: tocar na tela durante a animação adianta para o fim. */}
+      {pacote && estado?.niveis && estado.icone && (
+        <PacotePontos
+          de={pacote.de}
+          para={pacote.para}
+          niveis={estado.niveis}
+          icone={estado.icone}
+          origem={{ x: stageX + CW / 2, y: stageY + CH - 42 }}
+          topo={oy + 98}
+          rm={rm}
+        />
+      )}
     </View>
   );
 }
 
 
 // ── Revelação das cartas do servidor (peça 4 do design, 79i–79k) ─────────────
-const COPY = ['M5.5 6h8A2.5 2.5 0 0 1 16 8.5v11a2.5 2.5 0 0 1-2.5 2.5h-8A2.5 2.5 0 0 1 3 19.5v-11A2.5 2.5 0 0 1 5.5 6z', 'M8 3h11a2 2 0 0 1 2 2v13'];
-const SPARK_PLUS = 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
+const VERSO = { k: 'verso' } as const;
 
 // Selo de NIKS Points abaixo do chip (proposta aprovada: o selo branco de borda rosa do
 // 68d, na altura dos chips da carta). Entra com fade e o número conta em 900 ms.
@@ -1053,126 +1129,6 @@ function SeloPontos({ valor, rm }: { valor: number; rm: boolean }) {
     <Animated.View style={[styles.selo, st]}>
       <Text style={styles.seloText}>{`+${n} NIKS Points`}</Text>
     </Animated.View>
-  );
-}
-
-function FrenteServidor({
-  kind, carta, dup, vezes, poderTxt, label, chipSt, chipGlowSt, pontos, rm,
-}: {
-  kind: 'coll' | 'power' | 'conh'; carta: CartaGanha; dup: boolean; vezes: number; poderTxt: string; label: string;
-  chipSt: object; chipGlowSt: object; pontos: number | null; rm: boolean;
-}) {
-  const cat = carta.carta!;
-  if (kind === 'conh') {
-    // Conhecimento: o mesmo verso do detalhe 78c (tipo, título e texto).
-    const titulo = String((carta.conteudo as any)?.titulo ?? cat.nome);
-    const texto = (carta.conteudo as any)?.texto ?? cat.texto;
-    return (
-      <>
-        <View style={styles.frontTop}>
-          <Image source={LOGO} style={{ width: 18, height: 18 }} />
-          <Text style={styles.frontLabel}>{label}</Text>
-          <Text style={styles.frontWhen}>Hoje</Text>
-        </View>
-        <View style={{ flex: 1, justifyContent: 'center', paddingVertical: 10 }}>
-          <Text style={styles.conhTitle} lineBreakStrategyIOS="standard">{titulo}</Text>
-          {!!texto && <Text style={styles.conhText} lineBreakStrategyIOS="standard">{String(texto)}</Text>}
-        </View>
-        {pontos != null && <View style={{ alignItems: 'center', marginBottom: 6 }}><SeloPontos valor={pontos} rm={rm} /></View>}
-      </>
-    );
-  }
-  if (carta.origem === 'campea' && kind === 'coll') {
-    // 80h · carta rara da campeã: selo Rara, "Campeã da semana", check-ins e a semana.
-    const ct = carta.conteudo as { checkins?: number; semana?: string } | null;
-    const ini = ct?.semana ? new Date(`${ct.semana}T12:00:00`) : null;
-    const fim = ini ? new Date(ini.getTime() + 6 * 86400000) : null;
-    const curta = (d: Date) => `${d.getDate()} de ${['jan.', 'fev.', 'mar.', 'abr.', 'maio', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'][d.getMonth()]}`;
-    const n = Number(ct?.checkins ?? 0);
-    const sub = [n ? `${n} ${n === 1 ? 'check-in' : 'check-ins'}` : '', ini && fim ? `${curta(ini)} a ${curta(fim)}` : ''].filter(Boolean).join(' · ');
-    return (
-      <>
-        <View style={styles.frontTop}>
-          <Image source={LOGO} style={{ width: 18, height: 18 }} />
-          <Text style={styles.frontLabel}>Carta rara</Text>
-          <View style={styles.rarePill}>
-            <Svg width={11} height={11} viewBox="0 0 24 24"><Path d={SPARK_PLUS} fill="#fff" /></Svg>
-            <Text style={styles.rarePillText}>Rara</Text>
-          </View>
-        </View>
-        <View style={styles.frontMid}>
-          <View style={[styles.srvArt, { boxShadow: '0px 0px 24px rgba(255,94,168,0.35)' }]}>
-            <Image source={LOGO} style={{ width: 56, height: 57 }} />
-          </View>
-          <Text style={styles.srvName} lineBreakStrategyIOS="standard">{'Campeã\nda semana'}</Text>
-          {!!sub && <Text style={[styles.srvSub, { color: '#C99BC4' }]} lineBreakStrategyIOS="standard">{sub}</Text>}
-          {dup ? null : (
-            <View style={{ marginTop: 16 }}>
-              <Animated.View style={[styles.srvChip, chipSt]}>
-                <Icon d={['M12 5v14M5 12h14']} size={14} color="#fff" sw={2.6} />
-                <Text style={[styles.srvChipText, { color: '#fff' }]}>Nova na sua coleção!</Text>
-              </Animated.View>
-            </View>
-          )}
-          {pontos != null && <SeloPontos valor={pontos} rm={rm} />}
-        </View>
-        <Text style={styles.foot}>Vai para o seu deck de Raras</Text>
-      </>
-    );
-  }
-  const power = kind === 'power';
-  const info = power ? PODER_INFO[cat.subtipo ?? ''] ?? { nome: cat.nome, efeito: cat.texto ?? '', icone: PODER_INFO.sequencia_dobro.icone } : null;
-  return (
-    <>
-      {power && (
-        <View style={styles.frontTop}>
-          <Image source={LOGO} style={{ width: 18, height: 18 }} />
-          <Text style={styles.frontLabel}>Carta de poder</Text>
-          <Text style={styles.frontWhen}>Hoje</Text>
-        </View>
-      )}
-      <View style={styles.frontMid}>
-        <View style={[styles.srvArt, power && { boxShadow: '0px 0px 24px rgba(255,94,168,0.45)' }]}>
-          <Image source={LOGO} style={{ width: 56, height: 57 }} />
-          {power && (
-            <View style={styles.srvBadge}>
-              <Icon d={[info!.icone]} size={15} color="#fff" sw={2.2} />
-            </View>
-          )}
-        </View>
-        {power ? (
-          <>
-            <Text style={styles.srvName} lineBreakStrategyIOS="standard">{info!.nome}</Text>
-            <Text style={styles.srvSub} lineBreakStrategyIOS="standard">{info!.efeito}</Text>
-          </>
-        ) : (
-          <Text style={styles.srvColl}>Carta colecionável</Text>
-        )}
-        {dup ? (
-          <View style={styles.srvChipDup}>
-            <Icon d={COPY} size={14} color={PINK} sw={2.2} />
-            <Text style={[styles.srvChipText, { color: PINK }]}>{`Você já tem esta · x${vezes}`}</Text>
-          </View>
-        ) : (
-          <View style={{ marginTop: 16 }}>
-            {power && <Animated.View style={[styles.srvChipGlow, chipGlowSt]} />}
-            <Animated.View style={[styles.srvChip, power && { boxShadow: '0px 6px 14px rgba(255,94,168,0.45)' }, chipSt]}>
-              {power ? (
-                <Svg width={14} height={14} viewBox="0 0 24 24">
-                  <Path d={SPARK_PLUS} fill="#fff" />
-                  <Path d="M20 2v4M22 4h-4" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" fill="none" />
-                </Svg>
-              ) : (
-                <Icon d={['M12 5v14M5 12h14']} size={14} color="#fff" sw={2.6} />
-              )}
-              <Text style={[styles.srvChipText, { color: '#fff' }]}>{power ? 'Ativado agora' : 'Nova na sua coleção!'}</Text>
-            </Animated.View>
-          </View>
-        )}
-        {pontos != null && <SeloPontos valor={pontos} rm={rm} />}
-      </View>
-      {power && <Text style={styles.foot}>{poderTxt}</Text>}
-    </>
   );
 }
 
@@ -1209,6 +1165,8 @@ const styles = StyleSheet.create({
     experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,94,168,0.34), rgba(214,180,255,0.22) 62%, rgba(214,180,255,0))',
   },
   face: { position: 'absolute', left: 0, top: 0, width: CW, height: CH, borderRadius: 22, overflow: 'hidden' },
+  faceSrv: { position: 'absolute', left: 0, top: 0, width: CW, height: CH },
+  faceSrvClip: { borderRadius: 22 * (CW / 220), overflow: 'hidden' },
   front: { borderWidth: 1.5, borderColor: PINK, boxShadow: '0px 18px 40px rgba(200,60,120,0.18), 0px 2px 6px rgba(200,60,120,0.10)' },
   frontPower: { boxShadow: '0px 18px 44px rgba(200,60,120,0.26), 0px 0px 0px 3px rgba(255,94,168,0.18)' },
   // Auréola rosa e lilás atrás do poder (79k), respirando .97↔1.03 em 2,4 s.
@@ -1217,35 +1175,12 @@ const styles = StyleSheet.create({
     flex: 1, borderRadius: 56,
     experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,94,168,0.38), rgba(214,180,255,0.24) 62%, rgba(214,180,255,0))',
   },
-  srvArt: {
-    width: 92, height: 92, borderRadius: 46, backgroundColor: '#FFF0F7', borderWidth: 1.5, borderColor: 'rgba(255,94,168,0.35)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  srvBadge: {
-    position: 'absolute', right: -4, bottom: -2, width: 30, height: 30, borderRadius: 15, backgroundColor: PINK,
-    borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', boxShadow: '0px 4px 10px rgba(255,94,168,0.4)',
-  },
-  srvName: { marginTop: 16, fontSize: 26, lineHeight: 30, fontWeight: '700', letterSpacing: -0.7, maxWidth: 200, textAlign: 'center', color: INK },
-  srvSub: { marginTop: 5, fontSize: 13, lineHeight: 18, letterSpacing: -0.1, maxWidth: 200, textAlign: 'center', color: INK },
-  srvColl: { marginTop: 16, fontSize: 17, lineHeight: 22, fontWeight: '600', letterSpacing: -0.3, color: INK },
-  srvChip: { height: 30, paddingLeft: 11, paddingRight: 14, borderRadius: 100, backgroundColor: PINK, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  srvChipGlow: {
-    position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, borderRadius: 100,
-    boxShadow: '0px 0px 0px 10px rgba(255,94,168,0), 0px 6px 24px rgba(255,94,168,0.7)',
-  },
-  srvChipDup: {
-    marginTop: 16, height: 30, paddingLeft: 11, paddingRight: 14, borderRadius: 100, backgroundColor: '#fff',
-    borderWidth: 1.5, borderColor: PINK, flexDirection: 'row', alignItems: 'center', gap: 6,
-  },
-  srvChipText: { fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
   selo: {
     marginTop: 8, height: 30, paddingHorizontal: 14, borderRadius: 100, backgroundColor: '#fff',
     borderWidth: 1.5, borderColor: PINK, boxShadow: '0px 8px 18px rgba(255,94,168,0.28)',
     alignItems: 'center', justifyContent: 'center',
   },
   seloText: { color: PINK, fontSize: 15, fontWeight: '700', letterSpacing: -0.2, fontVariant: ['tabular-nums'] },
-  conhTitle: { fontSize: 22, lineHeight: 26, fontWeight: '700', letterSpacing: -0.6, color: INK },
-  conhText: { marginTop: 10, fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: INK },
   back: { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.9)', boxShadow: '0px 18px 40px rgba(200,60,120,0.18)' },
   backInner: { position: 'absolute', left: 9 - 1.5, top: 9 - 1.5, right: 9 - 1.5, bottom: 9 - 1.5, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
   backPattern: {
@@ -1270,8 +1205,6 @@ const styles = StyleSheet.create({
   frontTop: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   frontLabel: { fontSize: 13, fontWeight: '600', color: PINK, letterSpacing: -0.1 },
   frontWhen: { marginLeft: 'auto', fontSize: 12, color: MUTE },
-  rarePill: { marginLeft: 'auto', height: 24, paddingHorizontal: 9, borderRadius: 100, backgroundColor: PINK, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  rarePillText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   frontMid: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   meterTitle: { fontSize: 27, lineHeight: 31, fontWeight: '700', letterSpacing: -0.8, maxWidth: 190, textAlign: 'center', color: INK },
   meterTrack: { marginTop: 18, width: 150, height: 8, borderRadius: 100, backgroundColor: '#F0F0F0', overflow: 'hidden' },

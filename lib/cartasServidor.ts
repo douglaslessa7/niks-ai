@@ -255,6 +255,8 @@ export type ItemColecao = {
   dia: string;
   raspada_em: string;
   conteudo: Record<string, unknown> | null;
+  /** NIKS Points que a carta deu ao ser raspada. */
+  pontos: number | null;
   carta: CartaCatalogo;
   poder: PoderRow | null;
 };
@@ -264,7 +266,7 @@ async function buscarColecao(): Promise<ItemColecao[]> {
   if (!uid) throw new Error('sem sessão');
   const { data, error } = await supabase
     .from('cartas_usuario')
-    .select('id, origem, dia, raspada_em, conteudo, carta:cartas_catalogo(id, codigo, familia, subtipo, serie, nome, raridade, arte_path, texto, efeito), poder:poderes_usuario(id, tipo, inicio, fim, consumido_em, dados)')
+    .select('id, origem, dia, raspada_em, conteudo, pontos, carta:cartas_catalogo(id, codigo, familia, subtipo, serie, nome, raridade, arte_path, texto, efeito), poder:poderes_usuario(id, tipo, inicio, fim, consumido_em, dados)')
     .eq('user_id', uid)
     .not('raspada_em', 'is', null)
     .order('raspada_em', { ascending: false });

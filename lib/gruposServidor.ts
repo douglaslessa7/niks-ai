@@ -73,6 +73,8 @@ export type PerfilGrupos = Perfil & {
   /** Dias de sessão seguidos com check-in (terminando hoje ou ontem). */
   dias_seguidos: number;
   grupos: number;
+  /** Check-ins no mês pedido (até 2 por dia) — "18 check-ins" do 81a/81b. Ausente antes da migration 20261111120000. */
+  checkins_mes?: number;
   /** Mês do 1º check-in ('AAAA-MM-01') — até onde a seta volta. */
   primeiro_mes: string | null;
   mes: string;

@@ -65,6 +65,7 @@ import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 import { useEstadoCartas, concluirRotina } from '../../lib/cartasServidor';
 import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
+import BalancedText from '../../components/BalancedText';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 
 // LayoutAnimation no Android (iOS já vem ligado) — expandir "Como introduzir os ativos".
@@ -195,30 +196,6 @@ function DottedLine({ color, hidden }: { color: string; hidden: boolean }) {
         </Svg>
       )}
     </View>
-  );
-}
-
-// `text-wrap: balance` do design (45c), que o RN não tem: se o texto quebrar em
-// exatamente 2 linhas, reparte no espaço mais perto do meio para as duas ficarem
-// do mesmo tamanho (em vez de uma linha cheia e uma palavra sozinha embaixo).
-function BalancedText({ text, style }: { text: string; style: StyleProp<TextStyle> }) {
-  const [out, setOut] = useState(text);
-  useEffect(() => setOut(text), [text]);
-  return (
-    <Text
-      style={style}
-      onTextLayout={(e) => {
-        if (out !== text || e.nativeEvent.lines.length !== 2) return;
-        const mid = text.length / 2;
-        let cut = -1;
-        for (let i = 0; i < text.length; i++) {
-          if (text[i] === ' ' && (cut < 0 || Math.abs(i - mid) < Math.abs(cut - mid))) cut = i;
-        }
-        if (cut > 0) setOut(`${text.slice(0, cut)}\n${text.slice(cut + 1)}`);
-      }}
-    >
-      {out}
-    </Text>
   );
 }
 
@@ -1091,7 +1068,7 @@ export default function Protocolo() {
     setLit((l) => (l.includes(i) ? l.filter((x) => x !== i) : [...l, i]));
   };
 
-  // 80o/80p · "Compartilhar com o grupo?" sobe 500 ms depois da concluída (45c), a cada
+  // 81t/81u · "Compartilhar com o grupo?" sobe 500 ms depois da concluída (45c), a cada
   // rotina. Com grupo, vira um check-in (Novo check-in já com a rotina, os grupos e, de
   // manhã, a Foto do dia); sem grupo, convida a criar um.
   const [folhaGrupo, setFolhaGrupo] = useState(false);
@@ -1723,10 +1700,9 @@ export default function Protocolo() {
             </View>
             <FolhaCompartilhar
               aberta={folhaGrupo}
-              sub={`Sua rotina da ${am ? 'manhã' : 'noite'} entra no mural, com a foto do check-in.`}
-              onCompartilhar={(grupos) => {
-                trackFora('compartilhado', { origem: 'rotina', grupos: grupos.length, com_foto: Boolean(photoUri) });
-                sairParaGrupo({ pathname: '/checkin', params: { rotina: period, grupos: grupos.join(','), foto: photoUri ?? '', de: 'rotina' } });
+              onCompartilhar={(grupo) => {
+                trackFora('compartilhado', { origem: 'rotina', grupos: 1, com_foto: Boolean(photoUri) });
+                sairParaGrupo({ pathname: '/checkin', params: { rotina: period, grupos: grupo, foto: photoUri ?? '', de: 'rotina' } });
               }}
               onCriarGrupo={() => sairParaGrupo('/seus-grupos?criar=1')}
               onFechar={() => setFolhaGrupo(false)}

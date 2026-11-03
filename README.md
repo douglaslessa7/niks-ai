@@ -3323,7 +3323,7 @@ Réplica das telas **77a–77e** (hub) e **78a–78f** (cartas raspadas: coleç�
 - **Entrada do hub (77e)** a cada abertura vinda da home: widgets de cima para baixo (mola ζ0,86 r0,55, 70 ms entre eles), números contando (ζ1 r0,9) e a barra da meta enchendo aos 260 ms. Voltar do calendário completo não repete a entrada. Reduzir movimento (do iOS): tudo vira fade de 220 ms e os números aparecem prontos.
 - **Dados:**
   - **Sequência, recorde e proteção:** do **servidor** (`useEstadoCartas`). Sem ele, o histórico do celular (`routineDayStreak`/`recordeDias`).
-  - **Calendário do mês:** histórico do celular.
+  - **Calendário do mês:** o de check-ins da aba Grupos (`components/grupos/CalendarioCheckins.tsx`, nov/2026); antes era o histórico de rotinas do celular.
   - **Meta:** segue os marcos 3, 7, 14, 30, 100 e depois a próxima centena (`metaDias`).
   - **Cartas:** REAIS (`useColecao` → `cartas_usuario`), em dev e produção. "Cartas raspadas" conta cada raspada; "N raras" conta só colecionáveis raras.
   - **Medalhas e "Próximas conquistas":** ainda NÃO existem no banco. O exemplo do design aparece só em `__DEV__`, e em produção vêm zeradas.
@@ -3546,6 +3546,8 @@ Pelo `users.push_token` (Expo Push API, sem autenticação — mesmo padrão da 
 - Testes: PGlite (19 casos — 1 por pessoa em 2 grupos, sem autora/sem token/simulator, não repete, bloqueio, quem saiu, check-in removido; "falta só você" com mais de uma faltando, antes da hora, na hora, não repete, dia já feito, fuso de Manaus, rotina às 23:45 (aviso 00:15 ainda no dia de sessão anterior), grupo só com ela, sem token, horário padrão; só service role). O envio pelo pg_net não roda no PGlite (sem a extensão).
 
 ### Telas do grupo no app (fase 3 · 3.5, nov/2026 — migration `20261109120000_grupos_telas.sql`)
+> **Visual atual = rodada 81** (seção "Cartas da rodada 84 + grupos da rodada 81", abaixo). A tabela registra o que a 3.5 entregou com o design 80; desde a 81, a aba Grupos tem 2 números (sem Dias seguidos), a folha de criar pede só o nome (o convite fica no menu "…") e o sino da tela do grupo saiu.
+
 Réplica frame a frame do **NiksGrupoV2** (projeto "NIKS home redesign", rodada 80), comparada no simulador com o design em @3x. **Sem `__DEV__`**: a navbar sempre termina em Grupos e nada usa dado de exemplo (`lib/grupos.ts`, o `DEMO_GRUPO`, foi apagado).
 | Tela | Arquivo | Design |
 |---|---|---|
@@ -3553,12 +3555,12 @@ Réplica frame a frame do **NiksGrupoV2** (projeto "NIKS home redesign", rodada 
 | Seus grupos (cards com "x de y hoje", ponto de novidade, sua posição) + folha de criar e convidar | `app/(app)/seus-grupos.tsx` | 80s, 80t, 80u |
 | Tela do grupo: banner, Líder/Você, atalhos Ranking e Jornada, mural por dia | `app/(app)/grupo.tsx` | 80a |
 | Menu "…" (Convidar amigas, Denunciar, **Bloquear**, Remover integrante — só quem criou —, Sair) e "…" da foto (Denunciar foto, **Bloquear**) | `app/(app)/grupo.tsx` | 80b, 80c |
-| Câmera do check-in (sem galeria, sem pular; flash, inverter) e Novo check-in (título, descrição, grupos, hora ±15 min, Matinal/Noturna) | `app/(app)/checkin.tsx` | 80d, 80w |
+| Câmera do check-in (sem galeria, sem pular; flash, inverter) e Novo check-in (título, descrição, grupos, hora numa roda de horas e minutos — `components/grupos/RodaHora.tsx`, de 04:00 do dia de sessão até agora —, Matinal/Noturna) | `app/(app)/checkin.tsx` | 80d, 80w → 81i, 81j |
 | Carta depois do check-in ("Check-in feito") e carta rara da campeã | `app/(carta)/carta.tsx` | 80e, 80h |
 | Ranking Semana / Mês / Ano / Geral | `app/(app)/grupo-ranking.tsx` | 80f, 80g |
 | Jornada (nível individual de cada integrante na trilha da "Sua caminhada") | `app/(app)/grupo-jornada.tsx` | 80i |
 - **Migration `20261109120000_grupos_telas.sql`:** `checkins.titulo` (≤ 60) e `descricao` (≤ 280); `publicar_checkin` recebe os dois; `mural_grupo` devolve o título (sem título: "Rotina da manhã/noite"); `grupo_detalhe` ganha `checkins_semana` e `ultimo_checkin_outra` (ponto de novidade); `perfil_grupos` ganha `dias_seguidos` e `primeiro_mes`.
-- **Decisões fora do design** (o design não desenha estes passos): escolher a integrante para Denunciar/Bloquear/Remover = folha do sistema + confirmação; o sino da tela do grupo pede a permissão de avisos (ponto rosa = avisos desligados); escolher os grupos no Novo check-in = folha do sistema ("Todos os grupos" ou um); "Ver todos os check-ins" abre o calendário completo (`/calendario?de=grupos`; o X volta para a aba Grupos); o passeio da Jornada (subir até a líder e voltar) só na 1ª abertura de cada grupo, como na "Sua caminhada"; a carta da campeã continua de raspar (os NIKS Points são sorteados ao raspar).
+- **Decisões fora do design** (o design não desenha estes passos): escolher a integrante para Denunciar/Bloquear/Remover = folha do sistema + confirmação; o sino da tela do grupo pedia a permissão de avisos (saiu na rodada 81; a permissão agora vem só do onboarding e do Perfil); escolher os grupos no Novo check-in = folha do sistema ("Todos os grupos" ou um); "Ver todos os check-ins" abre o calendário completo (`/calendario?de=grupos`; o X volta para a aba Grupos); o passeio da Jornada (subir até a líder e voltar) só na 1ª abertura de cada grupo, como na "Sua caminhada"; a carta da campeã continua de raspar (os NIKS Points são sorteados ao raspar).
 - **Voltar:** `router.back()` numa aba oculta do `<Tabs>` cai na 1ª aba (a home), então cada tela tem destino explícito: Seus grupos → aba Grupos; grupo → Seus grupos (ou a home, se abriu pelo card da home — `de=home`); Ranking e Jornada → o grupo; check-in → de onde abriu.
 - **Convite pelo link (Parte A):** `niks-ai://convite/<token>` é desviado no `app/+native-intent.tsx` (não é rota): o token fica em `lib/convitePendente.ts` e `components/grupos/ConvitePendente.tsx` (dentro do `(app)/_layout`, **depois do guard de assinatura** — o link nunca pula o paywall) confere no servidor, pergunta "Entrar em “Glow das Meninas”?" e abre o grupo.
 - **Home:** o card "Seu grupo" mostra o 1º grupo dela (integrantes com anel de quem fez hoje, "x de y hoje") e abre a tela do grupo; sem grupo, "Criar grupo" abre a folha de Seus grupos.
@@ -3567,7 +3569,7 @@ Réplica frame a frame do **NiksGrupoV2** (projeto "NIKS home redesign", rodada 
 - **Produção (02/nov/2026):** migration `20261109120000` aplicada sozinha (`db query -f` + `migration repair`) e `grupos` v3 publicada, com backup antes (definições das 4 funções e a função publicada).
 
 ### Compartilhar com o grupo (fase 3 · 3.6, nov/2026 — migration `20261110120000_compartilhar_produto.sql`)
-Folha **80o** (com grupo: "Compartilhar com o grupo?", os grupos dela — o primeiro marcado, toque alterna —, Compartilhar e Agora não) / **80p** (sem grupo: "Faça skincare com suas amigas" + Criar grupo, **sempre**, enquanto ela não tiver grupo). `components/grupos/FolhaCompartilhar.tsx`: sobe 500 ms depois, mola ζ.9 .55 s, véu em 420 ms (o desfoque de 6 pt da tela de trás do design ficou só no véu).
+Folha **80o** (com grupo: "Compartilhar com o grupo?", os grupos dela — o primeiro marcado, toque alterna —, Compartilhar e Agora não) / **80p** (sem grupo: "Faça skincare com suas amigas" + Criar grupo, **sempre**, enquanto ela não tiver grupo). `components/grupos/FolhaCompartilhar.tsx`. **Refeita na rodada 81 (81t/81u):** cada grupo é uma linha com o próprio botão de compartilhar (tocar compartilha naquele grupo; não há mais marcar/alternar nem botão "Compartilhar"), e "Agora não" virou pílula cinza. A API passou a `onCompartilhar(grupoId)` + `ocupado` (id do grupo em andamento). Sobe com mola ζ1 .5 s, 120 ms depois do véu (240 ms).
 - **Fim da rotina** (`protocolo.tsx`, por cima da concluída 45c, a cada rotina): Compartilhar **vira um check-in** — abre o Novo check-in (80w) já com a rotina, os grupos marcados e, de manhã, a Foto do dia que ela acabou de tirar (`/checkin?rotina=&grupos=&foto=&de=rotina`; sem foto, a câmera). Conta no ranking e dá a carta do check-in como qualquer check-in.
 - **Fim do scan de produto** (`product-result.tsx`): a folha abre quando ela **fecha o resultado** (aberta por cima da análise, cobriria o que ela acabou de escanear); uma vez por resultado; não abre no fluxo "Escolher produto" da Rotina. Compartilhar → ação `compartilhar` da função `grupos` → `compartilhar_produto`: o produto entra no **mural** dos grupos escolhidos como "Escaneou <produto>" com a **foto do scan** (bucket privado `product-scans`, URL assinada de 1 h, só para integrantes); **não conta no ranking**; carta `produto_grupo` (1 por dia; o mesmo scan no mesmo grupo não repete). Depois de compartilhar, o pedido de avaliação da App Store não aparece (cairia em cima da carta).
 - **Moderação igual à do check-in:** some para quem bloqueou a autora e quando ela sai do grupo; `compartilhamentos.removido_em` (NIKSfy) tira do mural; "Denunciar foto" grava `denuncias.compartilhamento_id`. Apagar o scan apaga o compartilhamento (cascade).
@@ -3586,6 +3588,52 @@ Folha **80o** (com grupo: "Compartilhar com o grupo?", os grupos dela — o prim
   3. **Termos de Uso (Apple 1.2):** o link "Termos de Uso" do cadastro abre a mesma página da Política de Privacidade; conteúdo de usuária pede termos com tolerância zero e resposta à denúncia em 24 h (NIKSfy).
   4. Nova versão na loja (o app com os grupos precisa do build com `expo-clipboard`).
 - **Parte B (3.7, convidada):** convite que instala o app (Paywallo/Branch/domínio), pular o paywall só com convite válido no servidor, modo convidada e a carta dela.
+
+### Cartas da rodada 84 + grupos da rodada 81 (nov/2026)
+**Cartas (84a–84c, `NiksCartaFlo.dc.html`)** — um componente só, `components/cartas/Carta.tsx` (medidas do design numa carta de 220 × 308; em outro tamanho tudo escala). O visual sai do que o servidor devolve, por `visualDe(carta, estadoDoPoder)`:
+| Visual | Regra |
+|---|---|
+| Verso (para raspar) | antes de raspar |
+| Colecionável | `familia = colecionavel` |
+| Rara "Campeã da semana" | `origem = campea` |
+| Rara "N dias seguidos" | `origem = marco` (`conteudo.marco`: 7, 14, 30) |
+| Os 5 poderes + estado | `familia = poder`, `subtipo`; estado por `estadoPoder` (Ativo até … / Armado / Usado em …) |
+| Carta misteriosa | Sequência em dobro de `origem = volta` |
+| Convidada (produto, idade, rotina) | só o visual; entra no fluxo na Parte B (a de rotina recebe os passos reais) |
+- A rara tem o holográfico correndo (3,6 s) e faíscas piscando (2,2 s, 260 ms entre elas); com "Reduzir movimento", parados. Os NIKS Points continuam no selo (`SeloPontos` na revelação; pílula no detalhe, só se > 0).
+- Trocado em: tela de raspar 67a (verso no giro, camada de raspar redesenhada em Skia com o verso 84a, frente = a carta; o reflexo e o brilho do 67a ficaram só nas cartas de exemplo), "Suas cartas" (miniaturas paradas, com o "x2"), detalhe da carta (verso → frente; embaixo, a data ou "Você tem N"), mini carta da home, leque e meta de sequência do hub de Conquistas. A carta do check-in é a mesma tela de raspar.
+- A de conhecimento não está no design: usa a moldura do verso com título e texto.
+- `ItemColecao` passou a ler `pontos` de `cartas_usuario` (coluna que já existia).
+- **Pacote de NIKS Points na tela de raspar** (`components/cartas/PacotePontos.tsx`; não há design, o visual foi aprovado num mockup):
+  - **Quando:** ~600 ms depois da revelação, se o `raspar` devolveu pontos.
+  - **O que aparece:** o cabeçalho da caminhada (68: "Nível N", título, "X / teto", barra piso→teto) entra no lugar da headline. Os dados são reais: `total_antes`/`total` do `raspar` + a tabela `niveis`/`icone` do estado (`nivelDe`).
+  - **O voo:** 5 mini cartas (verso 84a, 30 × 42) saem do selo em leque, uma a cada 70 ms, sobem em curva e viram faíscas (Skia) na ponta da barra.
+  - **Cada chegada:** a barra enche um pedaço com mola e o número conta. Toque leve em cada uma e médio na última.
+  - **Subiu de nível:** a barra completa ("nível completo") e o cabeçalho brilha. O "Continuar" segue para a caminhada, como antes.
+  - **Tempo e atalho:** ~1,5 s. Tocar na tela adianta para o fim.
+  - **Reduzir movimento:** sem voo. A barra nova aparece com um fade e o número vai direto ao final.
+  - **Camadas:** o pacote fica em `zIndex 30`, acima do palco da carta (10) e dos raios (9).
+
+**Grupos (81a–81u, `NiksGrupoFlo.dc.html`, "linguagem do Flo")** — telas da 3.5 refeitas: aba Grupos (herói rosa com curva, 2 números, calendário em card branco com "N check-ins" do mês), Seus grupos (cards brancos com a faixa do banner; "Criar grupo" em link), folha "Novo grupo" (só o nome; criado, o grupo abre e o convite fica no menu "…"), tela do grupo (banner no topo, card com a líder da semana e você — ou a 2ª, se a líder é você —, Fazer check-in no card; o botão da câmera e o sino saíram), folhas "…" (Bloquear continua, Apple 1.2), câmera, Novo check-in (chips do Flo; Publicar embaixo), ranking (fundo branco, abas em pílula, medalhas ouro/prata/bronze; sem a faixa da carta rara), jornada (geometria própria do 81o, sem o passeio) e a folha de compartilhar (uma linha por grupo; tocar compartilha naquele grupo).
+- Fora do design, mantido a pedido: "Ver todos os check-ins" embaixo do calendário (abre o calendário completo).
+- **Erros do "Publicar" (`checkin.tsx`):** cada recusa do servidor tem mensagem própria:
+  - `motivo: foto` → "A foto não chegou" (a foto sobe de novo);
+  - `ja_fez` → "Você já fez o check-in da rotina … hoje";
+  - `grupos` → "Você não está mais nesse grupo" (recarrega os grupos).
+  - Falha de rede → "Sem conexão". Sessão vencida (401) → "Sua sessão expirou".
+  - Qualquer outro erro → "Não deu para publicar agora", com `console.warn` da mensagem real.
+  - Tentar de novo reaproveita a foto já enviada (não sobe duplicada).
+- ⚠️ **Tropeços desta rodada:**
+  - `<Pattern>` do react-native-svg com `<Image>` dentro não desenha: o padrão de flores usa o Skia (`components/caminhada/Padrao`).
+  - `@react-native-masked-view` não está instalado: os fades de borda são degradês na cor do fundo.
+  - `filter: blur()` do CSS não existe em View: os passos borrados da carta de rotina usam `BlurView` por cima do texto.
+  - `ScrollView` numa linha cresce por padrão: as colunas da `RodaHora` precisam de `flexGrow: 0, flexShrink: 0`.
+  - No design, as camadas de dentro da carta ficam na caixa de padding (dentro da borda): meça a partir da borda, não da caixa toda.
+  - `text-wrap: balance` agora tem um componente compartilhado: `components/BalancedText.tsx` (tirado do `protocolo.tsx`).
+- Animações em Reanimated (molas do design convertidas: rigidez (2π/r)², amortecimento 4πζ/r) e Skia (padrão de flores das cartas da jornada).
+- **Migration `20261111120000_checkins_mes.sql` (✅ em produção, 03/nov/2026):** `perfil_grupos` ganha `checkins_mes` (até 2 por dia). Aplicada sozinha (`db query -f` + `migration repair`), com backup antes da definição e das permissões de `perfil_grupos`. Sem ela (build antiga contra banco antigo) a aba Grupos mostraria o número de DIAS com foto. A função `grupos` não muda. Teste: PGlite `checkins_mes` (7 casos).
+- **Calendário de check-ins = um componente só (`components/grupos/CalendarioCheckins.tsx`):** a aba Grupos e o hub Suas conquistas mostram o MESMO card (o da 81a: mês, "N check-ins", setas, foto do check-in no dia). Antes o hub tinha um calendário próprio, do histórico de rotinas do celular, e os dois divergiam. Semanas em linhas explícitas de 7 (README #29): com `flexWrap` o 7º dia descia de linha no hub. O calendário em tela cheia ("Ver todos os check-ins") continua no histórico de rotinas.
+- 81p–81s (convidada) ficam para a Parte B.
 
 > ✅ **NAVBAR "splitHouse" (12/out/2026) — réplica da tela 57d** (Claude Design, projeto "NIKS home redesign", `NiksHomeFlo.dc.html`, `nav="splitHouse"`). Barra FLUTUANTE a 26 pt da base: círculo branco Ø64 com a **casa** (Home; rosa `#FF5EA8` quando ativa, cinza `#7A7076` fora dela) + pílula branca de 60 pt com borda de 1,5 pt em degradê `#FFC2DB → #FF5EA8 → #F86B79`, com três ícones line 27 pt: Rotina (rosto) · Produtos (frasco) · Perfil (pessoa); aba ativa = ícone rosa + ponto rosa embaixo. Véu de 130 pt atrás (`rgba(249,242,245,0 → .85)`). **O NIKS Chat SAIU da navbar** (abre pelo card "NIKS Chat" da home). Modo noturno da rotina mantido (fundo `#1A1F2E`). A altura total (~90 pt da base) é a mesma da barra anterior (53 + home indicator), então os espaçamentos das telas continuam valendo. Tudo abaixo desta nota sobre a barra antiga é histórico.
 

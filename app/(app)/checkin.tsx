@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Device from 'expo-device';
@@ -17,16 +16,17 @@ import { haptics } from '../../lib/haptics';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { getRoutinePeriodForNow, sessionDate } from '../../lib/routineProgress';
 import { invalidarGrupos, publicarCheckin, subirFoto, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
+import RodaHora from '../../components/grupos/RodaHora';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Check-in do grupo — réplica de 80d (câmera) e 80w (Novo check-in) do Claude Design
-// (NiksGrupoV2.dc.html). A foto é obrigatória e vem só da câmera, na hora: sem galeria
+// Check-in do grupo — réplica de 81i (câmera) e 81j (Novo check-in) do Claude Design
+// (NiksGrupoFlo.dc.html, rodada 81; antes 80d/80w). A foto é obrigatória e vem só da câmera, na hora: sem galeria
 // e sem "só marcar" (no simulador de dev, a galeria faz o papel da câmera, como na
 // "Foto do dia"). Câmera: visor de 520 pt, flash à esquerda, disparador, inverter à
 // direita (o visor gira 90° em 150 ms, troca e volta em 180 ms). Novo check-in: a foto
 // entra com mola (0,9 → 1), título (60) e descrição (280), Grupos (padrão: todos),
-// Hora do check-in (só o horário EXIBIDO, ±15 min, nunca no futuro nem antes da virada
-// das 04:00) e Rotina, Matinal ou Noturna (a que ela já postou hoje fica apagada: é 1
+// Hora do check-in (só o horário EXIBIDO; roda de horas e minutos, nunca no futuro nem
+// antes da virada das 04:00) e Rotina, Matinal ou Noturna (a que ela já postou hoje fica apagada: é 1
 // por rotina por dia). Publicar sobe a foto (bucket privado, URL assinada), publica e
 // abre a carta para raspar (80e); sem carta nova (já ganhou a de hoje), volta ao grupo.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,11 +34,9 @@ import { invalidarGrupos, publicarCheckin, subirFoto, useMeusGrupos, type GrupoR
 const INK = '#121212';
 const PINK = '#FF5EA8';
 const MUTE = '#818181';
-const LOGO = require('../../assets/home/score-logo-pink.png');
 const EO = Easing.bezier(0.23, 1, 0.32, 1);
 const EIO = Easing.bezier(0.77, 0, 0.175, 1);
 const EIN = Easing.bezier(0.55, 0, 1, 0.45);
-const PASSO = 15;
 
 type Foto = { uri: string; base64: string };
 
@@ -68,13 +66,11 @@ function useReduceMotion(): boolean {
 
 const hm = (d: Date) => `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 
-function BolinhaGrupo({ g, first }: { g: GrupoResumo; first: boolean }) {
+function BolinhaGrupo({ g }: { g: GrupoResumo }) {
   const rosa = g.banner === 'niks-2';
   return (
-    <View style={[styles.gDot, !first && { marginLeft: -9 }, { experimental_backgroundImage: rosa ? 'linear-gradient(120deg, #FF5EA8 0%, #FF8CC0 55%, #FFC2DB 100%)' : 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)' }]}>
-      {g.banner === 'foto' && g.banner_url
-        ? <Image source={{ uri: g.banner_url }} style={StyleSheet.absoluteFill} />
-        : <Image source={LOGO} style={{ width: 16, height: 16, tintColor: rosa ? '#fff' : undefined }} />}
+    <View style={[styles.gDot, { experimental_backgroundImage: rosa ? 'linear-gradient(120deg, #FF5EA8 0%, #FF8CC0 55%, #FFC2DB 100%)' : 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)' }]}>
+      {g.banner === 'foto' && g.banner_url ? <Image source={{ uri: g.banner_url }} style={StyleSheet.absoluteFill} /> : null}
     </View>
   );
 }
@@ -184,8 +180,8 @@ export default function Checkin() {
   const [hora, setHora] = useState(() => new Date());
   const [abrirHora, setAbrirHora] = useState(false);
   const [publicando, setPublicando] = useState(false);
+  const fotoSubida = useRef<{ uri: string; path: string } | null>(null);
   const fotoIn = useRef(new Animated.Value(0)).current;
-  const rotX = useRef(new Animated.Value(0)).current;
   const pick = useRef(new Animated.Value(0)).current;
   const chev = useRef(new Animated.Value(0)).current;
 
@@ -199,7 +195,6 @@ export default function Checkin() {
     const pref = rotinaParam === 'am' || rotinaParam === 'pm' ? rotinaParam : getRoutinePeriodForNow(agora);
     const r = jaFeitas.includes(pref) && !jaFeitas.includes(pref === 'am' ? 'pm' : 'am') ? (pref === 'am' ? 'pm' : 'am') : pref;
     setRotina(r);
-    rotX.setValue(r === 'pm' ? 1 : 0);
     fotoIn.setValue(rm ? 1 : 0);
     if (!rm) Animated.spring(fotoIn, { toValue: 1, damping: 14, stiffness: 180, mass: 1, useNativeDriver: true }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -218,29 +213,27 @@ export default function Checkin() {
     );
   };
 
-  const inicioDia = sessionDate();
-  inicioDia.setHours(4, 0, 0, 0);
-  const passo = (d: number) => new Date(hora.getTime() + d * PASSO * 60000);
-  const podeAntes = passo(-1) >= inicioDia;
-  const podeDepois = passo(1) <= new Date();
+  const formRef = useRef<ScrollView>(null);
+  // Limites da roda: do início do dia de sessão (04:00) até agora (fixado ao abrir).
+  const [limites, setLimites] = useState(() => {
+    const ini = sessionDate(); ini.setHours(4, 0, 0, 0);
+    return { min: ini, max: new Date() };
+  });
   const tocarHora = () => {
     haptics.tap();
     const v = !abrirHora;
+    if (v) { const ini = sessionDate(); ini.setHours(4, 0, 0, 0); setLimites({ min: ini, max: new Date() }); }
     setAbrirHora(v);
+    // A roda abre embaixo do formulário: rola para ela ficar à vista, acima do Publicar.
+    if (v) setTimeout(() => formRef.current?.scrollToEnd({ animated: !rm }), rm ? 0 : 320);
     Animated.timing(pick, { toValue: v ? 1 : 0, duration: rm ? 0 : 300, easing: EIO, useNativeDriver: false }).start();
     Animated.timing(chev, { toValue: v ? 1 : 0, duration: rm ? 0 : 300, easing: EIO, useNativeDriver: true }).start();
-  };
-  const mudarHora = (d: number) => {
-    if ((d < 0 && !podeAntes) || (d > 0 && !podeDepois)) return;
-    haptics.select();
-    setHora(passo(d));
   };
 
   const escolherRotina = (r: 'am' | 'pm') => {
     if (r === rotina || jaFeitas.includes(r)) return;
     haptics.select();
     setRotina(r);
-    Animated.timing(rotX, { toValue: r === 'pm' ? 1 : 0, duration: rm ? 0 : 320, easing: EO, useNativeDriver: true }).start();
   };
 
   const publicar = async () => {
@@ -250,13 +243,29 @@ export default function Checkin() {
     haptics.action();
     setPublicando(true);
     try {
-      const path = await subirFoto('checkin', foto.base64);
+      // A foto sobe uma vez só: se o publicar falhar depois, tentar de novo reaproveita o
+      // mesmo arquivo (antes cada tentativa subia outra cópia e deixava órfãs no bucket).
+      const path = fotoSubida.current?.uri === foto.uri ? fotoSubida.current.path : await subirFoto('checkin', foto.base64);
+      fotoSubida.current = { uri: foto.uri, path };
       const r = await publicarCheckin({
         foto_path: path, rotina, grupos: escolhidos.map((g) => g.id), hora_exibida: hora.toISOString(),
         titulo: titulo.trim() || undefined, descricao: descricao.trim() || undefined,
       });
       if (!r.ok) {
-        Alert.alert(r.motivo === 'ja_fez' ? 'Você já fez o check-in dessa rotina hoje' : 'Não deu para publicar agora', 'Tente de novo em instantes.');
+        console.warn('[check-in] recusado pelo servidor:', r.motivo);
+        haptics.error();
+        if (r.motivo === 'foto') {
+          // O arquivo não está lá (subida interrompida): a próxima tentativa sobe de novo.
+          fotoSubida.current = null;
+          Alert.alert('A foto não chegou', 'Tente publicar de novo. Se continuar, tire outra foto.');
+        } else if (r.motivo === 'ja_fez') {
+          Alert.alert(`Você já fez o check-in da rotina ${rotina === 'am' ? 'matinal' : 'noturna'} hoje`, 'Escolha a outra rotina ou volte amanhã.');
+        } else if (r.motivo === 'grupos') {
+          await invalidarGrupos();
+          Alert.alert('Você não está mais nesse grupo', 'Escolha outro grupo para publicar.');
+        } else {
+          Alert.alert('Não deu para publicar agora', 'Tente de novo em instantes.');
+        }
         return;
       }
       trackFora('checkin_feito', { rotina, grupos: r.grupos.length, com_titulo: Boolean(titulo.trim()), carta: Boolean(r.carta_id) });
@@ -264,8 +273,17 @@ export default function Checkin() {
       if (r.carta_id) router.replace(`/(carta)/carta?id=${r.carta_id}` as any);
       else sair();
     } catch (e) {
-      console.warn('[check-in] publicar falhou', e);
-      Alert.alert('Não deu para publicar agora', 'Confira a internet e tente de novo.');
+      const msg = String((e as Error)?.message ?? e);
+      console.warn('[check-in] publicar falhou:', msg);
+      haptics.error();
+      // Só é "internet" quando a requisição nem saiu; o resto é do servidor ou da sessão.
+      if (/network request failed|failed to fetch|timed? ?out|offline/i.test(msg)) {
+        Alert.alert('Sem conexão', 'Confira a internet e tente de novo.');
+      } else if (/sem sessão|unauthorized|jwt|HTTP 401/i.test(msg)) {
+        Alert.alert('Sua sessão expirou', 'Feche e abra o NIKS de novo para publicar.');
+      } else {
+        Alert.alert('Não deu para publicar agora', 'Tente de novo em instantes.');
+      }
     } finally {
       setPublicando(false);
     }
@@ -276,19 +294,19 @@ export default function Checkin() {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <StatusBar style="light" />
-        <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); sair(); }} style={[styles.close, { top: y(60) }]} accessibilityLabel="Fechar">
-          <Icon size={24} color="#fff" sw={2} d={['M18 6 6 18M6 6l12 12']} />
+        <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); sair(); }} style={[styles.close, { top: y(56) }]} accessibilityLabel="Fechar">
+          <Icon size={26} color="#fff" sw={2} d={['M18 6 6 18M6 6l12 12']} />
         </TouchableOpacity>
-        <Animated.View style={[styles.vf, { top: y(112), opacity: visorO, transform: [{ perspective: 1200 }, { rotateY: rot }] }]}>
+        <Animated.View style={[styles.vf, { top: y(108), opacity: visorO, transform: [{ perspective: 1200 }, { rotateY: rot }] }]}>
           {perm?.granted && (
             <CameraView ref={cam} style={StyleSheet.absoluteFill} facing={frente ? 'front' : 'back'} mirror={frente} flash={flash ? 'on' : 'off'} />
           )}
         </Animated.View>
-        <View style={[styles.camNote, { top: y(648) }]}>
-          <Cadeado color="rgba(255,255,255,0.78)" />
+        <View style={[styles.camNote, { top: y(652) }]}>
+          <Cadeado color="rgba(255,255,255,0.8)" />
           <Text style={styles.camNoteT}>Só as integrantes do grupo veem sua foto</Text>
         </View>
-        <View style={[styles.controls, { top: y(690) }]}>
+        <View style={[styles.controls, { top: y(692) }]}>
           <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); setFlash((f) => !f); }} style={styles.side} accessibilityLabel={flash ? 'Desligar flash' : 'Ligar flash'}>
             {flash
               ? <Icon size={26} color="#fff" sw={1.8} d={['M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z']} />
@@ -308,164 +326,141 @@ export default function Checkin() {
     );
   }
 
-  const linha = (r: 'am' | 'pm') => ({ color: rotina === r ? '#fff' : jaFeitas.includes(r) ? '#C9C2C6' : '#515151' });
+  const fundoPub = 38 + Math.max(0, insets.bottom - 34);
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <LinearGradient colors={['#FCE3EE', '#FDD5E6', '#FCDFEA', '#F9F1F4']} locations={[0, 0.45, 0.72, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
-      <View style={styles.circleBlob} pointerEvents="none" />
-      <View style={styles.circleWhite} pointerEvents="none" />
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 60 }}>
-          <View style={styles.head}>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.roundBtn} accessibilityLabel="Voltar para a câmera">
-              <Icon size={18} color={INK} sw={2} d={['m15 18-6-6 6-6']} />
-            </TouchableOpacity>
-            <Text style={styles.headT} pointerEvents="none">Novo check-in</Text>
-            <TouchableOpacity activeOpacity={0.7} onPress={publicar} disabled={publicando} hitSlop={10} accessibilityLabel="Publicar">
-              {publicando ? <ActivityIndicator color={PINK} /> : <Text style={styles.publicar}>Publicar</Text>}
-            </TouchableOpacity>
-          </View>
-
+      <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={[styles.back, { top: y(54) }]} accessibilityLabel="Voltar para a câmera">
+        <Icon size={26} color={INK} sw={2} d={['m15 18-6-6 6-6']} />
+      </TouchableOpacity>
+      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.titleT}>Novo check-in</Text></View>
+      <KeyboardAvoidingView behavior="padding" style={{ position: 'absolute', top: y(98), left: 0, right: 0, bottom: fundoPub + 62 }}>
+        <ScrollView ref={formRef} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ paddingTop: 8, paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
           <View style={styles.shotWrap}>
-            <Animated.View style={[styles.shot, { opacity: fotoIn.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] }), transform: [{ scale: fotoIn.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }]}>
+            <Animated.View style={[styles.shot, { opacity: fotoIn.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] }), transform: [{ scale: fotoIn.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }] }]}>
               {foto && <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%' }} />}
             </Animated.View>
             <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.retake} accessibilityLabel="Tirar outra foto">
-              <Icon size={18} color={PINK} sw={2} d={['M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z', 'm15 5 4 4']} />
+              <Icon size={17} color={INK} sw={2} d={['M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z']} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.fields}>
-            <TextInput value={titulo} onChangeText={setTitulo} placeholder="Título" placeholderTextColor={MUTE} maxLength={60} style={styles.titleIn} returnKeyType="next" />
-            <View style={styles.sep16} />
-            <TextInput value={descricao} onChangeText={setDescricao} placeholder="Descrição (opcional)" placeholderTextColor={MUTE} maxLength={280} multiline style={styles.descIn} textAlignVertical="top" />
+          <View style={styles.cardBranco}>
+            <TextInput value={titulo} onChangeText={setTitulo} placeholder="Título" placeholderTextColor={MUTE} maxLength={60} style={styles.titleIn} returnKeyType="next" selectionColor={PINK} />
+            <View style={styles.sep} />
+            <TextInput value={descricao} onChangeText={setDescricao} placeholder="Descrição (opcional)" placeholderTextColor={MUTE} maxLength={280} multiline style={styles.descIn} textAlignVertical="top" selectionColor={PINK} />
           </View>
 
-          <View style={styles.opts}>
-            <TouchableOpacity activeOpacity={meus.length > 1 ? 0.6 : 1} onPress={escolherGrupos} style={styles.rowG}>
-              <Icon size={21} color={PINK} sw={1.9} d={['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M22 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75']}>
-                <Circle cx={9} cy={7} r={4} fill="none" stroke={PINK} strokeWidth={1.9} />
-              </Icon>
-              <Text style={styles.rowT}>Grupos</Text>
-              <View style={{ flexDirection: 'row' }}>
-                {escolhidos.slice(0, 3).map((g, i) => <BolinhaGrupo key={g.id} g={g} first={i === 0} />)}
+          <View style={[styles.cardBranco, { padding: 16 }]}>
+            <Text style={styles.cardT}>Rotina</Text>
+            <View style={styles.chips}>
+              {(['am', 'pm'] as const).map((r) => {
+                const sel = rotina === r;
+                const feita = jaFeitas.includes(r);
+                return (
+                  <TouchableOpacity
+                    key={r}
+                    activeOpacity={0.7}
+                    disabled={feita}
+                    onPress={() => escolherRotina(r)}
+                    style={[styles.chip, { borderColor: sel ? PINK : 'rgba(255,94,168,0)' }, feita && { opacity: 0.45 }]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: sel, disabled: feita }}
+                  >
+                    <View style={styles.chipIcon}>
+                      {r === 'am'
+                        ? <Icon size={16} color={PINK} sw={2.2} d={['M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41']}><Circle cx={12} cy={12} r={4} fill="none" stroke={PINK} strokeWidth={2.2} /></Icon>
+                        : <Icon size={16} color={PINK} sw={2.2} d={['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z']} />}
+                    </View>
+                    <Text style={styles.chipT}>{r === 'am' ? 'Matinal' : 'Noturna'}</Text>
+                    {sel && (
+                      <View style={styles.chipCheck}><Icon size={10} color="#fff" sw={4} d={['M20 6 9 17l-5-5']} /></View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.cardBranco}>
+            <TouchableOpacity activeOpacity={meus.length > 1 ? 0.7 : 1} onPress={escolherGrupos} style={styles.linha}>
+              <Text style={styles.linhaT}>Grupos</Text>
+              <View style={{ flexDirection: 'row', paddingLeft: 8 }}>
+                {escolhidos.slice(0, 3).map((g) => <BolinhaGrupo key={g.id} g={g} />)}
               </View>
-              <Text style={styles.rowV} numberOfLines={1}>{gruposLabel}</Text>
-              {meus.length > 1 && <Icon size={14} color={MUTE} sw={2.4} d={['M9 6l6 6-6 6']} />}
+              <Text style={styles.linhaV} numberOfLines={1}>{gruposLabel}</Text>
+              <Icon size={16} color="#B5B5B5" sw={2.4} d={['m9 18 6-6-6-6']} />
             </TouchableOpacity>
-            <View style={styles.sep49} />
-            <TouchableOpacity activeOpacity={0.6} onPress={tocarHora} style={styles.rowH} accessibilityLabel="Hora do check-in">
-              <Icon size={21} color={PINK} sw={1.9} d={['M12 7v5l3 2']}>
-                <Circle cx={12} cy={12} r={9} fill="none" stroke={PINK} strokeWidth={1.9} />
-              </Icon>
-              <Text style={styles.rowT}>Hora do check-in</Text>
-              <Text style={[styles.rowV, { color: abrirHora ? PINK : MUTE, fontVariant: ['tabular-nums'] }]}>{`Hoje, ${hm(hora)}`}</Text>
+            <View style={styles.sep} />
+            <TouchableOpacity activeOpacity={0.7} onPress={tocarHora} style={styles.linha} accessibilityLabel="Hora do check-in">
+              <Text style={styles.linhaT}>Hora do check-in</Text>
+              <Text style={[styles.linhaV, { color: abrirHora ? PINK : MUTE, fontVariant: ['tabular-nums'] }]}>{`Hoje, ${hm(hora)}`}</Text>
               <Animated.View style={{ transform: [{ rotate: chev.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] }) }] }}>
-                <Icon size={14} color={MUTE} sw={2.4} d={['M9 6l6 6-6 6']} />
+                <Icon size={16} color="#B5B5B5" sw={2.4} d={['m9 18 6-6-6-6']} />
               </Animated.View>
             </TouchableOpacity>
             <Animated.View style={{ height: pick.interpolate({ inputRange: [0, 1], outputRange: [0, 144] }), overflow: 'hidden' }}>
               <View style={styles.picker}>
-                <View style={styles.pickerSel} />
-                <TouchableOpacity activeOpacity={0.6} disabled={!podeAntes} onPress={() => mudarHora(-1)} style={styles.pickRow} accessibilityLabel="15 minutos antes">
-                  <Text style={[styles.pickSide, !podeAntes && { opacity: 0.35 }]}>{hm(passo(-1))}</Text>
-                </TouchableOpacity>
-                <View style={styles.pickRow}><Text style={styles.pickCur}>{hm(hora)}</Text></View>
-                <TouchableOpacity activeOpacity={0.6} disabled={!podeDepois} onPress={() => mudarHora(1)} style={styles.pickRow} accessibilityLabel="15 minutos depois">
-                  <Text style={[styles.pickSide, !podeDepois && { opacity: 0.35 }]}>{hm(passo(1))}</Text>
-                </TouchableOpacity>
+                {abrirHora && <RodaHora valor={hora} min={limites.min} max={limites.max} onChange={setHora} />}
               </View>
             </Animated.View>
-            <View style={styles.sep49} />
-            <View style={styles.rowR}>
-              {rotina === 'am'
-                ? <Icon size={21} color={PINK} sw={1.9} d={['M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41']}><Circle cx={12} cy={12} r={4} fill="none" stroke={PINK} strokeWidth={1.9} /></Icon>
-                : <Icon size={21} color={PINK} sw={1.9} d={['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z']} />}
-              <Text style={styles.rowT}>Rotina</Text>
-              <View style={styles.seg}>
-                <Animated.View style={[styles.segPill, { transform: [{ translateX: rotX.interpolate({ inputRange: [0, 1], outputRange: [0, 87] }) }] }]} />
-                <View style={{ flexDirection: 'row', height: 30 }}>
-                  <TouchableOpacity activeOpacity={1} onPress={() => escolherRotina('am')} style={styles.segItem} accessibilityState={{ selected: rotina === 'am', disabled: jaFeitas.includes('am') }}>
-                    <Text style={[styles.segT, linha('am')]}>Matinal</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity activeOpacity={1} onPress={() => escolherRotina('pm')} style={styles.segItem} accessibilityState={{ selected: rotina === 'pm', disabled: jaFeitas.includes('pm') }}>
-                    <Text style={[styles.segT, linha('pm')]}>Noturna</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.note}>
-            <Cadeado color={MUTE} />
-            <Text style={styles.noteT}>Só as integrantes do grupo veem sua foto</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <TouchableOpacity activeOpacity={0.85} onPress={publicar} disabled={publicando} style={[styles.publicar, { bottom: fundoPub }]} accessibilityLabel="Publicar">
+        {publicando ? <ActivityIndicator color="#fff" /> : <Text style={styles.publicarT}>Publicar</Text>}
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F9F1F4' },
-  circleBlob: {
-    position: 'absolute', width: 560, height: 560, borderRadius: 280, left: 190, top: -90,
-    experimental_backgroundImage: 'radial-gradient(circle at 30% 75%, rgba(255,170,205,0.34), rgba(255,255,255,0.2))',
-  },
-  circleWhite: { position: 'absolute', width: 620, height: 620, borderRadius: 310, left: -330, top: 250, backgroundColor: 'rgba(255,255,255,0.42)' },
+  root: { flex: 1, backgroundColor: '#F6F1F4' },
 
-  // 80d
-  close: { position: 'absolute', left: 14, width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 5 },
-  vf: { position: 'absolute', left: 0, right: 0, height: 520, overflow: 'hidden', backgroundColor: '#1a1418' },
+  // 81i
+  close: { position: 'absolute', left: 8, width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 5 },
+  vf: { position: 'absolute', left: 0, right: 0, height: 528, overflow: 'hidden', backgroundColor: '#1a1418' },
   camNote: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  camNoteT: { fontSize: 13, color: 'rgba(255,255,255,0.78)', letterSpacing: -0.1 },
+  camNoteT: { fontSize: 13, lineHeight: 17, color: 'rgba(255,255,255,0.8)' },
   controls: { position: 'absolute', left: 0, right: 0, height: 84, flexDirection: 'row', alignItems: 'center' },
   side: { flex: 1, height: 48, alignItems: 'center', justifyContent: 'center' },
-  shutter: { width: 80, height: 80, borderRadius: 40, borderWidth: 4, borderColor: '#fff', padding: 5 },
-  shutterIn: { flex: 1, borderRadius: 40, backgroundColor: '#fff' },
+  shutter: { width: 78, height: 78, borderRadius: 39, borderWidth: 4, borderColor: '#fff', padding: 5 },
+  shutterIn: { flex: 1, borderRadius: 39, backgroundColor: '#fff' },
 
-  // 80w
-  head: { height: 36, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  roundBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', zIndex: 1,
-    boxShadow: '0px 4px 14px rgba(120,60,72,0.10)',
-  },
-  headT: { position: 'absolute', left: 0, right: 0, textAlign: 'center', fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: INK },
-  publicar: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3, color: PINK },
-  shotWrap: { marginTop: 22, height: 234, alignItems: 'center' },
+  // 81j
+  back: { position: 'absolute', left: 6, width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 4 },
+  titleRow: { position: 'absolute', left: 0, right: 0, height: 44, alignItems: 'center', justifyContent: 'center' },
+  titleT: { fontSize: 17, fontWeight: '600', letterSpacing: -0.4, color: INK },
+  shotWrap: { alignSelf: 'center', width: 148, height: 196, marginBottom: 8 },
   shot: {
-    width: 150, height: 204, borderRadius: 20, borderWidth: 3, borderColor: '#fff', overflow: 'hidden', backgroundColor: '#F4F4F4',
-    boxShadow: '0px 14px 30px rgba(200,60,120,0.22)',
+    width: 148, height: 196, borderRadius: 16, borderWidth: 3, borderColor: '#fff', overflow: 'hidden', backgroundColor: '#FCE3EE',
+    boxShadow: '0px 10px 24px rgba(200,60,120,0.18)',
   },
   retake: {
-    position: 'absolute', top: 184, width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0px 6px 16px rgba(120,60,72,0.16)',
+    position: 'absolute', right: -12, bottom: -10, width: 38, height: 38, borderRadius: 19, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0px 4px 12px rgba(18,18,18,0.12)',
   },
-  fields: { marginTop: 18, marginHorizontal: 18, borderRadius: 18, borderWidth: 1.5, borderColor: PINK, backgroundColor: '#fff', overflow: 'hidden' },
-  titleIn: { height: 54, paddingHorizontal: 16, fontSize: 17, color: INK, letterSpacing: -0.3 },
-  sep16: { height: 1, marginLeft: 16, backgroundColor: 'rgba(18,18,18,0.08)' },
-  descIn: { height: 118, paddingTop: 14, paddingBottom: 14, paddingHorizontal: 16, fontSize: 16, lineHeight: 21, color: INK, letterSpacing: -0.2 },
-  opts: { marginTop: 12, marginHorizontal: 18, borderRadius: 18, borderWidth: 1.5, borderColor: PINK, backgroundColor: '#fff', overflow: 'hidden' },
-  rowG: { height: 60, paddingLeft: 16, paddingRight: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rowH: { height: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rowR: { height: 56, paddingLeft: 16, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rowT: { flex: 1, fontSize: 16, fontWeight: '500', letterSpacing: -0.3, color: INK },
-  rowV: { maxWidth: 150, fontSize: 15, color: MUTE, letterSpacing: -0.2 },
-  sep49: { height: 1, marginLeft: 49, backgroundColor: 'rgba(18,18,18,0.08)' },
-  gDot: {
-    width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff', overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0px 2px 6px rgba(200,60,120,0.18)',
+  cardBranco: { borderRadius: 16, backgroundColor: '#fff', overflow: 'hidden', boxShadow: '0px 1px 2px rgba(18,18,18,0.04)' },
+  titleIn: { height: 52, paddingHorizontal: 16, fontSize: 17, fontWeight: '600', color: INK, letterSpacing: -0.4 },
+  sep: { height: 1, marginHorizontal: 16, backgroundColor: 'rgba(18,18,18,0.07)' },
+  descIn: { height: 92, paddingTop: 12, paddingBottom: 12, paddingHorizontal: 16, fontSize: 16, lineHeight: 21, color: INK, letterSpacing: -0.2 },
+  cardT: { fontSize: 17, lineHeight: 22, fontWeight: '700', letterSpacing: -0.4, color: INK },
+  chips: { marginTop: 12, flexDirection: 'row', gap: 10 },
+  chip: {
+    height: 42, paddingLeft: 6, paddingRight: 16, borderRadius: 100, borderWidth: 2, backgroundColor: '#FFEAF3',
+    flexDirection: 'row', alignItems: 'center', gap: 8,
   },
+  chipIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFD1E5', alignItems: 'center', justifyContent: 'center' },
+  chipT: { fontSize: 16, letterSpacing: -0.3, color: INK },
+  chipCheck: {
+    position: 'absolute', right: -5, bottom: -5, width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#fff', backgroundColor: PINK,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  linha: { height: 56, paddingLeft: 16, paddingRight: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  linhaT: { flex: 1, fontSize: 16, letterSpacing: -0.3, color: INK },
+  linhaV: { maxWidth: 150, fontSize: 15, color: MUTE },
+  gDot: { width: 26, height: 26, marginLeft: -8, borderRadius: 13, borderWidth: 2, borderColor: '#fff', overflow: 'hidden' },
   picker: { marginHorizontal: 16, marginBottom: 12, height: 132 },
-  pickerSel: { position: 'absolute', left: 0, right: 0, top: 44, height: 44, borderRadius: 12, backgroundColor: '#FFF0F7' },
-  pickRow: { height: 44, alignItems: 'center', justifyContent: 'center' },
-  pickSide: { fontSize: 19, color: '#B5B5B5', letterSpacing: -0.3, fontVariant: ['tabular-nums'] },
-  pickCur: { fontSize: 22, fontWeight: '600', letterSpacing: -0.5, color: INK, fontVariant: ['tabular-nums'] },
-  seg: { width: 180, height: 36, borderRadius: 100, backgroundColor: '#F6EEF2', padding: 3 },
-  segPill: { position: 'absolute', top: 3, left: 3, width: 87, height: 30, borderRadius: 100, backgroundColor: PINK, boxShadow: '0px 4px 10px rgba(255,94,168,0.35)' },
-  segItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  segT: { fontSize: 14, fontWeight: '600' },
-  note: { marginTop: 14, marginHorizontal: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  noteT: { fontSize: 13, color: MUTE, letterSpacing: -0.1 },
+  publicar: { position: 'absolute', left: 16, right: 16, height: 50, borderRadius: 100, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
+  publicarT: { color: '#fff', fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
 });

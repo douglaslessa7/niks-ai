@@ -22,6 +22,7 @@ import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
 import { useMeusGrupos } from '../../lib/gruposServidor';
 import Avatar from '../../components/grupos/Avatar';
+import Carta from '../../components/cartas/Carta';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import SeloProtegida, { EscudoChama } from '../../components/conquistas/SeloProtegida';
 import AvisoSequencia from '../../components/conquistas/AvisoSequencia';
@@ -46,6 +47,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INK = '#121212';
+const VERSO = { k: 'verso' } as const;
 const PINK = '#FF5EA8';
 const MUTE = '#818181';
 
@@ -752,16 +754,9 @@ export default function Home() {
           {/* Mini carta inclinada (8°) à direita */}
           <Animated.View style={[styles.mini, { transform: [{ rotate: '8deg' }, { scale: pop }] }]}>
             <View style={[styles.miniCard, { boxShadow: miniShadow }]}>
+              {/* O verso da carta da rodada 84a; o brilho que passa e o véu (trancada) por cima. */}
               <View style={styles.miniClip}>
-                <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)' }]} />
-                <View style={styles.miniInner} />
-                <Image source={require('../../assets/home/score-logo-pink.png')} style={styles.miniLogo} />
-                <View
-                  style={[StyleSheet.absoluteFill, {
-                    mixBlendMode: 'overlay', opacity: 0.55,
-                    experimental_backgroundImage: 'linear-gradient(115deg, rgba(255,255,255,0) 18%, rgba(255,170,215,0.9) 34%, rgba(205,180,255,0.9) 46%, rgba(255,255,255,1) 56%, rgba(190,175,255,0.85) 70%, rgba(255,255,255,0) 84%)',
-                  }]}
-                />
+                <Carta v={VERSO} w={78} h={106} semSombra />
                 <Animated.View
                   pointerEvents="none"
                   style={[styles.sheen, { transform: [{ translateX: sheenX }, { skewX: '-18deg' }] }]}
@@ -1065,10 +1060,8 @@ const styles = StyleSheet.create({
   cartaTrackLabelWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   cartaTrackLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   mini: { position: 'absolute', right: -10, top: '50%', marginTop: -53, width: 78, height: 106 },
-  miniCard: { ...StyleSheet.absoluteFillObject, borderRadius: 12 },
-  miniClip: { flex: 1, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#fff' },
-  miniInner: { position: 'absolute', top: 4, left: 4, right: 4, bottom: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
-  miniLogo: { position: 'absolute', left: '50%', top: '50%', width: 38, height: 38, marginLeft: -19, marginTop: -19 },
+  miniCard: { ...StyleSheet.absoluteFillObject, borderRadius: 22 * (78 / 220) },
+  miniClip: { flex: 1, borderRadius: 22 * (78 / 220), overflow: 'hidden' },
   sheen: {
     position: 'absolute', top: '-30%', bottom: '-30%', left: 0, width: '46%',
     experimental_backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.9), rgba(255,255,255,0))',

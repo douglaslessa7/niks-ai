@@ -9,7 +9,8 @@
 // Medidas do frame 393×852: o topo da barra é 58 = barra de status (54) + 4 →
 // `insets.top + 4`; o conteúdo começa em 112 → `insets.top + 58`. Fonte SF Pro.
 //
-// Dados: sequência, recorde e calendário são REAIS (lib/routineProgress). Cartas e
+// Dados: sequência e recorde são REAIS (servidor, com o histórico do celular de reserva);
+// o calendário é o de check-ins da aba Grupos (components/grupos/CalendarioCheckins). Cartas e
 // medalhas vêm de lib/conquistas: exemplo do design só em __DEV__, zerado em produção.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,17 +27,19 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import {
-  getRoutineHistory, routineDayStreak, routinesDoneOn, sessionDate, dateKey, type RoutineHistory,
+  getRoutineHistory, routineDayStreak, sessionDate, dateKey, type RoutineHistory,
 } from '../../lib/routineProgress';
 import {
   MEDALHAS_CONQUISTADAS, MEDALHAS_TRANCADAS, TOTAL_MEDALHAS,
   MEDALHAS_NOVAS, PROXIMAS, recordeDias, metaDias, montarColecao, type DeckKey, type Tile,
 } from '../../lib/conquistas';
 import {
-  useEstadoCartas, useColecao, estadoPoder, etiquetaCarta, diaCurto, horaCurta, PODER_INFO, type EstadoPoder,
+  useEstadoCartas, useColecao, estadoPoder, diaCurto, horaCurta,
 } from '../../lib/cartasServidor';
-import SeloProtegida, { SHIELD } from '../../components/conquistas/SeloProtegida';
+import SeloProtegida from '../../components/conquistas/SeloProtegida';
 import DeckBox, { AMBIENT_MS, spr } from '../../components/conquistas/DeckBox';
+import Carta, { visualDe } from '../../components/cartas/Carta';
+import CalendarioCheckins from '../../components/grupos/CalendarioCheckins';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -50,15 +53,12 @@ const LOGO = require('../../assets/home/score-logo-pink.png');
 const FLOWER = require('../../assets/home/niks-logo.png');
 const BG = 'linear-gradient(180deg, #FCE3EE 0%, #FDD5E6 45%, #FCDFEA 72%, #F9F1F4 100%)';
 const HEAD = 'linear-gradient(180deg, #FCE3EE 0%, #FCE3EE 62%, rgba(252,227,238,0) 100%)';
-const CARD_GRAD = 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)';
-const HOLO = 'linear-gradient(115deg, rgba(255,255,255,0) 18%, rgba(255,170,215,0.9) 34%, rgba(205,180,255,0.9) 46%, rgba(255,255,255,1) 56%, rgba(190,175,255,0.85) 70%, rgba(255,255,255,0) 84%)';
 const SHEEN = 'linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.9), rgba(255,255,255,0))';
 
 const FLAME = 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z';
 const SPARKLE = 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
-const CHECK = 'M5 12.5l4.5 4.5L19 7.5';
-const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-const WD = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const VERSO = { k: 'verso' } as const;
+const hojeSessaoKey = () => dateKey(sessionDate(new Date()));
 
 // Detalhe da carta (78c/78d): 262×390, centro no frame em (196,5; 426).
 const CW = 262, CH = 390;
@@ -328,25 +328,6 @@ export default function Conquistas() {
   const frontSt = useAnimatedStyle(() => ({ opacity: Math.cos(Math.PI * flip.get()) >= 0 ? 1 : 0, transform: flipT(false) as any }));
   const backSt = useAnimatedStyle(() => ({ opacity: Math.cos(Math.PI * flip.get()) < 0 ? 1 : 0, transform: flipT(true) as any }));
 
-  // ── Calendário do mês (real) ──────────────────────────────────────────────
-  const cal = useMemo(() => {
-    const today = sessionDate(now);
-    const todayKey = dateKey(today);
-    const y = today.getFullYear(), m = today.getMonth();
-    const first = new Date(y, m, 1);
-    const len = new Date(y, m + 1, 0).getDate();
-    const cells: ({ n: number; today: boolean; v: number; future: boolean } | null)[] = [];
-    for (let b = 0; b < first.getDay(); b++) cells.push(null);
-    for (let d = 1; d <= len; d++) {
-      const date = new Date(y, m, d), k = dateKey(date), future = k > todayKey;
-      cells.push({ n: d, today: k === todayKey, future, v: future ? 0 : routinesDoneOn(hist, date) });
-    }
-    while (cells.length % 7) cells.push(null);
-    const weeks = [];
-    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-    return { title: MONTHS[m], weeks };
-  }, [hist, now]);
-
   const deckObj = col.decks.find((d) => d.k === dk) ?? col.decks[0];
   const tiles = col.tiles[dk];
   // Mural "Suas cartas" (nov/2026, no lugar de "Suas coleções"): TODAS as cartas raspadas,
@@ -402,11 +383,8 @@ export default function Conquistas() {
               <View style={styles.goalCard}>
                 <View style={styles.goalCardShadow}>
                   <View style={styles.goalCardClip}>
-                    <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: CARD_GRAD }]} />
-                    <View style={styles.goalCardInner} />
-                    <Image source={LOGO} style={styles.goalCardLogo} />
-                    <View style={[StyleSheet.absoluteFill, { mixBlendMode: 'overlay', opacity: 0.55, experimental_backgroundImage: HOLO }]} />
-                    <SheenBar w={74} h={102} frac={0.46} p={streakSheen} />
+                    <Carta v={VERSO} w={78} h={106} semSombra />
+                    <SheenBar w={78} h={106} frac={0.46} p={streakSheen} />
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(252,236,243,0.55)' }]} />
                   </View>
                 </View>
@@ -431,10 +409,8 @@ export default function Conquistas() {
                   {[{ l: 4, t: 18, r: -16 }, { l: 26, t: 8, r: -2 }, { l: 48, t: 2, r: 12, front: true }].map((c, i) => (
                     <View key={i} style={[styles.miniCard, { left: c.l, top: c.t, transform: [{ rotate: `${c.r}deg` }], boxShadow: c.front ? '0px 6px 14px rgba(200,60,120,0.22)' : '0px 4px 10px rgba(200,60,120,0.18)' }]}>
                       <View style={styles.miniClip}>
-                        <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: CARD_GRAD }]} />
-                        <Image source={LOGO} style={styles.miniLogo} />
-                        {c.front && <View style={[StyleSheet.absoluteFill, { mixBlendMode: 'overlay', opacity: 0.55, experimental_backgroundImage: HOLO }]} />}
-                        {c.front && <SheenBar w={41} h={59} frac={0.46} p={sheen} />}
+                        <Carta v={VERSO} w={44} h={62} semSombra />
+                        {c.front && <SheenBar w={44} h={62} frac={0.46} p={sheen} />}
                       </View>
                     </View>
                   ))}
@@ -481,32 +457,9 @@ export default function Conquistas() {
             </ScrollView>
           </Enter>
 
-          {/* w3 · calendário do mês */}
+          {/* w3 · calendário de check-ins do mês — o MESMO da aba Grupos (81a) */}
           <Enter i={3} run={run} rm={rm}>
-            <View style={styles.calCard}>
-              <Text style={styles.calTitle}>{cal.title}</Text>
-              <View style={styles.calWd}>
-                {WD.map((d, i) => <Text key={i} style={styles.calWdText}>{d}</Text>)}
-              </View>
-              <View style={{ paddingHorizontal: 8, paddingBottom: 8 }}>
-                {cal.weeks.map((wk, wi) => (
-                  <View key={wi} style={{ flexDirection: 'row' }}>
-                    {wk.map((c, i) => (
-                      <View key={i} style={styles.calCell}>
-                        {c?.today && <Text style={styles.calToday}>HOJE</Text>}
-                        {c && (
-                          <View style={[styles.calDot, c.v === 2 && { backgroundColor: PINK }, c.v === 1 && { borderWidth: 2, borderColor: PINK }]}>
-                            <Text style={{ fontSize: 18, fontWeight: c.today ? '700' : '400', letterSpacing: -0.3, color: c.v === 2 ? '#FFFFFF' : c.v === 1 ? '#C0206A' : c.future ? '#B5AEB1' : INK }}>
-                              {c.n}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                ))}
-              </View>
-            </View>
+            <CalendarioCheckins abertura={run} rm={rm} entrada={false} style={styles.calCard} />
           </Enter>
 
           {/* w4 · Ver todos os check-ins → calendário completo */}
@@ -627,42 +580,27 @@ export default function Conquistas() {
         </TouchableOpacity>
         {dt && (
           <View pointerEvents="box-none" style={{ position: 'absolute', left: (W - CW) / 2, top: cardTop, width: CW, height: CH, zIndex: 1 }}>
-            {/* Frente: o verso de carta com a data */}
+            {/* Frente: o verso da rodada 84a */}
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, frontSt]}>
-              <View style={[styles.dFront, { boxShadow: '0px 18px 40px rgba(200,60,120,0.18)' }]}>
-                <View style={styles.dFrontClip}>
-                  <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: CARD_GRAD }]} />
-                  <View style={styles.dFrontInner} />
-                  <Image source={LOGO} style={styles.dFrontLogo} />
-                  <View style={[StyleSheet.absoluteFill, { mixBlendMode: 'overlay', opacity: 0.55, experimental_backgroundImage: HOLO }]} />
-                  {dFam !== 'colecionavel' && <Text style={styles.dFrontDate}>{diaCurto(dt.item.raspada_em)}</Text>}
-                </View>
-              </View>
+              <Carta v={VERSO} w={CW} h={CH} />
             </Animated.View>
-            {/* Verso raspado */}
+            {/* Verso raspado: a carta da rodada 84; embaixo, quando foi raspada (ou quantas ela tem) */}
             <Animated.View style={[StyleSheet.absoluteFill, backSt]}>
-              <View style={styles.dBack}>
-                {dFam === 'poder' ? (
-                  <VersoPoder t={dt} hoje={hojeSessao} rm={rm} />
-                ) : dFam === 'colecionavel' ? (
-                  <VersoColecionavel t={dt} />
+              <Carta
+                v={visualDe(dt.item, dFam === 'poder' ? estadoPoder(dt.item.poder, dt.item.carta.subtipo ?? '', hojeSessao) : null)}
+                w={CW} h={CH} pontos={dt.item.pontos ? dt.item.pontos : null}
+              />
+              <View pointerEvents="none" style={styles.dInfo}>
+                {dFam === 'colecionavel' && !dt.rara ? (
+                  <View style={styles.cDup}>
+                    <Icon d={COPY} size={16} color={PINK} sw={2} />
+                    <Text style={styles.cDupMain}>{`Você tem ${dt.vezes}`}</Text>
+                    <Text style={styles.cDupLast}>{dt.vezes > 1 ? `· última em ${diaCurto(dt.item.raspada_em)}` : `· raspada em ${diaCurto(dt.item.raspada_em)}`}</Text>
+                  </View>
                 ) : (
-                  <>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-                      <Image source={LOGO} style={{ width: 18, height: 18 }} />
-                      <Text style={styles.dLabel}>{etiquetaCarta(dt.item.carta.familia, dt.item.origem)}</Text>
-                      {dt.rara && <Sparkle size={14} />}
-                    </View>
-                    <Text style={styles.dWhen}>{quando(dt.item.raspada_em)}</Text>
-                    <View style={{ flex: 1, justifyContent: 'center', paddingVertical: 10 }}>
-                      <Text style={styles.dTitle} lineBreakStrategyIOS="standard">{String(dt.item.conteudo?.titulo ?? dt.item.carta.nome)}</Text>
-                      {!!(dt.item.conteudo?.texto ?? dt.item.carta.texto) && (
-                        <Text style={styles.dText} lineBreakStrategyIOS="standard">{String(dt.item.conteudo?.texto ?? dt.item.carta.texto)}</Text>
-                      )}
-                    </View>
-                    <Text style={styles.dFoot}>Toque fora para fechar</Text>
-                  </>
+                  <Text style={styles.dWhenInfo}>{quando(dt.item.raspada_em)}</Text>
                 )}
+                <Text style={[styles.dFoot, { marginTop: 10 }]}>Toque fora para fechar</Text>
               </View>
             </Animated.View>
           </View>
@@ -740,120 +678,30 @@ function GridCard({
     const v = p.get();
     return { transform: [{ translateX: dx * (1 - v) }, { translateY: dy * (1 - v) }, { rotate: `${rot * (1 - v)}deg` }, { scale: 0.92 + 0.08 * v }] };
   });
-  const coll = fam === 'colecionavel';
-  const rare = t.rara;
+  const coll = fam === 'colecionavel' && !t.rara;
   const date = diaCurto(t.item.raspada_em);
-  const shadow = rare ? '0px 10px 24px rgba(255,94,168,0.38), 0px 0px 0px 3px rgba(255,94,168,0.16)' : '0px 4px 12px rgba(200,60,120,0.16)';
+  const visual = useMemo(() => visualDe(t.item, t.item.carta.familia === 'poder' ? estadoPoder(t.item.poder, t.item.carta.subtipo ?? '', hojeSessaoKey()) : null), [t.item]);
   return (
     <Animated.View style={[{ width: w, height: 111, opacity: hidden ? 0 : 1 }, st]}>
       <TouchableOpacity
         ref={ref as any}
         activeOpacity={0.85}
         onPress={() => ref.current?.measureInWindow((x, y, ww, hh) => onOpen({ x, y, w: ww, h: hh }))}
-        style={[styles.gridCard, { boxShadow: shadow }]}
+        style={styles.gridCard}
         accessibilityLabel={coll ? `Carta colecionável${t.vezes > 1 ? `, x${t.vezes}` : ''}` : `${t.item.carta.nome}, ${date}`}
       >
-        <View style={styles.gridClip}>
-          <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: CARD_GRAD }]} />
-          <View style={styles.gridInner} />
-          <Image source={LOGO} style={styles.gridLogo} />
-          <View style={[StyleSheet.absoluteFill, { mixBlendMode: 'overlay', opacity: rare ? 0.75 : 0.5, experimental_backgroundImage: HOLO }]} />
-          {rare && <SheenBar w={w - 4} h={107} frac={0.46} p={sheen} />}
-          {rare && !coll && (
-            <View style={styles.rarePill}>
-              <Sparkle size={9} />
-              <Text style={styles.rarePillText}>Rara</Text>
-            </View>
-          )}
-          {!coll && <Text style={styles.gridDate}>{date}</Text>}
-          {coll && <Text style={styles.gridColl}>Carta colecionável</Text>}
-          {coll && t.vezes > 1 && (
-            <View style={styles.dupBadge}><Text style={styles.dupBadgeText}>{`x${t.vezes}`}</Text></View>
-          )}
-        </View>
+        {/* A carta da rodada 84 em miniatura (parada: o mural tem muitas). O "x2" das repetidas fica. */}
+        <Carta v={visual} w={w} h={111} parado faiscasFora={false} />
+        {coll && t.vezes > 1 && (
+          <View style={styles.dupBadge}><Text style={styles.dupBadgeText}>{`x${t.vezes}`}</Text></View>
+        )}
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-// Verso da carta de poder no detalhe (79a–79d): ícone, nome em 26 pt, efeito numa frase
-// e o estado embaixo — Ativo (chip rosa com o ponto pulsando), Armado (contornado com o
-// escudo) ou Usado (cinza com o check).
-function VersoPoder({ t, hoje, rm }: { t: Tile; hoje: string; rm: boolean }) {
-  const tipo = t.item.carta.subtipo ?? '';
-  const info = PODER_INFO[tipo] ?? { nome: t.item.carta.nome, efeito: t.item.carta.texto ?? '', icone: PODER_INFO.sequencia_dobro.icone };
-  const est = estadoPoder(t.item.poder, tipo, hoje);
-  return (
-    <>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-        <Image source={LOGO} style={{ width: 18, height: 18 }} />
-        <Text style={styles.dLabel}>Carta de poder</Text>
-      </View>
-      <Text style={styles.dWhen}>{quando(t.item.raspada_em)}</Text>
-      <View style={{ flex: 1, justifyContent: 'center', paddingVertical: 10 }}>
-        <View style={styles.pIcon}><Icon d={info.icone} size={24} color={PINK} sw={2} /></View>
-        <Text style={styles.pName} lineBreakStrategyIOS="standard">{info.nome}</Text>
-        <Text style={styles.pEffect} lineBreakStrategyIOS="standard">{info.efeito}</Text>
-      </View>
-      <View style={{ alignItems: 'flex-start', gap: 10 }}>
-        <ChipEstado est={est} rm={rm} />
-        <Text style={[styles.dFoot, { alignSelf: 'center' }]}>Toque fora para fechar</Text>
-      </View>
-    </>
-  );
-}
 
-function ChipEstado({ est, rm }: { est: EstadoPoder; rm: boolean }) {
-  const pulse = useSharedValue(0);
-  useEffect(() => {
-    if (est.st !== 'active' || rm) { pulse.set(0); return; }
-    pulse.set(withRepeat(withTiming(1, { duration: 1400, easing: Easing.bezier(0.42, 0, 0.58, 1) }), -1, true));
-    return () => cancelAnimation(pulse);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [est.st, rm]);
-  const dotSt = useAnimatedStyle(() => ({ opacity: 1 - 0.45 * pulse.get(), transform: [{ scale: 1 - 0.2 * pulse.get() }] }));
-  if (est.st === 'active') {
-    return (
-      <View style={[styles.chipEst, styles.chipAtivo]}>
-        <Animated.View style={[styles.chipDot, dotSt]} />
-        <Text style={[styles.chipEstText, { color: '#FFFFFF' }]}>{est.texto}</Text>
-      </View>
-    );
-  }
-  if (est.st === 'armed') {
-    return (
-      <View style={[styles.chipEst, styles.chipArmado]}>
-        <Svg width={13} height={13} viewBox="0 0 24 24"><Path d={SHIELD} fill={PINK} stroke={PINK} strokeWidth={1.5} strokeLinejoin="round" /></Svg>
-        <Text style={[styles.chipEstText, { color: PINK }]}>{est.texto}</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={[styles.chipEst, styles.chipUsado]}>
-      <Icon d={CHECK} size={13} color={MUTE} sw={2.6} />
-      <Text style={[styles.chipEstText, { color: MUTE }]}>{est.texto}</Text>
-    </View>
-  );
-}
 
-// Verso da colecionável (79f): só a flor e "Carta colecionável"; embaixo, quantas ela tem.
-function VersoColecionavel({ t }: { t: Tile }) {
-  const ultima = diaCurto(t.item.raspada_em);
-  return (
-    <>
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={styles.cCircle}><Image source={LOGO} style={{ width: 68, height: 69 }} /></View>
-        <Text style={styles.cTitle}>Carta colecionável</Text>
-      </View>
-      <View style={styles.cDup}>
-        <Icon d={COPY} size={16} color={PINK} sw={2} />
-        <Text style={styles.cDupMain}>{`Você tem ${t.vezes}`}</Text>
-        <Text style={styles.cDupLast}>{t.vezes > 1 ? `· última em ${ultima}` : `· raspada em ${ultima}`}</Text>
-      </View>
-      <Text style={[styles.dFoot, { marginTop: 10 }]}>Toque fora para fechar</Text>
-    </>
-  );
-}
 
 const styles = StyleSheet.create({
   bgBlob: {
@@ -886,10 +734,8 @@ const styles = StyleSheet.create({
   goalHint: { marginTop: 8, fontSize: 13, lineHeight: 17, color: MUTE, letterSpacing: -0.1 },
   goalWrap: { position: 'absolute', right: -10, top: 0, bottom: 0, width: 78, justifyContent: 'center' },
   goalCard: { width: 78, height: 106, transform: [{ rotate: '8deg' }] },
-  goalCardShadow: { ...StyleSheet.absoluteFillObject, borderRadius: 12, boxShadow: '0px 6px 14px rgba(200,60,120,0.22)' },
-  goalCardClip: { flex: 1, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF' },
-  goalCardInner: { position: 'absolute', top: 4, left: 4, right: 4, bottom: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
-  goalCardLogo: { position: 'absolute', left: '50%', top: '50%', width: 38, height: 38, marginLeft: -19, marginTop: -19 },
+  goalCardShadow: { ...StyleSheet.absoluteFillObject, borderRadius: 22 * (78 / 220), boxShadow: '0px 6px 14px rgba(200,60,120,0.22)' },
+  goalCardClip: { flex: 1, borderRadius: 22 * (78 / 220), overflow: 'hidden' },
   goalLock: {
     position: 'absolute', left: '50%', top: '50%', width: 30, height: 30, marginLeft: -15, marginTop: -15, borderRadius: 15,
     backgroundColor: '#FFFFFF', boxShadow: '0px 4px 10px rgba(200,60,120,0.2)', alignItems: 'center', justifyContent: 'center',
@@ -924,9 +770,8 @@ const styles = StyleSheet.create({
   },
   pillText: { fontSize: 11, fontWeight: '700', color: PINK, letterSpacing: 0.1 },
   miniFan: { position: 'absolute', right: -14, bottom: -10, width: 96, height: 84 },
-  miniCard: { position: 'absolute', width: 44, height: 62, borderRadius: 8 },
-  miniClip: { flex: 1, borderRadius: 8, overflow: 'hidden', borderWidth: 1.5, borderColor: '#FFFFFF' },
-  miniLogo: { position: 'absolute', left: '50%', top: '50%', width: 20, height: 20, marginLeft: -10, marginTop: -10 },
+  miniCard: { position: 'absolute', width: 44, height: 62, borderRadius: 22 * (44 / 220) },
+  miniClip: { flex: 1, borderRadius: 22 * (44 / 220), overflow: 'hidden' },
   medalDecor: { position: 'absolute', right: -12, bottom: -10, width: 84, height: 96 },
   ribbon: { position: 'absolute', top: 0, borderRadius: 3 },
   medalDisc: {
@@ -951,17 +796,8 @@ const styles = StyleSheet.create({
   nextFill: { width: '100%', height: '100%', borderRadius: 100, backgroundColor: PINK, transformOrigin: 'left center' },
   nextLabel: { marginTop: 6, fontSize: 12, color: MUTE, letterSpacing: -0.1, fontVariant: ['tabular-nums'] },
 
-  // w3
-  calCard: {
-    marginTop: 18, marginHorizontal: 18, borderRadius: 18, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E3E3E6',
-    boxShadow: '0px 1px 3px rgba(0,0,0,0.10)', overflow: 'hidden',
-  },
-  calTitle: { paddingTop: 18, lineHeight: 24, textAlign: 'center', fontSize: 18, fontWeight: '700', letterSpacing: -0.4, color: INK },
-  calWd: { marginTop: 12, height: 22, flexDirection: 'row', paddingHorizontal: 8 },
-  calWdText: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '500', color: '#6E6468' },
-  calCell: { flex: 1, height: 68, alignItems: 'center', justifyContent: 'center' },
-  calToday: { position: 'absolute', top: 2, left: 0, right: 0, textAlign: 'center', fontSize: 11, fontWeight: '700', letterSpacing: 0.3, color: INK },
-  calDot: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  // w3 · só o encaixe na coluna do hub (18 das bordas); o card é o CalendarioCheckins.
+  calCard: { marginTop: 18, marginHorizontal: 18 },
 
   // w4
   allBtn: {
@@ -980,16 +816,6 @@ const styles = StyleSheet.create({
   medLabel: { marginTop: 4, fontSize: 11, color: MUTE, letterSpacing: -0.1, fontVariant: ['tabular-nums'] },
 
   gridCard: { flex: 1, borderRadius: 12 },
-  gridClip: { flex: 1, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF' },
-  gridInner: { position: 'absolute', top: 4, left: 4, right: 4, bottom: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
-  gridLogo: { position: 'absolute', left: '50%', top: '50%', width: 38, height: 38, marginLeft: -19, marginTop: -19 },
-  gridDate: { position: 'absolute', left: 6, top: 5, fontSize: 9, fontWeight: '700', color: PINK, letterSpacing: 0.1 },
-  rarePill: {
-    position: 'absolute', bottom: 8, alignSelf: 'center', height: 18, paddingHorizontal: 7, borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.92)', flexDirection: 'row', alignItems: 'center', gap: 3,
-  },
-  rarePillText: { fontSize: 10, fontWeight: '700', color: PINK, letterSpacing: 0.1 },
-  gridColl: { position: 'absolute', left: 6, right: 6, bottom: 9, textAlign: 'center', fontSize: 9, lineHeight: 11, fontWeight: '700', color: PINK, letterSpacing: 0.1 },
   dupBadge: {
     position: 'absolute', right: 5, top: 5, height: 17, minWidth: 22, paddingHorizontal: 5, borderRadius: 100, backgroundColor: PINK,
     borderWidth: 1.5, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', boxShadow: '0px 2px 6px rgba(200,60,120,0.25)',
@@ -997,48 +823,19 @@ const styles = StyleSheet.create({
   dupBadgeText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0 },
 
   // Verso de poder (79a–79d)
-  pIcon: {
-    width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFF0F7', borderWidth: 1.5, borderColor: 'rgba(255,94,168,0.35)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  pName: { marginTop: 14, fontSize: 26, lineHeight: 30, fontWeight: '700', letterSpacing: -0.7, color: INK },
-  pEffect: { marginTop: 8, fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: INK },
-  chipEst: { height: 28, paddingRight: 12, borderRadius: 100, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  chipAtivo: { paddingLeft: 10, backgroundColor: PINK, boxShadow: '0px 6px 12px rgba(255,94,168,0.35)' },
-  chipArmado: { paddingLeft: 9, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: PINK },
-  chipUsado: { paddingLeft: 9, backgroundColor: '#F0F0F0' },
-  chipDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#FFFFFF' },
-  chipEstText: { fontSize: 12, fontWeight: '600', letterSpacing: -0.1 },
 
   // Verso da colecionável (79f)
-  cCircle: {
-    width: 112, height: 112, borderRadius: 56, backgroundColor: '#FFF0F7', borderWidth: 1.5, borderColor: 'rgba(255,94,168,0.35)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cTitle: { marginTop: 16, fontSize: 17, lineHeight: 22, fontWeight: '600', letterSpacing: -0.3, color: INK },
   cDup: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#FFF0F7' },
   cDupMain: { fontSize: 13, fontWeight: '600', letterSpacing: -0.2, color: INK },
   cDupLast: { fontSize: 13, color: MUTE, letterSpacing: -0.1 },
 
   // Detalhe
-  dFront: { flex: 1, borderRadius: 22 },
-  dFrontClip: { flex: 1, borderRadius: 22, overflow: 'hidden', borderWidth: 2, borderColor: '#FFFFFF' },
-  dFrontInner: { position: 'absolute', top: 9, left: 9, right: 9, bottom: 9, borderRadius: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
-  dFrontLogo: { position: 'absolute', left: '50%', top: '50%', width: 84, height: 85, marginLeft: -42, marginTop: -42 },
-  dFrontDate: { position: 'absolute', left: 14, top: 12, fontSize: 13, fontWeight: '700', color: PINK, letterSpacing: 0.1 },
-  dBack: {
-    flex: 1, borderRadius: 22, borderWidth: 1.5, borderColor: PINK, padding: 18,
-    experimental_backgroundImage: 'linear-gradient(160deg, #FFFFFF 0%, #FFF7FB 58%, #FCEEF6 100%)',
-    boxShadow: '0px 18px 40px rgba(200,60,120,0.18), 0px 2px 6px rgba(200,60,120,0.10)',
-  },
-  dLabel: { fontSize: 13, fontWeight: '600', color: PINK, letterSpacing: -0.1 },
-  dWhen: { marginTop: 4, fontSize: 12, color: MUTE, letterSpacing: -0.1 },
-  dTitle: { fontSize: 22, lineHeight: 26, fontWeight: '700', letterSpacing: -0.6, color: INK },
   dLevel: { marginTop: 8, alignSelf: 'flex-start', height: 24, paddingHorizontal: 10, borderRadius: 100, backgroundColor: PINK, justifyContent: 'center' },
   dLevelText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600', letterSpacing: -0.1 },
   dCheck: { width: 26, height: 26, borderRadius: 13, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
   dRecT: { fontSize: 13, lineHeight: 16, fontWeight: '600', letterSpacing: -0.2, color: INK },
   dRecD: { marginTop: 1, fontSize: 12, lineHeight: 15, color: MUTE, letterSpacing: -0.1 },
-  dText: { marginTop: 10, fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: INK },
   dFoot: { fontSize: 12, color: MUTE, textAlign: 'center', letterSpacing: -0.1 },
+  dInfo: { position: 'absolute', left: -20, right: -20, top: CH + 22, alignItems: 'center' },
+  dWhenInfo: { fontSize: 14, fontWeight: '600', color: PINK, letterSpacing: -0.1 },
 });
