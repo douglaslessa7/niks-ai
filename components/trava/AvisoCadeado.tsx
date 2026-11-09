@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { usePlacement } from 'expo-superwall';
 import { haptics } from '../../lib/haptics';
 import { definirAbridorPaywall, fecharTrava, pularProximoPaywallDaMedalha, useTrava } from '../../lib/trava';
-import { definirAcesso } from '../../lib/acesso';
+import { definirAcesso, useAcesso } from '../../lib/acesso';
 import { confirmPremium } from '../../lib/subscriptionGate';
 import { useAppStore } from '../../store/onboarding';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
@@ -37,16 +37,19 @@ export default function AvisoCadeado() {
     onError: () => { setCobrindo(false); irParaCaminhada(); },
     onDismiss: async (_info, result) => {
       setCobrindo(false);
-      irParaCaminhada();
       if (result?.type !== 'purchased' && result?.type !== 'restored') {
+        irParaCaminhada();
         trackFora('convidada_paywall_fechado', { origem: origem.current });
         return;
       }
+      useTrava.setState({ caminhadaDepois: false });
       if (await confirmPremium({ source: 'sync', attempts: 3, label: `convidada:${result.type}` })) {
         const uid = await getUserId();
         definirAcesso('assinante', uid ?? undefined);
         setSubscriptionVerified(true);
         trackFora('convidada_assinou', { origem: origem.current });
+        useAcesso.setState({ boasVindasEx: true });
+        router.replace('/(onboarding)/bv-entrou' as any);
       }
     },
   });

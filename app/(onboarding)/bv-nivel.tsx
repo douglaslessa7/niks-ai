@@ -1,3 +1,5 @@
+import { useAcesso } from '../../lib/acesso';
+import { useFaceScan } from '../../hooks/useFaceScan';
 import { useEffect } from 'react';
 import { View, Text, AccessibilityInfo } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -33,6 +35,7 @@ const TRILHA = [
 ];
 
 export default function BvNivel() {
+  const { startFaceScan } = useFaceScan();
   const router = useRouter();
   const { track } = useMixpanel();
   const name = useObName();
@@ -107,6 +110,13 @@ export default function BvNivel() {
 
       <BvBotao label="Entrar no app" onPress={() => {
         track('boas_vindas_concluidas');
+        if (useAcesso.getState().boasVindasEx) {
+          // Ex-convidada: já tem conta. Vai direto ao scan novo; a rotina sai dele.
+          useAcesso.setState({ boasVindasEx: false });
+          router.replace('/(app)/home' as any);
+          setTimeout(startFaceScan, 400);
+          return;
+        }
         router.replace('/(onboarding)/signup');
       }} />
     </BvScreen>

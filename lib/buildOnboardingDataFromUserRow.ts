@@ -15,12 +15,13 @@ export function buildOnboardingDataFromUserRow(urow: any, scanResult: ScanResult
     hydration: urow?.hydration ?? null,
     sleep: urow?.sleep ?? null,
     commitment: null,      // não é persistido em `users`
-    goal_desire: null,     // não é persistido em `users`
+    goal_desire: urow?.goal_desire ?? null,   // salvo desde a Parte B, Fase 4
     skincare_routine_type: urow?.skincare_routine_type ?? null,
     skincare_routine_description: urow?.skincare_routine_description ?? null,
     allergy_type: urow?.allergy_type ?? null,
     allergy_description: urow?.allergy_description ?? null,
-    // Personalização (04/nov/2026). `makeup` não é persistido em `users`.
+    // Personalização (04/nov/2026). `makeup` salvo desde a Parte B, Fase 4.
+    makeup: urow?.makeup ?? null,
     sunscreen: urow?.sunscreen ?? null,
     frequency: urow?.frequency ?? null,
   };

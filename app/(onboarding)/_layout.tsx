@@ -1,3 +1,4 @@
+import { useAcesso } from '../../lib/acesso';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
@@ -32,7 +33,8 @@ export default function OnboardingLayout() {
       // reabrir o app, `app/index.tsx`). Ela mesma abre a home no fim.
       const naEspera = segments[segments.length - 1] === 'loading-rotina';
 
-      if (session && !onNameStep && !naEspera) {
+      // Ex-convidada que acabou de assinar: as boas-vindas ficam no onboarding.
+      if (session && !onNameStep && !naEspera && !useAcesso.getState().boasVindasEx) {
         if (await confirmPremium({ label: 'onboarding:layout' })) {
           router.replace('/(app)/home');
           return;
