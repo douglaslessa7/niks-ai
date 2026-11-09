@@ -1926,6 +1926,15 @@ As últimas 40 decisões ficam salvas no aparelho.
 
 **Dados (19/out/2026, só leitura):** a tabela `subscriptions` **não é prova de pagamento** — a compra acontece antes da conta, com o RevenueCat anônimo, e o webhook descarta eventos anônimos; 139 contas dos últimos 30 dias usaram o app (passaram pelo guard) sem linha nela. Das 374 contas sem linha e sem uso, 363 vieram do **"Entrar" com Apple/Google** (cria conta de quem nunca teve uma e a manda ao paywall, pulando o onboarding — não é brecha, mas é volume) e 11 do cadastro (a conferir no RevenueCat). Botão "Restaurar compra" do Superwall em 7 dias: 2 sucessos, 68 falhas ("Transactions Failed to Restore") — com o restore automático fora, ele é o único caminho de quem já assina: validar no iPhone.
 
+#### Travas de IA no servidor (Parte B, Fase 8, nov/2026 — migration `20261128120000_travas_ia.sql`)
+> ⚠️ **Estado em 09/nov/2026:** migration aplicada e as 14 funções publicadas com a trava em `AVISAR`. Ao publicar de novo, partir da versão no ar, cada função baixada em pasta própria: o download sobrescreve `_shared`. A `analisar-produto` no ar está atrás do repositório em `prompt.ts` e `context.ts` (Minha rotina e `passo_id`), diferença anterior à Fase 8.
+- **Etapa 1 (medir):** `travaAssinatura` em chat, SOS, análise e recorte de produto, rotina, recomendação e extração de imagem. Com `ASSINATURA_TRAVA` ausente, só registra em `assinatura_divergencias`. Falha na verificação deixa passar.
+- **Etapa 2 (app):** `analyze-skin-app`, `analyze-food` e `generate-protocol` recebem a sessão (`autorizacaoIA`). Resposta 403 mostra o aviso de assinatura. Links externos para `(scan)`, `(share)` e `(foto)` não abrem. Limite de 20 por hora e por IP em `analyze-skin`, `analise-rapida`, `generate-skin-preview` e `generate-protocol` sem sessão. O comprovante da Apple vai logo depois do cadastro.
+- **Versão mínima:** `grupos_config.versao_minima` abre `app/atualize.tsx`. Só funciona a partir da versão que tem este código.
+- **Etapa 3 (bloquear):** `ASSINATURA_TRAVA=BLOQUEAR`, só com aprovação, depois da versão nova adotada e de 7 dias sem divergência.
+- **Pendência obrigatória antes da Etapa 3:** testar cada função com uma conta assinante reconhecida pelo servidor.
+- **`generate-skin-preview` continua ativa:** tem uso real (95 chamadas em 24 h em 09/nov/2026) e o app ainda a chama. Recebeu o limite de 20 por hora por IP.
+
 #### Saída, vencimento e assinatura da convidada (Parte B, Fase 7, nov/2026)
 > ⚠️ **Sem teste no iPhone: pendência obrigatória antes da Fase 9**, com Sandbox Tester novo (vencimento, sair do último grupo, compra pela convidada, boas-vindas sem cadastro, scan novo e quem assina tendo código). Só app; depende da flag `convidada_ligada`.
 - `reconferirAcesso` (`lib/acesso.ts`): ao voltar ao app, no máximo 1 vez por minuto. Sem resposta do servidor, nada muda. Assinatura vencida com grupo vira convidada, sem aviso; sem grupo, vai para `sem-grupo`.
