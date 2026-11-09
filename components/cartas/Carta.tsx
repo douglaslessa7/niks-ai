@@ -1,7 +1,8 @@
-import { memo, useEffect, type ReactNode } from 'react';
+import { memo, useEffect, useState, type ReactNode } from 'react';
+import { useTelaFocada } from '../../hooks/useTelaFocada';
 import { View, Text, Image, StyleSheet, TouchableOpacity, type ViewStyle } from 'react-native';
 import Animated, {
-  Easing, cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming,
+  Easing, Keyframe, cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
@@ -38,6 +39,14 @@ const HOLO = 'linear-gradient(115deg, rgba(255,255,255,0) 10%, rgba(255,214,170,
 const SOMBRA_BASE = '0px 16px 34px rgba(255,94,168,0.20), 0px 2px 6px rgba(255,94,168,0.10)';
 const SOMBRA_PODER = '0px 16px 34px rgba(255,94,168,0.18), 0px 2px 6px rgba(255,94,168,0.10)';
 const SOMBRA_RARA = '0px 0px 0px 1px rgba(245,180,74,0.45), 0px 0px 34px rgba(255,170,130,0.45), 0px 16px 36px rgba(240,140,100,0.28)';
+// Carta de ALERTA do onboarding (Carta 2, 06/nov/2026, pedido do produto: "mais vermelha").
+// O vermelho é o do próprio app — o do Niks score na faixa 0–25 (`lib/scoreTheme.ts`: #FD3A42,
+// claro #FBD4D4) —, não um vermelho novo. Fundo blush avermelhado (no lugar do pêssego/lilás
+// da rara), número e pílula no vermelho, sem holográfico nem faíscas (alerta não é prêmio).
+export const VERMELHO_ALERTA = '#FD3A42';
+const VERMELHO_ESCURO = '#C81E36';
+const BG_ALERTA = 'linear-gradient(165deg, #FFF3F2 0%, #FFDADB 50%, #FFE7EA 100%)';
+const SOMBRA_ALERTA = '0px 0px 0px 1px rgba(253,58,66,0.30), 0px 0px 30px rgba(253,58,66,0.30), 0px 16px 36px rgba(140,16,36,0.32)';
 
 const IC = {
   flame: 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z',
@@ -56,32 +65,56 @@ const PODERES: Record<string, Poder> = {
   protecao_sequencia: { icone: IC.shield, cor: '#8E6CEB', brilho: 'rgba(142,108,235,0.30)', bg: 'linear-gradient(165deg, #F3E9FF 0%, #E6DAFF 50%, #FCE0EF 100%)', titulo: 'Proteção de sequência', texto: 'Se você falhar 1 dia, sua sequência não zera', selo: true },
   carta_extra: { icone: IC.extra, cor: '#FF5EA8', brilho: 'rgba(255,94,168,0.30)', bg: 'linear-gradient(165deg, #FFE6F1 0%, #FFD1E5 50%, #F3DDF8 100%)', titulo: 'Carta extra', texto: 'Amanhã você ganha uma carta a mais' },
   scan_antecipado: { icone: IC.scan, cor: '#F2577A', brilho: 'rgba(242,87,122,0.28)', bg: 'linear-gradient(165deg, #FFE8EA 0%, #FFD8DE 50%, #F6DEF3 100%)', titulo: 'Scan antecipado', texto: 'Seu próximo scan de rosto já está liberado' },
-  pontos_dobro: { icone: IC.coins, cor: '#E39A12', brilho: 'rgba(233,162,30,0.30)', bg: 'linear-gradient(165deg, #FFF3DA 0%, #FFE5C4 45%, #FFDCEB 100%)', titulo: 'Pontos em dobro', texto: 'Por 2 dias, suas cartas valem o dobro de NIKS Points' },
+  pontos_dobro: { icone: IC.coins, cor: '#E39A12', brilho: 'rgba(233,162,30,0.30)', bg: 'linear-gradient(165deg, #FFF3DA 0%, #FFE5C4 45%, #FFDCEB 100%)', titulo: 'Pontos em dobro', texto: 'Por 2 dias, todos os seus pontos valem o dobro' },
 };
 const MISTERIOSA: Poder = { ...PODERES.sequencia_dobro, icone: IC.help, brilho: 'rgba(169,121,240,0.32)', bg: 'linear-gradient(165deg, #FFE6F1 0%, #F1DAFA 50%, #E3D6FF 100%)' };
 
 export type PassoPrevia = { nome: string; sub: string; foto?: string | null };
 export type VisualCarta =
   | { k: 'verso' }
-  | { k: 'colecionavel' }
+  /** Comum (regras novas, 05/nov/2026): a flor e os NIKS Points em destaque (`pontos`; contando com `contar`). */
+  | { k: 'colecionavel'; pontos?: number | null; contar?: boolean }
   /** `faiscas`: o desenho das faíscas (0 = campeã, 1 = dias seguidos — o design muda as posições). */
   | { k: 'rara'; titulo: string; faiscas?: 0 | 1 }
   | { k: 'poder'; subtipo: string; misteriosa: boolean; estado: EstadoPoder | null }
   | { k: 'conhecimento'; titulo: string; texto: string | null }
   | { k: 'convidada'; tipo: 'produto'; foto?: any }
   | { k: 'convidada'; tipo: 'idade'; foto?: any }
-  | { k: 'convidada'; tipo: 'rotina'; passos: PassoPrevia[] };
+  | { k: 'convidada'; tipo: 'rotina'; passos: PassoPrevia[] }
+  /** A carta do onboarding (03/nov/2026): a idade da pele do scan, na identidade da rara.
+   *  `numero` null = ainda não revelada (nada do número aparece). `contar`: ao aparecer, o
+   *  número sobe de 0 até `numero` (`Contador`); sem ele, aparece pronto. */
+  | { k: 'idade'; numero: number | null; chip: string; contar?: boolean }
+  /** A carta de alerta do onboarding (06/nov/2026, a única no onboarding por enquanto): "Você
+   *  tem N% mais [problema] do que a usuária padrão" — `problema` é um dos que ela marcou em "O
+   *  que mais te incomoda" (`lib/cartaOnboarding.ts`). Número fixo por decisão do produto (sem
+   *  dado do scan). `numero` null = não revelada. `semNumero` (versão pronta e DESLIGADA):
+   *  "Encontramos sinais de [problema]" + a região na pílula. Era a carta "N% mais acne". */
+  | { k: 'alerta'; numero: number | null; contar?: boolean; problema: string; semNumero?: boolean; regiaoTexto?: string | null }
+  /** A Carta 1 do onboarding, a notícia boa (06/nov/2026): "Você tem menos [problema] do que
+   *  N% das usuárias" — um problema que ela NÃO marcou e que a foto quase não mostrou
+   *  (`lib/cartaOnboarding.ts` › `pontoForteDoOnboarding`). N fixo e PROVISÓRIO. `numero` null =
+   *  não revelada (a pílula com o número fica invisível, sem mudar o desenho). */
+  | { k: 'pontoForte'; numero: number | null; problema: string }
+  /** Demonstração do scan de produto no onboarding (04/nov/2026, `(scan)/demo-scan`): resultado
+   *  FIXO e igual para todas — foto do produto (vazia por enquanto), N% de compatibilidade e,
+   *  com `resultado`, a pílula "Não recomendado" (sem o selo "Exemplo", tirado a pedido do
+   *  produto). `numero` null = ainda não contou. Sem marca nem nome de produto real. */
+  | { k: 'produtoExemplo'; numero: number | null; contar?: boolean; resultado?: boolean; foto?: any; nome?: string };
 
 /** O visual de uma carta do servidor (família, subtipo, rara, origem e o estado do poder). */
 export function visualDe(c: Pick<CartaGanha, 'origem' | 'conteudo'> & { carta: CartaGanha['carta'] }, estado?: EstadoPoder | null): VisualCarta {
   const cat = c.carta;
   if (cat?.familia === 'poder') {
-    return { k: 'poder', subtipo: cat.subtipo ?? 'sequencia_dobro', misteriosa: c.origem === 'volta' && cat.subtipo === 'sequencia_dobro', estado: estado ?? null };
+    // Regras novas: a "Carta misteriosa" deixou de existir como tipo na tela (a Carta de volta é um Pontos em dobro).
+    return { k: 'poder', subtipo: cat.subtipo ?? 'pontos_dobro', misteriosa: false, estado: estado ?? null };
   }
   if (cat?.familia === 'conhecimento') {
     return { k: 'conhecimento', titulo: String((c.conteudo as any)?.titulo ?? cat.nome), texto: ((c.conteudo as any)?.texto ?? cat.texto ?? null) as string | null };
   }
   if (c.origem === 'campea') return { k: 'rara', titulo: 'Campeã da semana' };
+  // A rara das missões do tutorial (06/nov/2026, `lib/missoes.ts`).
+  if (c.origem === 'missoes') return { k: 'rara', titulo: 'Missões concluídas' };
   if (c.origem === 'marco') {
     const n = Number((c.conteudo as any)?.marco);
     return { k: 'rara', titulo: Number.isFinite(n) && n > 0 ? `${n} dias seguidos` : 'Carta rara', faiscas: 1 };
@@ -92,15 +125,16 @@ export function visualDe(c: Pick<CartaGanha, 'origem' | 'conteudo'> & { carta: C
 
 function Faisca({ size, color, style, i, parado }: { size: number; color: string; style: ViewStyle; i: number; parado: boolean }) {
   const p = useSharedValue(parado ? 1 : 0);
+  const focada = useTelaFocada();
   useEffect(() => {
-    if (parado) { cancelAnimation(p); p.set(1); return; }
+    if (parado || !focada) { cancelAnimation(p); p.set(1); return; }
     p.set(0);
     p.set(withDelay(i * 260, withRepeat(withSequence(
       withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
       withTiming(0, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
     ), -1, false)));
     return () => cancelAnimation(p);
-  }, [parado, i, p]);
+  }, [parado, i, p, focada]);
   const st = useAnimatedStyle(() => ({ opacity: 0.25 + 0.75 * p.get(), transform: [{ scale: 0.7 + 0.3 * p.get() }] }));
   return (
     <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: size, height: size }, style, st]}>
@@ -112,11 +146,12 @@ function Faisca({ size, color, style, i, parado }: { size: number; color: string
 // Holográfico da rara: camada de 260% que corre de 0% a 100% (background-position) e volta, 3,6 s.
 function Holo({ w, h, parado }: { w: number; h: number; parado: boolean }) {
   const p = useSharedValue(0);
+  const focada = useTelaFocada();
   useEffect(() => {
-    if (parado) { cancelAnimation(p); p.set(0); return; }
+    if (parado || !focada) { cancelAnimation(p); p.set(0); return; }
     p.set(withRepeat(withTiming(1, { duration: 3600, easing: Easing.inOut(Easing.ease) }), -1, true));
     return () => cancelAnimation(p);
-  }, [parado, p]);
+  }, [parado, p, focada]);
   const st = useAnimatedStyle(() => ({ transform: [{ translateX: -1.6 * w * p.get() }, { translateY: -0.8 * h }] }));
   return (
     <Animated.View
@@ -125,6 +160,38 @@ function Holo({ w, h, parado }: { w: number; h: number; parado: boolean }) {
     />
   );
 }
+
+// O número que conta de 0 até o valor (idade da pele / % da acne do onboarding). Fica num
+// componente só dele: cada passo redesenha SÓ este texto — antes cada número novo
+// redesenhava a tela inteira da carta no meio do flash e das partículas, e travava.
+// Desacelera em ease-out quártico: os primeiros números passam rápido e os últimos assentam.
+export const CONTA_MS = 1300;
+// Exportado também para o resultado da demonstração do scan de produto (`(scan)/demo-scan`).
+export function Contador({ alvo, contar, style, duracao = CONTA_MS }: { alvo: number; contar: boolean; style: any; duracao?: number }) {
+  const [n, setN] = useState(contar ? 0 : alvo);
+  useEffect(() => {
+    if (!contar) { setN(alvo); return; }
+    let raf = 0;
+    let shown = -1;
+    const t0 = performance.now();
+    const f = (now: number) => {
+      const t = Math.min(1, (now - t0) / duracao);
+      const v = Math.round(alvo * (1 - Math.pow(1 - t, 4)));
+      if (v !== shown) { shown = v; setN(v); }
+      if (t < 1) raf = requestAnimationFrame(f);
+    };
+    raf = requestAnimationFrame(f);
+    return () => cancelAnimationFrame(raf);
+  }, [alvo, contar, duracao]);
+  return <Text style={style}>{String(n)}</Text>;
+}
+
+// Pílula "Não recomendado" da carta de exemplo: esmaece e cresce de 92% (nunca de 0), 240 ms,
+// ease-out forte. Com "Reduzir movimento" o Reanimated a mostra pronta.
+const RESULTADO_ENTRA = new Keyframe({
+  0: { opacity: 0, transform: [{ scale: 0.92 }] },
+  100: { opacity: 1, transform: [{ scale: 1 }], easing: Easing.bezier(0.23, 1, 0.32, 1) },
+}).duration(240);
 
 function Pilula({ s, children, style }: { s: number; children: ReactNode; style?: ViewStyle }) {
   return (
@@ -155,7 +222,8 @@ type Props = {
 
 /** Sombra da carta (para quem recorta a carta e desenha a sombra por fora). */
 export function sombraCarta(v: VisualCarta): string {
-  return v.k === 'rara' ? SOMBRA_RARA : v.k === 'poder' ? SOMBRA_PODER : SOMBRA_BASE;
+  if (v.k === 'alerta') return SOMBRA_ALERTA;
+  return v.k === 'rara' || v.k === 'idade' || v.k === 'pontoForte' ? SOMBRA_RARA : v.k === 'poder' ? SOMBRA_PODER : SOMBRA_BASE;
 }
 
 function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true, parado: paradoProp, onBotao, apenasFaiscas }: Props) {
@@ -167,16 +235,19 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
   const s = sx;
   const X = (n: number) => n * sx;
   const Y = (n: number) => n * sy;
-  const rara = v.k === 'rara';
+  // As do onboarding (idade e acne) usam a identidade da rara: fundo, sombra, fio e faíscas de fora.
+  // A de alerta tem a própria identidade (vermelha): fora da família da rara.
+  const rara = v.k === 'rara' || v.k === 'idade' || v.k === 'pontoForte';
+  const alerta = v.k === 'alerta';
   const poder = v.k === 'poder' ? (v.misteriosa ? MISTERIOSA : PODERES[v.subtipo] ?? PODERES.sequencia_dobro) : null;
-  const bg = rara ? BG_RARA : poder ? poder.bg : BG_BASE;
-  const sombra = semSombra ? undefined : rara ? SOMBRA_RARA : poder ? SOMBRA_PODER : SOMBRA_BASE;
+  const bg = alerta ? BG_ALERTA : rara ? BG_RARA : poder ? poder.bg : BG_BASE;
+  const sombra = semSombra ? undefined : alerta ? SOMBRA_ALERTA : rara ? SOMBRA_RARA : poder ? SOMBRA_PODER : SOMBRA_BASE;
   const borda = Math.max(1.5, 3 * s);
   // Como no CSS do design, as camadas se posicionam DENTRO da borda (padding box).
   const wi = w - 2 * borda;
   const hi = h - 2 * borda;
   const inset = 9 * s;
-  const fio = rara ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.85)';
+  const fio = rara || alerta ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.85)';
   const usado = v.k === 'poder' && v.estado?.st === 'used';
 
   const pilulaPontos = (cor: string) => (selo ?? (pontos != null ? (
@@ -200,13 +271,22 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
       </>
     );
   } else if (v.k === 'colecionavel') {
+    // Comum (regras novas): a flor em cima e os NIKS Points em destaque embaixo (o número
+    // grande conta de 0 até o valor na revelação). Sem pontos ainda: só a flor.
+    const pts = v.pontos ?? pontos ?? null;
     corpo = (
       <>
-        <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'radial-gradient(55% 38% at 50% 40%, rgba(255,255,255,0.9), rgba(255,255,255,0))' }]} />
-        {logo(hi * 0.4, 84, 85, 'rgba(255,94,168,0.35)')}
-        {/* Com pontos, a pílula fica embaixo (20) e o título sobe para cima dela. */}
-        <Text style={[styles.centro, { bottom: Y(temRodape ? 62 : 30), fontSize: 17 * s, lineHeight: 22 * s, fontWeight: '700', letterSpacing: -0.3 * s }]}>Carta colecionável</Text>
-        {temRodape && <View style={[styles.rodape, { bottom: Y(20) }]}>{pilulaPontos('rgba(255,94,168,0.22)')}</View>}
+        <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'radial-gradient(55% 38% at 50% 36%, rgba(255,255,255,0.9), rgba(255,255,255,0))' }]} />
+        {logo(hi * (pts != null ? 0.34 : 0.42), 84, 85, 'rgba(255,94,168,0.35)')}
+        {pts != null && (
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: Y(30), alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+              <Text style={{ fontSize: 30 * s, lineHeight: 52 * s, fontWeight: '800', color: PINK, letterSpacing: -1 * s }}>+</Text>
+              <Contador alvo={pts} contar={Boolean(v.contar) && !parado} duracao={900} style={{ fontSize: 48 * s, lineHeight: 52 * s, fontWeight: '800', color: INK, letterSpacing: -1.6 * s, fontVariant: ['tabular-nums'] }} />
+            </View>
+            <Text style={{ marginTop: 2 * s, fontSize: 14 * s, lineHeight: 18 * s, fontWeight: '600', color: INK, letterSpacing: -0.2 * s }}>NIKS Points</Text>
+          </View>
+        )}
       </>
     );
   } else if (v.k === 'conhecimento') {
@@ -218,6 +298,130 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
           {!!v.texto && <Text style={{ marginTop: 8 * s, textAlign: 'center', fontSize: 13 * s, lineHeight: 18 * s, color: '#3d3d3d' }}>{v.texto}</Text>}
         </View>
         {temRodape && <View style={[styles.rodape, { bottom: Y(20) }]}>{pilulaPontos('rgba(255,94,168,0.22)')}</View>}
+      </>
+    );
+  } else if (v.k === 'idade') {
+    // "Idade da sua pele", o número grande em rosa, "anos" e a frase que compara com a
+    // idade dela — um bloco só, centrado na carta (sem o selo "Carta rara", pedido do
+    // produto; a frase em 1 ou 2 linhas não desalinha nada). Holográfico e faíscas da rara.
+    corpo = (
+      <>
+        <Holo w={wi} h={hi} parado={parado} />
+        <Faisca i={4} parado={parado} size={10 * s} color="#FFFFFF" style={{ left: X(24), top: Y(40) }} />
+        <Faisca i={5} parado={parado} size={13 * s} color="#FFFFFF" style={{ right: X(24), top: Y(150) }} />
+        <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.42 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,250,240,0.95), rgba(255,200,150,0.35) 60%, rgba(255,200,150,0))' }} />
+        <View style={{ position: 'absolute', left: X(16), right: X(16), top: Y(18), bottom: Y(18), alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.2 * s, color: INK, textAlign: 'center' }}>Idade da sua pele</Text>
+          {v.numero != null
+            ? <Contador alvo={v.numero} contar={!!v.contar} style={{ marginTop: 4 * s, fontSize: 96 * s, lineHeight: 102 * s, fontWeight: '800', letterSpacing: -3 * s, color: PINK, fontVariant: ['tabular-nums'], textAlign: 'center' }} />
+            : <Text style={{ marginTop: 4 * s, fontSize: 96 * s, lineHeight: 102 * s }}> </Text>}
+          <Text style={{ fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '500', letterSpacing: -0.2 * s, color: INK, textAlign: 'center' }}>anos</Text>
+          {/* A frase de baixo em tamanho de leitura (16): cabe em 1 linha ou quebra em 2. */}
+          <View style={{ marginTop: 22 * s, minHeight: 34 * s, paddingVertical: 6 * s, paddingHorizontal: 14 * s, borderRadius: 17 * s, backgroundColor: PINK, justifyContent: 'center', boxShadow: `0px ${4 * s}px ${10 * s}px rgba(240,140,100,0.25)` }}>
+            <Text style={{ color: '#fff', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.2 * s, textAlign: 'center' }}>{v.chip}</Text>
+          </View>
+        </View>
+      </>
+    );
+  } else if (v.k === 'alerta') {
+    // "Você tem" · "40%" (o % menor, na mesma linha de base) · "mais [problema]" · pílula rosa
+    // "do que a usuária padrão" (06/nov/2026; era "Detectamos que você tem · 40% · mais acne ·
+    // que uma mulher comum da sua idade"). Mesmo fundo, holo e faíscas da carta da idade.
+    // `semNumero` (desligada): "Encontramos sinais de" · [problema] grande · pílula com a região.
+    const fraseBaixo = v.semNumero ? v.regiaoTexto ?? null : 'do que a usuária padrão';
+    corpo = (
+      <>
+        <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,255,255,0.95), rgba(255,190,192,0.35) 60%, rgba(255,190,192,0))' }} />
+        <View style={{ position: 'absolute', left: X(16), right: X(16), top: Y(18), bottom: Y(18), alignItems: 'center', justifyContent: 'center' }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
+            {v.semNumero ? 'Encontramos sinais de' : 'Você tem'}
+          </Text>
+          {v.semNumero ? (
+            <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6} style={{ alignSelf: 'stretch', marginTop: 8 * s, fontSize: 44 * s, lineHeight: 48 * s, fontWeight: '800', letterSpacing: -1.2 * s, color: VERMELHO_ALERTA, textAlign: 'center' }}>{v.problema}</Text>
+          ) : (
+            <>
+              <View style={{ marginTop: 4 * s, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' }}>
+                {v.numero != null
+                  ? <Contador alvo={v.numero} contar={!!v.contar} style={{ fontSize: 96 * s, lineHeight: 102 * s, fontWeight: '800', letterSpacing: -3 * s, color: VERMELHO_ALERTA, fontVariant: ['tabular-nums'] }} />
+                  : <Text style={{ fontSize: 96 * s, lineHeight: 102 * s }}> </Text>}
+                {v.numero != null && (
+                  <Text style={{ marginLeft: 2 * s, fontSize: 40 * s, lineHeight: 44 * s, fontWeight: '800', color: VERMELHO_ALERTA }}>%</Text>
+                )}
+              </View>
+              <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 21 * s, lineHeight: 26 * s, fontWeight: '700', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>{`mais ${v.problema}`}</Text>
+            </>
+          )}
+          {!!fraseBaixo && (
+            <View style={{ marginTop: 22 * s, alignSelf: 'stretch', paddingVertical: 10 * s, paddingHorizontal: 14 * s, borderRadius: 24 * s, backgroundColor: VERMELHO_ALERTA, justifyContent: 'center', boxShadow: `0px ${4 * s}px ${10 * s}px rgba(200,30,54,0.28)` }}>
+              <Text style={{ color: '#fff', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.2 * s, textAlign: 'center' }}>{fraseBaixo}</Text>
+            </View>
+          )}
+        </View>
+      </>
+    );
+  } else if (v.k === 'pontoForte') {
+    // "Você tem" · "menos" · [problema] grande em rosa · pílula "do que N% das usuárias". Mesmo
+    // fundo, holo e faíscas da carta de alerta (as duas cartas do onboarding são da mesma família).
+    corpo = (
+      <>
+        <Holo w={wi} h={hi} parado={parado} />
+        <Faisca i={4} parado={parado} size={10 * s} color="#FFFFFF" style={{ left: X(24), top: Y(40) }} />
+        <Faisca i={5} parado={parado} size={13 * s} color="#FFFFFF" style={{ right: X(24), top: Y(150) }} />
+        <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,250,240,0.95), rgba(255,200,150,0.35) 60%, rgba(255,200,150,0))' }} />
+        <View style={{ position: 'absolute', left: X(16), right: X(16), top: Y(18), bottom: Y(18), alignItems: 'center', justifyContent: 'center' }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
+            Você tem
+          </Text>
+          <Text style={{ marginTop: 6 * s, fontSize: 21 * s, lineHeight: 26 * s, fontWeight: '700', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>menos</Text>
+          <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6} style={{ alignSelf: 'stretch', marginTop: 2 * s, fontSize: 44 * s, lineHeight: 48 * s, fontWeight: '800', letterSpacing: -1.2 * s, color: PINK, textAlign: 'center' }}>{v.problema}</Text>
+          <View style={{ opacity: v.numero != null ? 1 : 0, marginTop: 22 * s, alignSelf: 'stretch', paddingVertical: 10 * s, paddingHorizontal: 14 * s, borderRadius: 24 * s, backgroundColor: PINK, justifyContent: 'center', boxShadow: `0px ${4 * s}px ${10 * s}px rgba(240,140,100,0.25)` }}>
+            <Text style={{ color: '#fff', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.2 * s, textAlign: 'center' }}>{`do que ${v.numero ?? 0}% das usuárias`}</Text>
+          </View>
+        </View>
+      </>
+    );
+  } else if (v.k === 'produtoExemplo') {
+    // Design 86a do Claude Design (`NiksCartaFlo.dc.html`, rodada 86 · "Compatibilidade com
+    // produto", 04/nov/2026): moldura e fundo da carta base, sem etiqueta no topo. A foto do
+    // produto abre a carta (quadrado 92 com borda branca de 3 e a foto ampliada 112%), o nome
+    // embaixo dela, o brilho branco atrás do número, "22%" em rosa (o herói, contando),
+    // "de compatibilidade" e, no selo branco de baixo, "Não recomendado" com o X no círculo
+    // vermelho (entra ao fim da contagem). Posições do design (camadas dentro da borda), em
+    // escala; tudo absoluto, então nada pula quando o número e o selo aparecem.
+    const foto = 92 * s;
+    const fotoDentro = foto - 2 * borda;
+    const fotoZoom = fotoDentro * 1.12;
+    corpo = (
+      <>
+        <View style={{ position: 'absolute', left: (wi - foto) / 2, top: Y(26), width: foto, height: foto, borderRadius: 22 * s, borderWidth: borda, borderColor: '#fff', backgroundColor: '#F4F4F4', overflow: 'hidden', boxShadow: `0px ${8 * s}px ${18 * s}px rgba(255,94,168,0.18)` }}>
+          {v.foto ? (
+            <Image source={v.foto} resizeMode="cover" style={{ position: 'absolute', left: (fotoDentro - fotoZoom) / 2, top: (fotoDentro - fotoZoom) / 2, width: fotoZoom, height: fotoZoom }} />
+          ) : null}
+        </View>
+        {!!v.nome && (
+          <Text numberOfLines={1} style={[styles.centro, { top: Y(130), fontSize: 13 * s, lineHeight: 17 * s, fontWeight: '600', color: '#3d3d3d' }]}>{v.nome}</Text>
+        )}
+        <View style={{ position: 'absolute', left: wi / 2 - 75 * s, top: Y(196) - 60 * s, width: 150 * s, height: 120 * s, borderRadius: 75 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,255,255,0.9), rgba(255,255,255,0))' }} />
+        {v.numero != null && (
+          <View style={{ position: 'absolute', left: 0, right: 0, top: Y(150), flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start' }}>
+            <Contador alvo={v.numero} contar={!!v.contar} style={[styles.numeroProduto, { fontSize: 72 * s, lineHeight: 76 * s, letterSpacing: -3 * s, textShadowOffset: { width: 0, height: 6 * s }, textShadowRadius: 16 * s }]} />
+            <Text style={[styles.numeroProduto, { marginTop: 12 * s, marginLeft: 2 * s, fontSize: 26 * s, lineHeight: 28 * s, textShadowOffset: { width: 0, height: 6 * s }, textShadowRadius: 16 * s }]}>%</Text>
+          </View>
+        )}
+        <Text style={[styles.centro, { top: Y(226), fontSize: 14 * s, lineHeight: 18 * s, fontWeight: '600', letterSpacing: -0.2 * s }]}>de compatibilidade</Text>
+        {v.resultado && (
+          <View style={[styles.rodape, { bottom: Y(20) }]}>
+            <Animated.View
+              entering={RESULTADO_ENTRA}
+              style={{ height: 30 * s, paddingLeft: 6 * s, paddingRight: 13 * s, borderRadius: 100, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 6 * s, boxShadow: `0px ${4 * s}px ${10 * s}px rgba(255,94,168,0.18)` }}
+            >
+              <View style={{ width: 19 * s, height: 19 * s, borderRadius: 9.5 * s, backgroundColor: '#FD3A42', alignItems: 'center', justifyContent: 'center' }}>
+                <Svg width={9 * s} height={9 * s} viewBox="0 0 24 24"><Path d="M5 5l14 14M19 5L5 19" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" /></Svg>
+              </View>
+              <Text style={{ fontSize: 13 * s, fontWeight: '700', color: INK }}>Não recomendado</Text>
+            </Animated.View>
+          </View>
+        )}
       </>
     );
   } else if (rara) {
@@ -388,4 +592,7 @@ export default Carta;
 const styles = StyleSheet.create({
   centro: { position: 'absolute', left: 0, right: 0, textAlign: 'center', color: INK },
   rodape: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  // O "22%" da carta de produto (design 86a): rosa, extranegrito, algarismos de mesma largura e
+  // a sombra rosa suave do design (`text-shadow: 0 6px 16px`; deslocamento e raio em escala).
+  numeroProduto: { fontWeight: '800', color: PINK, fontVariant: ['tabular-nums'], textShadowColor: 'rgba(255,94,168,0.22)' },
 });

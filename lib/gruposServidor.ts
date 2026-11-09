@@ -8,6 +8,8 @@ import { useCallback } from 'react';
 import { supabase } from './supabase';
 import { useCachedQuery, invalidateCache } from './cache';
 import { getUserId, useUserId } from './currentUser';
+import type { PontosGanhos } from './cartasServidor';
+import { ajustarMedalhas } from './niveis';
 
 const FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/grupos`;
 const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -88,7 +90,6 @@ export type ConviteInfo = {
   banner?: string;
   banner_url?: string | null;
   convidou?: string;
-  integrantes?: Perfil[];
 };
 
 export type Recusa = { ok: false; motivo: string };
@@ -103,7 +104,7 @@ async function chamar<T>(body: Record<string, unknown>): Promise<T> {
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.error ?? `HTTP ${resp.status}`);
-  return json as T;
+  return ajustarMedalhas(json) as T;   // níveis = medalhas, mesmo antes da migration (lib/niveis.ts)
 }
 
 // ── Leituras ────────────────────────────────────────────────────────────────────
@@ -145,12 +146,15 @@ export async function subirFoto(tipo: 'checkin' | 'banner', base64: string): Pro
   return u.path;
 }
 
+// Regras novas das cartas (05/nov/2026): o check-in registra o skincare do período (a
+// carta do dia, se for o 1º skincare de hoje → `carta_id`) e dá os pontos sem carta
+// (`pontos`: o do skincare sem carta e o do check-in, 1/dia).
 export const publicarCheckin = (p: { foto_path: string; rotina: 'am' | 'pm'; grupos: string[]; hora_exibida?: string; titulo?: string; descricao?: string }) =>
-  chamar<{ ok: true; checkin_id: string; dia: string; grupos: string[]; carta_id: string | null } | Recusa>({ acao: 'checkin', ...p });
+  chamar<{ ok: true; checkin_id: string; dia: string; grupos: string[]; carta_id: string | null; pontos?: PontosGanhos[] } | Recusa>({ acao: 'checkin', ...p });
 
 /** Produto do scan no mural dos grupos escolhidos (80o). `carta_id`: a do produto_grupo, 1 por dia. */
 export const compartilharProduto = (productScanId: string, grupos: string[]) =>
-  chamar<{ ok: true; grupos: string[]; novos: number; carta_id: string | null } | Recusa>({ acao: 'compartilhar', product_scan_id: productScanId, grupos });
+  chamar<{ ok: true; grupos: string[]; novos: number; carta_id: string | null; pontos?: PontosGanhos | null } | Recusa>({ acao: 'compartilhar', product_scan_id: productScanId, grupos });
 
 // ── Cache (revalida a cada foco) ────────────────────────────────────────────────
 export const chaveMeusGrupos = (uid: string) => `grupos:meus:${uid}`;

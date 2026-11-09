@@ -9,8 +9,8 @@ import { BlurStyle, Canvas, Picture, Skia, createPicture } from '@shopify/react-
 import Carta from './Carta';
 import { haptics } from '../../lib/haptics';
 import { nivelDe } from '../../lib/niveis';
+import Medalha from '../medalhas/Medalha';
 import { fmtPontos, type NivelTabela } from '../../lib/cartasServidor';
-import { CARD_BG, ICON_BG, NIVEIS_TRILHA } from '../caminhada/geometria';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pacote de NIKS Points, depois da revelação na tela de raspar. Não há design; o visual
@@ -24,6 +24,9 @@ import { CARD_BG, ICON_BG, NIVEIS_TRILHA } from '../caminhada/geometria';
 // chegadas; as faíscas e o rastro são partículas desenhadas no Skia. ~1,5 s no total.
 // Tocar na tela adianta para o fim. Reduzir movimento: sem voo; a barra nova aparece
 // por cima da antiga com um fade e o número vai direto ao final.
+// `semCartas` (regras novas, 05/nov/2026): os pontos ganhos SEM carta (2º skincare,
+// check-in, scan, produto no grupo) — o mesmo cabeçalho, sem as mini cartas: a barra enche
+// com mola e o número conta (~0,9 s). Quem mostra é `BarraPontosHost` (lib/pontosAnimacao).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INK = '#121212';
@@ -114,9 +117,11 @@ type Props = {
   topo: number;
   rm: boolean;
   onFim?: () => void;
+  /** Pontos sem carta: só o cabeçalho com a barra subindo (sem as mini cartas). */
+  semCartas?: boolean;
 };
 
-export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm, onFim }: Props) {
+export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm, onFim, semCartas = false }: Props) {
   const { width: W } = useWindowDimensions();
   const nv = useMemo(() => nivelDe(de, niveis, icone), [de, niveis, icone]);
   const { piso, teto } = nv;
@@ -125,6 +130,7 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
   const barY = topo + BAR_DY + 4;
   const fracao = (v: number) => {
     'worklet';
+    if (teto <= piso) return 1;
     return Math.min(1, Math.max(0, (v - piso) / Math.max(1, teto - piso)));
   };
   const valor = (n: number) => {
@@ -151,7 +157,9 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
   const brilho = useSharedValue(0);
   const fx = useSharedValue<Faisca[]>([]);
   const [rodando, setRodando] = useState(true);
-  const subiu = para >= teto;
+  // No NIKS (último nível, teto === piso) não há subida: os pontos só somam.
+  const ultimo = teto <= piso;
+  const subiu = !ultimo && para >= teto;
 
   const terminar = () => { setRodando(false); onFim?.(); };
 
@@ -165,6 +173,19 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
       return () => clearTimeout(id);
     }
     hdr.set(withSpring(1, mola(1, 0.35)));
+    if (semCartas) {
+      // Sem carta: a barra enche de uma vez, com mola, e o número conta junto.
+      const id = setTimeout(() => {
+        barK.set(withSpring(fracao(para), mola(0.8, 0.45)));
+        xp.set(withSpring(para, mola(1, 0.5)));
+        pisca.set(0);
+        pisca.set(withTiming(1, { duration: 620, easing: EO }));
+        haptics.action();
+        if (subiu) brilho.set(withSequence(withTiming(1, { duration: 220, easing: EO }), withTiming(0.35, { duration: 900, easing: EO })));
+      }, 260);
+      const fimId = setTimeout(terminar, 1000);
+      return () => { clearTimeout(id); clearTimeout(fimId); };
+    }
     t.set(withTiming(FIM, { duration: FIM, easing: Easing.linear }));
     return () => cancelAnimation(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -268,25 +289,24 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
   });
   const brilhoSt = useAnimatedStyle(() => ({ opacity: brilho.get() }));
 
-  const icn = nv.nivel >= NIVEIS_TRILHA;
   return (
     // Acima do palco da carta (zIndex 10) e dos raios (9) da tela de raspar.
     <View style={[StyleSheet.absoluteFill, { zIndex: 30 }]} pointerEvents="box-none">
       <Animated.View pointerEvents="none" style={[styles.hdr, { top: topo }, hdrSt]}>
         <Animated.View style={[styles.brilho, brilhoSt]} />
         <View style={styles.hdrRow}>
-          <View style={[styles.thumb, { experimental_backgroundImage: icn ? ICON_BG : CARD_BG, borderColor: icn ? '#E7B67C' : '#FFFFFF' }]}>
-            <Image source={LOGO} style={{ width: 24, height: 24 }} />
+          <View style={styles.thumb}>
+            <Medalha nivel={nv.nivel} tamanho={56} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.hdrLvl}>{`Nível ${nv.nivel}`}</Text>
             <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{nv.titulo}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Vivo xp={xp} fmtFn={(v) => `${fmtPontos(Math.min(v, teto))} / ${fmtPontos(teto)}`} style={styles.hdrXp} />
+            <Vivo xp={xp} fmtFn={(v) => (ultimo ? fmtPontos(v) : `${fmtPontos(Math.min(v, teto))} / ${fmtPontos(teto)}`)} style={styles.hdrXp} />
             <Vivo
               xp={xp}
-              fmtFn={(v) => (v >= teto ? 'nível completo' : `faltam ${fmtPontos(teto - v)} NIKS Points`)}
+              fmtFn={(v) => (ultimo ? 'Nível máximo' : v >= teto ? 'nível completo' : `faltam ${fmtPontos(teto - v)} NIKS Points`)}
               style={styles.hdrFalta}
             />
           </View>
@@ -300,13 +320,13 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
         </View>
       </Animated.View>
 
-      {!rm && voos.map((v, i) => <Mini key={i} i={i} t={t} voo={v} />)}
+      {!rm && !semCartas && voos.map((v, i) => <Mini key={i} i={i} t={t} voo={v} />)}
 
       <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
         <Picture picture={fxPic} />
       </Canvas>
 
-      {rodando && !rm && (
+      {rodando && !rm && !semCartas && (
         <Pressable style={StyleSheet.absoluteFill} onPress={adiantar} accessibilityLabel="Pular animação" />
       )}
     </View>
@@ -323,10 +343,8 @@ const styles = StyleSheet.create({
     boxShadow: '0px 0px 30px 8px rgba(255,94,168,0.7)',
   },
   hdrRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  thumb: {
-    width: 40, height: 56, borderRadius: 8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0px 4px 10px rgba(200,60,120,0.18)',
-  },
+  // Só a medalha, sem carta atrás. O desenho tem folga nas laterais, por isso a margem negativa.
+  thumb: { width: 56, height: 56, marginHorizontal: -4, alignItems: 'center', justifyContent: 'center' },
   hdrLvl: { fontSize: 13, lineHeight: 16, fontWeight: '600', color: PINK },
   hdrName: { marginTop: 2, fontSize: 22, lineHeight: 27, fontWeight: '700', letterSpacing: -0.6, color: INK },
   hdrXp: { fontSize: 14, lineHeight: 18, fontWeight: '600', letterSpacing: -0.2, color: INK, fontVariant: ['tabular-nums'] },

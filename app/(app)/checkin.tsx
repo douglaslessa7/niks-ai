@@ -16,7 +16,13 @@ import { haptics } from '../../lib/haptics';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { getRoutinePeriodForNow, sessionDate } from '../../lib/routineProgress';
 import { invalidarGrupos, publicarCheckin, subirFoto, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
+import { invalidarMissoes } from '../../lib/missoes';
 import RodaHora from '../../components/grupos/RodaHora';
+import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
+import { getUserId } from '../../lib/currentUser';
+import { saveRoutinePhoto, temFotoDoDia } from '../../lib/routinePhotos';
+import { abrirCartasEDepois } from '../../lib/concluirSkincare';
+import { ganhouPontos } from '../../lib/pontosAnimacao';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Check-in do grupo — réplica de 81i (câmera) e 81j (Novo check-in) do Claude Design
@@ -29,6 +35,15 @@ import RodaHora from '../../components/grupos/RodaHora';
 // antes da virada das 04:00) e Rotina, Matinal ou Noturna (a que ela já postou hoje fica apagada: é 1
 // por rotina por dia). Publicar sobe a foto (bucket privado, URL assinada), publica e
 // abre a carta para raspar (80e); sem carta nova (já ganhou a de hoje), volta ao grupo.
+//
+// `fluxo=skincare` (05/nov/2026) — o fim do "Iniciar skincare" da home, depois de a rotina já
+// estar concluída (`(app)/skincare`). A foto também vale como Foto do dia (manhã e noite; a
+// PRIMEIRA do dia vale: com uma já salva hoje, esta vai só para o check-in; refazer aqui
+// troca a que este caminho salvou). Fechar a câmera volta para a home. Chega aqui só quem
+// escolheu um grupo na folha "Compartilhar com o grupo?" da lista (`grupos` = esse grupo): o
+// Novo check-in de sempre, com a rotina do período marcada; publicou → carta(s) → mural do 1º
+// grupo publicado. Sem grupo, o convite já aparece na lista, sem câmera; o convite daqui
+// (por cima da foto) fica só de reserva, se a lista de grupos chegar vazia depois da foto.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INK = '#121212';
@@ -81,17 +96,20 @@ export default function Checkin() {
   const rm = useReduceMotion();
   // Do fim da rotina (3.6, "Compartilhar com o grupo?"): `rotina`, `grupos` (ids) e,
   // na manhã, `foto` (a Foto do dia que ela acabou de tirar) → abre direto no Novo check-in.
-  const { feitas, de, grupo, rotina: rotinaParam, grupos: gruposParam, foto: fotoParam } = useLocalSearchParams<{
-    feitas?: string; de?: string; grupo?: string; rotina?: string; grupos?: string; foto?: string;
+  const { feitas, de, grupo, rotina: rotinaParam, grupos: gruposParam, foto: fotoParam, fluxo } = useLocalSearchParams<{
+    feitas?: string; de?: string; grupo?: string; rotina?: string; grupos?: string; foto?: string; fluxo?: string;
   }>();
-  const sair = () => router.navigate((
+  const skincare = fluxo === 'skincare';
+  // fluxo=skincare: fechar a câmera termina o fluxo — a carta de hoje abre sozinha e depois a home.
+  const sair = () => (skincare ? void terminar('/home') : router.navigate((
     de === 'grupo' && grupo ? { pathname: '/grupo', params: { id: grupo } } : de === 'rotina' ? '/protocolo' : '/grupos'
-  ) as any);
+  ) as any));
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const { data: grupos } = useMeusGrupos();
   const y = (v: number) => insets.top + v - 54;
 
-  const [etapa, setEtapa] = useState<'cam' | 'compor'>('cam');
+  // `convite` = só no `fluxo=skincare` sem grupo: a foto parada + o convite para criar um.
+  const [etapa, setEtapa] = useState<'cam' | 'compor' | 'convite'>('cam');
   const [foto, setFoto] = useState<Foto | null>(null);
 
   useFocusEffect(
@@ -109,6 +127,41 @@ export default function Checkin() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [setTabBarVisible, gruposParam, fotoParam])
   );
+
+  // ── fluxo=skincare: Foto do dia e saída ──────────────────────────────────────
+  // `fddLivre`: ainda não há Foto do dia hoje (lido ao abrir). `fddNossa`: este caminho já
+  // salvou a de hoje — refazer a foto substitui a dele.
+  const fddLivre = useRef<Promise<boolean> | null>(null);
+  const fddNossa = useRef(false);
+  const saindo = useRef(false);
+  const [vez, setVez] = useState(0);   // remonta o convite a cada abertura (sem fechar velho)
+  useFocusEffect(
+    useCallback(() => {
+      saindo.current = false;
+      fddNossa.current = false;
+      fddLivre.current = skincare
+        ? getUserId().then((uid) => (uid ? temFotoDoDia(uid).then((tem) => !tem) : false))
+        : null;
+      setVez((v) => v + 1);
+    }, [skincare])
+  );
+  const salvarFotoDoDia = (base64: string) => {
+    void (async () => {
+      const uid = await getUserId();
+      if (!uid) return;
+      if (!fddNossa.current) {
+        if (!(await (fddLivre.current ?? Promise.resolve(false)))) return;
+        fddNossa.current = true;
+      }
+      await saveRoutinePhoto(uid, base64);
+    })().catch((e) => console.warn('[foto do dia] falhou ao salvar', e));
+  };
+  // Fim do caminho: carta(s) a raspar, uma depois da outra, e então o destino.
+  const terminar = async (destino: string) => {
+    if (saindo.current) return;
+    saindo.current = true;
+    await abrirCartasEDepois(router, destino);
+  };
 
   // ── 80d · câmera ──────────────────────────────────────────────────────────
   const [perm, pedirPerm] = useCameraPermissions();
@@ -163,7 +216,10 @@ export default function Checkin() {
       if (!small.base64) return;
       setBranco(true);
       setFoto({ uri: small.uri, base64: small.base64 });
-      setTimeout(() => { setBranco(false); setEtapa('compor'); }, 200);
+      if (skincare) salvarFotoDoDia(small.base64);
+      // Sem grupo (fluxo=skincare): em vez do Novo check-in, o convite para criar um.
+      const semGrupo = skincare && grupos != null && grupos.length === 0;
+      setTimeout(() => { setBranco(false); setEtapa(semGrupo ? 'convite' : 'compor'); }, 200);
     } catch (e) {
       console.warn('[check-in] foto falhou', e);
     } finally {
@@ -199,6 +255,11 @@ export default function Checkin() {
     if (!rm) Animated.spring(fotoIn, { toValue: 1, damping: 14, stiffness: 180, mass: 1, useNativeDriver: true }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etapa]);
+
+  // fluxo=skincare: se a lista de grupos só chegou (vazia) depois da foto, vira o convite.
+  useEffect(() => {
+    if (skincare && etapa === 'compor' && grupos != null && grupos.length === 0) setEtapa('convite');
+  }, [skincare, etapa, grupos]);
 
   const meus = grupos ?? [];
   const escolhidos = sel ? meus.filter((g) => sel.includes(g.id)) : meus;
@@ -269,9 +330,24 @@ export default function Checkin() {
         return;
       }
       trackFora('checkin_feito', { rotina, grupos: r.grupos.length, com_titulo: Boolean(titulo.trim()), carta: Boolean(r.carta_id) });
+      void invalidarMissoes(); // desafio 4: o check-in também registra o skincare
       await Promise.all([invalidarGrupos(), ...r.grupos.map((g) => invalidarGrupos(g))]);
-      if (r.carta_id) router.replace(`/(carta)/carta?id=${r.carta_id}` as any);
-      else sair();
+      if (skincare) {
+        // Carta(s) e, no fim, o mural do 1º grupo publicado (na ordem da lista escolhida).
+        const gid = escolhidos.map((g) => g.id).find((id) => r.grupos.includes(id)) ?? r.grupos[0];
+        // Pontos do check-in (e do skincare que ele registrou): com a carta de hoje para raspar,
+        // sobem junto com ela; sem carta, a barra sobe no mural.
+        ganhouPontos(r.pontos, { segurar: true });
+        await terminar(gid ? `/grupo?id=${gid}&de=home` : '/home');
+        return;
+      }
+      if (r.carta_id) {
+        ganhouPontos(r.pontos, { segurar: true });   // sobem junto com a carta, depois de raspar
+        router.replace(`/(carta)/carta?id=${r.carta_id}` as any);
+      } else {
+        ganhouPontos(r.pontos);                       // sem carta: a barra sobe já
+        sair();
+      }
     } catch (e) {
       const msg = String((e as Error)?.message ?? e);
       console.warn('[check-in] publicar falhou:', msg);
@@ -289,7 +365,8 @@ export default function Checkin() {
     }
   };
 
-  if (etapa === 'cam') {
+  if (etapa === 'cam' || etapa === 'convite') {
+    const convite = etapa === 'convite';
     const rot = giro.interpolate({ inputRange: [-1, 0, 1], outputRange: ['-90deg', '0deg', '90deg'] });
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -301,6 +378,8 @@ export default function Checkin() {
           {perm?.granted && (
             <CameraView ref={cam} style={StyleSheet.absoluteFill} facing={frente ? 'front' : 'back'} mirror={frente} flash={flash ? 'on' : 'off'} />
           )}
+          {/* Convite (sem grupo): a foto tirada fica parada no visor, atrás da folha. */}
+          {convite && foto && <Image source={{ uri: foto.uri }} style={StyleSheet.absoluteFill} />}
         </Animated.View>
         <View style={[styles.camNote, { top: y(652) }]}>
           <Cadeado color="rgba(255,255,255,0.8)" />
@@ -322,6 +401,15 @@ export default function Checkin() {
           </TouchableOpacity>
         </View>
         {branco && <View style={[StyleSheet.absoluteFill, { backgroundColor: '#fff' }]} pointerEvents="none" />}
+        {skincare && (
+          <FolhaCompartilhar
+            key={vez}
+            aberta={convite}
+            onCompartilhar={() => {}}
+            onCriarGrupo={() => { void terminar('/seus-grupos?criar=1'); }}
+            onFechar={() => { void terminar('/home'); }}
+          />
+        )}
       </View>
     );
   }

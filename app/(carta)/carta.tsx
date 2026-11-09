@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Image, StyleSheet, Pressable, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, Image, StyleSheet, Pressable, Alert, AppState, BackHandler, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { BlurView } from 'expo-blur';
 import Svg, { Defs, Path, RadialGradient, Stop } from 'react-native-svg';
@@ -19,11 +19,16 @@ import {
 import { haptics } from '../../lib/haptics';
 import { CARTAS, ORDEM_CARTAS, REC_ICONS, type CartaTipo } from '../../lib/cartas';
 import {
-  cartaDetalhe, rasparCarta, estadoCartas, vezesRaspada, estadoPoder, etiquetaCarta, useEstadoCartas, type CartaGanha, type EstadoPoder,
+  cartaDetalhe, rasparCarta, estadoCartas, estadoPoder, etiquetaCarta, useEstadoCartas, type CartaGanha, type EstadoPoder,
 } from '../../lib/cartasServidor';
-import Carta, { sombraCarta, visualDe } from '../../components/cartas/Carta';
+import Carta, { CONTA_MS, VERMELHO_ALERTA, sombraCarta, visualDe, type VisualCarta } from '../../components/cartas/Carta';
 import PacotePontos from '../../components/cartas/PacotePontos';
+import { inicioDoPacote } from '../../lib/pontosAnimacao';
+import { marcarCartaAberta } from '../../lib/cartaDoDia';
 import { dateKey, sessionDate } from '../../lib/routineProgress';
+import { useAppStore } from '../../store/onboarding';
+import { useObName } from '../../components/onboarding/kit';
+import { cartaDoOnboarding, pontoForteDoOnboarding } from '../../lib/cartaOnboarding';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Carta de raspar — réplica do protótipo 67a do Claude Design ("Cartas de raspar",
@@ -106,25 +111,54 @@ const START_SCALE = 0.06;
 const EASE_PATH = Easing.bezier(0.33, 0, 0.2, 1);
 const EASE_GROW = Easing.bezier(0.34, 1.25, 0.64, 1);
 const EASE_SPIN = Easing.bezier(0.3, 0.35, 0.2, 1);
+// Onboarding: voo de 1,5 s depois da luz rosa, com 3 voltas completas (verso e frente à
+// vista) que começam rápidas e freiam ao chegar no centro.
+const OB_FLY_AT = 3250;
+const OB_FLY_MS = 1500;
+const OB_EASE_SPIN = Easing.bezier(0.2, 0.55, 0.3, 1);
+const OB_GIRO = 1080;
+// Onboarding: fundo rosa — partículas brancas e rosa bem claro (o rosa do app sumiria nele).
+const COLORS_OB = ['#FFFFFF', '#FFFFFF', '#FFE6F2', '#FFD6EA'];
+// A carta clara no fundo rosa: brilho branco em volta + sombra rosa escura embaixo.
+const SOMBRA_OB = '0px 0px 30px 6px rgba(255,255,255,0.55), 0px 20px 40px rgba(150,10,80,0.40)';
 
-function flight(p: number, ps: number, pr: number, x0: number, y0: number, s0: number) {
+// ── As DUAS cartas do onboarding (06/nov/2026, pedido do produto) ─────────────────────────
+// Carta 1 (notícia boa, o ponto forte) → transição de alerta (sem botão) → Carta 2 (alerta).
+// Sem ponto forte possível, a Carta 1 é pulada e a tela vai direto à transição.
+// Rosa-escuro do alerta: ícone na camada de raspar e borda pulsando da Carta 2.
+// Desde o pedido "mais vermelha" (06/nov/2026): o vermelho do Niks score (#FD3A42, em
+// `components/cartas/Carta.tsx`) e o tom escuro dele para o ícone.
+const ALERTA_ESCURO = '#D3263A';
+// A Carta 2 não tem o brilho branco da Carta 1 (nada festivo): só a sombra escura.
+const SOMBRA_ALERTA = '0px 0px 26px 2px rgba(253,58,66,0.35), 0px 22px 44px rgba(60,0,16,0.50)';
+// Transição de alerta (ms desde o "Continuar" da Carta 1): a carta sai (240), o fundo vira o
+// rosa-escuro (500), "Mas nem tudo são boas notícias, <nome>." 300–1250 com o batimento,
+// "Encontramos algo que precisa da sua atenção." 1400–2300, a Carta 2 entra aos 2500.
+const TRANS = { sai: 240, escurece: 500, t1: 300, t1Fora: 1250, t2: 1400, t2Fora: 2300, fim: 2500 };
+// Entrada da Carta 2 (alerta, não prêmio): surge no centro com um tranco curto (0,92 → 1,04 em
+// 120 ms, ease-out; depois assenta em 1 sem sobra) e um tremor leve logo em seguida.
+const TRANCO_MS = 120;
+const TREMOR: [number, number][] = [[4, 45], [-4, 60], [3, 55], [-3, 55], [1.5, 50], [0, 45]];
+
+// `giro`: graus da entrada (540 = 1,5 volta; o onboarding usa 3 voltas).
+function flight(p: number, ps: number, pr: number, x0: number, y0: number, s0: number, giro = 540) {
   'worklet';
   return {
     x: x0 * (1 - p),
     y: y0 * (1 - p),
     s: s0 + (1 - s0) * ps,
-    ry: -540 * (1 - pr),
+    ry: -giro * (1 - pr),
     rz: 0 * p,
   };
 }
 
 type Part = { x: number; y: number; vx: number; vy: number; life: number; max: number; s: number; c: string; star: boolean; rot: number };
 
-function mkPart(x: number, y: number, vx: number, vy: number): Part {
+function mkPart(x: number, y: number, vx: number, vy: number, cores: string[] = COLORS): Part {
   'worklet';
   return {
     x, y, vx, vy, life: 0, max: 0.55 + Math.random() * 0.75, s: 1.6 + Math.random() * 3.2,
-    c: COLORS[Math.floor(Math.random() * COLORS.length)], star: Math.random() < 0.45, rot: Math.random() * 3,
+    c: cores[Math.floor(Math.random() * cores.length)], star: Math.random() < 0.45, rot: Math.random() * 3,
   };
 }
 
@@ -142,7 +176,9 @@ function rng(seed: number) {
 // branca de 3, degradê perolado de 165°, brilho branco no meio, a flor (78 pt com sombra
 // rosa) a 46% e o fio branco por dentro. Medidas do design (220 × 308) escaladas para
 // 252 × 360; a borda é desenhada aqui porque a camada cobre a carta inteira.
-function drawVerso84(img: SkImage | null) {
+// `alerta` (Carta 2 do onboarding, 06/nov/2026): no lugar da flor, o ícone de alerta (triângulo
+// rosa-escuro com "!"), na própria camada de raspar — some raspando, como o resto do verso.
+function drawVerso84(img: SkImage | null, alerta = false) {
   return createPicture((c) => {
     const W = CW, H = CH, sx = W / 220, b = 3 * sx;
     const R = 22 * sx;
@@ -157,7 +193,7 @@ function drawVerso84(img: SkImage | null) {
     const g = Skia.Paint();
     g.setShader(Skia.Shader.MakeLinearGradient(
       vec(cx - dx * half, cy - dy * half), vec(cx + dx * half, cy + dy * half),
-      ['#FFE6F1', '#FCD6E8', '#EFDDFB'].map((x) => Skia.Color(x)), [0, 0.48, 1], TileMode.Clamp,
+      (alerta ? ['#FFF1F0', '#FFD6D8', '#FFE5E8'] : ['#FFE6F1', '#FCD6E8', '#EFDDFB']).map((x) => Skia.Color(x)), [0, 0.48, 1], TileMode.Clamp,
     ));
     c.drawRRect(inner, g);
     // radial-gradient(55% 40% at 50% 46%): elipse de raios 55% × 40% da caixa.
@@ -168,7 +204,18 @@ function drawVerso84(img: SkImage | null) {
       Skia.Matrix().translate(gx, gy).scale(1, ry / rx).translate(-gx, -gy),
     ));
     c.drawRRect(inner, rg);
-    if (img) {
+    if (alerta) {
+      const t = 84 * sx, cxI = gx, cyI = gy + 4 * sx;
+      const tri = Skia.Path.Make();
+      tri.moveTo(cxI, cyI - t * 0.52); tri.lineTo(cxI + t * 0.56, cyI + t * 0.44); tri.lineTo(cxI - t * 0.56, cyI + t * 0.44); tri.close();
+      const tp = Skia.Paint(); tp.setColor(Skia.Color(ALERTA_ESCURO)); tp.setAntiAlias(true);
+      tp.setPathEffect(Skia.PathEffect.MakeCorner(10 * sx));
+      tp.setImageFilter(Skia.ImageFilter.MakeDropShadow(0, 6 * sx, 8 * sx, 8 * sx, Skia.Color('rgba(150,10,30,0.35)'), null));
+      c.drawPath(tri, tp);
+      const wp = Skia.Paint(); wp.setColor(Skia.Color('#FFFFFF')); wp.setAntiAlias(true);
+      c.drawRRect(Skia.RRectXY(Skia.XYWHRect(cxI - 4.5 * sx, cyI - t * 0.2, 9 * sx, t * 0.36), 4.5 * sx, 4.5 * sx), wp);
+      c.drawCircle(cxI, cyI + t * 0.28, 5.2 * sx, wp);
+    } else if (img) {
       const lw = 78 * sx, lh = 79 * sx;
       const lp = Skia.Paint();
       lp.setImageFilter(Skia.ImageFilter.MakeDropShadow(0, 6 * sx, 6 * sx, 6 * sx, Skia.Color('rgba(255,94,168,0.35)'), null));
@@ -236,6 +283,7 @@ function Icon({ d, size, color, sw }: { d: string[]; size: number; color: string
 // Raios atrás da carta: 16 cunhas finas saindo do centro (desenhadas uma vez).
 const RAYS = 760;
 const GLOW = 470;
+const LUZ = 160; // a luz rosa de onde a carta do onboarding sai
 const RAYS_PATH = (() => {
   const c = RAYS / 2, n = 16, half = (4.6 * Math.PI) / 180;
   let d = '';
@@ -279,7 +327,16 @@ export default function CartaScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();
-  const params = useLocalSearchParams<{ tipo?: string; id?: string }>();
+  const params = useLocalSearchParams<{ tipo?: string; id?: string; modo?: string; depois?: string }>();
+  // `depois` (05/nov/2026, o "Iniciar skincare" da home — `lib/concluirSkincare`): para onde ir
+  // quando as cartas acabarem ou ela fechar (o mural do grupo, a home ou criar grupo). Sem
+  // ele, como sempre: volta para onde estava.
+  const depois = typeof params.depois === 'string' && params.depois ? params.depois : null;
+  const fechar = () => {
+    if (router.canGoBack()) router.back();
+    else if (!depois) router.replace('/(app)/home' as any);
+    if (depois) router.navigate(depois as any);
+  };
   const reduced = useReducedMotion();
   const logoImg = useImage(LOGO);
 
@@ -310,29 +367,84 @@ export default function CartaScreen() {
   tabela.current = estado;
   useEffect(() => {
     if (!srvId) return;
+    marcarCartaAberta(srvId);   // a home não reabre sozinha uma carta já aberta nesta sessão
     let vivo = true;
     setSrv(null); setPoderEst(null); setRevelada(false); setPontos(null); setPacote(null);
     cartaDetalhe(srvId)
       .then(async (carta) => {
-        const antes = carta.carta?.familia === 'colecionavel' && carta.carta ? await vezesRaspada(carta.carta.id, carta.id) : 0;
-        if (vivo) setSrv({ carta, antes });
+        // Regras novas (05/nov/2026): não há mais coleção nem "repetida" — a carta é a do dia.
+        if (vivo) setSrv({ carta, antes: 0 });
       })
       .catch(() => {
         if (!vivo) return;
         Alert.alert('Carta', 'Não foi possível abrir a carta agora. Tente de novo em instantes.');
-        if (router.canGoBack()) router.back(); else router.replace('/(app)/home' as any);
+        fechar();
       });
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srvId]);
+  // ── Modo onboarding (`?modo=onboarding`, 03/nov/2026): a chegada da carta logo depois
+  // do loading do scan. Tela preta → "Espera, <nome>..." → "Encontramos algo na sua
+  // análise." → luz rosa → a carta voa girando e pousa com impacto → raspar revela a
+  // IDADE DA PELE do relatório → "Continuar" leva ao resultado do scan. Conteúdo local
+  // (nada no servidor); mesma carta da rodada 84 (verso e camada de raspar), frente na
+  // identidade da rara. Sem fechar, sem voltar; toca uma vez (`cartaChegadaVista`).
+  const obMode = params.modo === 'onboarding';
+  const nome = useObName();
+  // A carta vem da ANÁLISE RÁPIDA (antes da compra) e dos problemas que ela marcou
+  // (`lib/cartaOnboarding.ts`, 06/nov/2026). A da idade está fora do onboarding por enquanto.
+  const analiseRapida = useAppStore((st) => st.analiseRapida);
+  const concernsOb = useAppStore((st) => st.onboarding.concerns);
+  const birthdayOb = useAppStore((st) => st.onboarding.birthday);
+  const cartaOb = cartaDoOnboarding(analiseRapida, { concerns: concernsOb, birthday: birthdayOb });
+  const idadePele = cartaOb?.tipo === 'idade' ? cartaOb.idadePele : null;
+  const idadeReal = Number(birthdayOb) || null;
+  const [numOb, setNumOb] = useState<number | null>(null);
+  const chipOb = idadePele == null || idadeReal == null ? 'Análise da sua foto'
+    : idadePele < idadeReal ? `${idadeReal - idadePele} ${idadeReal - idadePele === 1 ? 'ano' : 'anos'} mais jovem que você`
+    : idadePele > idadeReal ? `${idadePele - idadeReal} ${idadePele - idadeReal === 1 ? 'ano' : 'anos'} acima da sua idade`
+    : 'A mesma idade que você';
+  // A carta de alerta ("Você tem 40% mais [problema] do que a usuária padrão."): a escolha
+  // do problema e o número moram em `lib/cartaOnboarding.ts` (o "Seu caminho" e a tela final
+  // leem os mesmos dados).
+  const cartaAlerta = cartaOb?.tipo === 'comparacao' ? cartaOb : null;
+  const ALERTA_PCT = cartaAlerta ? cartaAlerta.numero : 0;
+  const temAlerta = cartaAlerta != null;
+  // As DUAS cartas (06/nov/2026): Carta 1 = o ponto forte (notícia boa; null → pulada), depois
+  // a transição de alerta e a Carta 2 (a de alerta acima). `etapa` troca a carta na tela; a
+  // `etapaCartaOb` do store guarda até onde ela foi, para retomar sem repetir carta raspada.
+  const pontoForte = obMode ? pontoForteDoOnboarding(analiseRapida, { concerns: concernsOb }) : null;
+  const pontoForteRef = useRef(pontoForte);
+  pontoForteRef.current = pontoForte;
+  type EtapaOb = 'boa' | 'transicao' | 'alerta';
+  const [etapa, setEtapa] = useState<EtapaOb>('boa');
+  const etapaRef = useRef<EtapaOb>('boa');
+  const irEtapa = (e: EtapaOb) => { etapaRef.current = e; setEtapa(e); };
+  // QUAL FRENTE aparece é separado da etapa: a frente só vira a de alerta com a Carta 1 já
+  // invisível (no meio da transição), e a Carta 2 só começa a entrar com a frente nova já
+  // desenhada. Antes a troca seguia a etapa, e no "Continuar" a frente de alerta aparecia
+  // por ~240 ms na Carta 1 que ainda estava sumindo (bug visto em 06/nov/2026).
+  const [faceAlerta, setFaceAlertaJS] = useState(false);
+  const faceAlertaRef = useRef(false);
+  const setFaceAlerta = (v: boolean) => { faceAlertaRef.current = v; setFaceAlertaJS(v); };
+  const naBoa = obMode && !faceAlerta && pontoForte != null;
+  const naAlerta = obMode && faceAlerta;
+  // Frente/verso/camada da rodada 84: as cartas do servidor e a do onboarding.
+  const cartaNova = srvMode || obMode;
+  const visOb: VisualCarta | null = !obMode ? null
+    : naBoa ? { k: 'pontoForte', numero: numOb, problema: pontoForte!.nome }
+    : cartaAlerta ? { k: 'alerta', numero: numOb, contar: !reduced, problema: cartaAlerta.nome, semNumero: cartaAlerta.semNumero, regiaoTexto: cartaAlerta.regiaoTexto }
+    : { k: 'idade', numero: numOb, chip: chipOb, contar: !reduced };
   const pronto = useSharedValue(params.id ? 0 : 1);
   useEffect(() => { pronto.set(!srvMode || srv ? 1 : 0); }, [srvMode, srv, pronto]);
   const fam = srv?.carta.carta?.familia ?? null;
   const kindSrv: 'coll' | 'power' | 'conh' | null = !srv ? null : fam === 'poder' ? 'power' : fam === 'colecionavel' ? 'coll' : 'conh';
   const isPower = kindSrv === 'power';
-  const isDup = kindSrv === 'coll' && (srv?.antes ?? 0) >= 1;
+  const isDup = false;
   // Rodada 84: o visual sai da família, subtipo, rara, origem e (no poder) do estado.
-  const visual = srv ? visualDe(srv.carta, poderEst) : null;
+  // Regras novas: a Comum mostra os NIKS Points em destaque na própria carta (contando).
+  const visualBase = srv ? visualDe(srv.carta, poderEst) : null;
+  const visual: VisualCarta | null = visualBase?.k === 'colecionavel' ? { ...visualBase, pontos, contar: !reduced } : visualBase;
   // Grupo (NiksGrupoV2): a carta do check-in diz "Check-in feito" (80e); a da campeã da
   // semana leva o nome do grupo e "Você foi a mais constante da semana" (80h).
   const campea = srv?.carta.origem === 'campea';
@@ -343,7 +455,8 @@ export default function CartaScreen() {
     : etiquetaCarta('x', srv.carta.origem);
   const headLabel = srvMode ? (revelada && isPower ? 'Carta de poder' : origemLabel) : c.label;
   const headLine = srvMode
-    ? (revelada && isPower ? 'Um poder saiu na sua carta' : campea ? 'Você foi a mais constante da semana' : 'Sua carta de hoje chegou')
+    ? (revelada && isPower ? 'Um poder saiu na sua carta' : campea ? 'Você foi a mais constante da semana'
+      : srv?.carta.origem === 'missoes' ? 'Você completou as missões!' : 'Sua carta de hoje chegou')
     : c.headline;
   // Reflexo perolado: .5 na carta comum, .85 no poder (sHolo do design); antes de raspar, o de hoje.
   const holoK = !srvMode ? c.holo : !revelada ? 1 : isPower ? 0.85 / 0.55 : 0.5 / 0.55;
@@ -352,8 +465,20 @@ export default function CartaScreen() {
   const ox = (W - 393) / 2;
   const oy = insets.top - 54;
   const ob = insets.bottom - 34; // home indicator do frame = 34
-  const stageX = ox + CARD_LEFT;
-  const stageY = oy + CARD_TOP;
+  // Onboarding: a carta fica com ~72% da largura da tela (escala K do palco inteiro, em
+  // volta do centro), limitada ao espaço entre o título e o botão — no SE ela encolhe para
+  // caber. Centro vertical = meio desse espaço.
+  const obBtnBottom = Math.max(40 + ob, insets.bottom + 16);
+  const obTopo = oy + 102 + 96;               // título em 2 linhas + "Raspe para revelar"
+  const obBase = H - obBtnBottom - 56;        // topo do botão
+  const K = obMode ? Math.min((0.72 * W) / CW, (obBase - obTopo - 28) / CH) : 1;
+  const stageX = obMode ? (W - CW) / 2 : ox + CARD_LEFT;
+  const stageY = obMode ? (obTopo + obBase) / 2 - CH / 2 : oy + CARD_TOP;
+  const giro = obMode ? OB_GIRO : 540;
+  const cores = obMode ? COLORS_OB : COLORS;
+  // Ponto da carta (coordenadas 252 × 360) → tela, com a escala K em volta do centro.
+  const telaX = (x: number) => { 'worklet'; return stageX + CW / 2 + (x - CW / 2) * K; };
+  const telaY = (y: number) => { 'worklet'; return stageY + CH / 2 + (y - CH / 2) * K; };
   const sheetTop = oy + 328;
   const sheetH = H - sheetTop;
 
@@ -368,7 +493,8 @@ export default function CartaScreen() {
 
   // ── Valores animados (UI thread) ──────────────────────────────────────────
   const y = useSharedValue(640), s = useSharedValue(0.78), ry = useSharedValue(-360), rz = useSharedValue(-10);
-  const lift = useSharedValue(0), tx = useSharedValue(0), ty = useSharedValue(0), o = useSharedValue(1);
+  // Onboarding: a carta nasce invisível (a sequência só começa quando o modal aparece).
+  const lift = useSharedValue(0), tx = useSharedValue(0), ty = useSharedValue(0), o = useSharedValue(obMode ? 0 : 1);
   const veil = useSharedValue(0), head = useSharedValue(0), sheet = useSharedValue(110), sheetO = useSharedValue(1);
   const ph = useSharedValue(PH_ENTER);
   const sheen = useSharedValue(0);
@@ -395,20 +521,219 @@ export default function CartaScreen() {
   // Partículas (tela inteira).
   const parts = useSharedValue<Part[]>([]);
 
+  // Modo onboarding: os dois textos da abertura, a luz rosa, a flutuação e a mãozinha.
+  const txt1 = useSharedValue(0), txt2 = useSharedValue(0), luz = useSharedValue(0);
+  const bob = useSharedValue(0), maoO = useSharedValue(0), maoX = useSharedValue(0);
+  const [handOb, setHandOb] = useState(false);
+  // As duas cartas: `escuro` = o rosa-escuro da transição (fica na Carta 2); `txt3`/`txt4` = os
+  // dois textos da transição; `tremor` = o deslocamento X do tremor da Carta 2; `borda`/`pulso`
+  // = a borda rosa-escuro pulsando; `festa` = 0 tira as partículas (worklets leem aqui).
+  const escuro = useSharedValue(0), txt3 = useSharedValue(0), txt4 = useSharedValue(0);
+  const tremor = useSharedValue(0), borda = useSharedValue(0), pulso = useSharedValue(0), festa = useSharedValue(1);
+  // Na revelação o título vira "Sua pele aparenta N anos" (a idade do resultado).
+  const [tituloIdade, setTituloIdade] = useState(false);
+
   const rm = reduced;
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const later = (ms: number, fn: () => void) => { timers.current.push(setTimeout(fn, ms)); };
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
   const numRaf = useRef(0);
 
-  const foilPic = useMemo(() => (srvMode ? drawVerso84(logoImg ?? null) : drawFoil(tipo === 'idade', logoImg ?? null)), [srvMode, tipo, logoImg]);
+  const foilPic = useMemo(() => (cartaNova ? drawVerso84(logoImg ?? null, naAlerta) : drawFoil(tipo === 'idade', logoImg ?? null)), [cartaNova, tipo, logoImg, naAlerta]);
 
   const setPhase = useCallback((p: Phase) => setPhaseJS(p), []);
+
+  // ── Carta 2 (alerta): entra no centro, sem voo nem giro ────────────────────
+  // Animação de ALERTA, não de prêmio: tranco curto, tremor leve e a borda rosa-escuro
+  // pulsando; sem raios, brilho, flutuação nem partículas. `imediato`: o rosa-escuro já pronto
+  // (retomada, ou voltou ao app no meio da transição).
+  const bootAlerta = useCallback((imediato = false) => {
+    clearTimers();
+    irEtapa('alerta');
+    useAppStore.getState().setEtapaCartaOb('alerta');
+    festa.set(0); parts.set([]);
+    saindoOb.current = false;
+    setPhaseJS('enter'); setProgress(0); setHint(false); setBtnShown(false); setHandOb(false); setNumOb(null); setTituloIdade(false); setRevelada(false);
+    scratch.set(Skia.Path.Make()); last.set(null);
+    grid.set(new Array(COLS * ROWS).fill(0)); cleared.set(0); moves.set(0); down.set(false);
+    foilO.set(1); foilS.set(1); foilBlur.set(0); flash.set(0); sheen.set(0);
+    lift.set(0); tx.set(0); ty.set(0); ph.set(PH_ENTER);
+    fx0.set(0); fy0.set(0); fs0.set(1); fp.set(1); fs.set(1); fr.set(1);
+    y.set(0); ry.set(0); rz.set(0); glow.set(0); raysO.set(0); bob.set(0); luz.set(0);
+    txt1.set(0); txt2.set(0); txt3.set(0); txt4.set(0); maoO.set(0); head.set(0);
+    tremor.set(0); pulso.set(0); borda.set(0);
+    if (imediato) { veil.set(1); escuro.set(1); }
+    o.set(0);
+    // A frente de alerta precisa estar desenhada antes de a carta aparecer (retomada direto na
+    // Carta 2): troca agora e começa a entrada no quadro seguinte ao redesenho.
+    const trocar = !faceAlertaRef.current;
+    if (trocar) setFaceAlerta(true);
+    const entrar = () => entradaAlerta();
+    if (trocar) later(80, entrar); else entrar();
+  }, [rm]);
+
+  const entradaAlerta = () => {
+    if (rm) {
+      // Reduzir movimento: só fades — sem tranco, tremor nem pulso (a borda fica parada).
+      s.set(1); o.set(0); pulso.set(1);
+      o.set(withTiming(1, { duration: 300, reduceMotion: ReduceMotion.Never }));
+      borda.set(withTiming(1, { duration: 300, reduceMotion: ReduceMotion.Never }));
+      later(300, () => { haptics.impact(); head.set(withTiming(1, { duration: 300, reduceMotion: ReduceMotion.Never })); ph.set(PH_IDLE); setPhaseJS('idle'); });
+      return;
+    }
+    s.set(0.92); o.set(0);
+    o.set(withTiming(1, { duration: TRANCO_MS, easing: EO, reduceMotion: ReduceMotion.Never }));
+    s.set(withSequence(
+      withTiming(1.04, { duration: TRANCO_MS, easing: EO, reduceMotion: ReduceMotion.Never }),
+      withSpring(1, spr(1, 0.3, 0, 0.001)),
+    ));
+    later(TRANCO_MS, () => haptics.impact());   // no quadro do tranco
+    tremor.set(withDelay(TRANCO_MS, withSequence(...TREMOR.map(([v, d]) =>
+      withTiming(v, { duration: d, easing: EIO, reduceMotion: ReduceMotion.Never })))));
+    borda.set(withDelay(TRANCO_MS, withTiming(1, { duration: 300, easing: EO, reduceMotion: ReduceMotion.Never })));
+    pulso.set(withDelay(TRANCO_MS + 300, withRepeat(withTiming(1, { duration: 600, easing: EIO, reduceMotion: ReduceMotion.Never }), -1, true)));
+    later(TRANCO_MS + 200, () => head.set(withSpring(1, spr(1, 0.38, 0, 0.002))));
+    later(TRANCO_MS + 450, () => { ph.set(PH_IDLE); setPhaseJS('idle'); });
+  };
+
+  // ── Transição de alerta (sem botão, ~2,5 s) ───────────────────────────────
+  // A Carta 1 sai; o brilho festivo (luz, raios, flutuação, partículas) some; o fundo vira o
+  // rosa-escuro, levemente mais escuro; os dois textos com o batimento (dois toques). `semCarta1`:
+  // a Carta 1 foi pulada (não houve ponto forte).
+  const startTransicao = useCallback((semCarta1 = false) => {
+    clearTimers();
+    irEtapa('transicao');
+    if (!semCarta1) useAppStore.getState().setEtapaCartaOb('boaRaspada');
+    festa.set(0); parts.set([]);
+    setBtnShown(false); setHandOb(false); maoO.set(0);
+    head.set(withTiming(0, { duration: 200, easing: EO, reduceMotion: ReduceMotion.Never }));
+    o.set(withTiming(0, { duration: TRANS.sai, easing: EO, reduceMotion: ReduceMotion.Never }));
+    if (!rm) s.set(withTiming(0.96, { duration: TRANS.sai, easing: EO }));
+    glow.set(withTiming(0, { duration: 300, easing: EO, reduceMotion: ReduceMotion.Never }));
+    raysO.set(withTiming(0, { duration: 300, easing: EO, reduceMotion: ReduceMotion.Never }));
+    bob.set(withTiming(0, { duration: 220, easing: EO, reduceMotion: ReduceMotion.Never }));
+    escuro.set(withTiming(1, { duration: TRANS.escurece, easing: EO, reduceMotion: ReduceMotion.Never }));
+    later(TRANS.t1, () => {
+      haptics.tap();                                  // batimento: leve…
+      txt3.set(withTiming(1, { duration: 260, easing: EO, reduceMotion: ReduceMotion.Never }));
+    });
+    later(TRANS.t1 + 140, () => haptics.action());    // …e médio
+    later(TRANS.t1Fora, () => txt3.set(withTiming(0, { duration: 200, easing: EO, reduceMotion: ReduceMotion.Never })));
+    later(TRANS.t2, () => txt4.set(withTiming(1, { duration: 260, easing: EO, reduceMotion: ReduceMotion.Never })));
+    later(TRANS.t2Fora, () => txt4.set(withTiming(0, { duration: 200, easing: EO, reduceMotion: ReduceMotion.Never })));
+    later(TRANS.sai + 60, () => setFaceAlerta(true));   // a Carta 1 já sumiu: troca a frente
+    later(TRANS.fim, () => bootAlerta());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rm, bootAlerta]);
+
+  // Saiu do app no meio da transição: ao voltar, a Carta 2 já pronta (não refaz a transição).
+  useEffect(() => {
+    if (!obMode) return;
+    let saiu = false;
+    const sub = AppState.addEventListener('change', (estadoApp) => {
+      if (estadoApp === 'background') saiu = true;
+      else if (estadoApp === 'active' && saiu) {
+        saiu = false;
+        if (etapaRef.current === 'transicao') bootAlerta(true);
+      }
+    });
+    return () => sub.remove();
+  }, [obMode, bootAlerta]);
+
+  // ── 0. Chegada no onboarding (abertura própria, uma vez) ───────────────────
+  // Tempos (ms desde a tela abrir, que é o resultado pronto): preto 0–400; "Espera,
+  // <nome>..." 450–1450 com vibração leve; "Encontramos algo na sua análise." 1450–2650;
+  // o texto some; luz rosa 2900; a carta voa 3250–4350 (giro rápido que freia, 1,5 volta
+  // do verso para a frente, nascendo a 6% do tamanho); no pouso passa a 108% e volta, com
+  // brilho, raios, partículas e vibração forte; os títulos entram e a carta flutua.
+  const bootOb = useCallback(() => {
+    const st = useAppStore.getState();
+    st.setCartaChegadaVista(true);
+    // Retomada (a tela foi recriada): nunca repete uma carta já raspada.
+    if (st.etapaCartaOb === 'alertaRaspada') { router.back(); return; }   // o loading abre a "Calma"
+    if (st.etapaCartaOb === 'boaRaspada' || st.etapaCartaOb === 'alerta') { veil.set(1); bootAlerta(true); return; }
+    irEtapa('boa'); setFaceAlerta(false); festa.set(1);
+    escuro.set(0); txt3.set(0); txt4.set(0); tremor.set(0); borda.set(0); pulso.set(0);
+    setPhaseJS('enter'); setProgress(0); setHint(false); setRecs(false); setBtnShown(false); setHandOb(false); setNumOb(null); setTituloIdade(false); setRevelada(false);
+    scratch.set(Skia.Path.Make()); last.set(null);
+    grid.set(new Array(COLS * ROWS).fill(0)); cleared.set(0); moves.set(0); down.set(false);
+    foilO.set(1); foilS.set(1); foilBlur.set(0); flash.set(0); sheen.set(0);
+    lift.set(0); tx.set(0); ty.set(0); sheet.set(110); sheetO.set(1);
+    ph.set(PH_ENTER);
+    y.set(0); s.set(1); ry.set(0); rz.set(0); head.set(0); glow.set(0); raysO.set(0);
+    txt1.set(0); txt2.set(0); luz.set(0); bob.set(0); maoO.set(0); maoX.set(0);
+    veil.set(withTiming(1, { duration: rm ? 300 : 500, easing: EO, reduceMotion: ReduceMotion.Never }));
+    // Sem ponto forte possível: pula a Carta 1 e vai direto à transição de alerta.
+    if (!pontoForteRef.current) { o.set(0); later(rm ? 300 : 500, () => startTransicao(true)); return; }
+    st.setEtapaCartaOb('boa');
+    later(450, () => { haptics.tap(); txt1.set(withTiming(1, { duration: 260, easing: EO, reduceMotion: ReduceMotion.Never })); });
+    later(1450, () => {
+      txt1.set(withTiming(0, { duration: 200, easing: EO, reduceMotion: ReduceMotion.Never }));
+      txt2.set(withDelay(150, withTiming(1, { duration: 260, easing: EO, reduceMotion: ReduceMotion.Never })));
+    });
+    later(2650, () => txt2.set(withTiming(0, { duration: 240, easing: EO, reduceMotion: ReduceMotion.Never })));
+    if (rm) {
+      // Reduzir movimento: a carta só aparece (fade), sem luz, giro, partículas ou flutuação.
+      fp.set(1); fs.set(1); fr.set(1); o.set(0);
+      later(2950, () => { o.set(withTiming(1, { duration: 300, reduceMotion: ReduceMotion.Never })); glow.set(withTiming(0.4, { duration: 300, reduceMotion: ReduceMotion.Never })); });
+      later(3300, () => { haptics.impact(); head.set(withTiming(1, { duration: 300, reduceMotion: ReduceMotion.Never })); ph.set(PH_IDLE); setPhaseJS('idle'); });
+      return;
+    }
+    fx0.set(0); fy0.set(0); fs0.set(START_SCALE);
+    fp.set(0); fs.set(0); fr.set(0); o.set(0);
+    // A luz rosa nasce pequena no centro; a carta sai de dentro dela e a luz se apaga.
+    later(2900, () => luz.set(withTiming(1, { duration: 420, easing: EO, reduceMotion: ReduceMotion.Never })));
+    later(OB_FLY_AT, () => {
+      o.set(1);
+      fp.set(withTiming(1, { duration: OB_FLY_MS, easing: EASE_PATH, reduceMotion: ReduceMotion.Never }));
+      fs.set(withTiming(1, { duration: OB_FLY_MS, easing: EASE_PATH, reduceMotion: ReduceMotion.Never }));
+      fr.set(withTiming(1, { duration: OB_FLY_MS, easing: OB_EASE_SPIN, reduceMotion: ReduceMotion.Never }));
+      luz.set(withTiming(0, { duration: 600, easing: EO, reduceMotion: ReduceMotion.Never }));
+    });
+    // Impacto: passa um pouco do tamanho e volta; brilho, raios, partículas e vibração forte.
+    later(OB_FLY_AT + OB_FLY_MS, () => {
+      haptics.impact();
+      s.set(withSequence(withTiming(1.08, { duration: 130, easing: EO, reduceMotion: ReduceMotion.Never }), withSpring(1, spr(0.6, 0.38, 0, 0.001))));
+      glow.set(withSequence(withTiming(1, { duration: 200, easing: EO, reduceMotion: ReduceMotion.Never }), withTiming(0.55, { duration: 900, easing: EO, reduceMotion: ReduceMotion.Never })));
+      raysO.set(withTiming(0.22, { duration: 700, easing: EO, reduceMotion: ReduceMotion.Never }));
+      raysRot.set(0);
+      raysRot.set(withRepeat(withTiming(360, { duration: 30000, easing: Easing.linear, reduceMotion: ReduceMotion.Never }), -1, false));
+      flashPeak.set(0.7); burstN.set(64);
+      scheduleOnUI(burst);
+      sheen.set(0); sheen.set(withTiming(1, { duration: 820, easing: EIO, reduceMotion: ReduceMotion.Never }));
+    });
+    later(OB_FLY_AT + OB_FLY_MS + 300, () => head.set(withSpring(1, spr(1, 0.38, 0, 0.002))));
+    later(OB_FLY_AT + OB_FLY_MS + 500, () => {
+      ph.set(PH_IDLE); setPhaseJS('idle');
+      bob.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.bezier(0.42, 0, 0.58, 1), reduceMotion: ReduceMotion.Never }), -1, true));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rm, bootAlerta, startTransicao]);
+
+  // Mãozinha: 2 s parada no idle sem toque → mostra o gesto de raspar (vai e vem).
+  useEffect(() => {
+    if (!obMode || phase !== 'idle') return;
+    const t = setTimeout(() => {
+      setHandOb(true);
+      maoO.set(withTiming(1, { duration: 260, easing: EO, reduceMotion: ReduceMotion.Never }));
+      if (!rm) maoX.set(withRepeat(withTiming(1, { duration: 900, easing: Easing.bezier(0.42, 0, 0.58, 1) }), -1, true));
+    }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obMode, phase, rm]);
+
+  // Sem voltar do Android durante a carta do onboarding.
+  useEffect(() => {
+    if (!obMode) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, [obMode]);
 
   // ── 1. Entrada ────────────────────────────────────────────────────────────
   const boot = useCallback(() => {
     clearTimers();
     cancelAnimationFrame(numRaf.current);
+    if (obMode) { bootOb(); return; }
     const cfg = CARTAS[tipo];
     setPhaseJS('enter'); setProgress(0); setHint(false); setRecs(false); setBtnShown(false); setPacote(null);
     setNum(cfg.to ?? 0); setSecs(6720);
@@ -448,9 +773,25 @@ export default function CartaScreen() {
     later(FLY_DELAY + FLY_MS + 120, () => head.set(withSpring(1, spr(1, 0.38, 0, 0.002))));
     later(FLY_DELAY + FLY_MS + 450, () => { ph.set(PH_IDLE); setPhaseJS('idle'); setBtnShown(true); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo, rm, run]);
+  }, [tipo, rm, run, obMode, bootOb]);
 
-  useEffect(() => { boot(); return () => { clearTimers(); cancelAnimationFrame(numRaf.current); }; }, [boot, run]);
+  // Onboarding: a sequência começa quando o modal APARECE (`transitionStart`), não na
+  // montagem — a montagem vem de 0,2 a 1,3 s antes (medido no simulador), e a tela surgia
+  // já no preto, sem o escurecimento nem o "Espera, <nome>...". Reserva: 800 ms.
+  const navigation = useNavigation();
+  const [visivel, setVisivel] = useState(!obMode);
+  useEffect(() => {
+    if (!obMode) return;
+    const t = setTimeout(() => setVisivel(true), 800);
+    const sai = navigation.addListener('transitionStart' as never, () => { clearTimeout(t); setVisivel(true); });
+    return () => { clearTimeout(t); sai(); };
+  }, [navigation, obMode]);
+
+  useEffect(() => {
+    if (!visivel) return;
+    boot();
+    return () => { clearTimers(); cancelAnimationFrame(numRaf.current); };
+  }, [boot, run, visivel]);
 
   // Carta surpresa: "some em 1h 52min" contando e a barrinha esvaziando.
   useEffect(() => {
@@ -466,12 +807,12 @@ export default function CartaScreen() {
     // Rastro de brilhos atrás da carta enquanto ela voa.
     const p = fp.get();
     if (!rm && p > 0.02 && p < 0.96) {
-      const f = flight(p, fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get());
-      const cx = stageX + CW / 2 + f.x, cy = stageY + CH / 2 + f.y;
-      const r = (CW * f.s) / 2;
+      const f = flight(p, fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get(), giro);
+      const cx = stageX + CW / 2 + f.x * K, cy = stageY + CH / 2 + f.y * K;
+      const r = (CW * f.s * K) / 2;
       list = list.slice();
       for (let i = 0; i < 2; i++) {
-        const q = mkPart(cx + (Math.random() - 0.5) * r * 1.4, cy + (Math.random() - 0.5) * r * 1.8, (Math.random() - 0.5) * 60, -20 - Math.random() * 60);
+        const q = mkPart(cx + (Math.random() - 0.5) * r * 1.4, cy + (Math.random() - 0.5) * r * 1.8, (Math.random() - 0.5) * 60, -20 - Math.random() * 60, cores);
         q.max = 0.45 + Math.random() * 0.4;
         list.push(q);
       }
@@ -569,7 +910,7 @@ export default function CartaScreen() {
       let x: number, yy: number;
       if (side < 0.25) { x = a * CW; yy = 0; } else if (side < 0.5) { x = a * CW; yy = CH; } else if (side < 0.75) { x = 0; yy = a * CH; } else { x = CW; yy = a * CH; }
       const dx = x - cx, dy = yy - cy, d = Math.hypot(dx, dy) || 1, sp = 180 + Math.random() * 360;
-      const q = mkPart(stageX + x, stageY + yy, (dx / d) * sp, (dy / d) * sp - 120);
+      const q = mkPart(telaX(x), telaY(yy), (dx / d) * sp, (dy / d) * sp - 120, cores);
       q.max += 0.3;
       list.push(q);
     }
@@ -586,6 +927,8 @@ export default function CartaScreen() {
       const id = srvId!;
       rasparCarta(id)
         .then((r) => {
+          // Regras novas: a carta de outro dia venceu às 04:00 — fecha (o card da home já mostra).
+          if (r.vencida) { fechar(); return; }
           if (r.pontos) {
             setPontos(r.pontos.ganhos);
             if (r.pontos.nivel > r.pontos.nivel_antes) subiuNivel.current = true;
@@ -594,7 +937,8 @@ export default function CartaScreen() {
             if (p.ganhos > 0 && tabela.current?.niveis?.length && tabela.current.icone) {
               later(Math.max(0, 600 - (Date.now() - reveladaEm.current)), () => {
                 head.set(withTiming(0, { duration: 180, easing: EO }));
-                setPacote({ de: p.total_antes, para: p.total });
+                // Os pontos sem carta do mesmo fluxo (check-in…) sobem junto: a barra sobe uma vez só.
+                setPacote({ de: inicioDoPacote(p.total_antes), para: p.total });
               });
             }
           }
@@ -609,6 +953,13 @@ export default function CartaScreen() {
         auraBreath.set(withRepeat(withTiming(1, { duration: 2400, easing: Easing.bezier(0.42, 0, 0.58, 1) }), -1, true));
       } else if (isPower) auraO.set(withTiming(1, { duration: 220 }));
     }
+    // Carta 2 do onboarding (alerta): a camada some sem flash, explosão nem pulo.
+    const alertaOb = obMode && etapaRef.current !== 'boa';
+    if (obMode) useAppStore.getState().setEtapaCartaOb(alertaOb ? 'alertaRaspada' : 'boaRaspada');
+    if (alertaOb) {
+      borda.set(withTiming(0, { duration: 300, easing: EO, reduceMotion: ReduceMotion.Never }));
+      pulso.set(withTiming(0, { duration: 300, reduceMotion: ReduceMotion.Never }));
+    }
     // Flash: repetida não é festa (metade); poder é a revelação mais brilhante.
     flashPeak.set(!srvMode ? 0.9 : isPower ? 1 : isDup ? 0.45 : 0.9);
     burstN.set(!srvMode ? 56 : isPower ? 60 : 40);
@@ -620,19 +971,57 @@ export default function CartaScreen() {
       foilS.set(withTiming(1.08, { duration: 460, easing: EO }));
       foilBlur.set(withTiming(6, { duration: 460, easing: EO }));
       flash.set(0);
-      flash.set(withTiming(1, { duration: 760, easing: EO }));
+      if (!alertaOb) flash.set(withTiming(1, { duration: 760, easing: EO }));
       tx.set(withSpring(0, spr(0.7, 0.5))); ty.set(withSpring(0, spr(0.7, 0.5)));
-      s.set(withSpring(1, spr(0.55, 0.42, 0.9, 0.001)));
-      scheduleOnUI(burst);
+      s.set(withSpring(1, alertaOb ? spr(1, 0.4, 0, 0.001) : spr(0.55, 0.42, 0.9, 0.001)));
+      if (!alertaOb) scheduleOnUI(burst);
+    }
+    if (obMode) {
+      // O número (idade da pele ou % da acne) sobe de 0 até o valor em CONTA_MS e só então o
+      // "Continuar" aparece. Quem conta é o `Contador` da carta: aqui o valor final entra uma
+      // vez só (antes esta tela inteira redesenhava a cada número, e a contagem travava).
+      setRevelada(true); setHandOb(false); maoO.set(withTiming(0, { duration: 150 }));
+      const alvo = !alertaOb && pontoForteRef.current ? pontoForteRef.current.numero : cartaAlerta ? ALERTA_PCT : idadePele ?? 0;
+      if (rm) { setNumOb(alvo); setTituloIdade(true); later(400, () => setBtnShown(true)); return; }
+      // O título troca junto com o número: some em 140 ms, troca e volta em 260 ms.
+      head.set(withTiming(0, { duration: 140, easing: EO }));
+      later(160, () => { setTituloIdade(true); setNumOb(alvo); head.set(withTiming(1, { duration: 260, easing: EO })); });
+      later(160 + CONTA_MS + 100, () => setBtnShown(true));
+      return;
     }
     if (srvMode) return; // sem número nem recomendações: a carta revelada fica na tela
     later(rm ? 60 : 160, runNumber);
     later(rm ? 700 : 1550, showRecs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rm, runNumber, showRecs, srvMode, srvId, isPower, isDup]);
+  }, [rm, runNumber, showRecs, srvMode, srvId, isPower, isDup, obMode, idadePele, temAlerta]);
+  // TEMP-PULAR-SCAN — só em desenvolvimento: deixa o depurador do Metro revelar a carta sem
+  // raspar (`globalThis.__revelarCarta()`), para gravar o que vem depois. Some no release.
+  useEffect(() => {
+    if (!__DEV__) return;
+    (globalThis as any).__revelarCarta = reveal;
+    return () => { if ((globalThis as any).__revelarCarta === reveal) delete (globalThis as any).__revelarCarta; };
+  }, [reveal]);
+  // TEMP-PULAR-SCAN — idem para o "Continuar" (`globalThis.__continuarCarta()`).
+  useEffect(() => {
+    if (!__DEV__) return;
+    const g = globalThis as any;
+    g.__continuarCarta = () => onContinueRef.current();
+    return () => { delete g.__continuarCarta; };
+  }, []);
 
   // ── 3–5. Toque, arrastar e raspar (gesto no UI thread) ────────────────────
-  const onReady = useCallback(() => { haptics.tap(); setPhaseJS('ready'); setHint(true); }, []);
+  // Onboarding: sem a pílula "Raspe para ver" (o "Raspe para revelar" já está no título);
+  // o primeiro toque some com a mãozinha e para a flutuação.
+  const onReady = useCallback(() => {
+    haptics.tap(); setPhaseJS('ready');
+    if (obMode) {
+      setHandOb(false); maoO.set(withTiming(0, { duration: 150 })); bob.set(withTiming(0, { duration: 220, easing: EO }));
+      // Carta 2: a borda para de pulsar quando ela começa a raspar (fica acesa, parada).
+      if (etapaRef.current === 'alerta') pulso.set(withTiming(0.5, { duration: 200, easing: EO }));
+    }
+    else setHint(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obMode]);
   const onScratching = useCallback(() => { setPhaseJS('scratching'); setHint(false); }, []);
 
   const tilt = (px: number, py: number, max: number) => {
@@ -682,11 +1071,11 @@ export default function CartaScreen() {
     }
     if (added) cleared.set(cleared.get() + added);
     last.set({ x, y: yy });
-    if (!rm) {
+    if (!rm && festa.get()) {
       const list = parts.get().slice();
       const count = Math.min(4, 1 + Math.floor(d / 14));
       for (let i = 0; i < count; i++) {
-        list.push(mkPart(stageX + x + (Math.random() - 0.5) * 18, stageY + yy + (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 160, -Math.random() * 170 - 30));
+        list.push(mkPart(telaX(x) + (Math.random() - 0.5) * 18, telaY(yy) + (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 160, -Math.random() * 170 - 30, cores));
       }
       parts.set(list);
     }
@@ -710,6 +1099,8 @@ export default function CartaScreen() {
         }
         ph.set(PH_READY);
         scheduleOnRN(onReady);
+        // Onboarding: o primeiro toque já raspa (o pedido é "Raspe para revelar").
+        if (obMode) scratchAt(e.x, e.y);
       } else {
         scratchAt(e.x, e.y);
       }
@@ -737,34 +1128,42 @@ export default function CartaScreen() {
   // no resto. Faz o papel do `backface-visibility: hidden` do design — no iOS, com a
   // perspectiva no transform, o backfaceVisibility escondia a frente de pé.
   const frontStyle = useAnimatedStyle(() => {
-    const f = flight(fp.get(), fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get());
+    const f = flight(fp.get(), fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get(), giro);
     const Y = ry.get() + ty.get() + f.ry, X = tx.get();
     const facing = Math.cos((Y * Math.PI) / 180) * Math.cos((X * Math.PI) / 180) >= 0;
     return {
       opacity: facing ? o.get() : 0,
-      transform: cardT(f.x, y.get() + lift.get() + f.y, s.get() * f.s, X, Y, rz.get() + f.rz, false) as any,
+      transform: cardT(f.x + tremor.get(), y.get() + lift.get() + f.y - 6 * bob.get(), s.get() * f.s, X, Y, rz.get() + f.rz, false) as any,
     };
   });
   const haloStyle = useAnimatedStyle(() => {
-    const f = flight(fp.get(), fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get());
+    const f = flight(fp.get(), fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get(), giro);
     return {
       opacity: o.get(),
-      transform: cardT(f.x, y.get() + lift.get() + f.y, s.get() * f.s, tx.get(), ry.get() + ty.get() + f.ry, rz.get() + f.rz, false) as any,
+      transform: cardT(f.x + tremor.get(), y.get() + lift.get() + f.y - 6 * bob.get(), s.get() * f.s, tx.get(), ry.get() + ty.get() + f.ry, rz.get() + f.rz, false) as any,
+    };
+  });
+  // Borda rosa-escuro da Carta 2: acompanha a carta (inclusive o tremor) e pulsa 0,35 ↔ 0,9.
+  const bordaStyle = useAnimatedStyle(() => {
+    const f = flight(fp.get(), fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get(), giro);
+    return {
+      opacity: o.get() * borda.get() * (0.35 + 0.55 * pulso.get()),
+      transform: cardT(f.x + tremor.get(), y.get() + lift.get() + f.y, s.get() * f.s, tx.get(), ry.get() + ty.get() + f.ry, rz.get() + f.rz, false) as any,
     };
   });
   const backStyle = useAnimatedStyle(() => {
-    const f = flight(fp.get(), fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get());
+    const f = flight(fp.get(), fs.get(), fr.get(), fx0.get(), fy0.get(), fs0.get(), giro);
     const Y = ry.get() + ty.get() + f.ry, X = tx.get();
     const facing = Math.cos((Y * Math.PI) / 180) * Math.cos((X * Math.PI) / 180) >= 0;
     return {
       opacity: facing ? 0 : o.get(),
-      transform: cardT(f.x, y.get() + lift.get() + f.y, s.get() * f.s, X, Y, rz.get() + f.rz, true) as any,
+      transform: cardT(f.x + tremor.get(), y.get() + lift.get() + f.y - 6 * bob.get(), s.get() * f.s, X, Y, rz.get() + f.rz, true) as any,
     };
   });
   // Brilho rosado atrás da carta pousada + raios girando devagar.
   const glowStyle = useAnimatedStyle(() => ({
     opacity: glow.get(),
-    transform: [{ scale: interpolate(glow.get(), [0, 1], [0.6, 1.08]) }],
+    transform: [{ scale: interpolate(glow.get(), [0, 1], [0.6, 1.08]) * K }],
   }));
   // Halo rosa na borda: só depois do pouso (é estático no centro, não acompanha o voo).
   const cardGlowStyle = useAnimatedStyle(() => ({ opacity: fp.get() > 0.98 ? glow.get() : 0 }));
@@ -775,6 +1174,18 @@ export default function CartaScreen() {
     transform: [{ scale: 0.97 + 0.06 * auraBreath.get() }],
   }));
   const veilStyle = useAnimatedStyle(() => ({ opacity: veil.get() }));
+  // Abertura do onboarding: os dois textos sobem 8 pt ao entrar; a luz rosa nasce pequena.
+  const txt1Style = useAnimatedStyle(() => ({ opacity: txt1.get(), transform: [{ translateY: (1 - txt1.get()) * 8 }] }));
+  const txt2Style = useAnimatedStyle(() => ({ opacity: txt2.get(), transform: [{ translateY: (1 - txt2.get()) * 8 }] }));
+  const txt3Style = useAnimatedStyle(() => ({ opacity: txt3.get(), transform: [{ translateY: rm ? 0 : (1 - txt3.get()) * 8 }] }));
+  const txt4Style = useAnimatedStyle(() => ({ opacity: txt4.get(), transform: [{ translateY: rm ? 0 : (1 - txt4.get()) * 8 }] }));
+  const escuroStyle = useAnimatedStyle(() => ({ opacity: escuro.get() }));
+  const luzStyle = useAnimatedStyle(() => ({ opacity: luz.get(), transform: [{ scale: 0.25 + 0.45 * luz.get() }] }));
+  // Mãozinha: vai e vem 56 pt em cima da carta, inclinando junto (o gesto de raspar).
+  const maoStyle = useAnimatedStyle(() => ({
+    opacity: maoO.get(),
+    transform: [{ translateX: (maoX.get() - 0.5) * 56 }, { rotate: `${(maoX.get() - 0.5) * 16}deg` }],
+  }));
   const headStyle = useAnimatedStyle(() => ({ opacity: head.get(), transform: [{ translateY: (1 - head.get()) * 12 }] }));
   const sheetStyle = useAnimatedStyle(() => ({ opacity: sheetO.get(), transform: [{ translateY: (sheet.get() / 100) * sheetH }] }));
   const SHEEN_W = (CW - 3) * 0.38;
@@ -797,15 +1208,36 @@ export default function CartaScreen() {
 
   // ── Continuar ─────────────────────────────────────────────────────────────
   const unlocked = progress >= UNLOCK || phase === 'revealed' || phase === 'recs';
+  const saindoOb = useRef(false);
+  const saidaOb = useSharedValue(0);
+  const saidaObStyle = useAnimatedStyle(() => ({ opacity: saidaOb.get() }));
+  // A carta (modal da raiz, sem animação) só FECHA: o loading que está por baixo já mostra o
+  // mesmo rosa e, ao ganhar foco, troca a si mesmo pela "Calma, <nome>." DENTRO da pilha do
+  // scan — onde vale o `animation: 'none'`. (Um `replace` daqui saía deslizando: a troca
+  // acontecia na pilha da raiz, com o deslize padrão.)
+  const irParaSolucao = () => router.back();
+  const onContinueRef = useRef<() => void>(() => {});
   const onContinue = () => {
     if (!unlocked) return;
     haptics.action();
+    if (obMode && etapaRef.current === 'boa') { startTransicao(); return; }   // Carta 1 → transição
+    if (obMode) {
+      // O rosa cobre o conteúdo, a carta fecha e o loading por baixo abre a "Calma, <nome>."
+      // (`(scan)/solucao`), que segue sozinha para o "Seu caminho".
+      if (saindoOb.current) return;
+      saindoOb.current = true;
+      saidaOb.set(withTiming(1, { duration: 300, easing: EO }, (ok) => {
+        'worklet';
+        if (ok) scheduleOnRN(irParaSolucao);
+      }));
+      return;
+    }
     if (srvMode) {
       // Próxima carta a raspar (Carta extra, marco); sem mais nenhuma, volta — ou, se ela
       // subiu de nível, vai para a "Sua caminhada", que anima os pontos e celebra (68d/68e).
       const atual = srvId;
       const sair = () => {
-        if (router.canGoBack()) router.back(); else router.replace('/(app)/home' as any);
+        fechar();
         if (subiuNivel.current) { subiuNivel.current = false; router.push('/(app)/caminhada' as any); }
       };
       estadoCartas()
@@ -821,6 +1253,7 @@ export default function CartaScreen() {
     setTipo(ORDEM_CARTAS[(i + 1) % ORDEM_CARTAS.length]);
     setRun((r) => r + 1);
   };
+  onContinueRef.current = onContinue;
   const fill = unlocked ? 0 : Math.min(1, progress / UNLOCK);
 
   const hh = Math.floor(secs / 3600), mm = Math.floor((secs % 3600) / 60);
@@ -828,13 +1261,42 @@ export default function CartaScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="dark" />
+      <StatusBar style={obMode ? 'light' : 'dark'} />
       {/* Fundo = o próprio app (a tela é um modal transparente por cima dele), desfocado
-          enquanto a carta voa: camada de desfoque estática, só a opacidade anima. */}
-      <Animated.View style={[StyleSheet.absoluteFill, veilStyle]} pointerEvents="none">
-        <BlurView intensity={28} tint="light" style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(252,228,238,0.55)' }]} />
-      </Animated.View>
+          enquanto a carta voa: camada de desfoque estática, só a opacidade anima.
+          Onboarding: o loading branco passa direto para o rosa do app (#FF5EA8, mais claro no
+          centro e mais forte nas bordas), sem passar pelo preto. */}
+      {obMode ? (
+        <>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.fundoOb, veilStyle]} pointerEvents="none" />
+          {/* Transição de alerta e Carta 2: o rosa mais escuro e profundo por cima (só a opacidade anima). */}
+          <Animated.View style={[StyleSheet.absoluteFill, styles.fundoAlerta, escuroStyle]} pointerEvents="none" />
+        </>
+      ) : (
+        <Animated.View style={[StyleSheet.absoluteFill, veilStyle]} pointerEvents="none">
+          <BlurView intensity={28} tint="light" style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(252,228,238,0.55)' }]} />
+        </Animated.View>
+      )}
+
+      {/* Abertura do onboarding: os dois textos no centro e a luz rosa de onde a carta sai */}
+      {obMode && (
+        <>
+          <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 40, left: 32, right: 32 }, txt1Style]}>
+            {nome ? `Espera, ${nome}...` : 'Espera...'}
+          </Animated.Text>
+          <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 40, left: 32, right: 32 }, txt2Style]}>
+            Encontramos algo bom na sua análise.
+          </Animated.Text>
+          <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 48, left: 32, right: 32 }, txt3Style]}>
+            {nome ? `Mas nem tudo são boas notícias, ${nome}.` : 'Mas nem tudo são boas notícias.'}
+          </Animated.Text>
+          <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 48, left: 32, right: 32 }, txt4Style]}>
+            Encontramos algo que precisa da sua atenção.
+          </Animated.Text>
+          <Animated.View pointerEvents="none" style={[styles.luz, { left: stageX + CW / 2 - LUZ / 2, top: stageY + CH / 2 - LUZ / 2 }, luzStyle]} />
+        </>
+      )}
 
       {/* Brilho e raios atrás da carta pousada */}
       <Animated.View pointerEvents="none" style={[styles.rays, { left: stageX + CW / 2 - RAYS / 2, top: stageY + CH / 2 - RAYS / 2 }, raysStyle]}>
@@ -849,22 +1311,38 @@ export default function CartaScreen() {
           <Path d={RAYS_PATH} fill="url(#ray)" />
         </Svg>
       </Animated.View>
-      <Animated.View pointerEvents="none" style={[styles.glow, { left: stageX + CW / 2 - GLOW / 2, top: stageY + CH / 2 - GLOW / 2 }, glowStyle]} />
+      <Animated.View pointerEvents="none" style={[styles.glow, obMode && styles.glowOb, { left: stageX + CW / 2 - GLOW / 2, top: stageY + CH / 2 - GLOW / 2 }, glowStyle]} />
 
-      {/* Fechar */}
-      <Pressable
-        onPress={() => { haptics.tap(); if (router.canGoBack()) router.back(); else router.replace('/(app)/home' as any); }}
+      {/* Fechar (o onboarding não tem: sem voltar no meio da sequência) */}
+      {!obMode && <Pressable
+        onPress={() => { haptics.tap(); fechar(); }}
         style={[styles.close, { top: oy + 58, right: ox + 16 }]}
         accessibilityLabel="Fechar"
         hitSlop={6}
       >
         <Icon d={['M18 6 6 18', 'm6 6 12 12']} size={18} color={INK} sw={2} />
-      </Pressable>
+      </Pressable>}
 
-      {/* 2. Headline */}
+      {/* 2. Headline (onboarding: "<nome>, você precisa ver isso." + "Raspe para revelar", em branco) */}
       <Animated.View style={[styles.head, { top: oy + 102, left: ox + 24, right: ox + 24 }, headStyle]} pointerEvents="none">
-        <Text style={styles.headLabel}>{headLabel}</Text>
-        <Text style={styles.headline} lineBreakStrategyIOS="standard">{headLine}</Text>
+        {obMode ? (
+          <>
+            <Text style={[styles.headline, { color: '#FFFFFF', marginTop: 0 }]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
+              {tituloIdade && naBoa ? 'O ponto forte da sua pele'
+                : tituloIdade && cartaAlerta ? `Seu maior desafio: ${cartaAlerta.nome}`
+                : tituloIdade && idadePele != null ? `Sua pele aparenta ${idadePele} anos`
+                : nome ? `${nome}, você precisa ver isso.` : 'Você precisa ver isso.'}
+            </Text>
+            <Text style={[styles.obSub, { opacity: phase === 'revealed' ? 0 : 1, transitionProperty: 'opacity', transitionDuration: 220 } as any]}>
+              Raspe para revelar
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.headLabel}>{headLabel}</Text>
+            <Text style={styles.headline} lineBreakStrategyIOS="standard">{headLine}</Text>
+          </>
+        )}
         {!srvMode && c.timer && (
           <View style={styles.timer}>
             <Icon d={['M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z', 'M12 6v6l4 2']} size={15} color={PINK} sw={2} />
@@ -876,8 +1354,8 @@ export default function CartaScreen() {
 
       {/* A carta */}
       <GestureDetector gesture={gesture}>
-        <View style={[styles.stage, { left: stageX, top: stageY }]}>
-          <Animated.View pointerEvents="none" style={[styles.cardGlow, cardGlowStyle]} />
+        <View style={[styles.stage, { left: stageX, top: stageY }, K !== 1 && { transform: [{ scale: K }] }]}>
+          <Animated.View pointerEvents="none" style={[styles.cardGlow, obMode && styles.cardGlowOb, cardGlowStyle]} />
           {!srvMode && tipo === 'idade' && (
             <Animated.View pointerEvents="none" style={[styles.halo, haloStyle]} />
           )}
@@ -886,8 +1364,8 @@ export default function CartaScreen() {
               <Animated.View style={[styles.aura, auraSt]} />
             </Animated.View>
           )}
-          {/* Verso (aparece durante o giro da entrada). Servidor: o verso da rodada 84a. */}
-          {srvMode ? (
+          {/* Verso (aparece durante o giro da entrada). Servidor e onboarding: o verso da rodada 84a. */}
+          {cartaNova ? (
             <Animated.View pointerEvents="none" style={[styles.faceSrv, backStyle]}>
               <Carta v={VERSO} w={CW} h={CH} />
             </Animated.View>
@@ -908,11 +1386,13 @@ export default function CartaScreen() {
               raspar; a sombra vai na própria face e as faíscas de fora numa camada à parte). */}
           <Animated.View
             pointerEvents="none"
-            style={[srvMode ? [styles.faceSrv, styles.faceSrvClip, { boxShadow: visual ? sombraCarta(visual) : undefined }] : [styles.face, styles.front, isPower && styles.frontPower], frontStyle]}
+            style={[cartaNova ? [styles.faceSrv, styles.faceSrvClip, { boxShadow: obMode ? (naAlerta ? SOMBRA_ALERTA : SOMBRA_OB) : visual ? sombraCarta(visual) : undefined }] : [styles.face, styles.front, isPower && styles.frontPower], frontStyle]}
           >
-            {!srvMode && <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(160deg, #FFFFFF 0%, #FFF7FB 58%, #FCEEF6 100%)' }]} />}
-            {srvMode ? (
-              visual ? <Carta v={visual} w={CW} h={CH} semSombra faiscasFora={false} selo={pontos != null ? <SeloPontos valor={pontos} rm={rm} /> : undefined} /> : null
+            {!cartaNova && <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: 'linear-gradient(160deg, #FFFFFF 0%, #FFF7FB 58%, #FCEEF6 100%)' }]} />}
+            {obMode ? (
+              visOb ? <Carta v={visOb} w={CW} h={CH} semSombra faiscasFora={false} parado={naAlerta} /> : null
+            ) : srvMode ? (
+              visual ? <Carta v={visual} w={CW} h={CH} semSombra faiscasFora={false} selo={pontos != null && visual.k !== 'colecionavel' ? <SeloPontos valor={pontos} rm={rm} /> : undefined} /> : null
             ) : (
             <View style={styles.frontPad}>
               <View style={styles.frontTop}>
@@ -1002,13 +1482,31 @@ export default function CartaScreen() {
               <Text style={styles.hintText}>Raspe para ver</Text>
             </Animated.View>
             {/* Reflexo e brilho do 67a só nas cartas de exemplo: as da rodada 84 têm o próprio. */}
-            {!srvMode && <Animated.View style={[styles.holo, holo]} />}
-            {!srvMode && <Animated.View style={[styles.glare, glare]} />}
+            {!cartaNova && <Animated.View style={[styles.holo, holo]} />}
+            {!cartaNova && <Animated.View style={[styles.glare, glare]} />}
           </Animated.View>
 
           {srvMode && visual?.k === 'rara' && revelada && (
             <Animated.View pointerEvents="none" style={[styles.faceSrv, frontStyle]}>
               <Carta v={visual} w={CW} h={CH} apenasFaiscas />
+            </Animated.View>
+          )}
+          {/* Carta 2: a borda rosa-escuro pulsando, POR CIMA da face (por baixo ela some). */}
+          {obMode && naAlerta && (
+            <Animated.View pointerEvents="none" style={[styles.faceSrv, styles.bordaAlerta, bordaStyle]} />
+          )}
+          {obMode && visOb && revelada && !naAlerta && (
+            <Animated.View pointerEvents="none" style={[styles.faceSrv, frontStyle]}>
+              <Carta v={visOb} w={CW} h={CH} apenasFaiscas />
+            </Animated.View>
+          )}
+
+          {/* Mãozinha do onboarding: 2 s sem toque, mostra o gesto de raspar */}
+          {/* Só com a carta parada esperando o toque: o aviso de 2 s podia disparar junto com a
+              revelação e a mãozinha ficava na tela (inclusive na transição). */}
+          {obMode && handOb && phase === 'idle' && (
+            <Animated.View pointerEvents="none" style={[styles.mao, maoStyle]}>
+              <Icon d={HAND} size={26} color={PINK} sw={1.9} />
             </Animated.View>
           )}
 
@@ -1027,7 +1525,7 @@ export default function CartaScreen() {
         pointerEvents="none"
         style={[styles.helper, {
           bottom: 112 + ob, left: ox + 24, right: ox + 24,
-          opacity: phase === 'idle' ? 1 : 0,
+          opacity: phase === 'idle' && !obMode ? 1 : 0,
           transitionProperty: 'opacity', transitionDuration: 220,
         }]}
       >
@@ -1062,12 +1560,12 @@ export default function CartaScreen() {
       </Animated.View>
 
       {/* Continuar */}
-      <Pressable onPress={onContinue} disabled={!unlocked} style={{ position: 'absolute', left: ox + 24, right: ox + 24, bottom: 40 + ob }}>
+      <Pressable onPress={onContinue} disabled={!unlocked || !btnShown} style={{ position: 'absolute', left: ox + 24, right: ox + 24, bottom: obMode ? Math.max(40 + ob, insets.bottom + 16) : 40 + ob }}>
         <Animated.View
           style={[styles.btn, {
             opacity: btnShown ? 1 : 0,
-            backgroundColor: unlocked ? PINK : '#F0F0F0',
-            boxShadow: unlocked ? '0px 6px 12px rgba(255,94,168,0.45)' : '0px 0px 0px rgba(255,94,168,0)',
+            backgroundColor: obMode ? '#FFFFFF' : unlocked ? PINK : '#F0F0F0',
+            boxShadow: obMode ? '0px 10px 22px rgba(150,10,80,0.35)' : unlocked ? '0px 6px 12px rgba(255,94,168,0.45)' : '0px 0px 0px rgba(255,94,168,0)',
             transitionProperty: ['opacity', 'backgroundColor', 'boxShadow'],
             transitionDuration: 240,
           }]}
@@ -1078,8 +1576,8 @@ export default function CartaScreen() {
               transitionProperty: 'transform', transitionDuration: 220, transitionTimingFunction: ease,
             } as any]}
           />
-          <Animated.Text style={[styles.btnText, { color: unlocked ? '#FFFFFF' : '#B5B5B5', transitionProperty: 'color', transitionDuration: 240 }]}>
-            Continuar
+          <Animated.Text style={[styles.btnText, { color: obMode ? (naAlerta ? VERMELHO_ALERTA : PINK) : unlocked ? '#FFFFFF' : '#B5B5B5', transitionProperty: 'color', transitionDuration: 240 }, obMode && { fontWeight: '700' }]}>
+            {obMode ? (naBoa ? 'Continuar' : 'Quero resolver isso') : 'Continuar'}
           </Animated.Text>
         </Animated.View>
       </Pressable>
@@ -1097,6 +1595,11 @@ export default function CartaScreen() {
           rm={rm}
         />
       )}
+
+      {/* Onboarding: ao tocar em "Quero resolver isso", o MESMO fundo rosa cobre carta,
+          título e botão (300 ms) e só então a tela "Calma, <nome>." (`(scan)/solucao`, mesmo
+          fundo, sem animação de entrada) toma o lugar — a troca não aparece. */}
+      {obMode && <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.fundoOb, { zIndex: 100, elevation: 100 }, saidaObStyle]} />}
     </View>
   );
 }
@@ -1243,6 +1746,40 @@ const styles = StyleSheet.create({
   },
 
   helper: { position: 'absolute', zIndex: 6, textAlign: 'center', fontSize: 14, color: MUTE, letterSpacing: -0.1 },
+
+  // Onboarding (chegada da carta, fundo preto).
+  obText: { position: 'absolute', zIndex: 12, textAlign: 'center', fontSize: 26, lineHeight: 32, fontWeight: '700', letterSpacing: -0.6, color: '#FFFFFF' },
+  obSub: { marginTop: 8, fontSize: 17, lineHeight: 22, fontWeight: '700', letterSpacing: -0.2, color: '#FFFFFF', textAlign: 'center' },
+  fundoOb: {
+    backgroundColor: PINK,
+    experimental_backgroundImage: 'radial-gradient(circle at 50% 46%, #FF8DC3 0%, #FF5EA8 52%, #EC4895 100%)',
+  },
+  // Transição de alerta e Carta 2: rosa mais escuro e profundo, um pouco mais escuro nas bordas.
+  // Puxado para o vinho (06/nov/2026): o magenta de antes brigava com o vermelho da carta.
+  fundoAlerta: {
+    backgroundColor: '#9E1D46',
+    experimental_backgroundImage: 'radial-gradient(circle at 50% 46%, #CF3A62 0%, #A9234C 52%, #5E0D27 100%)',
+  },
+  // Rosa-escuro, mas saturado: no fundo do alerta (também rosa-escuro) o #B3135F sumia. O brilho
+  // é estático; quem pulsa é a opacidade da camada.
+  bordaAlerta: {
+    borderRadius: 22 * (CW / 220), borderWidth: 3.5, borderColor: VERMELHO_ALERTA,
+    boxShadow: '0px 0px 22px 5px rgba(253,58,66,0.9)',
+  },
+  cardGlowOb: {
+    boxShadow: '0px 0px 44px 10px rgba(255,255,255,0.62), 0px 24px 46px rgba(150,10,80,0.42)',
+  },
+  luz: {
+    position: 'absolute', width: LUZ, height: LUZ, borderRadius: LUZ / 2, zIndex: 9,
+    experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,255,255,1), rgba(255,236,245,0.9) 30%, rgba(255,214,234,0.45) 60%, rgba(255,214,234,0))',
+  },
+  glowOb: {
+    experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,255,255,0.6), rgba(255,226,240,0.3) 42%, rgba(255,226,240,0))',
+  },
+  mao: {
+    position: 'absolute', left: CW / 2 - 26, top: CH * 0.62 - 26, width: 52, height: 52, borderRadius: 26, zIndex: 4,
+    backgroundColor: 'rgba(255,255,255,0.96)', boxShadow: '0px 8px 20px rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center',
+  },
 
   sheet: {
     position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 15, backgroundColor: '#fff',

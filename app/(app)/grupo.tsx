@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Pressable, ActionSheetIOS, Alert, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -22,6 +23,9 @@ import {
 import { enviarConvite, type Canal } from '../../lib/convite';
 import { BANNERS_GRUPO } from './seus-grupos';
 import { sessionDate, dateKey } from '../../lib/routineProgress';
+import AlvoGuia from '../../components/coach/AlvoGuia';
+import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
+import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tela do grupo — réplica de 81f (tela), 81g (folha "…" de quem criou) e 81h ("…" na foto
@@ -136,6 +140,10 @@ function BannerTopo({ g, w, h }: { g: GrupoResumo | undefined; w: number; h: num
   );
 }
 
+/** Só o 1º item do mural é alvo do tutorial (duas instâncias da mesma chave se apagam). */
+const AlvoItem = ({ primeiro, children }: { primeiro: boolean; children: React.ReactNode }) =>
+  (primeiro ? <AlvoGuia chave="grupo-mural-item">{children}</AlvoGuia> : <>{children}</>);
+
 type ItemFolha = { k: string; label: string; sub?: string; d: string[] };
 
 export default function Grupo() {
@@ -164,10 +172,19 @@ export default function Grupo() {
       setRun((n) => n + 1);
       void refresh?.();
       if (gid) AsyncStorage.setItem(`grupo:visto:${gid}`, new Date().toISOString()).catch(() => {});
+      if (gid) verificarTutorialGrupos('/grupo', gid);
       return () => fecharFolha(true);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gid])
   );
+
+  // Tutorial dos Grupos: palco pronto com ESTE grupo carregado; a rolagem acompanha as paradas.
+  useCoachStage('grupo', g?.id === gid);
+  const rolagem = useRef<ScrollView | null>(null);
+  const muralY = useRef(0);
+  useEffect(() => onCoachPrepare((alvo) => {
+    rolagem.current?.scrollTo({ y: alvo === 'mural' ? Math.max(0, muralY.current - 90) : 0, animated: false });
+  }), []);
 
   // ── Folhas (81g/81h) ─────────────────────────────────────────────────────
   const [folha, setFolha] = useState<null | { tipo: 'menu' } | { tipo: 'foto'; item: ItemMural }>(null);
@@ -291,39 +308,39 @@ export default function Grupo() {
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
+      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
         <View>
           <BannerTopo g={g} w={W} h={bannerH} />
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); voltar(); }} style={[styles.roundBtn, { top: y(58), left: 16 }]} accessibilityLabel="Voltar">
             <Icon d={['m15 18-6-6 6-6']} size={20} color={INK} sw={2.2} />
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.7} onPress={() => abrirFolha({ tipo: 'menu' })} style={[styles.roundBtn, { top: y(58), right: 16 }]} accessibilityLabel="Mais opções">
-            <Dots size={20} color={INK} r={1.8} />
+            <AlvoGuia chave="grupo-menu"><Dots size={20} color={INK} r={1.8} /></AlvoGuia>
           </TouchableOpacity>
         </View>
 
         <Entra i={0} run={run} rm={rm} style={styles.card}>
           <Text style={styles.nome} numberOfLines={2}>{g?.nome ?? ''}</Text>
-          <View style={styles.membros}>
+          <AlvoGuia chave="grupo-membros" style={styles.membros}>
             <View style={styles.avs}>
+              {/* Cada foto com a moldura da medalha atual dela (08/nov/2026). */}
               {(g?.integrantes ?? []).slice(0, 5).map((m) => (
-                m.foto ? <Image key={m.user_id} source={{ uri: m.foto }} style={styles.av} /> : <View key={m.user_id} style={styles.av} />
+                <FotoComMoldura key={m.user_id} nivel={m.nivel} foto={m.foto} tamanho={42} pequena vazio="#FCE3EE" style={styles.av} />
               ))}
             </View>
             <Text style={styles.membrosT}>{g ? (g.total === 1 ? '1 integrante' : `${g.total} integrantes`) : ' '}</Text>
-          </View>
+          </AlvoGuia>
           <View style={styles.sepCard} />
           <Text style={styles.semana}>{`Semana de ${curta(seg)} a ${curta(dom)}`}</Text>
-          <View style={styles.duelo}>
+          <AlvoGuia chave="grupo-duelo" style={styles.duelo}>
             {duelo.map((d, i) => {
               const lead = d === lider;
               return (
                 <View key={d.user_id} style={styles.duel}>
                   <Salta delay={rm ? 0 : 60 + i * 70} run={run} rm={rm}>
                     <View style={{ width: 80, height: 80 }}>
-                      <View style={[styles.duelFoto, { borderColor: lead ? PINK : '#FFD1E5' }]}>
-                        {d.foto ? <Image source={{ uri: d.foto }} style={{ width: '100%', height: '100%' }} /> : null}
-                      </View>
+                      {/* A moldura da medalha dela (passa 14 pt da caixa de cada lado). */}
+                      <FotoComMoldura nivel={d.nivel} foto={d.foto} tamanho={108} pequena={false} vazio="#FCE3EE" style={{ position: 'absolute', left: -14, top: -14 }} />
                       {lead && (
                         <View style={styles.coroa}>
                           <Svg width={15} height={15} viewBox="0 0 24 24"><Path d={ICO.coroa} fill={PINK} stroke={PINK} strokeWidth={1.6} strokeLinejoin="round" /></Svg>
@@ -340,7 +357,8 @@ export default function Grupo() {
                 </View>
               );
             })}
-          </View>
+          </AlvoGuia>
+          <AlvoGuia chave="grupo-checkin" style={{ marginTop: 18 }}>
           <TouchableOpacity
             activeOpacity={0.85}
             disabled={feito}
@@ -351,9 +369,11 @@ export default function Grupo() {
             <Icon d={ICO.camera} size={19} color="#fff" sw={2} circles={[[12, 13, 3]]} />
             <Text style={styles.checkinT}>{feito ? 'Check-ins de hoje feitos' : 'Fazer check-in'}</Text>
           </TouchableOpacity>
+          </AlvoGuia>
         </Entra>
 
         <Entra i={1} run={run} rm={rm} style={styles.atalhos}>
+          <AlvoGuia chave="grupo-ranking" style={{ flex: 1 }}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push({ pathname: '/grupo-ranking', params: { id: gid } } as any); }} style={styles.atalho} accessibilityLabel="Ranking">
             <View style={styles.atalhoTop}>
               <View style={styles.atalhoIcon}><Icon d={ICO.trofeu} size={20} color={PINK} sw={1.9} /></View>
@@ -362,6 +382,8 @@ export default function Grupo() {
             <Text style={styles.atalhoT}>Ranking</Text>
             <Text style={styles.atalhoS} numberOfLines={1}>{rankSub}</Text>
           </TouchableOpacity>
+          </AlvoGuia>
+          <AlvoGuia chave="grupo-jornada" style={{ flex: 1 }}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push({ pathname: '/grupo-jornada', params: { id: gid } } as any); }} style={styles.atalho} accessibilityLabel="Jornada">
             <View style={styles.atalhoTop}>
               <View style={styles.atalhoIcon}><Icon d={ICO.rota} size={20} color={PINK} sw={1.9} circles={[[6, 19, 3], [18, 5, 3]]} /></View>
@@ -370,15 +392,17 @@ export default function Grupo() {
             <Text style={styles.atalhoT}>Jornada</Text>
             <Text style={styles.atalhoS} numberOfLines={1}>{pontos ? `Nível ${pontos.nivel} · ${pontos.titulo}` : ' '}</Text>
           </TouchableOpacity>
+          </AlvoGuia>
         </Entra>
 
-        {dias.length > 0 && <Entra i={2} run={run} rm={rm}><Text style={styles.secao}>Check-ins</Text></Entra>}
+        {dias.length > 0 && <View onLayout={(e) => { muralY.current = e.nativeEvent.layout.y; }}><Entra i={2} run={run} rm={rm}><AlvoGuia chave="grupo-mural"><Text style={styles.secao}>Check-ins</Text></AlvoGuia></Entra></View>}
         {dias.map((d) => (
           <View key={d.dia}>
             <Entra i={iIn++} run={run} rm={rm}><Text style={styles.diaLabel}>{rotuloDia(d.dia, hoje)}</Text></Entra>
             <View style={styles.diaList}>
               {d.itens.map((it) => (
                 <Entra key={it.id} i={iIn++} run={run} rm={rm}>
+                  <AlvoItem primeiro={it.id === dias[0]?.itens[0]?.id}>
                   <View style={styles.item}>
                     <View style={styles.itemFoto}>
                       {it.foto_url ? <Image source={{ uri: it.foto_url }} style={{ width: '100%', height: '100%' }} /> : null}
@@ -393,12 +417,13 @@ export default function Grupo() {
                         )}
                       </View>
                       <View style={styles.itemRow}>
-                        {it.autora.foto ? <Image source={{ uri: it.autora.foto }} style={styles.itemAv} /> : <View style={[styles.itemAv, { backgroundColor: '#F6D3E1' }]} />}
+                        <FotoComMoldura nivel={it.autora.nivel} foto={it.autora.foto} tamanho={34} pequena vazio="#F6D3E1" style={styles.itemAv} />
                         <Text style={styles.itemWho} numberOfLines={1}>{it.voce ? 'Você' : it.autora.nome}</Text>
                         <Text style={styles.itemTime}>{hora(it.hora_exibida)}</Text>
                       </View>
                     </View>
                   </View>
+                  </AlvoItem>
                 </Entra>
               ))}
             </View>
@@ -454,8 +479,8 @@ const styles = StyleSheet.create({
   },
   nome: { textAlign: 'center', fontSize: 22, lineHeight: 27, fontWeight: '700', letterSpacing: -0.6, color: INK },
   membros: { marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  avs: { flexDirection: 'row', paddingLeft: 8 },
-  av: { width: 26, height: 26, marginLeft: -8, borderRadius: 13, borderWidth: 2, borderColor: '#fff', backgroundColor: '#FCE3EE' },
+  avs: { flexDirection: 'row', paddingLeft: 12 },
+  av: { marginLeft: -12 },
   membrosT: { fontSize: 13, color: MUTE },
   sepCard: { height: 1, marginVertical: 16, backgroundColor: 'rgba(18,18,18,0.07)' },
   semana: { textAlign: 'center', fontSize: 13, lineHeight: 17, color: MUTE },
@@ -474,7 +499,7 @@ const styles = StyleSheet.create({
   duelNome: { marginTop: 16, fontSize: 16, lineHeight: 20, fontWeight: '600', letterSpacing: -0.3, color: INK },
   duelSub: { fontSize: 13, lineHeight: 17, color: MUTE },
   duelN: { fontSize: 15, lineHeight: 20, fontWeight: '600', color: INK, fontVariant: ['tabular-nums'] },
-  checkinBtn: { marginTop: 18, height: 50, borderRadius: 100, backgroundColor: PINK, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  checkinBtn: { height: 50, borderRadius: 100, backgroundColor: PINK, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   checkinT: { color: '#fff', fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
 
   atalhos: { marginTop: 16, marginHorizontal: 16, flexDirection: 'row', gap: 12 },
@@ -495,7 +520,7 @@ const styles = StyleSheet.create({
   itemT: { flex: 1, minWidth: 0, fontSize: 17, fontWeight: '600', lineHeight: 21, letterSpacing: -0.4, color: INK },
   itemDots: { width: 28, height: 28, marginVertical: -4, marginRight: -6, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   itemRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  itemAv: { width: 20, height: 20, borderRadius: 10 },
+  itemAv: { marginVertical: -7, marginLeft: -7, marginRight: -7 },
   itemWho: { flex: 1, minWidth: 0, fontSize: 15, letterSpacing: -0.2, color: INK },
   itemTime: { fontSize: 13, color: MUTE, fontVariant: ['tabular-nums'] },
 

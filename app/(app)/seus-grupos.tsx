@@ -1,3 +1,4 @@
+import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
 import { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, TextInput, Keyboard, Pressable, ActivityIndicator,
@@ -15,6 +16,9 @@ import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { criarGrupo, invalidarGrupos, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
+import AlvoGuia from '../../components/coach/AlvoGuia';
+import { useCoachStage } from '../../lib/coachMarks';
+import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Seus grupos — réplica de 81c (com grupos), 81d (sem grupo) e 81e (folha "Novo grupo")
@@ -112,10 +116,12 @@ export default function SeusGrupos() {
       setTabBarTheme('light');
       setRun((n) => n + 1);
       void refresh?.();
+      verificarTutorialGrupos('/seus-grupos');
       return () => fecharFolha(true);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
   );
+  useCoachStage('seusGrupos', grupos != null);
 
   // ── Brilho da carta do estado vazio (a cada 5 s) ──────────────────────────
   const brilho = useSharedValue(0);
@@ -226,15 +232,15 @@ export default function SeusGrupos() {
             return (
               <Entra key={g.id} i={i} run={run} rm={rm}>
                 <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push({ pathname: '/grupo', params: { id: g.id } } as any); }} style={styles.card}>
+                  {i === 0 && <AlvoGuia chave="lista-card" style={StyleSheet.absoluteFill}><View /></AlvoGuia>}
                   <FaixaGrupo g={g} h={72} />
                   <View style={styles.cardBody}>
                     <Text style={styles.cardNome} numberOfLines={1}>{g.nome}</Text>
                     <View style={styles.cardRow}>
                       <View style={styles.avs}>
+                        {/* Cada foto com a moldura da medalha atual dela (08/nov/2026). */}
                         {g.integrantes.slice(0, 5).map((m) => (
-                          m.foto
-                            ? <Image key={m.user_id} source={{ uri: m.foto }} style={styles.av} />
-                            : <View key={m.user_id} style={styles.av} />
+                          <FotoComMoldura key={m.user_id} nivel={m.nivel} foto={m.foto} tamanho={44} pequena vazio="#FCE3EE" style={styles.av} />
                         ))}
                       </View>
                       <Text style={styles.hoje}>{so ? 'Só você · convide amigas' : `${g.feitos_hoje} de ${g.total} fizeram hoje`}</Text>
@@ -253,8 +259,10 @@ export default function SeusGrupos() {
           })}
           <Entra i={list.length} run={run} rm={rm}>
             <TouchableOpacity activeOpacity={0.7} onPress={abrirFolha} style={styles.criarLink}>
-              <View style={styles.criarCirculo}><Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={3} /></View>
-              <Text style={styles.criarT}>Criar grupo</Text>
+              <AlvoGuia chave="lista-criar" style={{ flexDirection: 'row', alignItems: 'center', gap: styles.criarLink.gap }}>
+                <View style={styles.criarCirculo}><Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={3} /></View>
+                <Text style={styles.criarT}>Criar grupo</Text>
+              </AlvoGuia>
             </TouchableOpacity>
           </Entra>
         </ScrollView>
@@ -265,6 +273,7 @@ export default function SeusGrupos() {
         <View style={[styles.vazio, { top: y(150) }]}>
           <Entra i={0} run={run} rm={rm}>
             <View style={{ alignItems: 'center' }}>
+              <AlvoGuia chave="lista-vazio" style={{ alignItems: 'center' }}>
               <View style={{ width: 220, height: 196 }}>
                 <View style={styles.cartaTras} />
                 <View style={styles.cartaFrenteSombra}>
@@ -288,10 +297,13 @@ export default function SeusGrupos() {
               </View>
               <Text style={styles.vazioT}>{'Faça skincare com suas amigas\ne vejam quem é mais constante'}</Text>
               <Text style={styles.vazioS}>Check-in com foto todo dia, ranking da semana e a jornada de cada uma</Text>
-              <TouchableOpacity activeOpacity={0.85} onPress={abrirFolha} style={styles.criarPilula}>
-                <Icon d="M12 5v14M5 12h14" size={16} color="#fff" sw={2.6} />
-                <Text style={styles.criarPilulaT}>Criar grupo</Text>
-              </TouchableOpacity>
+              </AlvoGuia>
+              <AlvoGuia chave="lista-criar" style={{ marginTop: 24 }}>
+                <TouchableOpacity activeOpacity={0.85} onPress={abrirFolha} style={styles.criarPilula}>
+                  <Icon d="M12 5v14M5 12h14" size={16} color="#fff" sw={2.6} />
+                  <Text style={styles.criarPilulaT}>Criar grupo</Text>
+                </TouchableOpacity>
+              </AlvoGuia>
             </View>
           </Entra>
         </View>
@@ -350,8 +362,8 @@ const styles = StyleSheet.create({
   cardBody: { paddingTop: 14, paddingHorizontal: 16, paddingBottom: 14 },
   cardNome: { fontSize: 17, lineHeight: 22, fontWeight: '700', letterSpacing: -0.4, color: INK },
   cardRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avs: { flexDirection: 'row', paddingLeft: 8 },
-  av: { width: 28, height: 28, marginLeft: -8, borderRadius: 14, borderWidth: 2, borderColor: '#fff', backgroundColor: '#FCE3EE' },
+  avs: { flexDirection: 'row', paddingLeft: 12, marginVertical: -8 },
+  av: { marginLeft: -12 },
   hoje: { flexShrink: 1, fontSize: 13, color: MUTE, letterSpacing: -0.1 },
   sep: { height: 1, marginHorizontal: 16, backgroundColor: 'rgba(18,18,18,0.07)' },
   rankRow: { height: 50, paddingLeft: 16, paddingRight: 14, flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -380,7 +392,7 @@ const styles = StyleSheet.create({
   vazioT: { marginTop: 20, fontSize: 20, lineHeight: 24, fontWeight: '600', letterSpacing: -0.5, color: INK, textAlign: 'center' },
   vazioS: { marginTop: 6, maxWidth: 280, fontSize: 15, lineHeight: 21, color: MUTE, letterSpacing: -0.1, textAlign: 'center' },
   criarPilula: {
-    marginTop: 24, height: 48, paddingHorizontal: 28, borderRadius: 100, backgroundColor: PINK,
+    height: 48, paddingHorizontal: 28, borderRadius: 100, backgroundColor: PINK,
     flexDirection: 'row', alignItems: 'center', gap: 10, boxShadow: '0px 10px 22px rgba(255,94,168,0.35)',
   },
   criarPilulaT: { color: '#fff', fontSize: 18, fontWeight: '600', letterSpacing: -0.4 },

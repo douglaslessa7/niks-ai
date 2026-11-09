@@ -1,6 +1,7 @@
 import { View, StyleSheet, ImageSourcePropType } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Svg, { Circle } from 'react-native-svg';
+import FotoComMoldura from '../medalhas/FotoComMoldura';
 
 const PINK = '#FF5EA8';
 
@@ -27,7 +28,18 @@ function DashedRing({ size }: { size: number }) {
 // anel rosa (fez hoje) ou tracejado, com a foto apagada e meio cinza
 // (`opacity:.5; filter:grayscale(.7)` — o grayscale é uma camada cinza em modo
 // "saturation" a 70%, já que o filtro não existe no iOS).
-export default function Avatar({ img, uri, done, size }: { img: ImageSourcePropType | null; uri: string | null; done: boolean; size: number }) {
+// Com `nivel` (08/nov/2026): a foto ganha a MOLDURA da medalha atual dela (5 molduras, uma
+// por material) no lugar do anel; quem ainda não fez hoje continua com a foto apagada e cinza.
+// A moldura passa 8 pt da caixa de cada lado (a flor sai para fora), sem mudar o layout.
+export default function Avatar({ img, uri, done, size, nivel }: { img: ImageSourcePropType | null; uri: string | null; done: boolean; size: number; nivel?: number }) {
+  if (nivel != null && !img) {
+    const m = size + 16;
+    return (
+      <View style={{ width: size, height: size }}>
+        <FotoComMoldura nivel={nivel} foto={uri} tamanho={m} pequena apagada={!done} vazio="#F6D3E1" style={{ position: 'absolute', left: -8, top: -8 }} />
+      </View>
+    );
+  }
   const inner = size - 8;
   return (
     <View style={{ width: size, height: size, padding: 4, borderRadius: size / 2 }}>

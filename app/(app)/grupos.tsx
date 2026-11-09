@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -12,7 +12,12 @@ import { useUserId } from '../../lib/currentUser';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import { chavePerfilGrupos, perfilGrupos, type PerfilGrupos } from '../../lib/gruposServidor';
 import { sessionDate } from '../../lib/routineProgress';
+import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
+import { FOTO_NA_MOLDURA } from '../../lib/medalhas';
 import CalendarioCheckins, { Salta, mesKey } from '../../components/grupos/CalendarioCheckins';
+import AlvoGuia from '../../components/coach/AlvoGuia';
+import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
+import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aba Grupos · Perfil — réplica de 81a/81b do Claude Design ("NIKS home redesign",
@@ -44,6 +49,10 @@ function Icon({ d, size, color, sw, circle }: { d: string[]; size: number; color
   );
 }
 
+// 84 pt (eram 96): com a moldura do NIKS, a mais alta, cabe entre o título e o nome.
+const FOTO = 84;
+const MOLDURA = FOTO / FOTO_NA_MOLDURA.grande.lado;
+
 export default function Grupos() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -66,8 +75,12 @@ export default function Grupos() {
     useCallback(() => {
       setTabBarTheme('light');
       setAbertura((n) => n + 1);
+      verificarTutorialGrupos('/grupos');
     }, [setTabBarTheme])
   );
+  useCoachStage('grupos', true);
+  const rolagem = useRef<ScrollView | null>(null);
+  useEffect(() => onCoachPrepare(() => rolagem.current?.scrollTo({ y: 0, animated: false })), []);
 
   // Herói: retângulo com a curva embaixo (border-radius 0 0 50% 50% / 0 0 34px 34px).
   const hh = y(HERO_H);
@@ -76,7 +89,7 @@ export default function Grupos() {
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
+      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
         <View style={{ height: hh }}>
           <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
             <Svg width={W} height={hh} style={StyleSheet.absoluteFill}>
@@ -95,8 +108,12 @@ export default function Grupos() {
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/perfil' as any); }} style={[styles.gear, { top: y(54) }]} accessibilityLabel="Perfil e configurações">
             <Icon d={GEAR} size={24} color={INK} sw={1.8} circle={[12, 12, 3]} />
           </TouchableOpacity>
-          <Salta key={`foto${abertura}`} delay={60} de={0.86} rm={rm} style={[styles.foto, { top: y(106), left: W / 2 - 48 }]}>
-            {p?.foto ? <Image source={{ uri: p.foto }} style={{ width: '100%', height: '100%' }} /> : null}
+          {/* Foto com a moldura do material da medalha atual (08/nov/2026; NiksMolduras 2a).
+              O quadrado da moldura é maior que a foto e fica em volta dela. */}
+          <Salta key={`foto${abertura}`} delay={60} de={0.86} rm={rm} style={{ position: 'absolute', top: y(116) + FOTO / 2 - MOLDURA / 2, left: W / 2 - MOLDURA / 2 }}>
+            <AlvoGuia chave="perfil-foto">
+              <FotoComMoldura nivel={pontos?.nivel ?? p?.nivel ?? 1} foto={p?.foto} tamanho={MOLDURA} pequena={false} vazio="#FCE3EE" />
+            </AlvoGuia>
           </Salta>
           <Text style={[styles.nome, { top: y(216) }]} numberOfLines={1}>{p?.nome ?? ''}</Text>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/caminhada' as any); }} style={[styles.nivelBtn, { top: y(248) }]} accessibilityLabel="Sua caminhada">
@@ -111,9 +128,11 @@ export default function Grupos() {
             ))}
           </View>
           <View style={[styles.pillRow, { top: y(348) }]}>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/seus-grupos' as any); }} style={styles.pill}>
-              <Text style={styles.pillT}>Seus grupos</Text>
-            </TouchableOpacity>
+            <AlvoGuia chave="perfil-seus-grupos">
+              <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/seus-grupos' as any); }} style={styles.pill}>
+                <Text style={styles.pillT}>Seus grupos</Text>
+              </TouchableOpacity>
+            </AlvoGuia>
           </View>
         </View>
 
@@ -134,10 +153,6 @@ const styles = StyleSheet.create({
   title: { position: 'absolute', left: 0, right: 0, height: 44, alignItems: 'center', justifyContent: 'center' },
   titleT: { fontSize: 17, fontWeight: '600', letterSpacing: -0.4, color: INK },
   gear: { position: 'absolute', right: 8, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  foto: {
-    position: 'absolute', width: 96, height: 96, borderRadius: 48, borderWidth: 4, borderColor: '#fff', overflow: 'hidden',
-    backgroundColor: '#FCE3EE', boxShadow: '0px 8px 20px rgba(200,60,120,0.22)',
-  },
   nome: { position: 'absolute', left: 20, right: 20, textAlign: 'center', fontSize: 24, lineHeight: 29, fontWeight: '700', letterSpacing: -0.6, color: INK },
   nivelBtn: { position: 'absolute', alignSelf: 'center', height: 20, justifyContent: 'center', paddingHorizontal: 8 },
   nivel: { fontSize: 15, lineHeight: 20, color: SUB, letterSpacing: -0.2 },

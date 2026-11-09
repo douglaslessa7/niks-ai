@@ -11,6 +11,11 @@
 //   marcarNivelVisto(nivel) ela viu a celebração do nível
 //
 // Fetch direto com o token da sessão (padrão do app: nunca functions.invoke).
+//
+// REGRAS NOVAS (05/nov/2026, migration 20261112120000): TODA chamada leva `regras: 2` —
+// a conta passa às regras novas no servidor (1 carta por dia, só a de hoje para raspar,
+// pontos sem carta, Proteção e Pontos em dobro). `marcarRegrasCartas()` marca a conta
+// logo no cadastro, antes de salvar o scan do cadastro; se falhar, o próximo estado marca.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,6 +24,7 @@ import { getRoutineHistory, type RoutinePeriod } from './routineProgress';
 import { useCachedQuery, invalidateCache, writeCache, peekCache } from './cache';
 import { getUserId, useUserId } from './currentUser';
 import { trackFora } from './mixpanel/MixpanelProvider';
+import { ajustarMedalhas } from './niveis';
 
 const FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/cartas`;
 const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -41,7 +47,7 @@ export type CartaCatalogo = {
 
 export type CartaGanha = {
   id: string;
-  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco' | 'volta' | 'scan_rosto' | 'checkin_grupo' | 'produto_grupo' | 'campea';
+  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco' | 'volta' | 'scan_rosto' | 'checkin_grupo' | 'produto_grupo' | 'campea' | 'missoes';
   dia: string;
   ganha_em: string;
   raspada_em: string | null;
@@ -72,26 +78,58 @@ export type NivelTabela = { n: number; titulo: string; pontos: number };
 
 export type Sequencia = { atual: number; recorde: number; ultimo_dia: string | null };
 
+/** Pontos ganhos SEM carta (2º skincare do dia, check-in, scan de rosto, produto no grupo). */
+export type PontosGanhos = {
+  acao?: string;
+  pontos: number;
+  base?: number;
+  dobro?: boolean;
+  total_antes: number;
+  total: number;
+  nivel_antes: number;
+  nivel: number;
+  titulo: string;
+};
+
+/** Carta do dia (regras novas): sem skincare hoje · para raspar · feita (raspada ou sem carta). */
+export type CartaHoje = {
+  estado: 'bloqueada' | 'pronta' | 'feita';
+  id: string | null;
+  origem: CartaGanha['origem'] | null;
+  /** 'comum' | 'rara' | 'poder:<subtipo>' */
+  tipo: string | null;
+};
+
 export type EstadoCartas = {
+  /** 2 = regras novas (o servidor respondeu com `estado_cartas_v2`). */
+  regras?: number;
   hoje: string;
   sequencia: Sequencia;
   rotina_hoje: boolean;
-  cartas_hoje: { cota: number; dadas: number };
+  /** Regras novas: o card da home. */
+  carta_hoje?: CartaHoje;
+  /** Regras novas: o sistema está ligado para ela (catálogo com carta para ela). */
+  ativo?: boolean;
+  /** Regras antigas (o servidor não manda mais nas regras novas). */
+  cartas_hoje?: { cota: number; dadas: number };
   /** `tipo` ('familia:subtipo[:rara]') e `motivo` do motor: só para medição. */
   a_raspar: { id: string; origem: CartaGanha['origem']; ganha_em: string; tipo?: string; motivo?: string | null }[];
   poderes: {
     protecao: number;
-    scan_antecipado: boolean;
-    carta_extra_amanha: boolean;
-    sequencia_dobro_dias: string[];
     pontos_dobro_dias?: string[];
+    /** Último dia em que o Pontos em dobro vale (regras novas). */
+    pontos_dobro_ate?: string | null;
+    // Regras antigas (fora das regras novas):
+    scan_antecipado?: boolean;
+    carta_extra_amanha?: boolean;
+    sequencia_dobro_dias?: string[];
   };
   pontos?: PontosUsuaria;
-  /** Os 11 níveis (Cara Lavada → Ícone) com os pontos de cada um. */
+  /** Os 13 níveis-medalha (Bronze 1 → NIKS) com os pontos de cada um. */
   niveis?: NivelTabela[];
-  /** Depois do Ícone: o Ícone II pede `passo` e cada seguinte +`incremento`. */
+  /** Sobra da regra antiga ("Ícone II…"); ignorado desde as medalhas (o NIKS é o último). */
   icone?: { passo: number; incremento: number };
-  /** Faixas de pontos das ações ativas (ex.: { rotina: {min:15, max:30} }). */
+  /** Faixas de pontos (regras novas: `carta` 10–50 e as dos pontos sem carta: `rotina` = 2º skincare, `checkin_grupo`, `scan_rosto`, `produto_grupo`). */
   faixas?: Record<string, { min: number; max: number }>;
   /** Carta de volta entregue nesta abertura (a carta misteriosa do push). */
   carta_volta?: string | null;
@@ -112,8 +150,12 @@ export type PontosRaspados = {
   base: number;
   rara: boolean;
   dobro: boolean;
-  /** Pontos extras da primeira semana (já somados em `ganhos`). */
+  /** Pontos extras da primeira semana (regras antigas; já somados em `ganhos`). */
   bonus?: number;
+  /** Regras novas: o Pontos em dobro desta carta dobrou os pontos sem carta já ganhos hoje (somado em `total`). */
+  bonus_dobro?: number;
+  /** Regras novas: pontos sem carta ganhos hoje (já dentro de `total_antes`). */
+  sem_carta_hoje?: number;
   semana1?: Semana1 | null;
   total_antes: number;
   total: number;
@@ -139,17 +181,23 @@ async function token(): Promise<string | null> {
   }
 }
 
+/** A Edge Function `cartas` (com `regras: 2`). Também usada pelas missões (`lib/missoes.ts`). */
+export async function chamarCartas<T>(body: Record<string, unknown>): Promise<T> {
+  return chamar<T>(body);
+}
+
 async function chamar<T>(body: Record<string, unknown>): Promise<T> {
   const t = await token();
   if (!t) throw new Error('sem sessão');
   const resp = await fetch(FN_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${t}`, apikey: ANON_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    // `regras: 2` em toda chamada: a conta fica nas regras novas (mesmo que a marca do cadastro tenha falhado).
+    body: JSON.stringify({ ...body, regras: 2 }),
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.error ?? `HTTP ${resp.status}`);
-  return json as T;
+  return ajustarMedalhas(json) as T;   // níveis = medalhas, mesmo antes da migration (lib/niveis.ts)
 }
 
 async function lerFila(): Promise<Pendente[]> {
@@ -168,8 +216,28 @@ async function historicoLocal() {
   return Object.entries(hist).map(([dia, v]) => ({ dia, am: !!v?.am, pm: !!v?.pm }));
 }
 
+/** Boas-vindas pós-pagamento que não chegaram ao servidor (sem rede na tela de espera):
+ *  guarda o uid; `estadoCartas` tenta de novo. Ver `lib/boasVindas.ts`. */
+export const BOAS_VINDAS_PENDENTE = 'boas_vindas_pendente';
+
 /** Estado das cartas e da sequência. Sobe o histórico (1ª vez) e a fila offline. */
-export async function estadoCartas(): Promise<EstadoCartas> {
+// A função `cartas` leva ~1 s e várias telas pedem o estado ao mesmo tempo: uma chamada só.
+let estadoEmVoo: Promise<EstadoCartas> | null = null;
+export function estadoCartas(): Promise<EstadoCartas> {
+  if (estadoEmVoo) return estadoEmVoo;
+  const p: Promise<EstadoCartas> = buscarEstado().finally(() => { if (estadoEmVoo === p) estadoEmVoo = null; });
+  estadoEmVoo = p;
+  return p;
+}
+
+async function buscarEstado(): Promise<EstadoCartas> {
+  const pendenteBv = await AsyncStorage.getItem(BOAS_VINDAS_PENDENTE).catch(() => null);
+  if (pendenteBv && pendenteBv === (await getUserId())) {
+    try {
+      await chamar({ acao: 'boas_vindas' });
+      await AsyncStorage.removeItem(BOAS_VINDAS_PENDENTE).catch(() => {});
+    } catch { /* tenta de novo no próximo estado */ }
+  }
   const [fila, enviado] = await Promise.all([lerFila(), AsyncStorage.getItem(HIST_KEY)]);
   const body: Record<string, unknown> = { acao: 'estado' };
   if (!enviado) body.historico = await historicoLocal();
@@ -198,12 +266,35 @@ async function medirRecebidas(lista: EstadoCartas['a_raspar']) {
 }
 
 /**
- * Registra a rotina concluída no servidor. Sem internet, guarda na fila (o servidor
- * aceita até 48 h depois) e devolve null — a próxima `estadoCartas()` envia.
+ * Marca a conta nas regras novas — no cadastro, ANTES de salvar o scan do cadastro (o
+ * gatilho do scan já toma o caminho novo). Tenta algumas vezes, cada uma com prazo curto,
+ * sem nunca travar o cadastro: se ainda assim falhar, o próximo `estadoCartas()` marca
+ * (toda chamada leva `regras: 2`). Devolve se marcou.
  */
-export async function concluirRotina(periodo: RoutinePeriod): Promise<{ sequencia: Record<string, unknown>; cartas: CartaGanha[] } | null> {
+export async function marcarRegrasCartas(tentativas = 3, prazoMs = 3000): Promise<boolean> {
+  for (let i = 0; i < tentativas; i++) {
+    try {
+      await Promise.race([
+        chamar({ acao: 'regras' }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('tempo')), prazoMs)),
+      ]);
+      return true;
+    } catch (e) {
+      console.warn(`[cartas] marcar regras novas falhou (tentativa ${i + 1}):`, String((e as Error)?.message ?? e));
+      if (i < tentativas - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    }
+  }
+  return false;
+}
+
+/**
+ * Registra o skincare concluído no servidor (regras novas): devolve a carta do dia (1º
+ * skincare de hoje) OU os pontos do skincare sem carta. Sem internet, guarda na fila (o
+ * servidor aceita até 48 h depois) e devolve null — a próxima `estadoCartas()` envia.
+ */
+export async function concluirRotina(periodo: RoutinePeriod): Promise<{ sequencia: Record<string, any>; carta: CartaGanha | null; pontos: PontosGanhos | null } | null> {
   try {
-    const r = await chamar<{ sequencia: Record<string, any>; cartas: CartaGanha[] }>({ acao: 'concluir_rotina', periodo });
+    const r = await chamar<{ sequencia: Record<string, any>; carta: CartaGanha | null; pontos: PontosGanhos | null }>({ acao: 'concluir_rotina', periodo });
     await aplicarSequencia(r.sequencia); // o estado é relido sozinho a cada foco (staleMs 0)
     return r;
   } catch {
@@ -221,6 +312,7 @@ export const chaveColecao = (uid: string) => `cartas:colecao:${uid}`;
 
 /** Depois de raspar ou concluir rotina: o estado e a coleção são relidos na próxima tela. */
 export async function invalidarCartas() {
+  estadoEmVoo = null; // uma leitura já em andamento pode ser de antes da mudança
   const uid = await getUserId();
   if (!uid) return;
   invalidateCache(chaveEstado(uid));
@@ -261,7 +353,7 @@ export type ItemColecao = {
   poder: PoderRow | null;
 };
 
-async function buscarColecao(): Promise<ItemColecao[]> {
+export async function buscarColecao(): Promise<ItemColecao[]> {
   const uid = await getUserId();
   if (!uid) throw new Error('sem sessão');
   const { data, error } = await supabase
@@ -303,7 +395,7 @@ export const PODER_INFO: Record<string, { nome: string; efeito: string; icone: s
   protecao_sequencia: { nome: 'Proteção de sequência', efeito: 'Se você falhar 1 dia, sua sequência não zera', icone: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z' },
   carta_extra: { nome: 'Carta extra', efeito: 'Amanhã você ganha 1 carta a mais', icone: 'M12 5v14M5 12h14' },
   scan_antecipado: { nome: 'Scan antecipado', efeito: 'Seu próximo scan já está liberado', icone: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8 12h8' },
-  pontos_dobro: { nome: 'Pontos em dobro', efeito: 'Por 2 dias, suas cartas valem o dobro de NIKS Points', icone: 'M12 3l2.3 6.2L21 9.6l-5.2 4.3L17.6 21 12 17.3 6.4 21l1.8-7.1L3 9.6l6.7-.4z' },
+  pontos_dobro: { nome: 'Pontos em dobro', efeito: 'Por 2 dias, todos os seus pontos valem o dobro', icone: 'M12 3l2.3 6.2L21 9.6l-5.2 4.3L17.6 21 12 17.3 6.4 21l1.8-7.1L3 9.6l6.7-.4z' },
 };
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -349,16 +441,18 @@ export function estadoPoder(p: PoderRow | null, tipo: string, hoje: string): Est
 /** Etiqueta da carta (topo do verso): poder → "Carta de poder"; o resto, pela origem. */
 export function etiquetaCarta(familia: string, origem: string): string {
   if (familia === 'poder') return 'Carta de poder';
-  return ({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo', scan_rosto: 'Carta do scan', checkin_grupo: 'Carta do grupo', produto_grupo: 'Carta do grupo', volta: 'Carta de volta', campea: 'Campeã da semana' } as Record<string, string>)[origem] ?? 'Carta do dia';
+  return ({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo', scan_rosto: 'Carta do scan', checkin_grupo: 'Carta do grupo', produto_grupo: 'Carta do grupo', volta: 'Carta de volta', campea: 'Campeã da semana', missoes: 'Missões concluídas' } as Record<string, string>)[origem] ?? 'Carta do dia';
 }
 
 export async function cartaDetalhe(id: string): Promise<CartaGanha> {
   return (await chamar<{ carta: CartaGanha }>({ acao: 'carta', id })).carta;
 }
 
-export async function rasparCarta(id: string): Promise<{ carta: CartaGanha; poder: Poder | null; pontos: PontosRaspados | null }> {
-  const r = await chamar<{ carta: CartaGanha; poder: Poder | null; pontos?: PontosRaspados | null }>({ acao: 'raspar', id });
+export async function rasparCarta(id: string): Promise<{ carta: CartaGanha; poder: Poder | null; pontos: PontosRaspados | null; vencida?: boolean }> {
+  const r = await chamar<{ carta: CartaGanha; poder: Poder | null; pontos?: PontosRaspados | null; vencida?: boolean }>({ acao: 'raspar', id });
   await invalidarCartas();
+  // Regras novas: a carta de outro dia venceu às 04:00 (não raspa, não dá pontos).
+  if (r.vencida) return { carta: r.carta, poder: null, pontos: null, vencida: true };
   const p = r.pontos;
   if (p) {
     // Medição (o que traz ela de volta): a carta, a subida de nível e a recompensa da semana 1.

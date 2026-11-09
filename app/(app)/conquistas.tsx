@@ -56,7 +56,6 @@ const HEAD = 'linear-gradient(180deg, #FCE3EE 0%, #FCE3EE 62%, rgba(252,227,238,
 const SHEEN = 'linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.9), rgba(255,255,255,0))';
 
 const FLAME = 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z';
-const SPARKLE = 'M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z';
 const VERSO = { k: 'verso' } as const;
 const hojeSessaoKey = () => dateKey(sessionDate(new Date()));
 
@@ -79,9 +78,6 @@ function Lock({ size, color, sw }: { size: number; color: string; sw: number }) 
       <Path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
-}
-function Sparkle({ size }: { size: number }) {
-  return <Svg width={size} height={size} viewBox="0 0 24 24"><Path d={SPARKLE} fill={PINK} /></Svg>;
 }
 
 // Fundo comum às telas (degradê + dois círculos), fixo atrás da rolagem.
@@ -398,13 +394,10 @@ export default function Conquistas() {
           {/* w1 · Cartas raspadas + Medalhas */}
           <Enter i={1} run={run} rm={rm}>
             <View style={styles.pair}>
-              <TouchableOpacity activeOpacity={0.85} onPress={() => push('album')} style={styles.pairCard} accessibilityLabel="Cartas raspadas">
-                <Text style={styles.pairTitle}>Cartas raspadas</Text>
-                <Text style={styles.pairNum}>{n23}</Text>
-                <View style={[styles.pill, { paddingLeft: 7, gap: 4 }]}>
-                  <Sparkle size={11} />
-                  <Text style={styles.pillText}>{`${col.raras} ${col.raras === 1 ? 'rara' : 'raras'}`}</Text>
-                </View>
+              {/* Regras novas das cartas (05/nov/2026): o card mostra só quantas ela já raspou e não
+                  abre nada (o mural "Suas cartas" e o "x2" saíram do caminho; continuam no código). */}
+              <View style={styles.pairCard} accessible accessibilityLabel={`Você já raspou ${col.total} ${col.total === 1 ? 'carta' : 'cartas'}`}>
+                <Text style={[styles.pairTitle, { maxWidth: 104 }]}>{`Você já raspou ${n23} ${n23 === 1 ? 'carta' : 'cartas'}`}</Text>
                 <View pointerEvents="none" style={styles.miniFan}>
                   {[{ l: 4, t: 18, r: -16 }, { l: 26, t: 8, r: -2 }, { l: 48, t: 2, r: 12, front: true }].map((c, i) => (
                     <View key={i} style={[styles.miniCard, { left: c.l, top: c.t, transform: [{ rotate: `${c.r}deg` }], boxShadow: c.front ? '0px 6px 14px rgba(200,60,120,0.22)' : '0px 4px 10px rgba(200,60,120,0.18)' }]}>
@@ -415,7 +408,7 @@ export default function Conquistas() {
                     </View>
                   ))}
                 </View>
-              </TouchableOpacity>
+              </View>
               {/* Medalhas: a função entra na próxima build. Por enquanto o card não abre a
                   tela de medalhas (que continua no código) e só mostra "Em breve". */}
               <View style={[styles.pairCard, styles.pairCardOff]} accessible accessibilityLabel="Medalhas, em breve" accessibilityState={{ disabled: true }}>
@@ -762,7 +755,6 @@ const styles = StyleSheet.create({
   },
   emBreveText: { fontSize: 13, fontWeight: '700', letterSpacing: -0.1, color: '#FFFFFF' },
   pairTitle: { fontSize: 15, fontWeight: '600', letterSpacing: -0.3, lineHeight: 18, color: INK },
-  pairNum: { marginTop: 4, fontSize: 40, lineHeight: 44, fontWeight: '700', letterSpacing: -1.2, color: INK, fontVariant: ['tabular-nums'] },
   pairOf: { fontSize: 15, fontWeight: '500', color: MUTE, letterSpacing: -0.2 },
   pill: {
     position: 'absolute', left: 14, bottom: 14, height: 22, paddingHorizontal: 9, borderRadius: 100, backgroundColor: '#FFFFFF',

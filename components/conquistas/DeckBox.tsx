@@ -8,10 +8,11 @@
 // → lateral. Coordenadas = as do contêiner 84×118 do design.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef } from 'react';
+import { useTelaFocada } from '../../hooks/useTelaFocada';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue, useDerivedValue, useAnimatedStyle, withSpring, withTiming, withDelay, withRepeat, withSequence,
-  Easing, ReduceMotion, type SharedValue,
+  Easing, ReduceMotion, cancelAnimation, type SharedValue,
 } from 'react-native-reanimated';
 import {
   Canvas, Group, Rect, RoundedRect, Path, Circle, Oval, LinearGradient, Shadow, BlurMask, BlendColor,
@@ -357,14 +358,15 @@ function FanCard({
 // Faíscas das Raras (data-twinkle): .25→.95, escala .7→1, giro 0→45°, 1,6 s ida e volta.
 function Twinkle({ i, x, y, s, c, rm }: { i: number; x: number; y: number; s: number; c: string; rm: boolean }) {
   const t = useSharedValue(-1);
+  const focada = useTelaFocada();
   useEffect(() => {
-    if (rm) { t.set(-1); return; }
+    if (rm || !focada) { cancelAnimation(t); t.set(-1); return; }
     t.set(withDelay(i * 320, withSequence(
       withTiming(0, { duration: 0 }),
       withRepeat(withTiming(1, { duration: 1600, easing: Easing.bezier(0.42, 0, 0.58, 1) }), -1, true),
     )));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rm]);
+  }, [rm, focada]);
   const style = useAnimatedStyle(() => {
     const v = t.get();
     if (v < 0) return { opacity: 0.85, transform: [{ scale: 1 }, { rotate: '0deg' }] };

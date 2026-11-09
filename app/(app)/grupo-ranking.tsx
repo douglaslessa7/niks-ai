@@ -1,3 +1,4 @@
+import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -92,8 +93,9 @@ function Linha({ r, i, ultima, rm }: { r: LinhaRanking; i: number; ultima: boole
           <Text style={[styles.medalT, { color: med ? med[1] : MUTE }]}>{pos}</Text>
         </View>
       </View>
-      <View style={[styles.foto, { borderColor: r.voce ? PINK : '#fff' }]}>
-        {r.foto ? <Image source={{ uri: r.foto }} style={{ width: '100%', height: '100%' }} /> : null}
+      {/* A foto com a moldura da medalha atual dela (08/nov/2026); passa 9 pt de cada lado. */}
+      <View style={{ width: 48, height: 48 }}>
+        <FotoComMoldura nivel={r.nivel} foto={r.foto} tamanho={66} pequena vazio="#FCE3EE" style={{ position: 'absolute', left: -9, top: -9 }} />
       </View>
       <View style={[styles.rowBody, { borderBottomColor: ultima ? 'transparent' : 'rgba(18,18,18,0.07)' }]}>
         <View style={{ flex: 1, minWidth: 0 }}>

@@ -14,8 +14,10 @@ import { useUserId } from '../../lib/currentUser';
 import { useCachedQuery } from '../../lib/cache';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import { jornadaGrupo, type LinhaJornada } from '../../lib/gruposServidor';
-import { nivelDe } from '../../lib/niveis';
-import Padrao from '../../components/caminhada/Padrao';
+import { nivelDe, NIVEL_MAXIMO } from '../../lib/niveis';
+import Medalha from '../../components/medalhas/Medalha';
+import { usePulsoMedalha } from '../../components/medalhas/usePulsoMedalha';
+import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Jornada do grupo — réplica de 81o do Claude Design ("NIKS home redesign",
@@ -23,7 +25,7 @@ import Padrao from '../../components/caminhada/Padrao';
 // esquerda, cartas dos níveis à direita) com o nível INDIVIDUAL de cada amiga marcado na
 // linha pelos NIKS Points — o grupo não tem nível nem XP. Card do seu nível no topo e
 // "Como ganhar" embaixo, nos componentes do Flo.
-//   · Geometria do design: trilha a partir de 40, 250 por nível (o 1 embaixo, o Ícone no
+//   · Geometria do design: trilha a partir de 40, 250 por nível (o 1 embaixo, o NIKS no
 //     topo), cartas de 132 × 184 em x = 214, ponto e "N NIKS Points" na linha.
 //   · Ao abrir: a trilha para com você 240 pt abaixo do topo; a linha enche até você com
 //     mola (ζ1 .8 s, 150 ms depois) e as fotos e os nomes saltam (ζ.72 .5 s, 0,6 → 1),
@@ -39,19 +41,18 @@ const MUTE = '#818181';
 const BG = '#FFF1F7';
 const LOGO = require('../../assets/home/score-logo-pink.png');
 const PAD = 40;
+const AV = 62;   // moldura do avatar na trilha (a foto fica com ~36 pt, como antes)
 const ROW = 250;
-const N = 11;
+// 13 níveis-medalha (Bronze 1 … NIKS) desde 08/nov/2026; o design desenhava 11.
+const N = NIVEL_MAXIMO;
 const CONTENT_H = PAD + N * ROW + 60;
-const CARD_BG = 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)';
-const ICON_BG = 'linear-gradient(150deg, #FFEBD9 0%, #FFD3E2 36%, #F7DDB8 64%, #FFE0EC 100%)';
-const MUTED_BG = 'linear-gradient(160deg, #FBF6F8 0%, #F2EBEF 100%)';
 
 const rowTop = (L: number) => PAD + (N - L) * ROW;
 const dotY = (L: number) => rowTop(L) + ROW;
 const fmt = (n: number) => Math.round(n).toLocaleString('pt-BR');
 const mola = (z: number, r: number) => ({ stiffness: (2 * Math.PI / r) ** 2, damping: (4 * Math.PI * z) / r, mass: 1 });
 
-/** Y de um total de pontos na trilha (do Ícone em diante, no ponto do Ícone). */
+/** Y de um total de pontos na trilha (do último nível em diante, no ponto dele). */
 function yDe(p: number, lim: number[]): number {
   let L = 1;
   lim.forEach((t, i) => { if (p >= t) L = i + 1; });
@@ -59,23 +60,13 @@ function yDe(p: number, lim: number[]): number {
   return dotY(L) - ((p - lim[L - 1]) / (lim[L] - lim[L - 1])) * ROW;
 }
 
-function CartaNivel81({ n, reached, icon, atual }: { n: number; reached: boolean; icon: boolean; atual: boolean }) {
+// Só a medalha, sem carta em volta (como na Sua caminhada). Trancada: apagada e com cadeado.
+function MedalhaNivel({ n, reached, atual }: { n: number; reached: boolean; atual: boolean }) {
+  const pulsoSt = usePulsoMedalha(atual, useReducedMotion());
   return (
     <View style={{ width: 132, height: 184 }}>
-      {atual && <View pointerEvents="none" style={styles.atual} />}
-      <View style={[styles.carta, {
-        experimental_backgroundImage: icon ? ICON_BG : CARD_BG,
-        borderColor: reached ? '#fff' : 'rgba(255,94,168,0.28)',
-        boxShadow: reached ? '0px 10px 22px rgba(200,60,120,0.18)' : '0px 4px 10px rgba(200,60,120,0.08)',
-      }]}>
-        <View style={[styles.cartaFio, { borderColor: reached ? 'rgba(255,255,255,0.95)' : 'rgba(255,94,168,0.18)' }]} />
-        {/* A flor em padrão de 16 (background-repeat: space) num quadro a 13 da borda. */}
-        <View style={{ position: 'absolute', left: 13 - 1.5, top: 13 - 1.5 }}>
-          <Padrao w={132 - 26} h={184 - 26} tile={16} opacity={0.2} />
-        </View>
-        <View style={[StyleSheet.absoluteFill, { experimental_backgroundImage: MUTED_BG, opacity: reached ? 0 : icon ? 0.45 : 0.82 }]} />
-        <View style={styles.cartaCirculo}><Image source={LOGO} style={{ width: 44, height: 45 }} /></View>
-        <View style={styles.cartaN}><Text style={styles.cartaNT}>{n}</Text></View>
+      <View style={[styles.medalha, { opacity: reached ? 1 : 0.4 }]}>
+        <Animated.View style={pulsoSt}><Medalha nivel={n} tamanho={150} /></Animated.View>
       </View>
       {!reached && (
         <View style={styles.cadeado}>
@@ -98,8 +89,9 @@ function Integrante({ m, ordem, y, rm, run }: { m: LinhaJornada; ordem: number; 
   const st = useAnimatedStyle(() => (rm ? { opacity: p.get() } : { opacity: Math.min(1, p.get() * 1.6), transform: [{ scale: 0.6 + 0.4 * p.get() }] }), [rm]);
   return (
     <>
-      <Animated.View style={[styles.av, { top: y - 19, borderColor: m.voce ? PINK : '#fff' }, st]}>
-        {m.foto ? <Image source={{ uri: m.foto }} style={{ width: '100%', height: '100%' }} /> : null}
+      {/* A foto com a moldura da medalha atual dela (5 molduras, uma por material). */}
+      <Animated.View style={[styles.av, { top: y - AV / 2 }, st]}>
+        <FotoComMoldura nivel={m.nivel} foto={m.foto} tamanho={AV} pequena vazio="#FCE3EE" />
       </Animated.View>
       <Animated.View style={[styles.pill, { top: y - 14, backgroundColor: m.voce ? PINK : '#fff' }, st]}>
         <Text style={[styles.pillNome, { color: m.voce ? '#fff' : INK }]} numberOfLines={1}>{m.voce ? 'Você' : m.nome}</Text>
@@ -174,8 +166,7 @@ export default function GrupoJornada() {
     }, [gid])
   );
 
-  const barK = nivel ? Math.min(1, Math.max(0, (pts - nivel.piso) / Math.max(1, nivel.teto - nivel.piso))) : 0;
-  const icone = L >= N;
+  const barK = nivel ? (nivel.teto <= nivel.piso ? 1 : Math.min(1, Math.max(0, (pts - nivel.piso) / Math.max(1, nivel.teto - nivel.piso)))) : 0;
 
   return (
     <View style={styles.root}>
@@ -193,16 +184,16 @@ export default function GrupoJornada() {
       {/* Seu nível (individual) */}
       <View style={[styles.hdr, { top: y(104), opacity: pronto ? 1 : 0 }]}>
         <View style={styles.hdrRow}>
-          <View style={[styles.thumb, { experimental_backgroundImage: icone ? ICON_BG : CARD_BG }]}>
-            <Image source={LOGO} style={{ width: 22, height: 22 }} />
+          <View style={styles.thumb}>
+            <Medalha nivel={L} tamanho={56} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.hdrLvl}>{`Nível ${L}`}</Text>
             <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{nivel?.titulo ?? ' '}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.hdrXp}>{nivel ? `${fmt(pts)} / ${fmt(nivel.teto)}` : ' '}</Text>
-            <Text style={styles.hdrFalta}>{nivel ? `faltam ${fmt(Math.max(0, nivel.teto - pts))} NIKS Points` : ' '}</Text>
+            <Text style={styles.hdrXp}>{nivel ? (nivel.teto <= nivel.piso ? fmt(pts) : `${fmt(pts)} / ${fmt(nivel.teto)}`) : ' '}</Text>
+            <Text style={styles.hdrFalta}>{nivel ? (nivel.teto <= nivel.piso ? 'Nível máximo' : `faltam ${fmt(Math.max(0, nivel.teto - pts))} NIKS Points`) : ' '}</Text>
           </View>
         </View>
         <View style={styles.barTrack}><View style={[styles.barFill, { width: `${barK * 100}%` }]} /></View>
@@ -224,7 +215,7 @@ export default function GrupoJornada() {
                     <View style={[styles.ponto, { top: dotY(lv.n) - 5.5, backgroundColor: passou ? PINK : '#fff', borderColor: passou ? '#fff' : 'rgba(255,94,168,0.45)' }]} />
                     <Text style={[styles.pontoT, { top: dotY(lv.n) - 7, color: passou ? INK : MUTE }]}>{`${fmt(lv.pontos)} NIKS Points`}</Text>
                     <View style={{ position: 'absolute', left: 214, top: rowTop(lv.n) + 14 }}>
-                      <CartaNivel81 n={lv.n} reached={reached} icon={lv.n === N} atual={lv.n === Math.min(L, N)} />
+                      <MedalhaNivel n={lv.n} reached={reached} atual={lv.n === Math.min(L, N)} />
                     </View>
                     <View style={[styles.nomeBloco, { top: rowTop(lv.n) + 206 }]}>
                       <Text style={[styles.nomeNivel, { color: reached ? INK : MUTE }]}>{lv.titulo}</Text>
@@ -266,7 +257,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', boxShadow: '0px 1px 2px rgba(18,18,18,0.04)', zIndex: 4,
   },
   hdrRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  thumb: { width: 40, height: 56, borderRadius: 8, borderWidth: 1.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', boxShadow: '0px 4px 10px rgba(200,60,120,0.18)' },
+  thumb: { width: 56, height: 56, marginHorizontal: -4, alignItems: 'center', justifyContent: 'center' },
   hdrLvl: { fontSize: 13, lineHeight: 16, fontWeight: '600', color: PINK },
   hdrName: { marginTop: 1, fontSize: 20, lineHeight: 24, fontWeight: '700', letterSpacing: -0.45, color: INK },
   hdrXp: { fontSize: 15, lineHeight: 19, fontWeight: '600', color: INK, fontVariant: ['tabular-nums'] },
@@ -279,23 +270,15 @@ const styles = StyleSheet.create({
   linha: { position: 'absolute', left: 32.5, top: PAD, width: 3, height: N * ROW, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'center bottom' },
   ponto: { position: 'absolute', left: 28.5, width: 11, height: 11, borderRadius: 5.5, borderWidth: 2 },
   pontoT: { position: 'absolute', left: 48, fontSize: 11, lineHeight: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  carta: { ...StyleSheet.absoluteFillObject, borderRadius: 14, borderWidth: 1.5, overflow: 'hidden' },
-  cartaFio: { position: 'absolute', left: 6 - 1.5, top: 6 - 1.5, right: 6 - 1.5, bottom: 6 - 1.5, borderRadius: 9, borderWidth: 1 },
-  cartaCirculo: {
-    position: 'absolute', left: (132 - 3) / 2 - 36, top: (184 - 3) * 0.46 - 36, width: 72, height: 72, borderRadius: 36,
-    backgroundColor: 'rgba(255,255,255,0.66)', borderWidth: 1.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center',
-  },
-  cartaN: { position: 'absolute', left: 9 - 1.5, top: 9 - 1.5, minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 100, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  cartaNT: { fontSize: 11, fontWeight: '700', color: PINK },
+  medalha: { position: 'absolute', left: 66 - 75, top: 92 - 75, width: 150, height: 150 },
   cadeado: {
-    position: 'absolute', left: 66 - 17, top: 96, width: 34, height: 34, borderRadius: 17, backgroundColor: '#fff', borderWidth: 1.5, borderColor: PINK,
+    position: 'absolute', left: 66 - 17, top: 92 - 17, width: 34, height: 34, borderRadius: 17, backgroundColor: '#fff', borderWidth: 1.5, borderColor: PINK,
     alignItems: 'center', justifyContent: 'center',
   },
-  atual: { position: 'absolute', left: -6, top: -6, right: -6, bottom: -6, borderRadius: 20, borderWidth: 2, borderColor: PINK, boxShadow: '0px 0px 0px 5px rgba(255,94,168,0.14)' },
   nomeBloco: { position: 'absolute', left: 180, width: 200, alignItems: 'center' },
   nomeNivel: { fontSize: 16, lineHeight: 20, fontWeight: '700', letterSpacing: -0.3, textAlign: 'center' },
   nomeSub: { fontSize: 13, lineHeight: 17, color: MUTE },
-  av: { position: 'absolute', left: 15, width: 38, height: 38, borderRadius: 19, borderWidth: 2.5, overflow: 'hidden', backgroundColor: '#FCE3EE', zIndex: 5, boxShadow: '0px 4px 12px rgba(200,60,120,0.3)' },
+  av: { position: 'absolute', left: 34 - AV / 2, width: AV, height: AV, zIndex: 5 },
   pill: {
     position: 'absolute', left: 60, height: 28, paddingHorizontal: 10, borderRadius: 100, flexDirection: 'row', alignItems: 'center', gap: 4, zIndex: 6,
     boxShadow: '0px 4px 10px rgba(200,60,120,0.14)',
