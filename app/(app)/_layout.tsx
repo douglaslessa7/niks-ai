@@ -12,7 +12,7 @@ import { haptics } from '../../lib/haptics';
 import { loginRevenueCat } from '../../lib/revenuecat';
 import { comTetoRc, confirmPremium } from '../../lib/subscriptionGate';
 import { convidadaLigada, meusGrupos } from '../../lib/gruposServidor';
-import { carregarAcesso, definirAcesso, useAcesso, useEhConvidada } from '../../lib/acesso';
+import { carregarAcesso, definirAcesso, reconferirAcesso, useAcesso, useEhConvidada } from '../../lib/acesso';
 import { abrirTrava } from '../../lib/trava';
 import AvisoCadeado from '../../components/trava/AvisoCadeado';
 import { Lock } from 'lucide-react-native';
@@ -308,6 +308,22 @@ export default function AppLayout() {
   const markSplashDestinationReady = useAppStore((st) => st.markSplashDestinationReady);
   useEffect(() => {
     if (ready) markSplashDestinationReady();
+  }, [ready]);
+
+  // Parte B, Fase 7: com a convidada ligada, reconfere ao voltar ao app. Assinatura vencida
+  // vira convidada sem aviso; quem ficou sem grupo vai para a tela sem grupo.
+  useEffect(() => {
+    if (!ready || PULAR_PAYWALL) return;
+    const sub = AppState.addEventListener('change', (e) => {
+      if (e !== 'active') return;
+      void (async () => {
+        if (!(await convidadaLigada())) return;
+        const uid = await getUserId();
+        if (uid && (await reconferirAcesso(uid)) === 'sem_acesso') router.replace('/(onboarding)/sem-grupo' as any);
+      })();
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   // Convite de retorno da espinha (12 h / 24 h): o servidor decide, ao abrir o app.

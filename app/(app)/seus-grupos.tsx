@@ -1,3 +1,6 @@
+import { useEhConvidada } from '../../lib/acesso';
+import { abrirTrava } from '../../lib/trava';
+import { Lock } from 'lucide-react-native';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
 import { useState, useCallback, useEffect } from 'react';
 import {
@@ -145,10 +148,15 @@ export default function SeusGrupos() {
   const sobe = useSharedValue(0);
   const teclado = useSharedValue(0);
   const [comCodigo, setComCodigo] = useState(false);
+  const convidada = useEhConvidada();
   const ok = nome.trim().length > 0;
 
   const abrirCodigo = () => { setNome(''); setErro(''); setComCodigo(true); mostrarFolha(); };
-  const abrirFolha = () => { setComCodigo(false); mostrarFolha(); };
+  const abrirFolha = () => {
+    if (convidada) { haptics.tap(); abrirTrava('criarGrupo'); return; }
+    setComCodigo(false);
+    mostrarFolha();
+  };
   const mostrarFolha = () => {
     haptics.action();
     setTabBarVisible(false);
@@ -291,7 +299,7 @@ export default function SeusGrupos() {
           <Entra i={list.length} run={run} rm={rm}>
             <TouchableOpacity activeOpacity={0.7} onPress={abrirFolha} style={styles.criarLink}>
               <AlvoGuia chave="lista-criar" style={{ flexDirection: 'row', alignItems: 'center', gap: styles.criarLink.gap }}>
-                <View style={styles.criarCirculo}><Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={3} /></View>
+                <View style={styles.criarCirculo}>{convidada ? <Lock size={13} color="#fff" strokeWidth={2.6} /> : <Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={3} />}</View>
                 <Text style={styles.criarT}>Criar grupo</Text>
               </AlvoGuia>
             </TouchableOpacity>
@@ -334,7 +342,7 @@ export default function SeusGrupos() {
               </AlvoGuia>
               <AlvoGuia chave="lista-criar" style={{ marginTop: 24 }}>
                 <TouchableOpacity activeOpacity={0.85} onPress={abrirFolha} style={styles.criarPilula}>
-                  <Icon d="M12 5v14M5 12h14" size={16} color="#fff" sw={2.6} />
+                  {convidada ? <Lock size={15} color="#fff" strokeWidth={2.6} /> : <Icon d="M12 5v14M5 12h14" size={16} color="#fff" sw={2.6} />}
                   <Text style={styles.criarPilulaT}>Criar grupo</Text>
                 </TouchableOpacity>
               </AlvoGuia>

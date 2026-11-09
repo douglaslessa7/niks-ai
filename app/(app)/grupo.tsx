@@ -1,3 +1,4 @@
+import { saiuSemGrupo } from '../../lib/acesso';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Pressable, ActionSheetIOS, Alert, useWindowDimensions } from 'react-native';
@@ -250,7 +251,7 @@ export default function Grupo() {
       } else if (k === 'exit') {
         Alert.alert('Sair do grupo?', g.seu_papel === 'criadora' && outras.length ? 'O grupo passa para a integrante mais antiga.' : undefined, [
           { text: 'Cancelar', style: 'cancel' },
-          { text: 'Sair', style: 'destructive', onPress: () => { sairDoGrupo(g.id).then(async () => { await invalidarGrupos(gid); router.navigate('/seus-grupos' as any); }).catch(() => {}); } },
+          { text: 'Sair', style: 'destructive', onPress: () => { sairDoGrupo(g.id).then(async () => { await invalidarGrupos(gid); if (await saiuSemGrupo()) { router.replace('/(onboarding)/sem-grupo' as any); return; } router.navigate('/seus-grupos' as any); }).catch(() => {}); } },
         ]);
       }
     });

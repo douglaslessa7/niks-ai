@@ -12,6 +12,7 @@ export const FRASES = {
   compatibilidade: 'Assine para ver se esse produto combina com você',
   calendario: 'Assine para ver o histórico da sua rotina',
   carta: 'Assine para ter tudo no NIKS',
+  criarGrupo: 'Assine para criar seu próprio grupo',
 } as const;
 
 export const useTrava = create<{ frase: string | null; funcao: string | null; aposCarta: string | null; caminhadaDepois: boolean }>(() => ({ frase: null, funcao: null, aposCarta: null, caminhadaDepois: false }));
