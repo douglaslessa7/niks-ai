@@ -4,6 +4,7 @@
 // devolve as fotos (check-in, banner) como URLs assinadas de 1 h. Fetch direto com o
 // token da sessão (padrão do app, como lib/cartasServidor.ts).
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from './mixpanel/MixpanelProvider';
 import { useCallback } from 'react';
 import { supabase } from './supabase';
 import { useCachedQuery, invalidateCache } from './cache';
@@ -104,6 +105,7 @@ async function chamar<T>(body: Record<string, unknown>): Promise<T> {
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.error ?? `HTTP ${resp.status}`);
+  if (json?.motivo === 'filtro') trackFora('foto_bloqueada_filtro', { categoria: json.categoria });
   return ajustarMedalhas(json) as T;   // níveis = medalhas, mesmo antes da migration (lib/niveis.ts)
 }
 
@@ -125,9 +127,36 @@ export const validarConvite = (token: string) => chamar<ConviteInfo>({ acao: 'va
 export const criarGrupo = (p: { nome: string; descricao?: string; banner?: string; banner_path?: string | null }) =>
   chamar<{ ok: true; grupo_id: string } | Recusa>({ acao: 'criar', ...p });
 export const conviteDoGrupo = (grupoId: string) =>
-  chamar<{ ok: true; token: string; link: string } | Recusa>({ acao: 'convite', grupo_id: grupoId });
+  chamar<{ ok: true; token: string; codigo: string; link: string } | Recusa>({ acao: 'convite', grupo_id: grupoId });
 export const entrarNoGrupo = (token: string) =>
   chamar<{ ok: true; grupo_id: string; nome?: string; ja_era?: boolean } | Recusa>({ acao: 'entrar', token });
+async function semLogin<T>(body: Record<string, unknown>, tetoMs: number): Promise<T | null> {
+  const controle = new AbortController();
+  const relogio = setTimeout(() => controle.abort(), tetoMs);
+  try {
+    const resp = await fetch(FN_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controle.signal,
+    });
+    return resp.ok ? await resp.json() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(relogio);
+  }
+}
+/** Sem login. `null` = sem resposta. */
+export const validarCodigo = (codigo: string) =>
+  semLogin<{ valido: boolean; nome?: string; convidou?: string; cheio?: boolean; motivo?: string }>({ acao: 'validar_codigo', codigo }, 8000);
+/** Sem login. Sem resposta conta como desligada: a tela de código não aparece. */
+export const convidadaLigada = () =>
+  semLogin<{ ligada: boolean }>({ acao: 'convidada_status' }, 3000).then((r) => r?.ligada === true);
+export const estadoAcesso = () =>
+  chamar<{ estado: 'assinante' | 'convidada' | 'sem_acesso' }>({ acao: 'estado' }).then((r) => r.estado);
+export const entrarComCodigo = (codigo: string) =>
+  chamar<{ ok: true; grupo_id: string; nome?: string; ja_era?: boolean } | Recusa>({ acao: 'entrar_codigo', codigo });
 export const sairDoGrupo = (grupoId: string) => chamar<{ ok: boolean; motivo?: string }>({ acao: 'sair', grupo_id: grupoId });
 export const removerIntegrante = (grupoId: string, userId: string) =>
   chamar<{ ok: boolean; motivo?: string }>({ acao: 'remover', grupo_id: grupoId, user_id: userId });
@@ -174,3 +203,17 @@ export async function invalidarGrupos(gid?: string) {
   invalidateCache(chaveMeusGrupos(uid));
   if (gid) invalidateCache(chaveGrupo(uid, gid));
 }
+
+// ── Moderação (Parte B, Fase 2) ──────────────────────────────────────────────────
+export type DenunciaAberta = {
+  id: string; tipo: 'foto' | 'integrante'; motivo: string | null; criado_em: string; grupo: string | null;
+  denunciante: string | null; alvo: string | null; foto_url: string | null;
+};
+export type DecisaoDenuncia = 'manter' | 'apagar' | 'remover_usuaria';
+
+export const moderarFotoPerfil = (base64: string) =>
+  chamar<{ ok: true } | Recusa>({ acao: 'moderar_perfil', base64 });
+export const denunciasAbertas = () =>
+  chamar<{ ok: true; denuncias: DenunciaAberta[] } | Recusa>({ acao: 'denuncias' });
+export const revisarDenuncia = (denunciaId: string, decisao: DecisaoDenuncia) =>
+  chamar<{ ok: true } | Recusa>({ acao: 'revisar_denuncia', denuncia_id: denunciaId, decisao });

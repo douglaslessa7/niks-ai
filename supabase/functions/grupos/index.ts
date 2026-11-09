@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { verifyJWT } from '../_shared/jwt.ts'
+import { moderarImagem } from '../_shared/moderacao.ts'
 
 // Grupos do NIKS (fase 3, design NiksGrupoV2). Tudo passa por aqui: o banco não tem
 // política para o app (migration 20261106120000). Sempre com o JWT da usuária; o
@@ -16,10 +17,16 @@ import { verifyJWT } from '../_shared/jwt.ts'
 //   { acao: 'perfil', mes? 'AAAA-MM-01' }            → aba Grupos (80q/80r)
 //   { acao: 'upload_url', tipo: 'checkin'|'banner' } → URL assinada de upload
 //   { acao: 'criar', nome, descricao?, banner?, banner_path? }       (80u)
-//   { acao: 'convite', grupo_id }                    → { token, link }
+//   { acao: 'convite', grupo_id }                    → { token, codigo, link }
 //   { acao: 'validar_convite', token } / { acao: 'entrar', token }
+//   { acao: 'validar_codigo', codigo }               → SEM login: { valido, nome, convidou, cheio }
+//   { acao: 'entrar_codigo', codigo }                → como `entrar`; o tipo é decidido no banco
+//   { acao: 'convidada_status' }                     → SEM login: { ligada }
+//   { acao: 'estado' }                               → { estado: assinante | convidada | sem_acesso }
 //   { acao: 'sair', grupo_id } / { acao: 'remover', grupo_id, user_id }
 //   { acao: 'bloquear', user_id, bloquear? } / { acao: 'denunciar', tipo, grupo_id, user_id?, checkin_id?, compartilhamento_id?, motivo? }
+//   { acao: 'moderar_perfil', base64 }               → filtro da foto de perfil, antes de subir
+//   { acao: 'denuncias' } / { acao: 'revisar_denuncia', denuncia_id, decisao } → só moderadoras
 //   { acao: 'checkin', foto_path, rotina: 'am'|'pm', grupos: [ids], hora_exibida?, titulo?, descricao? }
 //   { acao: 'compartilhar', product_scan_id, grupos: [ids] }  → produto no mural (80o)
 // Saída: 200 JSON ({ok:false, motivo} quando a regra recusa) · 400 entrada · 401 JWT · 404 não é do grupo.
@@ -91,6 +98,46 @@ async function avisarCheckin(supabase: Supa, checkinId: string) {
   }
 }
 
+// Filtro automático (Fase 2): recusa ou indisponibilidade impedem a publicação.
+async function filtrarArquivo(supabase: Supa, bucket: string, path: string) {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 120)
+  if (error || !data?.signedUrl) return { liberada: false as const, motivo: 'filtro_indisponivel' as const }
+  return moderarImagem(data.signedUrl)
+}
+
+const recusaDoFiltro = (r: { motivo?: string; categoria?: string }) =>
+  json({ ok: false, motivo: r.motivo, categoria: r.categoria })
+
+async function avisarModeradoras(supabase: Supa) {
+  try {
+    const { data } = await supabase.rpc('tokens_moderadores')
+    const tokens = (data ?? []) as string[]
+    if (!tokens.length) return
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(tokens.map((to) => ({
+        to, sound: 'default', title: 'NIKS: nova denúncia', body: 'Toque para revisar. Prazo de 24 horas.', data: { type: 'denuncia' },
+      }))),
+    })
+  } catch (e) {
+    console.error('[grupos] aviso de denúncia:', (e as Error).message)
+  }
+}
+
+// Limite de tentativas de código, por janela de 10 minutos (Parte B, Fase 1).
+const CODIGO_MAX = 20
+const LIMITE_POR_IP = 30
+const LIMITE_POR_CONTA = 20
+
+// Guarda só o hash do IP, com sal, e por no máximo 1 dia.
+async function chaveDoIp(req: Request): Promise<string> {
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'sem-ip'
+  const dados = new TextEncoder().encode(`${ip}:${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''}`)
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', dados))
+  return `ip:${Array.from(hash.slice(0, 16), (b) => b.toString(16).padStart(2, '0')).join('')}`
+}
+
 async function rpc(supabase: Supa, fn: string, args: Record<string, unknown>) {
   const { data, error } = await supabase.rpc(fn, args)
   if (error) throw error
@@ -100,15 +147,36 @@ async function rpc(supabase: Supa, fn: string, args: Record<string, unknown>) {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  const body = await req.json().catch(() => ({}))
+  const acao = String(body?.acao ?? '')
+  const supabase = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
+
+  // Única ação sem login: a tela de código do onboarding vem antes da conta.
+  if (acao === 'validar_codigo') {
+    try {
+      const codigo = String(body?.codigo ?? '')
+      if (codigo.length > CODIGO_MAX) return json({ valido: false })
+      const permitido = await rpc(supabase, 'codigo_tentativa', { p_chave: await chaveDoIp(req), p_limite: LIMITE_POR_IP })
+      if (!permitido) return json({ valido: false, motivo: 'limite' })
+      return json(await rpc(supabase, 'validar_codigo', { p_codigo: codigo }))
+    } catch (e) {
+      console.error('[grupos]', acao, (e as Error).message)
+      return json({ error: 'Erro interno' }, 500)
+    }
+  }
+
+  // Sem login: o onboarding decide se mostra a tela de código.
+  if (acao === 'convidada_status') {
+    const { data } = await supabase.from('grupos_config').select('convidada_ligada').eq('id', 1).maybeSingle()
+    return json({ ligada: data?.convidada_ligada === true })
+  }
+
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) return json({ error: 'Unauthorized' }, 401)
   const jwtPayload = await verifyJWT(authHeader.slice(7))
   if (!jwtPayload?.sub) return json({ error: 'Unauthorized' }, 401)
   const uid = jwtPayload.sub
 
-  const body = await req.json().catch(() => ({}))
-  const acao = String(body?.acao ?? '')
-  const supabase = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
   const gid = typeof body?.grupo_id === 'string' && UUID.test(body.grupo_id) ? body.grupo_id : null
   const precisaGrupo = ['grupo', 'mural', 'ranking', 'jornada', 'convite', 'sair', 'remover', 'denunciar']
   if (precisaGrupo.includes(acao) && !gid) return json({ error: 'grupo_id inválido' }, 400)
@@ -173,6 +241,11 @@ serve(async (req) => {
 
       case 'criar': {
         const bannerPath = typeof body?.banner_path === 'string' ? body.banner_path : null
+        if (bannerPath) {
+          if (!bannerPath.startsWith(`${uid}/`)) return json({ ok: false, motivo: 'banner' })
+          const filtro = await filtrarArquivo(supabase, BUCKET, bannerPath)
+          if (!filtro.liberada) return recusaDoFiltro(filtro)
+        }
         const r = await rpc(supabase, 'criar_grupo', {
           p_uid: uid, p_nome: String(body?.nome ?? ''), p_descricao: typeof body?.descricao === 'string' ? body.descricao : null,
           p_banner: typeof body?.banner === 'string' ? body.banner.slice(0, 20) : null, p_banner_path: bannerPath,
@@ -196,8 +269,19 @@ serve(async (req) => {
       case 'entrar': {
         const token = String(body?.token ?? '')
         if (!TOKEN.test(token)) return json({ ok: false, motivo: 'convite_invalido' })
-        return json(await rpc(supabase, 'entrar_grupo', { p_uid: uid, p_token: token, p_tipo: 'assinante' }))
+        return json(await rpc(supabase, 'entrar_grupo', { p_uid: uid, p_token: token }))
       }
+
+      case 'entrar_codigo': {
+        const codigo = String(body?.codigo ?? '')
+        if (codigo.length > CODIGO_MAX) return json({ ok: false, motivo: 'convite_invalido' })
+        const permitido = await rpc(supabase, 'codigo_tentativa', { p_chave: `conta:${uid}`, p_limite: LIMITE_POR_CONTA })
+        if (!permitido) return json({ ok: false, motivo: 'limite' })
+        return json(await rpc(supabase, 'entrar_grupo_codigo', { p_uid: uid, p_codigo: codigo }))
+      }
+
+      case 'estado':
+        return json({ estado: await rpc(supabase, 'estado_acesso', { p_uid: uid }) })
 
       case 'sair':
         return json(await rpc(supabase, 'sair_grupo', { p_uid: uid, p_grupo: gid }))
@@ -218,10 +302,12 @@ serve(async (req) => {
         const alvo = UUID.test(String(body?.user_id ?? '')) ? body.user_id : null
         const checkin = UUID.test(String(body?.checkin_id ?? '')) ? body.checkin_id : null
         const comp = UUID.test(String(body?.compartilhamento_id ?? '')) ? body.compartilhamento_id : null
-        return json(await rpc(supabase, 'denunciar', {
+        const r = await rpc(supabase, 'denunciar', {
           p_uid: uid, p_tipo: tipo, p_grupo: gid, p_alvo: alvo, p_checkin: checkin, p_compartilhamento: comp,
           p_motivo: typeof body?.motivo === 'string' ? body.motivo : null,
-        }))
+        })
+        if (r?.ok && !r.ja_denunciou) emSegundoPlano(avisarModeradoras(supabase))
+        return json(r)
       }
 
       case 'checkin': {
@@ -231,6 +317,8 @@ serve(async (req) => {
         const nome = path.slice(uid.length + 1)
         const { data: achados } = await supabase.storage.from(BUCKET).list(uid, { search: nome, limit: 1 })
         if (!achados?.some((o: { name: string }) => o.name === nome)) return json({ ok: false, motivo: 'foto' })
+        const filtro = await filtrarArquivo(supabase, BUCKET, path)
+        if (!filtro.liberada) return recusaDoFiltro(filtro)
         const grupos = Array.isArray(body?.grupos) ? body.grupos.filter((g: unknown) => typeof g === 'string' && UUID.test(g)).slice(0, 50) : []
         const hora = typeof body?.hora_exibida === 'string' && !Number.isNaN(Date.parse(body.hora_exibida)) ? body.hora_exibida : null
         const r = await rpc(supabase, 'publicar_checkin', {
@@ -246,8 +334,38 @@ serve(async (req) => {
       case 'compartilhar': {
         const scan = String(body?.product_scan_id ?? '')
         if (!UUID.test(scan)) return json({ error: 'product_scan_id inválido' }, 400)
+        const { data: foto } = await supabase.from('product_scans').select('image_path').eq('id', scan).eq('user_id', uid).maybeSingle()
+        if (foto?.image_path) {
+          const filtro = await filtrarArquivo(supabase, 'product-scans', foto.image_path)
+          if (!filtro.liberada) return recusaDoFiltro(filtro)
+        }
         const grupos = Array.isArray(body?.grupos) ? body.grupos.filter((g: unknown) => typeof g === 'string' && UUID.test(g)).slice(0, 50) : []
         return json(await rpc(supabase, 'compartilhar_produto', { p_uid: uid, p_scan: scan, p_grupos: grupos }))
+      }
+
+      case 'moderar_perfil': {
+        const b = typeof body?.base64 === 'string' ? body.base64 : ''
+        if (!b || b.length > 4_000_000) return json({ error: 'foto inválida' }, 400)
+        const filtro = await moderarImagem(`data:image/jpeg;base64,${b}`)
+        return filtro.liberada ? json({ ok: true }) : recusaDoFiltro(filtro)
+      }
+
+      case 'denuncias': {
+        const lista = await rpc(supabase, 'denuncias_abertas', { p_mod: uid })
+        if (lista === null) return json({ ok: false, motivo: 'sem_permissao' })
+        // deno-lint-ignore no-explicit-any
+        const itens = lista as any[]
+        const urls = new Map<string, string>()
+        for (const bucket of ['grupos', 'product-scans']) {
+          const assinadas = await assinar(supabase, itens.filter((d) => d.foto_bucket === bucket).map((d) => d.foto_path), bucket)
+          for (const [k, v] of assinadas) urls.set(`${bucket}:${k}`, v)
+        }
+        return json({ ok: true, denuncias: itens.map((d) => ({ ...d, foto_url: urls.get(`${d.foto_bucket}:${d.foto_path}`) ?? null })) })
+      }
+
+      case 'revisar_denuncia': {
+        if (!UUID.test(String(body?.denuncia_id ?? ''))) return json({ error: 'denuncia_id inválido' }, 400)
+        return json(await rpc(supabase, 'revisar_denuncia', { p_mod: uid, p_denuncia: body.denuncia_id, p_acao: String(body?.decisao ?? '') }))
       }
 
       default:
