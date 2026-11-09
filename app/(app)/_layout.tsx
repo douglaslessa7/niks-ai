@@ -11,7 +11,11 @@ import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { loginRevenueCat } from '../../lib/revenuecat';
 import { comTetoRc, confirmPremium } from '../../lib/subscriptionGate';
-import { estadoAcesso, meusGrupos } from '../../lib/gruposServidor';
+import { convidadaLigada, meusGrupos } from '../../lib/gruposServidor';
+import { carregarAcesso, definirAcesso, useAcesso, useEhConvidada } from '../../lib/acesso';
+import { abrirTrava } from '../../lib/trava';
+import AvisoCadeado from '../../components/trava/AvisoCadeado';
+import { Lock } from 'lucide-react-native';
 import { vincularAssinatura } from '../../lib/assinaturaServidor';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { useAppStore } from '../../store/onboarding';
@@ -135,6 +139,7 @@ function GlobalBottomBar() {
   const insets = useSafeAreaInsets();
   // Tema da tab bar — escurece junto com telas em modo noturno (protocolo)
   const isDark = useAppStore((s) => s.tabBarTheme) === 'dark';
+  const convidada = useEhConvidada();
 
   // O alarme é parte da rotina: no design 44a a aba Rotina aparece ativa nele. No
   // progresso (43d) a Rotina também aparece ativa. (A estante deixou de ser tela própria:
@@ -187,11 +192,22 @@ function GlobalBottomBar() {
                 <AlvoGuia key={it.key} chave={`nav-${it.key}` as 'nav-rotina' | 'nav-produtos' | 'nav-grupos'} style={styles.item}>
                   <TouchableOpacity
                     activeOpacity={0.85}
-                    onPress={() => { haptics.tap(); router.push(it.route as any); }}
+                    onPress={() => {
+                      haptics.tap();
+                      if (convidada && it.key !== 'grupos') { abrirTrava(it.key === 'rotina' ? 'rotina' : 'produtos'); return; }
+                      router.push(it.route as any);
+                    }}
                     style={styles.item}
                   >
                     {/* Sem o ponto embaixo da aba ativa: no design 75 a aba ativa é só o ícone rosa. */}
-                    <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
+                    <View style={{ opacity: convidada && it.key !== 'grupos' ? 0.25 : 1 }}>
+                      <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
+                    </View>
+                    {convidada && it.key !== 'grupos' && (
+                      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+                        <Lock size={16} color="#E0447F" strokeWidth={2.6} />
+                      </View>
+                    )}
                   </TouchableOpacity>
                 </AlvoGuia>
               );
@@ -266,18 +282,19 @@ export default function AppLayout() {
       // paywall. Se o RevenueCat falhar ou não responder, `confirmPremium` confere no Superwall
       // e no servidor antes de negar.
       if (!(await confirmPremium({ label: 'portao' }))) {
-        // Parte B, Fase 4: convidada abre no grupo; sem resposta do servidor, paywall.
-        const estado = await comTetoRc(estadoAcesso());
-        const grupos = estado === 'convidada' ? await comTetoRc(meusGrupos()) : null;
-        if (grupos?.[0]) {
+        // Parte B: convidada abre sempre no grupo; sem resposta e sem histórico, paywall.
+        const estado = await carregarAcesso(session.user.id);
+        if (estado === 'convidada') {
+          const grupos = await comTetoRc(meusGrupos());
           void vincularAssinatura(session.user.id);
           setReady(true);
-          router.replace({ pathname: '/grupo', params: { id: grupos[0].id } } as any);
+          if (grupos?.[0]) router.replace({ pathname: '/grupo', params: { id: grupos[0].id } } as any);
           return;
         }
-        router.replace('/(onboarding)/paywall-soft');
+        router.replace(await convidadaLigada() ? '/(onboarding)/sem-grupo' as any : '/(onboarding)/paywall-soft');
         return;
       }
+      definirAcesso('assinante', session.user.id);
 
       setSubscriptionVerified(true);
       // Servidor: liga as compras à conta (não bloqueia).
@@ -295,7 +312,7 @@ export default function AppLayout() {
 
   // Convite de retorno da espinha (12 h / 24 h): o servidor decide, ao abrir o app.
   useEffect(() => {
-    if (!ready || needsName) return;
+    if (!ready || needsName || useAcesso.getState().estado === 'convidada') return;
     void buscarConvite();
     const sub = AppState.addEventListener('change', (estado) => { if (estado === 'active') void buscarConvite(); });
     return () => sub.remove();
@@ -406,7 +423,8 @@ export default function AppLayout() {
 
   // ── Tutorial dos Grupos: obrigatório, um de cada vez, atravessa até 3 telas ────────
   const etapaGrupos = useEtapaTutorialGrupos();
-  const gruposLiberado = splashDone && ready && !needsName && !pendingShare && !showCoachMarks && !guiaAtiva;
+  const convidadaNoApp = useEhConvidada();
+  const gruposLiberado = splashDone && ready && !needsName && !pendingShare && !showCoachMarks && !guiaAtiva && !convidadaNoApp;
   const gruposStageReady = useCoachStageReady(etapaGrupos?.stage ?? 'grupos');
   const showGruposTutorial = gruposLiberado && !!etapaGrupos && pathname === etapaGrupos.rota && gruposStageReady;
   const tutorialGruposAtivo = !!etapaGrupos;
@@ -467,9 +485,10 @@ export default function AppLayout() {
         <Tabs.Screen name="checkin" options={{ href: null }} />
         <Tabs.Screen name="skincare" options={{ href: null }} />
         <Tabs.Screen name="revisao-denuncias" options={{ href: null }} />
+        <Tabs.Screen name="produto-amiga" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
-      {tabBarVisible && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <BalaoEspinha />}
+      {tabBarVisible && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && !convidadaNoApp && <BalaoEspinha />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
           escurecer a tela inteira, navbar inclusive (designs 58/59). Dentro da
           `home.tsx` ele ficaria ABAIXO da navbar por mais zIndex que levasse
@@ -497,6 +516,7 @@ export default function AppLayout() {
       {/* Toque em qualquer push (inclusive o que abriu o app) → lib/pushToque.ts. Fora do
           tutorial também: o toque do lote espera o aviso montar. */}
       <ToquePush />
+      <AvisoCadeado />
     </View>
   );
 }

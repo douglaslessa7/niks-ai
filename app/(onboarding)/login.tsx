@@ -1,3 +1,4 @@
+import { convidadaLigada } from '../../lib/gruposServidor';
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
@@ -45,6 +46,11 @@ export default function Login() {
     // completado) → isSubscribed false → usuário existente cai no paywall/signup.
     if (userId) await comTetoRc(loginRevenueCat(userId));
     if (await confirmPremium({ label: 'login' })) {
+      router.replace('/(app)/home');
+      return;
+    }
+    // Com a convidada ligada, o portão decide: grupo, sem grupo ou paywall.
+    if (await convidadaLigada()) {
       router.replace('/(app)/home');
       return;
     }
