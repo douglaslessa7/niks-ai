@@ -1926,6 +1926,12 @@ As últimas 40 decisões ficam salvas no aparelho.
 
 **Dados (19/out/2026, só leitura):** a tabela `subscriptions` **não é prova de pagamento** — a compra acontece antes da conta, com o RevenueCat anônimo, e o webhook descarta eventos anônimos; 139 contas dos últimos 30 dias usaram o app (passaram pelo guard) sem linha nela. Das 374 contas sem linha e sem uso, 363 vieram do **"Entrar" com Apple/Google** (cria conta de quem nunca teve uma e a manda ao paywall, pulando o onboarding — não é brecha, mas é volume) e 11 do cadastro (a conferir no RevenueCat). Botão "Restaurar compra" do Superwall em 7 dias: 2 sucessos, 68 falhas ("Transactions Failed to Restore") — com o restore automático fora, ele é o único caminho de quem já assina: validar no iPhone.
 
+#### Recompensas da convidada (Parte B, Fase 6, nov/2026 — migration `20261125120000_convidada_recompensas.sql`)
+> ✅ **Migration no ar desde 09/nov/2026.** ⚠️ O catálogo real segue inativo (só testers recebem cartas): ativar por id as 4 cartas `niks-flor`, `niks-flor-rara`, `niks-protecao-sequencia` e `niks-pontos-dobro` é item obrigatório da Fase 9, junto com a build nova.
+- **Cartas especiais:** check-ins ímpares (1º, 3º, 5º, 7º, 9º…), alternando produto, idade da pele, rotina, NIKS Chat e produto (sérum) (`convidada_carta_do_checkin`, migration `20261126120000`). Substituem a carta do dia e rendem os pontos dela ao raspar. O catálogo fica `ativa = false`, fora do sorteio.
+- **Campeã:** convidada também ganha a rara. **Medalha:** paywall depois da celebração, uma vez por medalha.
+- **Avisos:** grupos com 15 ou mais integrantes recebem só o resumo das 22h de Brasília (cron `grupos-resumo-diario`). Lembrete da convidada: "Hora do skincare! Faça seu check-in no grupo."
+
 #### Modo convidada (Parte B, Fase 5, nov/2026 — migration `20261124120000_produto_compartilhado.sql`)
 > ✅ **Servidor no ar desde 09/nov/2026** (migration e função `grupos` v15). O app vai à loja junto com a Fase 8.
 - `lib/acesso.ts`: `assinante`, `convidada` ou `sem_acesso`, com a última resposta no aparelho. `lib/trava.ts` + `components/trava/`: cadeado, aviso com a frase da função e "Ver planos" (`paywall_convidada`); fechar volta para a tela, sem downsell.
