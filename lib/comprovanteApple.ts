@@ -42,3 +42,17 @@ export async function comprovantesApple(): Promise<string[]> {
     void comTeto(iap.endConnection());
   }
 }
+
+/** A data da compra mais recente nos comprovantes, em ms, no relógio da Apple. Só lê: quem
+ *  valida a assinatura é o servidor. Sem data legível, `null`. */
+export function dataDaCompraMaisRecente(jws: string[]): number | null {
+  let maisRecente: number | null = null;
+  for (const token of jws) {
+    try {
+      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const data = Number(JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '='))).purchaseDate);
+      if (data > 0 && (maisRecente === null || data > maisRecente)) maisRecente = data;
+    } catch { /* comprovante ilegível não conta */ }
+  }
+  return maisRecente;
+}

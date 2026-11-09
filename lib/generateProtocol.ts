@@ -77,7 +77,7 @@ export async function saveProtocol({
     data.introduction_schedule ?? null,
   ];
 
-  await supabase.from('protocolos').insert({
+  const { error: erroRotina } = await supabase.from('protocolos').insert({
     user_id: userId,
     skin_scan_id: skinScanId ?? null,
     rotina_am: data.morning,
@@ -85,6 +85,7 @@ export async function saveProtocol({
     dicas,
     updated_at: new Date().toISOString(), // linha nova é inequivocamente a mais recente
   });
+  if (erroRotina) throw erroRotina;
 
   // Encadeia a recomendação de produtos reais. A função é auto-guardada
   // (gera só no primeiro scan), então é seguro chamar sempre. Roda aqui —
@@ -139,14 +140,16 @@ export async function generateAndSaveProtocol({
   regenerate?: boolean;
   onSuccess: (result: ProtocolResult) => void;
   onFinally: () => void;
-}) {
+}): Promise<boolean> {
   try {
     const data = await fetchProtocol(scanResult, onboardingData);
-    if (!data) return;
+    if (!data) return false;
     onSuccess(data);
     await saveProtocol({ data, userId, skinScanId, regenerate });
+    return true;
   } catch (err) {
     console.error('[generateProtocol] Unexpected error:', err);
+    return false;
   } finally {
     onFinally();
   }

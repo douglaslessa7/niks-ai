@@ -9,7 +9,8 @@ import { PULAR_PAYWALL } from '../lib/devPaywall';
 import {
   apagarCompraPendente, apagarFotosDeCompra, compraPendenteVencida, lerCompraPendente,
 } from '../lib/compraPendente';
-import { adiarCompraPendente, destinoDaCompra, retomarCompraPendente, tentarEmSegundoPlano } from '../lib/concluirCompra';
+import { adiarCompraPendente, compraDestaConta, destinoDaCompra, retomarCompraPendente, tentarEmSegundoPlano } from '../lib/concluirCompra';
+import { trackFora } from '../lib/mixpanel/MixpanelProvider';
 
 // Ponto de entrada — SÓ decide o destino da abertura, sem UI própria. A splash de
 // abertura (tela 0 do design "NIKS Onboarding - fluxo completo": logo #FF5EA8 no
@@ -37,9 +38,10 @@ export default function Index() {
       if (!reg) apagarFotosDeCompra();
 
       if (session) {
-        if (reg && (!reg.userId || reg.userId === session.user.id)) {
+        if (reg && await compraDestaConta(reg, session.user)) {
           const destino = destinoDaCompra(reg);
           if (destino === 'vencida') {
+            trackFora('rotina_desistiu', { falhas: reg.falhas ?? 0 });
             await apagarCompraPendente();
           } else {
             await retomarCompraPendente(reg);
@@ -61,7 +63,10 @@ export default function Index() {
         return;
       }
 
-      if (reg) {
+      if (reg?.userId) {
+        // Já é de uma conta: espera ela entrar nessa conta. O cadastro criaria outra.
+        if (compraPendenteVencida(reg)) await apagarCompraPendente();
+      } else if (reg) {
         await ensureAnonymousRevenueCat('retomada');
         const pago = PULAR_PAYWALL || await confirmPremium({ label: 'retomada:compra_pendente' });
         if (pago) {

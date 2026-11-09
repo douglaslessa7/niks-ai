@@ -204,7 +204,8 @@ function startReport(key: string, base64: string, o: OnboardingData) {
     job.status = r ? 'ok' : 'failed';
     job.result = r;
     if (r && reportJob === job) {
-      useAppStore.getState().setScanResult(r, key);
+      // Scan novo dentro do app: o relatório fica no registro da compra, sem trocar o de lá.
+      if (useAppStore.getState().scanSource === 'onboarding') useAppStore.getState().setScanResult(r, key);
       void atualizarCompraPendente({ relatorio: r });
       sync(); // relatório pronto → a rotina já pode sair
     }
@@ -395,8 +396,22 @@ export async function saveOnboardingProtocol({
   clearOnboardingPrefetch(); // a partir daqui a rotina é da conta
   closed = true;
 
+  // Não salvou: quem chamou precisa saber, para tentar de novo. A rotina já gerada fica
+  // guardada, e a próxima tentativa só grava, sem pagar a IA outra vez.
+  const guardar = (result: ProtocolResult | null) => {
+    if (result) useAppStore.getState().setPrefetchedProtocol({ key, result });
+  };
+
   if (!ready) {
-    await generateAndSaveProtocol({ scanResult, onboardingData, skinScanId, userId, onSuccess, onFinally });
+    let gerada = null as ProtocolResult | null;
+    const salvou = await generateAndSaveProtocol({
+      scanResult, onboardingData, skinScanId, userId, onFinally,
+      onSuccess: (r) => { gerada = r; onSuccess(r); },
+    });
+    if (!salvou) {
+      guardar(gerada);
+      throw new Error('rotina não foi salva');
+    }
     return;
   }
   try {
@@ -404,6 +419,8 @@ export async function saveOnboardingProtocol({
     await saveProtocol({ data: ready, userId, skinScanId });
   } catch (err) {
     console.error('[onboardingPrefetch] falha ao gravar a rotina pré-gerada:', err);
+    guardar(ready);
+    throw err;
   } finally {
     onFinally();
   }

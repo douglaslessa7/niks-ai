@@ -13,6 +13,7 @@ import {
   aguardarAnaliseCompleta, iniciarAnaliseCompleta, saveOnboardingProtocol, usarAnaliseRapidaRestaurada, usarRotinaRestaurada,
 } from './onboardingPrefetch';
 import { concluirBoasVindas } from './boasVindas';
+import { comprovantesApple, dataDaCompraMaisRecente } from './comprovanteApple';
 import {
   apagarCompraPendente, atualizarCompraPendente, lerCompraPendente, restaurarCompraPendente, type CompraPendente,
 } from './compraPendente';
@@ -22,7 +23,7 @@ export const ESPERA_SEGUNDO_PLANO_MS = 2 * 60 * 1000;
 const TENTATIVAS_POR_ABERTURA = 2;
 const VALIDADE_ADIADA_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type FimDaCompra = { status: 'ok' | 'sem_sessao' | 'falhou'; falhas: number };
+export type FimDaCompra = { status: 'ok' | 'sem_sessao' | 'falhou' | 'interrompida'; falhas: number };
 
 // Uma execução por vez: a tela e o segundo plano nunca salvam juntos.
 let emAndamento: Promise<FimDaCompra> | null = null;
@@ -44,10 +45,22 @@ async function executar(): Promise<FimDaCompra> {
     if (reg && !reg.userId) void atualizarCompraPendente({ userId: uid });
     let scanSalvo = reg?.skinScanId ?? scanSalvoMem;
 
-    // 1. O relatório completo (só se houve scan neste onboarding).
+    // O store guarda UM scan por vez. Se ela começou um scan novo dentro do app, a foto e o
+    // relatório de lá não são desta compra: para sem gravar e sem contar falha. A próxima
+    // abertura restaura a compra do registro e termina.
     const st = useAppStore.getState();
+    const fotoDaCompra = st.skinImageUri;
+    const scanNovo = () => {
+      const agora = useAppStore.getState();
+      return agora.scanSource !== 'onboarding' || agora.skinImageUri !== fotoDaCompra;
+    };
+    const interrompida: FimDaCompra = { status: 'interrompida', falhas: reg?.falhas ?? falhasMem };
+    if (scanNovo()) return interrompida;
+
+    // 1. O relatório completo (só se houve scan neste onboarding).
     const temScan = !!st.skinImageBase64 || !!st.scanResult;
     const relatorio = temScan ? await aguardarAnaliseCompleta() : null;
+    if (scanNovo()) return interrompida;
     if (temScan && !relatorio) throw new Error('análise completa falhou');
 
     // 2. Perfil + scan na conta (o scan uma vez só, mesmo tentando de novo ou retomando).
@@ -60,6 +73,8 @@ async function executar(): Promise<FimDaCompra> {
       await atualizarCompraPendente({ skinScanId });
     }
 
+    if (scanNovo()) return interrompida;
+
     // 3. A rotina (a pré-gerada desde a compra, ou gera agora) + recomendações.
     if (relatorio) {
       const { onboarding: o, setProtocolResult, setProtocolGenerating } = useAppStore.getState();
@@ -69,7 +84,7 @@ async function executar(): Promise<FimDaCompra> {
         onboardingData: o,
         userId: uid,
         skinScanId: scanSalvo,
-        onSuccess: setProtocolResult,
+        onSuccess: (r) => { if (!scanNovo()) setProtocolResult(r); },
         onFinally: () => setProtocolGenerating(false),
       });
     }
@@ -89,6 +104,7 @@ async function executar(): Promise<FimDaCompra> {
     const falhas = (reg?.falhas ?? falhasMem) + 1;
     falhasMem = falhas;
     await atualizarCompraPendente({ falhas });
+    trackFora('rotina_nao_salva', { tentativa: falhas });
     return { status: 'falhou', falhas };
   }
 }
@@ -104,6 +120,27 @@ export async function retomarCompraPendente(reg: CompraPendente): Promise<void> 
   if (reg.analiseRapida) usarAnaliseRapidaRestaurada(reg.analiseRapida);
   if (reg.rotina) usarRotinaRestaurada(reg.rotina);
   iniciarAnaliseCompleta();
+}
+
+const TETO_DATA_APPLE_MS = 5000;
+
+/** A data da compra no relógio da Apple; sem resposta a tempo, `null`. */
+function dataDaCompraNaApple(): Promise<number | null> {
+  return Promise.race([
+    comprovantesApple().then(dataDaCompraMaisRecente).catch(() => null),
+    new Promise<null>((resolve) => { setTimeout(() => resolve(null), TETO_DATA_APPLE_MS); }),
+  ]);
+}
+
+/** A compra pendente é desta conta? Só a conta criada para ela. O cadastro grava o `userId`;
+ *  sem ele, vale só conta criada DEPOIS da compra (o app fechou antes de gravar). As duas
+ *  datas vêm de servidores: conta no Supabase, compra na Apple. Sem a da Apple (Android,
+ *  sem comprovante), usa a hora do aparelho em que a compra foi registrada. */
+export async function compraDestaConta(reg: CompraPendente, conta: { id: string; created_at: string }): Promise<boolean> {
+  if (reg.userId) return reg.userId === conta.id;
+  const compra = (await dataDaCompraNaApple()) ?? Date.parse(reg.criadaEm);
+  const criada = Date.parse(conta.created_at);
+  return Number.isFinite(compra) && Number.isFinite(criada) && criada >= compra;
 }
 
 /** O que a abertura do app faz com uma compra pendente desta conta. */
