@@ -107,7 +107,7 @@ export default function Progresso() {
   const [tipW, setTipW] = useState(0);
 
   const fetchProgress = useCallback(async (): Promise<ProgressData> => {
-    const [{ data: scans }, { data: userRow }] = await Promise.all([
+    const [{ data: scans, error: erroScans }, { data: userRow, error: erroUser }] = await Promise.all([
       supabase.from('skin_scans')
         .select('created_at, skin_score, foto_url, full_result')
         .eq('user_id', uid!)
@@ -116,6 +116,8 @@ export default function Progresso() {
       // A foto escolhida pela usuária (galeria → ajuste) vale mais que a do scan, como na home.
       supabase.from('users').select('foto_home_url').eq('id', uid!).maybeSingle(),
     ]);
+    // Leitura com falha não vira "sem scans": o erro faz o cache manter a última versão boa.
+    if (erroScans ?? erroUser) throw erroScans ?? erroUser;
     return {
       scans: (scans ?? []) as ScanRow[],
       fotoHomeUrl: userRow?.foto_home_url ?? null,

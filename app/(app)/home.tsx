@@ -337,6 +337,10 @@ export default function Home() {
       contarPassosMinhaRotina(uid).catch(() => null),
     ]);
 
+    // Leitura com falha não vira "conta vazia": o erro faz o cache manter a última versão boa.
+    const erroLeitura = scanRes.error ?? userRes.error ?? protoRes.error ?? recRes.error;
+    if (erroLeitura) throw erroLeitura;
+
     const scan = scanRes.data;
     const user = userRes.data;
     const proto = protoRes.data;
@@ -358,10 +362,11 @@ export default function Home() {
     const ids = [...new Set([...raw.am, ...raw.pm].map((r) => r.id))];
     const byId = new Map<string, any>();
     if (ids.length) {
-      const { data: prods } = await supabase
+      const { data: prods, error: erroProdutos } = await supabase
         .from('produtos')
         .select('id, nome, imagem_url, imagem_recorte_url, imagem_recorte_status')
         .in('id', ids);
+      if (erroProdutos) throw erroProdutos;
       (prods ?? []).forEach((p: any) => byId.set(p.id, p));
     }
     const resolve = (list: typeof raw.am): HomeProduct[] => list

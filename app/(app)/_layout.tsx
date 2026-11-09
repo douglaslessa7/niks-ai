@@ -273,12 +273,15 @@ export default function AppLayout() {
       // branca para sempre. `needsName` é um estado paralelo ao `ready`.
       // Espaço em branco conta como vazio (mesma regra da validação do input).
       try {
-        const { data: userData } = await supabase
+        const { data: userData, error: erroNome } = await supabase
           .from('users')
           .select('nome')
           .eq('id', session.user.id)
           .single();
-        setNeedsName(!(userData?.nome ?? '').trim());
+        // Só pede o nome com a resposta em mãos: falha de leitura não é "sem nome".
+        // PGRST116 = a conta ainda não tem linha em `users`, aí falta mesmo.
+        if (!erroNome || erroNome.code === 'PGRST116') setNeedsName(!(userData?.nome ?? '').trim());
+        else console.warn('[app] leitura do nome falhou:', erroNome);
       } catch {
         // Em caso de erro não bloqueamos o nome check
       }

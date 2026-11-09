@@ -170,8 +170,10 @@ async function ultimaConversaGeral(uid: string): Promise<string | null> {
   const consulta = () => supabase.from('coach_conversations').select('id').eq('user_id', uid)
   const ordem = { ascending: false }
   const r = await consulta().neq('tipo', 'espinha').order('created_at', ordem).limit(1).maybeSingle()
-  if (r.error?.code !== COLUNA_NAO_EXISTE) return r.data?.id ?? null
+  if (r.error && r.error.code !== COLUNA_NAO_EXISTE) throw r.error
+  if (!r.error) return r.data?.id ?? null
   const antigo = await consulta().order('created_at', ordem).limit(1).maybeSingle()
+  if (antigo.error) throw antigo.error
   return antigo.data?.id ?? null
 }
 
@@ -513,16 +515,19 @@ export default function NiksChat() {
       ultimaConversaGeral(uid),
     ])
 
+    // Leitura com falha não vira "conversa vazia": o erro faz o cache manter a última versão boa.
+    if (userRes.error && userRes.error.code !== 'PGRST116') throw userRes.error
     const nome = userRes.data?.nome ?? null
     const convId: string | null = ultimaConversa
     if (!convId) return { userId: uid, nome, conversationId: null, msgs: [] as any[] }
 
-    const { data: msgs } = await supabase
+    const { data: msgs, error: erroMsgs } = await supabase
       .from('coach_messages')
       .select('id, role, content, image_url, created_at')
       .eq('conversation_id', convId)
       .eq('user_id', uid)
       .order('created_at', { ascending: true })
+    if (erroMsgs) throw erroMsgs
 
     return { userId: uid, nome, conversationId: convId, msgs: msgs ?? [] }
   }, [])
