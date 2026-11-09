@@ -10,6 +10,7 @@ import {
   useObFrame, useObName, withName, obStep, useOnMount, ObPress
 } from '../../components/onboarding/kit';
 import { CONCERN_LABELS } from '../../components/onboarding/answers';
+import { RostoPreload } from '../../components/onboarding/RostoRegioes';
 
 // Tela 5 do onboarding — "O que mais te incomoda na sua pele hoje?" (múltipla
 // escolha, até 3). Réplica da tela "05 O que te incomoda · zoom na pele" do Claude
@@ -97,7 +98,9 @@ export default function Concerns() {
   const handleContinue = () => {
     haptics.action();
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/goal-validation');
+    // Vem logo depois da idade e segue para o mapa do rosto (03/nov/2026); antes
+    // ficava depois das alergias e seguia para o "Seu potencial".
+    router.push('/(onboarding)/mapa-rosto');
   };
 
   const cardW = (width - SIDE * 2 - GAP) / 2;
@@ -143,6 +146,7 @@ export default function Concerns() {
 
       <ObHeader onBack={() => router.back()} />
       <ObPillButton onPress={handleContinue} disabled={selected.length === 0} bottom={buttonBottom} />
+      <RostoPreload />
     </ObScreen>
   );
 }

@@ -2,19 +2,20 @@ import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
+import { OBJETIVOS_PELE, valorObjetivo } from '../../components/onboarding/answers';
 
-// Tela 14 do onboarding — objetivo (escolha única), textos e opções da versão B.
-// Grava `onboarding.goal_desire` (texto livre para a `generate-protocol`). É a última
-// resposta antes do scan: a rotina começa a ser gerada em segundo plano assim que o
-// relatório fica pronto (`lib/onboardingPrefetch.ts`).
-const OPTIONS: ObChoice<string>[] = [
-  'Me sentir mais bonita e confiante',
-  'Ter um glow up que as pessoas notem',
-  'Aumentar minha autoestima de vez',
-  'Me sentir bem comigo mesma de novo',
-  'Conquistar alguém especial',
-  'Outro',
-].map((d) => ({ label: d, value: d }));
+// Onboarding — objetivo: "Qual a pele dos seus sonhos?" (era "Qual pele você quer ter?" até
+// 06/nov/2026, trocado a pedido do Douglas) (escolha única, só texto; 03/nov/2026,
+// pedido do produto — substituiu as 6 opções da versão B, "Outro" incluído). Vem logo
+// depois do nome e leva ao antes e depois ("Transformação real", `transformacao.tsx`, desde
+// 04/nov/2026) e dali ao gráfico "Sua evolução"; a pele escolhida volta no título do
+// gráfico e no da rotina pronta (`objetivoPele` em `answers.ts`).
+// Grava `onboarding.goal_desire` (texto livre para a `generate-protocol`). Com ele
+// respondido, a rotina começa a ser gerada em segundo plano assim que o relatório do scan
+// fica pronto (`lib/onboardingPrefetch.ts`).
+const OPTIONS: ObChoice<string>[] = OBJETIVOS_PELE.map((o) => ({
+  label: o.nome, sub: o.desc, strong: true, value: valorObjetivo(o),
+}));
 
 const STEP = OB_STEPS.objetivo;
 const STEP_NAME = 'Desejo Real';
@@ -28,14 +29,15 @@ export default function GoalDesire() {
 
   return (
     <ObChoiceScreen<string>
-      title="Qual é o seu verdadeiro objetivo?"
-      subtitle="Pode ser honesta — é só pra gente entender você melhor."
+      title="Qual a pele dos seus sonhos?"
       options={OPTIONS}
+      centerOptions
       onBack={() => router.back()}
       onSelect={(v) => setOnboardingField('goal_desire', v)}
       onContinue={(v) => {
         track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), desire: v });
-        router.push('/(onboarding)/social-proof');
+        // → "Transformação real" (antes e depois, 04/nov/2026) → "Sua evolução".
+        router.push('/(onboarding)/transformacao');
       }}
     />
   );

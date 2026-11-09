@@ -137,3 +137,25 @@ export function commitmentPhrase(concerns: string[]): string {
     : `${goals.slice(0, -1).join(', ')} e ${goals[goals.length - 1]}`;
   return `cuidar da minha pele todos os dias, ${list}.`;
 }
+
+// ── "Qual a pele dos seus sonhos?" (objetivo, 03/nov/2026; título trocado em 06/nov/2026) ──
+// Grava em `onboarding.goal_desire` o texto inteiro ("Pele de vidro — lisa e luminosa"),
+// que segue como texto livre para a `generate-protocol`. O objetivo não é salvo no banco
+// (só vive no store em memória durante o onboarding), então não há resposta antiga
+// gravada; mesmo assim, valor desconhecido → `objetivoPele` devolve null e cada tela usa
+// o seu texto neutro, nunca uma frase pela metade.
+export type ObjetivoPele = {
+  nome: string;      // destaque da opção
+  desc: string;      // linha menor embaixo
+  pele: string;      // "pele de vidro" → "sua pele de vidro…" / "uma pele de vidro"
+};
+export const OBJETIVOS_PELE: ObjetivoPele[] = [
+  { nome: 'Pele de vidro', desc: 'lisa e luminosa', pele: 'pele de vidro' },
+  { nome: 'Pele limpa', desc: 'sem espinhas e sem marcas', pele: 'pele limpa' },
+  { nome: 'Pele radiante', desc: 'com viço e cor uniforme', pele: 'pele radiante' },
+  { nome: 'Pele jovem', desc: 'firme e com menos linhas', pele: 'pele jovem' },
+];
+export const valorObjetivo = (o: ObjetivoPele) => `${o.nome} — ${o.desc}`;
+export function objetivoPele(goal: string | null | undefined): ObjetivoPele | null {
+  return OBJETIVOS_PELE.find((o) => goal === valorObjetivo(o)) ?? null;
+}

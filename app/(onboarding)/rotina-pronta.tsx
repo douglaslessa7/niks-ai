@@ -7,6 +7,7 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore, type OnboardingData, type ScanResult } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEPS, useObName, obStep, useOnMount } from '../../components/onboarding/kit';
+import { objetivoPele } from '../../components/onboarding/answers';
 
 // Onboarding — "Rotina pronta". RÉPLICA da tela 24 "Rotina pronta · nova" do Claude
 // Design (projeto NIKS Onboarding, `NIKS Onboarding - fluxo completo.dc.html`,
@@ -279,6 +280,7 @@ export default function RotinaPronta() {
   const { track } = useMixpanel();
   const insets = useSafeAreaInsets();
   const name = useObName();
+  const objetivo = objetivoPele(useAppStore((s) => s.onboarding.goal_desire));
   const onboarding = useAppStore((s) => s.onboarding);
   const scan = useAppStore((s) => s.scanResult);
   const { achados, semanas, d2Sub, metas } = montar(onboarding, scan);
@@ -311,8 +313,13 @@ export default function RotinaPronta() {
           }}>
             <Icone d={CHECK} size={38} color="#FFFFFF" width={3} />
           </View>
+          {/* A pele escolhida no objetivo (03/nov/2026): "Sua rotina para ter uma pele de
+              vidro está pronta, Ana." Sem objetivo reconhecido, o "Parabéns" de antes.
+              A pele vai com espaços que não quebram: "pele de / vidro" nunca se separa. */}
           <Text style={{ marginTop: 14, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: INK, textAlign: 'center' }}>
-            {name ? `Parabéns, ${name}!` : 'Parabéns!'}
+            {objetivo
+              ? `Sua rotina para ter uma ${objetivo.pele.replace(/ /g, ' ')} está pronta${name ? `, ${name}` : ''}.`
+              : name ? `Parabéns, ${name}!` : 'Parabéns!'}
           </Text>
           <Text style={{ fontSize: 17, lineHeight: 23, color: SUB, textAlign: 'center' }}>
             {'Montamos a rotina '}

@@ -1,28 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Animated, Easing } from 'react-native';
+import { View, Text, Animated, Easing, BackHandler, TouchableOpacity } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import Svg, { Defs, LinearGradient, Stop, Circle } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
+import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, useObFrame, useObName, obStep, useOnMount,
+  OB, OB_STEPS, ObPillButton, ObScreen, useObFrame, useObName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 import { routineLoadingLines } from '../../components/onboarding/answers';
-import { awaitRoutine, ensureSkinPreview } from '../../lib/onboardingPrefetch';
+import {
+  ESPERA_SEGUNDO_PLANO_MS, FALHAS_PARA_ENTRAR, adiarCompraPendente, concluirCompraPendente, tentarEmSegundoPlano,
+} from '../../lib/concluirCompra';
 
-// ⚠️ FORA DO FLUXO (out/2026, a pedido do produto): nada navega para cá.
-// "Criando uma rotina só sua, <nome>". Anel R 122 (trilho
-// branco 13 pt + progresso em degradê #FF5EA8 → #FF8CC0, 11 pt) em volta de um disco
+// TELA DE ESPERA depois da compra (06/nov/2026) — "Criando uma rotina só sua, <nome>". O
+// visual é o da antiga tela 23 do fluxo completo (fora do fluxo desde out/2026): anel R 122
+// (trilho branco 13 pt + progresso em degradê #FF5EA8 → #FF8CC0, 11 pt) em volta de um disco
 // branco Ø214 com a porcentagem; embaixo do título, uma frase que troca a cada terço
-// (`routineLoadingLines`: queixa → tipo de pele do scan → o que causou reação, esta só
-// se ela informou na tela 17) e 4 tracinhos pulsando.
+// (`routineLoadingLines`) e 4 tracinhos pulsando.
 //
-// A rotina já está sendo gerada em segundo plano desde que o relatório ficou pronto — aqui só
-// aguardamos (`awaitRoutine`, que dispara de novo se o job de fundo falhou). A % anda
-// no ritmo do design (0 → 100 em ~6,5 s) mas SEGURA em 95% até a rotina chegar. Se a
-// geração falhar, a tela segue mesmo assim: o signup gera de novo
-// (`saveOnboardingProtocol`), como sempre fez. Também garante o antes/depois da tela
-// seguinte. Sem voltar.
+// Chega aqui: o cadastro (conta nova), o paywall (já logada, refazendo o onboarding) ou a
+// retomada ao abrir o app (`app/index.tsx`, com sessão e compra pendente). Faz, em ordem:
+//   1. aguarda a análise completa (`analyze-skin`, disparada na compra — `lib/onboardingPrefetch.ts`);
+//   2. grava na conta: perfil (`users`), foto no bucket `scans` e `skin_scans` (`saveToSupabase`);
+//   3. aguarda/gera a rotina e grava em `protocolos` + `recomendar-produtos` (`saveOnboardingProtocol`);
+//   4. apaga a foto e o registro do aparelho (`lib/compraPendente.ts`) e abre a home.
+// A % anda no ritmo do design (0 → 100 em ~6,5 s) mas SEGURA em 95% até terminar. Falhou a
+// análise (depois das tentativas) → "Não conseguimos terminar sua rotina agora." + "Tentar de
+// novo"; o registro continua no aparelho, então reabrir o app também retoma. A rotina que
+// falhar de vez não segura a tela (a aba Rotina gera de novo, como sempre). Sem voltar.
+// Depois de 3 falhas aparece "Entrar no app" e o resto continua em segundo plano
+// (`lib/concluirCompra.ts`, 09/nov/2026).
 //
 // ⚠️ A linha "43.754 mulheres com pele oleosa já seguem uma rotina NIKS" do design
 // ficou de fora: prova social não vai ao ar com número de exemplo.
@@ -36,22 +44,31 @@ export default function LoadingRotina() {
   const router = useRouter();
   const { track } = useMixpanel();
   const name = useObName();
-  const { y } = useObFrame();
+  const { y, buttonBottom } = useObFrame();
   const onboarding = useAppStore((s) => s.onboarding);
   const skinType = useAppStore((s) => s.scanResult?.skin_type_detected);
   const lines = useRef(routineLoadingLines(onboarding, skinType)).current;
   const [p, setP] = useState(0);
+  const [falhou, setFalhou] = useState(false);
+  const [falhas, setFalhas] = useState(0);
   const ready = useRef(false);
   const start = useRef(Date.now());
   const dots = useRef(new Animated.Value(0)).current;
 
   useOnMount(() => track('onboarding_step_viewed', obStep(OB_STEPS.loadingRotina, 'Loading Rotina')));
 
+  const processar = async () => {
+    setFalhou(false);
+    const r = await concluirCompraPendente();
+    if (r.status === 'ok') { ready.current = true; return; }
+    if (r.status === 'sem_sessao') { router.replace('/'); return; }
+    setFalhas(r.falhas);
+    setFalhou(true);
+  };
+
   useEffect(() => {
-    ensureSkinPreview();
-    awaitRoutine()
-      .then((r) => { if (!r) console.warn('[loading-rotina] rotina não ficou pronta — o signup gera de novo'); })
-      .finally(() => { ready.current = true; });
+    void processar();
+    const back = BackHandler.addEventListener('hardwareBackPress', () => true);
 
     Animated.loop(Animated.timing(dots, { toValue: 1, duration: 1200, easing: Easing.linear, useNativeDriver: true })).start();
 
@@ -65,14 +82,26 @@ export default function LoadingRotina() {
       if (next >= 1 && !done) {
         done = true;
         track('onboarding_step_completed', obStep(OB_STEPS.loadingRotina, 'Loading Rotina'));
-        setTimeout(() => router.replace('/(onboarding)/rotina-pronta'), 400);
+        setTimeout(() => router.replace('/(app)/home'), 400);
         return;
       }
       id = requestAnimationFrame(loop);
     };
     id = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(id);
+    return () => { cancelAnimationFrame(id); back.remove(); };
   }, []);
+
+  const tentarDeNovo = () => {
+    haptics.action();
+    void processar();
+  };
+
+  const entrarNoApp = async () => {
+    haptics.action();
+    await adiarCompraPendente(falhas);
+    tentarEmSegundoPlano(ESPERA_SEGUNDO_PLANO_MS);
+    router.replace('/(app)/home');
+  };
 
   const pct = Math.round(p * 100);
   const n = lines.length;
@@ -127,26 +156,44 @@ export default function LoadingRotina() {
         position: 'absolute', left: 24, right: 24, top: y(562), textAlign: 'center',
         fontSize: 20, lineHeight: 26, fontWeight: '700', letterSpacing: -0.3, color: OB.ink,
       }}>
-        {name ? `Criando uma rotina só sua, ${name}` : 'Criando uma rotina só sua'}
+        {falhou ? 'Não conseguimos terminar sua rotina agora.' : name ? `Criando uma rotina só sua, ${name}` : 'Criando uma rotina só sua'}
       </Text>
-      <Text style={{
-        position: 'absolute', left: 24, right: 24, top: y(595), textAlign: 'center',
-        fontSize: 15, lineHeight: 20, color: OB.sub, opacity: lineOpacity,
-      }}>
-        {lines[idx]}
-      </Text>
+      {!falhou && (
+        <Text style={{
+          position: 'absolute', left: 24, right: 24, top: y(595), textAlign: 'center',
+          fontSize: 15, lineHeight: 20, color: OB.sub, opacity: lineOpacity,
+        }}>
+          {lines[idx]}
+        </Text>
+      )}
 
-      <View style={{ position: 'absolute', left: 0, right: 0, top: y(640), flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
-        {[6, 14, 14, 6].map((w, k) => (
-          <Animated.View key={k} style={{
-            width: w, height: 5, borderRadius: 3, backgroundColor: OB.pink,
-            opacity: dots.interpolate({
-              inputRange: [0, 0.25, 0.5, 0.75, 1],
-              outputRange: [0, 1, 2, 3, 4].map((j) => 0.35 + 0.65 * Math.max(0, Math.cos(((j / 4) - k / 4) * Math.PI * 2))),
-            }),
-          }} />
-        ))}
-      </View>
+      {!falhou && (
+        <View style={{ position: 'absolute', left: 0, right: 0, top: y(640), flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+          {[6, 14, 14, 6].map((w, k) => (
+            <Animated.View key={k} style={{
+              width: w, height: 5, borderRadius: 3, backgroundColor: OB.pink,
+              opacity: dots.interpolate({
+                inputRange: [0, 0.25, 0.5, 0.75, 1],
+                outputRange: [0, 1, 2, 3, 4].map((j) => 0.35 + 0.65 * Math.max(0, Math.cos(((j / 4) - k / 4) * Math.PI * 2))),
+              }),
+            }} />
+          ))}
+        </View>
+      )}
+
+      {falhou && falhas < FALHAS_PARA_ENTRAR && <ObPillButton label="Tentar de novo" width={200} bottom={buttonBottom} onPress={tentarDeNovo} />}
+      {falhou && falhas >= FALHAS_PARA_ENTRAR && (
+        <>
+          <TouchableOpacity
+            onPress={tentarDeNovo}
+            accessibilityRole="button"
+            style={{ position: 'absolute', alignSelf: 'center', bottom: buttonBottom + 66, paddingVertical: 10, paddingHorizontal: 20 }}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '600', color: OB.ink }}>Tentar de novo</Text>
+          </TouchableOpacity>
+          <ObPillButton label="Entrar no app" width={220} bottom={buttonBottom} onPress={() => { void entrarNoApp(); }} />
+        </>
+      )}
     </ObScreen>
   );
 }

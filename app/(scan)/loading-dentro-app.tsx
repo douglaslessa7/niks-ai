@@ -3,7 +3,9 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
-import { invalidateCache } from '../../lib/cache';
+import { invalidateCache, peekCache } from '../../lib/cache';
+import { chaveEstado, estadoCartas, type EstadoCartas } from '../../lib/cartasServidor';
+import { ganhouPontos } from '../../lib/pontosAnimacao';
 import { regenerateProtocolInApp } from '../../lib/regenerateProtocolInApp';
 import { ScanLoadingView } from '../../components/scan/ScanLoadingView';
 
@@ -137,6 +139,9 @@ export default function LoadingDentroApp() {
                 fotoUrl = signed?.signedUrl ?? supabase.storage.from('scans').getPublicUrl(path).data.publicUrl;
               }
             }
+            // Regras novas das cartas: o scan dá NIKS Points sem carta (1 a cada 7 dias, pelo
+            // gatilho do servidor). O total de antes, para a barra de nível subir depois.
+            const totalAntes = peekCache<EstadoCartas>(chaveEstado(user.id))?.data?.pontos?.total;
             const { data: scanRow } = await supabase.from('skin_scans').insert({
               user_id: user.id,
               foto_url: fotoUrl,
@@ -150,6 +155,11 @@ export default function LoadingDentroApp() {
             // Novo scan = novo score, novas métricas, nova foto. A home lê de
             // cache, então precisa ser invalidada aqui ou mostraria o scan antigo.
             invalidateCache(`home:${user.id}`);
+            if (typeof totalAntes === 'number') {
+              void estadoCartas()
+                .then((e) => { if (e.pontos && e.pontos.total > totalAntes) ganhouPontos({ total_antes: totalAntes, total: e.pontos.total }); })
+                .catch(() => {});
+            }
             // Regeneração do protocolo no 1º scan in-app — BACKGROUND, não bloqueia a
             // navegação. A função de módulo sobrevive à desmontagem desta tela; os guards
             // internos (marcador + regenInFlight) garantem "uma única vez".

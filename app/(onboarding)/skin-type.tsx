@@ -5,7 +5,7 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, useObFrame, obStep, useOnMount, ObPress
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, OB_BOTAO_H, useObFrame, obStep, useOnMount, ObPress
 } from '../../components/onboarding/kit';
 
 // Tela 7 do onboarding — tipo de pele. Réplica da tela "Como você descreveria sua
@@ -79,7 +79,7 @@ export default function SkinType() {
     <ObScreen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: y(114), paddingBottom: buttonBottom + 48 + 24 }}
+        contentContainerStyle={{ paddingTop: y(114), paddingBottom: buttonBottom + OB_BOTAO_H + 24 }}
       >
         {/* Sem subtítulo; "sua pele?" sempre na 2ª linha (pedido do produto). */}
         <ObTitle>{'Como você descreveria\nsua pele?'}</ObTitle>

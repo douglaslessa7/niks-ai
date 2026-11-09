@@ -5,12 +5,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Ellipse, Line, Path, G } from 'react-native-svg';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
-import { useAIConsent } from '../../hooks/useAIConsent';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, ObCheck,
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, OB_BOTAO_H, ObCheck,
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
-import { ConsentSheet } from '../../components/onboarding/ConsentSheet';
 import { ringTicks, ringBack } from '../../components/onboarding/scanRing';
 
 // TUTORIAL do scan do onboarding (antes da câmera). Título: "Agora vamos analisar a /
@@ -29,9 +27,9 @@ import { ringTicks, ringBack } from '../../components/onboarding/scanRing';
 // (`FRONT_MS`), passo 2 na 1ª metade da volta, passo 3 até o anel encher, ✓✓✓ na pausa.
 // Embaixo, "Para uma análise mais precisa, se certifique:" + os cuidados em 4 colunas.
 //
-// Consentimento de IA: no fluxo completo ele já foi dado na tela 0.2 ("Seus dados").
-// A folha "Antes de continuar" continua aqui como rede de segurança e a câmera mantém
-// o `useScanConsentGate` (trava única do README, seção 14) — quem já aceitou não vê nada.
+// Consentimento: "Abrir câmera" vai direto para a câmera, e é LÁ que abre o pop-up
+// "Sua pele. Seus dados." (`useScanConsentGate({ sheet: 'seusDados' })`, trava única
+// do README, seção 14) — quem já aceitou não vê nada (03/nov/2026).
 const STEP = OB_STEPS.prepScan;
 const STEP_NAME = 'Tutorial do Scan';
 
@@ -156,7 +154,6 @@ export default function ScanPrep() {
   const router = useRouter();
   const { track } = useMixpanel();
   const { y, buttonBottom } = useObFrame();
-  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
   const t = useLoopClock();
   const stepIdx = stepAt(t);
 
@@ -171,7 +168,7 @@ export default function ScanPrep() {
     <ObScreen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 32 }}
+        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + OB_BOTAO_H + 32 }}
       >
         <ObTitle>{'Agora vamos analisar a\nsua pele:'}</ObTitle>
         <View style={{ alignItems: 'center', marginTop: 14 }}>
@@ -238,10 +235,8 @@ export default function ScanPrep() {
       <ObPillButton
         label="Abrir câmera"
         bottom={buttonBottom}
-        onPress={() => { haptics.action(); requestConsent(openCamera); }}
+        onPress={() => { haptics.action(); openCamera(); }}
       />
-
-      <ConsentSheet visible={consentModalVisible} onAccept={handleAccept} onDecline={handleDecline} />
     </ObScreen>
   );
 }

@@ -28,12 +28,13 @@ const PINK = OB.pink;         // #FF5EA8
 const INK = OB.ink;           // #121212
 const MUTED = '#8A8385';      // eyebrow, "%" e subtítulo
 
-export type ScanLoadingKind = 'face' | 'product';
+export type ScanLoadingKind = 'face' | 'product' | 'sos';
 
 // Etapas do design — uma por pontinho; trocam a cada 25% da porcentagem.
 const STEPS: Record<ScanLoadingKind, string[]> = {
   face: ['Lendo suas fotos', 'Mapeando as áreas do rosto', 'Cruzando com o seu perfil de pele', 'Montando seu relatório'],
   product: ['Lendo o rótulo', 'Analisando os ingredientes', 'Comparando com a sua rotina atual', 'Calculando a compatibilidade'],
+  sos: ['Olhando sua espinha de perto…', 'Conferindo sua estante e sua rotina…', 'Separando o que fazer agora…'],
 };
 
 const COPY: Record<ScanLoadingKind, { eyebrow: string; demand: string; errorTitle: string; errorHint: string }> = {
@@ -49,6 +50,8 @@ const COPY: Record<ScanLoadingKind, { eyebrow: string; demand: string; errorTitl
     errorTitle: 'Não conseguimos analisar o produto',
     errorHint: 'Tire uma nova foto do produto para tentar novamente',
   },
+  // O SOS desenha os próprios estados de erro (`sos-loading`): daqui só usa o eyebrow.
+  sos: { eyebrow: 'SOS espinha', demand: '', errorTitle: '', errorHint: '' },
 };
 
 // Anel: SVG 272 × 272, raio 128, traço 12 (trilho branco + progresso rosa).

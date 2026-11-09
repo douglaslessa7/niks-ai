@@ -5,8 +5,8 @@ import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../co
 
 // Onboarding — alergias (escolha única), textos da versão B. Vem logo depois da
 // gravidez ("IMPORTANTE: alguns ativos…"), a pedido do produto. Como na versão B,
-// só "Já tive reação" leva ao detalhe; as outras seguem direto para "o que te
-// incomoda".
+// só "Já tive reação" leva ao detalhe; as outras seguem direto para o "Seu
+// potencial" (desde 03/nov/2026 o "o que te incomoda" vem antes, logo depois da idade).
 type AllergyType = 'none' | 'sensitive' | 'reaction' | 'no_history';
 
 const OPTIONS: ObChoice<AllergyType>[] = [
@@ -42,7 +42,7 @@ export default function Allergies() {
         }
         // Sem detalhe: a descrição de uma passagem anterior pelo detalhe não vale mais.
         setOnboardingField('allergy_description', null);
-        router.push('/(onboarding)/concerns');
+        router.push('/(onboarding)/goal-validation');
       }}
     />
   );

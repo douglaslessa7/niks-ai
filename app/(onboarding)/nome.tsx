@@ -9,15 +9,17 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Tela 2 do onboarding — campo de texto. Vem da apresentação "Olá, eu sou a NIKS"
-// (0.1) com `replace`: NÃO tem voltar, e carrega o link "Já tem conta? Entrar" — o
+// Tela 2 do onboarding — campo de texto. Vem da abertura com vídeo (`abertura.tsx`,
+// 03/nov/2026; antes do "Olá"/"Seus dados"). Não tem seta de voltar (o gesto volta à
+// abertura), e carrega o link "Já tem conta? Entrar" — o
 // único caminho de login de quem já tem conta. Vem ANTES do
 // signup/paywall: ainda não há sessão, então o nome só vai para o store
 // (`pendingName`, persistido); quem grava em `users.nome` é o signup
 // (`saveToSupabase`). A captura de nome DENTRO do app (guard do `(app)/_layout`,
 // usuária legada sem nome) continua em `components/onboarding/NameCapture.tsx`.
 //
-// O teclado abre sozinho; antes de digitar, campo vazio com cursor e botão a 40%;
+// O teclado NÃO abre sozinho (08/nov/2026, pedido do produto): abre quando ela toca no campo
+// (com "Seu nome" de dica enquanto vazio). Antes de digitar, botão a 40%;
 // o bloco fica centrado na altura livre acima do teclado. Textos = versão B.
 const STEP = OB_STEPS.nome;
 const STEP_NAME = 'Nome';
@@ -39,7 +41,8 @@ export default function Nome() {
     haptics.action();
     setPendingName(trimmed);
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/prazer');
+    // Nome → objetivo → gráfico "Sua evolução" → idade (03/nov/2026, pedido do produto).
+    router.push('/(onboarding)/goal-desire');
   };
 
   return (
@@ -64,7 +67,8 @@ export default function Nome() {
             <TextInput
               value={nome}
               onChangeText={setNome}
-              autoFocus
+              placeholder="Seu nome"
+              placeholderTextColor="rgba(18,18,18,0.25)"
               autoCapitalize="words"
               autoCorrect={false}
               returnKeyType="done"

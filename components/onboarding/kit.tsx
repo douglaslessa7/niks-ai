@@ -47,37 +47,38 @@ export const OB = {
 // As telas condicionais (detalhe da rotina, detalhe da alergia) mantêm o número mesmo
 // quando não aparecem — o funil mostra o pulo, não renumera.
 export const OB_STEPS = {
-  // "Seus dados" (0.2 do design) entre o "Olá" e o nome (out/2026, pedido do produto).
-  ola: 1, seusDados: 2, nome: 3, prazer: 4, idade: 5, gravidez: 6,
-  // Alergias logo depois da gravidez (out/2026, pedido do produto).
-  alergias: 7, alergiaDetalhe: 8, incomoda: 9, potencial: 10,
-  // Água e sono em DUAS telas de novo (20/out/2026, pedido do produto) — os passos
-  // seguintes andaram uma casa e o total foi de 26 para 27.
-  // O detalhe da rotina atual saiu do fluxo no mesmo dia (20/out/2026): os passos
-  // seguintes voltaram uma casa e o total voltou a 26.
-  tipoPele: 11, sol: 12, hidratacao: 13, sono: 14, rotinaAtual: 15,
-  // Horário → notificações ("Continuar" + "Já ativei!") logo depois da rotina atual
-  // (16/out/2026, pedido do produto). A permissão sai ANTES da conta (token em
-  // `pendingPushToken`, gravado no signup).
-  // Horário em duas ETAPAS (manhã → noite) desde 20/out/2026, numa tela só
-  // (`horario.tsx`): cada etapa conta um passo — os seguintes andaram uma casa.
-  horarioManha: 16, horarioNoite: 17, notificacoes: 18,
-  objetivo: 19, comSemNiks: 20,
-  prepScan: 21, camera: 22, analisando: 23, resultadoScan: 24, rotinaPronta: 25,
+  // Abertura com vídeo ("NF 1" do novo fluxo) no lugar do "Olá" + "Seus dados", e o
+  // nome indo direto para a idade, sem o "Prazer" (03/nov/2026, pedido do produto):
+  // todos os passos andaram para trás (−2) e o total foi de 27 para 25.
+  // "O que mais te incomoda" logo depois da idade e, depois dela, o mapa do rosto e a
+  // reação com o foco ("NF 5" e "NF 6" do novo fluxo) — 03/nov/2026, pedido do
+  // produto. Os passos seguintes andaram duas casas e o total foi de 25 para 27.
+  // Nome → objetivo → gráfico "Sua evolução" → idade → incômodos (03/nov/2026).
+  abertura: 1, nome: 2, objetivo: 3, evolucao: 4, idade: 5, incomoda: 6,
+  mapaRosto: 7, focoRosto: 8,
+  // Depois do foco, direto o tutorial do scan (com o pop-up "Sua pele. Seus dados.") e a
+  // câmera (03/nov/2026, pedido do produto). As perguntas que vinham no meio (gravidez →
+  // "Com × Sem NIKS") saíram do caminho e valem 0 até voltarem a ter lugar no fluxo.
+  prepScan: 9, camera: 10, analisando: 11, resultadoScan: 12, rotinaPronta: 13,
   // Paywall (Superwall) entre a rotina pronta e a conta — não é tela nossa, não conta.
   // O compromisso passou para DEPOIS da conta (20/out/2026, pedido do produto): é a
-  // última tela antes da home. Total continua 27.
+  // última tela antes da home.
   // Conta e compromisso ficam só no Mixpanel: o funil do Paywallo termina na rotina
   // pronta (`OB_PAYWALLO_LAST`, abaixo).
-  criarConta: 26, compromisso: 27,
+  criarConta: 14, compromisso: 15,
+  // Fora do caminho desde 03/nov/2026 (esperando lugar no fluxo novo).
+  gravidez: 0, alergias: 0, alergiaDetalhe: 0, potencial: 0,
+  tipoPele: 0, sol: 0, hidratacao: 0, sono: 0, rotinaAtual: 0,
+  horarioManha: 0, horarioNoite: 0, notificacoes: 0, comSemNiks: 0,
   // Telas FORA do fluxo (arquivos ficaram no repo, nada navega até elas): o 0
   // garante que nada delas entra no funil se alguém navegar até lá.
+  ola: 0, seusDados: 0, prazer: 0,
   avisoLembretes: 0, pedidoNotificacao: 0, entendi: 0, idadePele: 0, transicaoRotina: 0,
   aguaSono: 0, rotinaDetalhe: 0, horarioRotina: 0, empatia: 0,
   loadingRotina: 0, incomodaRotina: 0,
   loading: 0, relatorio: 0, planPreview: 0, apresentacao: 0,
 } as const;
-export const OB_STEP_TOTAL = 27;
+export const OB_STEP_TOTAL = 15;
 /**
  * Último passo repassado ao funil do Paywallo (tela Dropout). Os passos depois dele
  * (paywall → conta → compromisso) ficam só no Mixpanel; o `onboardingManager.complete()`
@@ -117,11 +118,26 @@ export function useObFrame() {
 }
 
 /** Fundo da tela: branco (perguntas) ou degradê rosado (telas de valor). */
-export function ObScreen({ variant = 'white', children }: { variant?: 'white' | 'blush'; children: React.ReactNode }) {
+/** `home` = o fundo da home (degradê rosa + bolha branca), usado no cadastro desde as
+ *  boas-vindas pós-pagamento (07/nov/2026, tela 9 do design NiksBoasVindas). */
+export function ObScreen({ variant = 'white', children }: { variant?: 'white' | 'blush' | 'home'; children: React.ReactNode }) {
+  const { y } = useObFrame();
   return (
     <View style={{ flex: 1, backgroundColor: OB.bg }}>
       {variant === 'blush' && (
         <LinearGradient colors={[...OB.blush]} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+      )}
+      {variant === 'home' && (
+        <>
+          <LinearGradient
+            colors={['#FCE3EE', '#FDD5E6', '#FCDFEA', '#F9F1F4']} locations={[0, 0.45, 0.72, 1]}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+          <View pointerEvents="none" style={{
+            position: 'absolute', left: -330, top: y(300), width: 620, height: 620, borderRadius: 310,
+            backgroundColor: 'rgba(255,255,255,0.42)',
+          }} />
+        </>
       )}
       {children}
     </View>
@@ -316,8 +332,8 @@ export function ObFill({ on, touch, color = OB.pink }: { on: boolean; touch?: To
 }
 
 export function ObOptionCard({
-  label, sub, selected, reveal, onPress, disabled,
-}: { label: string; sub?: string; selected: boolean; reveal?: string; onPress: () => void; disabled?: boolean }) {
+  label, sub, strong, selected, reveal, onPress, disabled,
+}: { label: string; sub?: string; strong?: boolean; selected: boolean; reveal?: string; onPress: () => void; disabled?: boolean }) {
   // O rosa abre a partir do dedo já no toque; se o dedo sair sem escolher (rolou a tela),
   // fecha de novo.
   const [pressing, setPressing] = useState(false);
@@ -341,7 +357,7 @@ export function ObOptionCard({
       <ObFill on={fillOn} touch={touch} />
       <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: '400', color: on ? '#FFFFFF' : OB.ink }}>
+          <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: strong ? '600' : '400', color: on ? '#FFFFFF' : OB.ink }}>
             {label}
           </Text>
           {!!sub && (
@@ -365,8 +381,13 @@ export function ObOptionCard({
 // 172 × 48 pt, raio 24, #FF5EA8, "Continuar" 18/600 branco. Desabilitado = 40%
 // de opacidade (nota da tela 2 do design). `bottom` posiciona no frame; sem ele o
 // botão fica no fluxo (tela de nome, que centraliza o bloco acima do teclado).
+/** Altura do botão rosa do onboarding ("Continuar"). Tela que reserva espaço para ele usa
+ *  esta constante, nunca o número solto. 06/nov/2026, pedido do produto: o botão ficou
+ *  maior (era 172 × 48, texto 18). */
+export const OB_BOTAO_H = 56;
+
 export function ObPillButton({
-  label = 'Continuar', onPress, disabled, bottom, width = 172, style,
+  label = 'Continuar', onPress, disabled, bottom, width = 220, style,
 }: { label?: string; onPress: () => void; disabled?: boolean; bottom?: number; width?: number; style?: StyleProp<ViewStyle> }) {
   const positioned: ViewStyle = bottom != null
     ? { position: 'absolute', bottom, alignSelf: 'center' }
@@ -377,12 +398,12 @@ export function ObPillButton({
       disabled={disabled}
       activeOpacity={0.85}
       style={[positioned, {
-        width, height: 48, borderRadius: 24, backgroundColor: OB.pink,
+        width, height: OB_BOTAO_H, borderRadius: OB_BOTAO_H / 2, backgroundColor: OB.pink,
         alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1,
         shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 8,
       }, style]}
     >
-      <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>{label}</Text>
+      <Text style={{ fontSize: 19, fontWeight: '600', color: '#FFFFFF' }}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -497,7 +518,8 @@ export function ObWheel({
 // Estrutura das perguntas de escolha única: título a 118 pt, subtítulo 9 pt
 // abaixo, opções 22 pt abaixo (gap 8), botão pílula fixo. A tela chamadora
 // decide o que gravar (`onSelect`) e para onde ir (`onContinue`).
-export type ObChoice<V extends string> = { label: string; value: V; reveal?: string; sub?: string };
+/** `strong`: nome em destaque (semibold), para opções com nome + descrição embaixo. */
+export type ObChoice<V extends string> = { label: string; value: V; reveal?: string; sub?: string; strong?: boolean };
 
 export function ObChoiceScreen<V extends string>({
   title, subtitle, options, initial = null, onSelect, onContinue, onBack, centerOptions = false, optionsTop,
@@ -508,7 +530,8 @@ export function ObChoiceScreen<V extends string>({
   initial?: V | null;
   onSelect: (value: V) => void;
   onContinue: (value: V) => void;
-  onBack: () => void;
+  /** Sem `onBack`, a tela não mostra o voltar (ex.: 1ª pergunta da personalização). */
+  onBack?: () => void;
   /** Título no topo e as opções CENTRALIZADAS na altura livre entre ele e o botão
    *  (um pouco acima do centro exato: 100 pt de folga embaixo, pedido do produto). */
   centerOptions?: boolean;
@@ -518,28 +541,46 @@ export function ObChoiceScreen<V extends string>({
   const { y, buttonBottom } = useObFrame();
   const [selected, setSelected] = useState<V | null>(initial);
   const top = optionsTop ?? (subtitle ? 22 : 34);
+  // Centralizadas: o bloco fica no centro medido SEM a frase revelada (`reveal`) — ao marcar
+  // uma opção com frase, o cartão cresce para baixo em vez de o bloco inteiro subir.
+  const [livreH, setLivreH] = useState(0);
+  const [blocoH, setBlocoH] = useState(0);
+  const revelando = options.some((o) => o.value === selected && !!o.reveal);
+  const medido = livreH > 0 && blocoH > 0;
+  const cards = options.map((opt) => (
+    <ObOptionCard
+      key={opt.value}
+      label={opt.label}
+      sub={opt.sub}
+      strong={opt.strong}
+      reveal={opt.reveal}
+      selected={selected === opt.value}
+      onPress={() => { setSelected(opt.value); onSelect(opt.value); }}
+    />
+  ));
   return (
     <ObScreen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 24, flexGrow: centerOptions ? 1 : undefined }}
+        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + OB_BOTAO_H + 24, flexGrow: centerOptions ? 1 : undefined }}
       >
         <ObTitle>{title}</ObTitle>
         {!!subtitle && <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>{subtitle}</ObSubtitle>}
-        <View style={centerOptions
-          ? { flex: 1, justifyContent: 'center', marginTop: top, marginBottom: 100, marginHorizontal: 17, gap: 8 }
-          : { marginTop: top, marginHorizontal: 17, gap: 8 }}>
-          {options.map((opt) => (
-            <ObOptionCard
-              key={opt.value}
-              label={opt.label}
-              sub={opt.sub}
-              reveal={opt.reveal}
-              selected={selected === opt.value}
-              onPress={() => { setSelected(opt.value); onSelect(opt.value); }}
-            />
-          ))}
-        </View>
+        {centerOptions ? (
+          <View
+            style={{ flex: 1, justifyContent: medido ? 'flex-start' : 'center', marginTop: top, marginBottom: 100 }}
+            onLayout={(e) => setLivreH(e.nativeEvent.layout.height)}
+          >
+            <View
+              style={{ marginHorizontal: 17, gap: 8, marginTop: medido ? Math.max(0, (livreH - blocoH) / 2) : 0 }}
+              onLayout={(e) => { if (!revelando) setBlocoH(e.nativeEvent.layout.height); }}
+            >
+              {cards}
+            </View>
+          </View>
+        ) : (
+          <View style={{ marginTop: top, marginHorizontal: 17, gap: 8 }}>{cards}</View>
+        )}
       </ScrollView>
       <ObHeader onBack={onBack} backdrop={OB.bg} />
       <ObPillButton

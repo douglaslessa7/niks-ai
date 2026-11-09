@@ -154,7 +154,10 @@ type Side = 'left' | 'right';   // lado da TELA para onde o nariz foi
 
 export default function Camera() {
   const router = useRouter();
-  const { consentGate, granted } = useScanConsentGate();
+  // O pop-up "Sua pele. Seus dados." abre AQUI, por cima da câmera (03/nov/2026, pedido
+  // do produto — antes abria no tutorial, ao tocar em "Abrir câmera"). Uma vez por
+  // instalação; "Cancelar" volta para a tela anterior.
+  const { consentGate, granted } = useScanConsentGate({ sheet: 'seusDados' });
   const setSkinImage = useAppStore((s) => s.setSkinImage);
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();

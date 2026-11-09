@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { View, Text, Image, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import Svg, { Defs, LinearGradient, Stop, Path, Circle } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import * as ExpoNotifications from 'expo-notifications';
 import { askPushPermission, requestPushPermission, savePushToken } from '../../lib/notifications';
+import { routineReminderContent } from '../../lib/routineReminders';
 import { getUserId } from '../../lib/currentUser';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -14,13 +16,15 @@ import {
 } from '../../components/onboarding/kit';
 
 // Onboarding — notificações, logo depois do horário da rotina e ANTES do cadastro
-// (16/out/2026, pedido do produto; antes era a última tela, depois da conta). Substitui
+// (16/out/2026, pedido do produto; antes era a última tela, depois da conta). Desde
+// 04/nov/2026 o caminho é: carta do produto (`(scan)/demo-scan`) → horário → AQUI →
+// "Comunidade" (`comunidade.tsx`, a prova social). Substitui
 // o "Aviso de lembretes" + o pedido nativo em tela cinza (`aviso-lembretes.tsx` e
 // `permitir-notificacoes.tsx`, que ficaram no repo sem ligação). VISUAL = o "Aviso de
 // lembretes" do fluxo completo. LÓGICA (16/out/2026, pedido do produto) — um botão só,
 // o "Continuar":
 //   • 1º toque, permissão ainda não respondida → abre o pop-up nativo.
-//       "Permitir" → avança SOZINHA para o objetivo, sem outro toque.
+//       "Permitir" → avança SOZINHA para a "Comunidade", sem outro toque.
 //       "Não permitir" → fica na tela, sem botão novo.
 //   • Toques seguintes → só avançam, sem pedir de novo.
 //   • Permissão já decidida antes (o iOS não mostraria o pop-up) → o 1º toque já avança.
@@ -32,8 +36,12 @@ import {
 // raro), grava direto também. O tutorial de primeiro acesso da home é armado no fim do
 // signup (`finishOnboarding`), não aqui.
 // Medidas do Flo: "iPhone" de 268 pt que some para baixo, sino Ø88 sobreposto ao
-// topo, notificação de 335 pt (mais larga que o iPhone) em y 205. O "21h" vem do
-// horário da noite escolhido na tela do horário.
+// topo, notificação de 335 pt (mais larga que o iPhone) em y 205. O horário vem da tela
+// anterior (04/nov/2026): é a PRÓXIMA rotina a partir de agora com os dois horários que ela
+// escolheu — a manhã de hoje (antes dela), a noite de hoje (entre as duas) ou a manhã de
+// amanhã (depois da noite) — e a notificação de exemplo mostra o texto real do lembrete
+// daquele período (`routineReminderContent`, o mesmo que os lembretes locais enviam).
+// Antes era sempre "hoje às <noite>", o que ficava errado depois do horário da noite.
 const STEP = OB_STEPS.notificacoes;
 const STEP_NAME = 'Notificações';
 
@@ -41,6 +49,18 @@ const STEP_NAME = 'Notificações';
 function hourLabel(hhmm: string) {
   const [h, m] = hhmm.split(':');
   return `${Number(h)}h${m === '00' ? '' : m}`;
+}
+
+/** A próxima rotina a partir de agora, com os horários escolhidos na tela anterior. */
+function proximaRotina(manha: string, noite: string, agora = new Date()) {
+  const minutos = (hhmm: string) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return h * 60 + m;
+  };
+  const agoraMin = agora.getHours() * 60 + agora.getMinutes();
+  if (agoraMin < minutos(manha)) return { periodo: 'am' as const, dia: 'hoje', hora: manha };
+  if (agoraMin < minutos(noite)) return { periodo: 'pm' as const, dia: 'hoje', hora: noite };
+  return { periodo: 'am' as const, dia: 'amanhã', hora: manha };
 }
 
 // Silhueta do iPhone (268 × 280, cantos de cima com raio 34). O `mask-image` do
@@ -61,7 +81,10 @@ function BellIcon() {
 export default function Notifications() {
   const router = useRouter();
   const { track } = useMixpanel();
-  const night = useAppStore((s) => s.onboarding.rotina_noite_horario) ?? '21:00';
+  const manha = useAppStore((s) => s.onboarding.rotina_manha_horario) ?? '07:00';
+  const noite = useAppStore((s) => s.onboarding.rotina_noite_horario) ?? '21:00';
+  const proxima = proximaRotina(manha, noite);
+  const lembrete = routineReminderContent(proxima.periodo);
   const { y, buttonBottom } = useObFrame();
   const setPendingPushToken = useAppStore((s) => s.setPendingPushToken);
   const [loading, setLoading] = useState(false);
@@ -85,7 +108,7 @@ export default function Notifications() {
 
   const goNext = (granted: boolean) => {
     track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), granted });
-    router.push('/(onboarding)/goal-desire');
+    router.push('/(onboarding)/comunidade');
   };
 
   // "Continuar": pede a permissão uma vez (se o sistema ainda mostra o pop-up);
@@ -119,6 +142,8 @@ export default function Notifications() {
 
   return (
     <ObScreen variant="blush">
+      {/* Barra de status escura (depois da carta rosa, ela ficava clara e sumia). */}
+      <StatusBar style="dark" />
       {/* iPhone que some para baixo */}
       <View style={{ position: 'absolute', top: y(137), alignSelf: 'center', width: 268, height: 280 }}>
         <Svg width={268} height={280}>
@@ -161,8 +186,8 @@ export default function Notifications() {
           <Text style={{ marginLeft: 'auto', fontSize: 13, color: '#B3ADAF' }}>agora</Text>
         </View>
         <View style={{ gap: 2 }}>
-          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '600', color: OB.ink }}>🌙 Boa noite!</Text>
-          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '400', color: OB.ink }}>Não esqueça sua rotina de skincare noturna antes de dormir.</Text>
+          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '600', color: OB.ink }}>{lembrete.title}</Text>
+          <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '400', color: OB.ink }}>{lembrete.body}</Text>
         </View>
       </View>
 
@@ -170,7 +195,7 @@ export default function Notifications() {
         position: 'absolute', left: 17, right: 17, top: y(428), textAlign: 'center',
         fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.4, color: OB.ink,
       }}>
-        {`Sua próxima rotina é\nhoje às ${hourLabel(night)}`}
+        {`Sua próxima rotina é\n${proxima.dia} às ${hourLabel(proxima.hora)}`}
       </Text>
       <Text style={{
         position: 'absolute', left: 28, right: 28, top: y(514), textAlign: 'center',

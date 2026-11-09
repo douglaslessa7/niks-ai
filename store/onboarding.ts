@@ -4,6 +4,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
 import type { StickerSpec } from '../lib/stickerSpec'
+import type { AnaliseRapida } from '../lib/analiseRapida'
 
 /**
  * Sobe um JPEG (base64) para o bucket privado `scans` e devolve uma signed URL de 1 ano.
@@ -212,6 +213,17 @@ export type OnboardingData = {
   skincare_routine_description?: string | null
   allergy_type?: 'none' | 'sensitive' | 'reaction' | 'no_history' | null
   allergy_description?: string | null
+  // Perguntas da personalização (`(scan)/personalizar`, 04/nov/2026), depois do "Seu caminho".
+  // `sunscreen`: 'Todo dia' | 'Às vezes' | 'Não uso' → `users.sunscreen` (a generate-protocol
+  // tem regra para quem não usa protetor).
+  sunscreen?: string | null
+  // `frequency`: "Já usou ácidos ou retinol?" gravado no campo que a generate-protocol já lê
+  // ("Iniciante → introdução mais gradual"): 'Iniciante — …' ou 'Intermediário — …'.
+  // → `users.frequency`.
+  frequency?: string | null
+  // `makeup`: 'Quase todo dia' | 'Às vezes' | 'Não'. ⚠️ NÃO tem coluna em `users`: vai só para
+  // a rotina gerada no onboarding (o JSON inteiro chega à IA); regenerações depois não o têm.
+  makeup?: string | null
   // Tela 13 do onboarding novo: horários da rotina ('HH:MM') + fuso IANA do aparelho.
   // Gravados em `users.rotina_*` no `saveToSupabase`. O agendamento das notificações
   // do servidor ainda NÃO os lê (pg_cron segue em 7h/21h fixos).
@@ -248,6 +260,12 @@ type AppStore = {
   // Rotina limpa ao voltar ao foco — um scan avulso depois nunca cai num passo.
   rotinaPassoAlvo: { passoId: string; nome: string; periodo: 'am' | 'pm'; em: number } | null
   setRotinaPassoAlvo: (v: { passoId: string; nome: string; periodo: 'am' | 'pm'; em: number } | null) => void
+  // Regiões do rosto que ela marcou no mapa do onboarding (`mapa-rosto.tsx`: 'testa' |
+  // 'nariz' | 'bochechas' | 'queixo'), para a linha "Região" da rotina pronta
+  // (`rotina-pronta-v2.tsx`, 04/nov/2026). FORA do `onboarding` de propósito: não entra na
+  // chave da rotina pré-gerada nem vai para a IA. Em memória.
+  regioesFoco: string[]
+  setRegioesFoco: (v: string[]) => void
   // "Ver todos" da folha "Escolher produto" (estante, escaneados ou recomendados): abre a
   // lista completa na aba Produtos em MODO ESCOLHA — tocar num produto põe no passo e
   // volta à Rotina. Em memória; a aba Produtos limpa ao perder o foco.
@@ -282,6 +300,16 @@ type AppStore = {
   markSplashDestinationReady: () => void
   splashDone: boolean
   setSplashDone: (v: boolean) => void
+  // Chegada da carta no onboarding (`(carta)/carta?modo=onboarding`, depois do loading do
+  // scan): toca UMA vez por onboarding. EM MEMÓRIA (fora do partialize): um refazer do
+  // scan, ou sair e voltar, cai direto no resultado.
+  cartaChegadaVista: boolean
+  setCartaChegadaVista: (v: boolean) => void
+  // As DUAS cartas do onboarding (06/nov/2026): até onde ela já foi — a tela da carta retoma
+  // daqui se for recriada, e nunca mostra de novo uma carta já raspada. EM MEMÓRIA, como a
+  // `cartaChegadaVista`. null = ainda não começou.
+  etapaCartaOb: 'boa' | 'boaRaspada' | 'alerta' | 'alertaRaspada' | null
+  setEtapaCartaOb: (v: 'boa' | 'boaRaspada' | 'alerta' | 'alertaRaspada' | null) => void
   // Tutorial de preparação do scan (scan-prep-app) — mostrado UMA vez só na vida.
   // Persistido (ver partialize): depois de visto, o botão "Escanear" vai direto à câmera.
   scanTutorialSeen: boolean
@@ -323,6 +351,12 @@ type AppStore = {
   scanResult: ScanResult | null
   scanImageUri: string | null
   setScanResult: (result: ScanResult, imageUri: string) => void
+  // Análise RÁPIDA do scan do onboarding (`lib/analiseRapida.ts`, 06/nov/2026): o que a carta
+  // usa, ANTES da compra. O relatório completo (`scanResult`) só chega depois da compra
+  // (`lib/onboardingPrefetch.ts`). EM MEMÓRIA (fora do partialize); depois da compra vai para
+  // o registro da compra pendente (`lib/compraPendente.ts`).
+  analiseRapida: AnaliseRapida | null
+  setAnaliseRapida: (v: AnaliseRapida | null) => void
   foodImageBase64: string | null
   foodImageMimeType: string | null
   setFoodImage: (base64: string, mimeType: string) => void
@@ -416,7 +450,11 @@ type AppStore = {
   setNiksChatMode: (mode: 'empty' | 'active') => void
   skinPreviewUrl: string | null
   setSkinPreviewUrl: (url: string | null) => void
-  saveToSupabase: (userId: string) => Promise<void>
+  /** Grava o onboarding na conta: `perfil` = a linha de `users` (+ marca as regras novas das
+   *  cartas); `scan` = a foto no bucket `scans` + a linha de `skin_scans` (só com relatório).
+   *  Padrão: os dois. Desde 06/nov/2026 o signup grava só o perfil (o relatório completo só
+   *  chega depois da compra) e a tela de espera (`loading-rotina`) grava os dois. */
+  saveToSupabase: (userId: string, opts?: { perfil?: boolean; scan?: boolean }) => Promise<void>
   reset: () => void
 }
 
@@ -435,6 +473,9 @@ const initialOnboarding: OnboardingData = {
   skincare_routine_description: null,
   allergy_type: null,
   allergy_description: null,
+  sunscreen: null,
+  frequency: null,
+  makeup: null,
   rotina_manha_horario: null,
   rotina_noite_horario: null,
   rotina_fuso: null,
@@ -452,6 +493,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   setProductDetailTarget: (id) => set({ productDetailTarget: id }),
   rotinaPassoAlvo: null,
   setRotinaPassoAlvo: (v) => set({ rotinaPassoAlvo: v }),
+  regioesFoco: [],
+  setRegioesFoco: (v) => set({ regioesFoco: v }),
   escolhaParaPasso: null,
   setEscolhaParaPasso: (v) => set({ escolhaParaPasso: v }),
   subscriptionVerified: false,
@@ -467,6 +510,10 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   markSplashDestinationReady: () => set({ splashDestinationReady: true }),
   splashDone: false,
   setSplashDone: (v) => set({ splashDone: v }),
+  cartaChegadaVista: false,
+  setCartaChegadaVista: (v) => set({ cartaChegadaVista: v }),
+  etapaCartaOb: null,
+  setEtapaCartaOb: (v) => set({ etapaCartaOb: v }),
   scanTutorialSeen: false,
   setScanTutorialSeen: (v) => set({ scanTutorialSeen: v }),
 
@@ -513,6 +560,8 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
 
   setScanResult: (result, imageUri) =>
     set({ scanResult: result, scanImageUri: imageUri }),
+  analiseRapida: null,
+  setAnaliseRapida: (v) => set({ analiseRapida: v }),
 
   setProductImage: (base64, mimeType) => {
     console.log('setProductImage called, size KB:', Math.round((base64.length * 0.75) / 1024))
@@ -570,56 +619,75 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   skinPreviewUrl: null,
   setSkinPreviewUrl: (url) => set({ skinPreviewUrl: url }),
 
-  saveToSupabase: async (userId: string) => {
+  saveToSupabase: async (userId: string, opts?: { perfil?: boolean; scan?: boolean }) => {
     const { onboarding, scanResult, scanImageUri, skinImageBase64, pendingName, pendingPushToken } = get()
-
-    let idade: number | null = null
-    if (onboarding.birthday) {
-      const asNum = Number(onboarding.birthday)
-      if (!isNaN(asNum) && asNum > 0 && asNum < 120) {
-        idade = asNum
-      } else {
-        const birth = new Date(onboarding.birthday)
-        if (!isNaN(birth.getTime())) {
-          idade = new Date().getFullYear() - birth.getFullYear()
+    const salvarPerfil = opts?.perfil !== false
+    const salvarScan = opts?.scan !== false
+    if (salvarPerfil) {
+      let idade: number | null = null
+      if (onboarding.birthday) {
+        const asNum = Number(onboarding.birthday)
+        if (!isNaN(asNum) && asNum > 0 && asNum < 120) {
+          idade = asNum
+        } else {
+          const birth = new Date(onboarding.birthday)
+          if (!isNaN(birth.getTime())) {
+            idade = new Date().getFullYear() - birth.getFullYear()
+          }
         }
+      }
+
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { error: userError } = await supabase
+        .from('users')
+        .upsert({
+          id: userId,
+          email: user?.email ?? '',
+          // Nome capturado no início do onboarding (tela "Como você quer ser chamada?").
+          // `|| null` para não sobrescrever um nome existente com string vazia.
+          nome: pendingName?.trim() || null,
+          genero: onboarding.genero,
+          pregnancy_status: onboarding.pregnancy_status ?? null,
+          skincare_routine_type: onboarding.skincare_routine_type ?? null,
+          skincare_routine_description: onboarding.skincare_routine_description ?? null,
+          allergy_type: onboarding.allergy_type ?? null,
+          allergy_description: onboarding.allergy_description ?? null,
+          idade,
+          tipo_pele: onboarding.skin_type,
+          concerns: onboarding.concerns,
+          sun_exposure: onboarding.sun_exposure,
+          hydration: onboarding.hydration,
+          sleep: onboarding.sleep,
+          // Personalização (04/nov/2026): colunas que já existiam em `users`. `makeup` não
+          // tem coluna e fica de fora de propósito (gravar coluna inexistente quebra o upsert).
+          sunscreen: onboarding.sunscreen ?? null,
+          frequency: onboarding.frequency ?? null,
+          birthday: onboarding.birthday,
+          rotina_manha_horario: onboarding.rotina_manha_horario ?? null,
+          rotina_noite_horario: onboarding.rotina_noite_horario ?? null,
+          rotina_fuso: onboarding.rotina_fuso ?? null,
+          // Token pedido antes do cadastro (tela 13b). Só entra quando existe — sem
+          // ele, não apagamos um token que a conta já tinha.
+          ...(pendingPushToken ? { push_token: pendingPushToken } : {}),
+        })
+
+      if (userError) throw userError
+
+      // Cartas — regras novas (05/nov/2026): marca a conta ANTES de salvar o scan do cadastro,
+      // para o gatilho do scan já tomar o caminho novo. Duas tentativas curtas (~5 s no máximo)
+      // sem travar o cadastro; se falharem, mais tentativas em segundo plano — e, de qualquer
+      // jeito, o próximo estado das cartas marca (toda chamada do app leva `regras: 2`).
+      try {
+        const { marcarRegrasCartas } = await import('../lib/cartasServidor')
+        const marcou = await marcarRegrasCartas(2, 2500)
+        if (!marcou) void marcarRegrasCartas(3, 4000)
+      } catch (e) {
+        console.warn('[cartas] marcar regras novas no cadastro falhou:', e)
       }
     }
 
-    const { data: { user } } = await supabase.auth.getUser()
-
-    const { error: userError } = await supabase
-      .from('users')
-      .upsert({
-        id: userId,
-        email: user?.email ?? '',
-        // Nome capturado no início do onboarding (tela "Como você quer ser chamada?").
-        // `|| null` para não sobrescrever um nome existente com string vazia.
-        nome: pendingName?.trim() || null,
-        genero: onboarding.genero,
-        pregnancy_status: onboarding.pregnancy_status ?? null,
-        skincare_routine_type: onboarding.skincare_routine_type ?? null,
-        skincare_routine_description: onboarding.skincare_routine_description ?? null,
-        allergy_type: onboarding.allergy_type ?? null,
-        allergy_description: onboarding.allergy_description ?? null,
-        idade,
-        tipo_pele: onboarding.skin_type,
-        concerns: onboarding.concerns,
-        sun_exposure: onboarding.sun_exposure,
-        hydration: onboarding.hydration,
-        sleep: onboarding.sleep,
-        birthday: onboarding.birthday,
-        rotina_manha_horario: onboarding.rotina_manha_horario ?? null,
-        rotina_noite_horario: onboarding.rotina_noite_horario ?? null,
-        rotina_fuso: onboarding.rotina_fuso ?? null,
-        // Token pedido antes do cadastro (tela 13b). Só entra quando existe — sem
-        // ele, não apagamos um token que a conta já tinha.
-        ...(pendingPushToken ? { push_token: pendingPushToken } : {}),
-      })
-
-    if (userError) throw userError
-
-    if (scanResult) {
+    if (salvarScan && scanResult) {
       let fotoUrl = scanImageUri ?? '';
       if (skinImageBase64) {
         try { fotoUrl = await uploadScanPhoto(userId, skinImageBase64); }
@@ -646,7 +714,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null, skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null, rotinaPassoAlvo: null, escolhaParaPasso: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null, skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null, rotinaPassoAlvo: null, escolhaParaPasso: null, regioesFoco: [], analiseRapida: null, cartaChegadaVista: false, etapaCartaOb: null }),
 }), {
   // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
   // O store era 100% em memória, então TODO cache dele morria ao fechar o app —

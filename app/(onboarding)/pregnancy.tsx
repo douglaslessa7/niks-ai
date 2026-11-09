@@ -5,7 +5,7 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObOptionCard, ObPillButton,
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObOptionCard, ObPillButton, OB_BOTAO_H,
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
@@ -46,7 +46,7 @@ export default function Pregnancy() {
     <ObScreen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 24 }}
+        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + OB_BOTAO_H + 24 }}
       >
         {/* "IMPORTANTE:" no mesmo estilo do título (mesma fonte e tamanho), em rosa e
             numa linha só dele, com um respiro de 14 pt antes da pergunta (pedido do produto). */}

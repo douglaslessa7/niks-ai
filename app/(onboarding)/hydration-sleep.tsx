@@ -5,7 +5,7 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
-  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton,
+  OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, OB_BOTAO_H,
   useObFrame, useObName, withName, obStep, useOnMount, ObPress, ObFill, useObFillText
 } from '../../components/onboarding/kit';
 
@@ -95,7 +95,7 @@ export default function HydrationSleep() {
     <ObScreen>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + 48 + 24 }}
+        contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + OB_BOTAO_H + 24 }}
       >
         <ObTitle>{withName(name, 'como está sua hidratação e sono?')}</ObTitle>
         <View style={{ marginTop: 30, gap: 28 }}>

@@ -42,7 +42,8 @@ export default function Birthday() {
     haptics.action();
     setOnboardingField('birthday', String(ageRef.current));
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
-    router.push('/(onboarding)/pregnancy');
+    // "O que mais te incomoda" logo depois da idade (03/nov/2026, pedido do produto).
+    router.push('/(onboarding)/concerns');
   };
 
   return (

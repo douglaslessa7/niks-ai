@@ -2,7 +2,14 @@
 // analyze-skin — ANÁLISE DE PELE DO ONBOARDING (1 foto)
 //
 // Recebe 1 foto (`imageBase64`) e devolve o `ScanResult` completo. Chamada por
-// `app/(scan)/loading.tsx` (o scan do onboarding).
+// `lib/onboardingPrefetch.ts` (o scan do onboarding).
+//
+// Desde 06/nov/2026 (app novo) roda só DEPOIS DA COMPRA: antes dela, o scan passa pela
+// `analise-rapida`, e a carta do onboarding mostra um dos problemas que ela marcou. O app
+// manda esse problema (com a intensidade e a região que a foto mostrou) e a idade da pele
+// em `analiseRapida`; esta análise MANTÉM o mesmo problema principal e a mesma região, e o
+// servidor força a mesma idade da pele, para não contradizer a carta. Sem `analiseRapida`
+// (versões antigas do app) nada muda.
 //
 // ⚠️ A análise MULTI-FOTO do app (6 fotos → 3 imagens) vive numa função SEPARADA,
 // `analyze-skin-app`, de propósito: ela pode ficar mais pesada/cara e evoluir sem
@@ -11,10 +18,27 @@
 // alimentam a mesma UI (`skin-result`, home, store). Se mudar a FORMA da resposta
 // aqui, mude lá também. Divergir o PROMPT é o esperado; divergir o schema, não.
 // ═══════════════════════════════════════════════════════════════════════════
+import { validarAncora, type Ancora } from '../_shared/analise-rapida.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+
+// Como cada problema da carta aparece nesta análise: o nome no pedido ao modelo e a seção
+// do relatório onde ele mora (vai para o log, para medir quanto a análise completa concorda).
+const PROBLEMA_ANCORA: Record<string, { texto: string; secao: (r: any) => unknown }> = {
+  acne: { texto: 'acne (seção acne)', secao: (r) => r?.acne },
+  manchas: { texto: 'manchas / hiperpigmentação (seção pigmentacao)', secao: (r) => r?.pigmentacao },
+  cravos: { texto: 'cravos / comedões (seção acne, lesion_type)', secao: (r) => r?.acne },
+  oleosidade: { texto: 'oleosidade (seção brilho_sebaceo)', secao: (r) => r?.brilho_sebaceo },
+  rugas: { texto: 'rugas / linhas finas / perda de firmeza (seção envelhecimento)', secao: (r) => r?.envelhecimento },
+  poros: { texto: 'poros dilatados (seção textura_poros)', secao: (r) => r?.textura_poros },
+  olheiras: { texto: 'olheiras (area_periocular)', secao: (r) => r?.area_periocular },
+  ressecamento: { texto: 'ressecamento / desidratação (skin_hydration e barrier_status)', secao: (r) => ({ skin_hydration: r?.skin_hydration, barrier_status: r?.barrier_status }) },
+  textura: { texto: 'textura irregular (seção textura_poros, texture)', secao: (r) => r?.textura_poros },
+}
+const INTENSIDADE_TEXTO = ['', 'leve', 'moderada', 'intensa']
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -22,7 +46,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { imageBase64, skinProfile } = await req.json()
+    const { imageBase64, skinProfile, analiseRapida } = await req.json()
+    // Âncora da carta (só o app novo manda, depois da compra). Fora do formato → ignorada
+    // (análise como antes).
+    const ancora: Ancora | null = analiseRapida ? validarAncora(analiseRapida) : null
 
     if (!imageBase64) {
       return new Response(JSON.stringify({ error: 'imageBase64 é obrigatório' }), {
@@ -574,9 +601,32 @@ Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria.
   "disclaimer": "Esta é uma análise estética por IA, não substitui consulta dermatológica."
 }`
 
-    const contextMessage = ctx
+    const contextoBase = ctx
       ? `Analise o rosto nesta foto seguindo todas as etapas do sistema.\n\nContexto declarado pelo usuário (use conforme as instruções — confirma ou contradiz o visível):\n${ctx}`
       : 'Analise o rosto nesta foto seguindo todas as etapas do sistema.'
+    // A carta que ela já viu saiu de uma análise anterior DESTA MESMA FOTO: o relatório não
+    // pode contradizê-la. A idade também é forçada depois da resposta (abaixo).
+    // ⚠️ 06/nov/2026: sem a última frase ("Todo o resto do relatório…"), a âncora puxava achados
+    // que a foto não mostrava (acne leve comedonal em 2 de 3 rodadas com âncora × 0 de 3 sem).
+    // Não tirar sem medir de novo.
+    // Problema que a foto mostra (intensidade ≥ 1): mantém como prioridade e com a região.
+    // Problema escolhido só por ser o 1º que ela marcou (a foto não mostrou): vira o FOCO da
+    // prioridade, sem achado inventado — o relatório descreve o que a foto mostra.
+    const linhasAncora = !ancora ? [] : [
+      ancora.idade_pele != null ? `- envelhecimento.skin_age = ${ancora.idade_pele}` : null,
+      ancora.intensidade > 0
+        ? `- o problema que ela marcou e que a foto mostra: ${PROBLEMA_ANCORA[ancora.problema]?.texto ?? ancora.problema}, intensidade ${INTENSIDADE_TEXTO[ancora.intensidade]}, mais visível em ${ancora.regiao}. Use-o como prioridade_clinica.primaria e inclua ${ancora.regiao} em region_insights com esse achado.`
+        : `- ela marcou ${PROBLEMA_ANCORA[ancora.problema]?.texto ?? ancora.problema} como a maior preocupação, mas a análise anterior não viu sinais claros dele na foto. Use-o como foco de prioridade_clinica.primaria (é o que ela quer tratar) e descreva com honestidade o que a foto mostra — não invente achado.`,
+      // Ponto forte da Carta 1 (06/nov/2026): um problema que ela NÃO marcou e que a foto quase
+      // não mostrou. O relatório não pode virá-lo no problema principal.
+      ancora.pontoForte
+        ? `- foi mostrado a ela como PONTO FORTE da pele: pouco ou nada de ${PROBLEMA_ANCORA[ancora.pontoForte]?.texto ?? ancora.pontoForte}. Não o apresente como problema principal nem como prioridade_clinica.`
+        : null,
+    ].filter(Boolean)
+    const contextMessage = linhasAncora.length
+      ? `${contextoBase}\n\nUma análise anterior desta MESMA foto já foi mostrada a ela. Mantenha:\n${linhasAncora.join('\n')}`
+        + `\n\nTodo o resto do relatório: avalie a foto normalmente, como se essa análise anterior não existisse. Não acrescente, não aumente e não deduza nenhum outro achado por causa dela (por exemplo, oleosidade não implica acne nem cravos). Uma seção só fica presente se o sinal estiver visível na foto.`
+      : contextoBase
 
     const userContent = [
       {
@@ -707,6 +757,19 @@ Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria.
       // valem uma tela, e falhar aqui queimaria mais 3 chamadas no retry do cliente.
       // O log acima é o que denuncia o problema.
       console.error(`[analyze-skin] devolvendo resposta INCOMPLETA — ausentes: ${bestMissing.join(', ')}`)
+    }
+
+    // Âncora da carta: a idade da pele é a MESMA que a carta mostrou (forçada, sem depender
+    // do modelo). O problema e a região vão no pedido; aqui só conferimos, no log, se a
+    // seção do problema veio presente — para medir quanto a análise completa concorda.
+    if (ancora) {
+      const antes = result.envelhecimento?.skin_age
+      if (ancora.idade_pele != null) {
+        result.envelhecimento = { ...(result.envelhecimento ?? {}), skin_age: ancora.idade_pele }
+        result.skin_age = ancora.idade_pele
+      }
+      const secao = JSON.stringify(PROBLEMA_ANCORA[ancora.problema]?.secao(result) ?? null).slice(0, 200)
+      console.log(`[analyze-skin] âncora da carta · idade ${antes ?? '-'} → ${ancora.idade_pele ?? '(sem)'} · problema ${ancora.problema} (intensidade ${ancora.intensidade}, ${ancora.regiao ?? 'sem região'}) · primaria=${JSON.stringify(result.prioridade_clinica?.primaria ?? null)} · seção=${secao}`)
     }
 
     // Mapeamento de compatibilidade para campos que o app consome

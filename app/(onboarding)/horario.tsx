@@ -4,6 +4,7 @@ import {
   type NativeSyntheticEvent, type NativeScrollEvent, type GestureResponderEvent,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
@@ -22,6 +23,8 @@ import {
 // A pílula NÃO é clicável — só mostra a etapa. "Continuar" na manhã troca a tela para a
 // noite (a pílula desliza, título/roda/lembrete trocam com fade); na noite, segue para
 // as notificações. O voltar da noite volta para a manhã.
+// Desde 04/nov/2026 vem logo depois da carta do produto (`(scan)/demo-scan`, "Quero saber
+// o que usar"); o voltar da manhã volta para a carta. Design sem mudança.
 //
 // Horários do design: manhã 05:00–10:00 (abre em 07:00); noite 19:00–23:30 (abre em
 // 21:00). ⚠️ O design vai até 00:00 na noite, mas 00:00 vira 0 minuto na home
@@ -137,6 +140,9 @@ export default function Horario() {
 
   return (
     <ObScreen>
+      {/* Barra de status escura: a carta do produto, que vem antes, deixa a barra clara
+          (fundo rosa) e ela sumia no branco desta tela. */}
+      <StatusBar style="dark" />
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(118), alignItems: 'center' }}>
         <Animated.View style={{ alignSelf: 'stretch', opacity: conteudo }}>
           <ObTitle>{withName(name, e.titulo)}</ObTitle>

@@ -9,10 +9,16 @@ import {
   OB, OB_STEPS, ObScreen, useObFrame, useObName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 
-// Onboarding — compromisso, ÚLTIMA tela antes do app: vem depois da conta criada
-// (`signup.tsx` → `finishOnboarding`, com o premium já confirmado) e leva à home
-// (20/out/2026, pedido do produto — antes ficava entre a rotina pronta e o paywall).
-// Sem voltar (gesto desligado): atrás dele na pilha ficam telas que já passaram.
+// ⚠️ FORA DO FLUXO desde 07/nov/2026 (pedido do produto): a "Comunidade" vai direto à rotina
+// pronta v2; o mesmo botão de segurar vive agora só no pacto pós-compra (`bv-pacto.tsx`).
+// Onboarding — compromisso. Desde 04/nov/2026 (pedido do produto) vem logo depois da
+// "Comunidade" (`comunidade.tsx`, "Montar minha rotina"), ANTES da conta; de 20/out a
+// 04/nov/2026 era a última tela antes do app (depois do cadastro, levando à home) e, antes
+// disso, ficava entre a rotina pronta e o paywall. O cadastro agora vai direto à home.
+// Sem voltar (gesto desligado).
+// Ao completar → a rotina pronta v2 (`rotina-pronta-v2.tsx`, 04/nov/2026, a tela final
+// adaptada do Tapfit), que leva direto ao paywall. (Antes, provisoriamente, ia ao resultado
+// do scan → rotina pronta v1; essas duas saíram do caminho.) Trocar em `PROXIMA`.
 // Repouso = RÉPLICA da tela "28 Compromisso" de "NIKS Onboarding - fluxo
 // completo.dc.html" (Claude Design): círculo rosa Ø144 com a DIGITAL BRANCA no meio
 // (`digital-branca.png`, 54 × 75 — o mesmo arquivo do design), halo Ø216, centro em
@@ -27,10 +33,12 @@ import {
 //   junto; "Continue segurando!" entra com fade quando o círculo passa de ~250 pt;
 //   vibração a cada 0,25 s ficando mais forte (leve → média → forte).
 //   Soltar antes → volta ao 21a com mola suave (~450 ms, sem overshoot).
-// 21c (completo): rosa na tela inteira, vibração de sucesso, "Bem-vinda ao NIKS!"
-//   com fade de 300 ms; ~1 s depois, home.
+// 21c (completo): rosa na tela inteira (fade de 300 ms) e vibração de sucesso; ~0,6 s
+//   depois, a próxima tela. O "Bem-vinda ao NIKS!" saiu em 04/nov/2026 (pedido do produto:
+//   a tela já não leva ao app) — sem texto para ler, a espera caiu de ~1,3 s para ~0,6 s.
 const STEP = OB_STEPS.compromisso;
 const STEP_NAME = 'Compromisso';
+const PROXIMA = '/(onboarding)/rotina-pronta-v2';
 
 const CIRCLE = 144;
 const AURA = 216;
@@ -95,8 +103,8 @@ export default function Compromisso() {
     // da rotina pré-gerada e a faria ser gerada de novo.
     track('onboarding_step_completed', { ...obStep(STEP, STEP_NAME), commitment_accepted_at: new Date().toISOString() });
     Animated.timing(done, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-    // `replace`: a home não pode voltar para o compromisso.
-    setTimeout(() => router.replace('/(app)/home'), 1000 + 300);
+    // `replace`: da próxima tela não se volta para o compromisso.
+    setTimeout(() => router.replace(PROXIMA as any), 300 + 300);
   };
 
   const onPressIn = () => {
@@ -194,17 +202,10 @@ export default function Compromisso() {
         Continue segurando!
       </Animated.Text>
 
-      {/* 21c — tela inteira rosa + "Bem-vinda ao NIKS!" */}
+      {/* 21c — tela inteira rosa (sem o "Bem-vinda ao NIKS!", que saiu em 04/nov/2026) */}
       <Animated.View pointerEvents="none" style={{
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: OB.pink, opacity: done,
-      }}>
-        <Text style={{
-          position: 'absolute', left: 17, right: 17, top: y(427), textAlign: 'center',
-          fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, color: '#FFFFFF',
-        }}>
-          Bem-vinda ao NIKS!
-        </Text>
-      </Animated.View>
+      }} />
 
       {/* Digital branca: mesma posição nos três estados (centro em y 509). O alvo do toque
           é o círculo inteiro (Ø144), com a digital de 54 × 75 centrada nele. */}
