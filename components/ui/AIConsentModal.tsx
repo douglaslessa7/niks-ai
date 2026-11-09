@@ -11,26 +11,23 @@ import {
 import { useEffect, useRef } from 'react';
 import { ShieldCheck } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
+import { PRIVACY_URL } from '../../lib/linksLegais';
 
 // FONTE ÚNICA do texto legal do consentimento de IA. (Desde 03/nov/2026 a folha do
-// onboarding, `components/onboarding/ConsentSheet.tsx`, mostra o texto da "Seus dados"
-// e só usa daqui o `PRIVACY_URL`.)
-// ⚠️ Desde out/2026 o texto NÃO nomeia os fornecedores (decisão do Douglas): fala em
-// "parceiros" e os nomes (OpenAI e Google Gemini) ficam na Política de Privacidade e
-// na declaração à Apple. Trocou de fornecedor de IA? Atualize a política, não este texto.
+// onboarding, `components/onboarding/ConsentSheet.tsx`, mostra o texto da "Seus dados".)
+// Desde 09/nov/2026 o texto nomeia os fornecedores de IA, como a Política de Privacidade (seção 5).
+// Trocou de fornecedor? Atualize este texto, a Política e a declaração à Apple.
 export const CONSENT_BODY =
   'Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e ' +
-  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros. ' +
+  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros (OpenAI, Anthropic e Google). ' +
   'Esses dados são usados exclusivamente para produzir o seu resultado.';
 // SOS espinha (nov/2026): a foto e a análise ficam guardadas junto da conversa de acompanhamento.
 export const CONSENT_SOS_BODY =
   'Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e ' +
-  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros. ' +
+  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros (OpenAI, Anthropic e Google). ' +
   'Esses dados são usados para produzir o seu resultado. No SOS espinha, a foto e a análise ' +
   'ficam guardadas junto da conversa para acompanhar a sua evolução, até você apagar a sua conta.';
 export const CONSENT_AUTH_PREFIX = 'Ao continuar, você autoriza esse processamento conforme nossa ';
-export const PRIVACY_URL =
-  'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
 
 interface AIConsentModalProps {
   visible: boolean;

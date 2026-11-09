@@ -1,3 +1,4 @@
+import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
 import { convidadaLigada } from '../../lib/gruposServidor';
 import { useState } from 'react';
 import {
@@ -24,7 +25,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // Google primeiro, "Continuar com e-mail" embaixo (o campo só aparece depois do toque), campos
 // e Google em branco. Só mudam o título e a função (entrar, não criar). Mantém a seta de
 // voltar (vem da tela de nome). Lógica de login intacta.
-const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
 
 export default function Login() {
   const { insets } = useObFrame();
@@ -294,7 +294,7 @@ export default function Login() {
           <Text style={{ marginTop: 16, paddingHorizontal: 24, textAlign: 'center', fontSize: 13, lineHeight: 18, color: OB.sub }}>
             {'Ao continuar, você concorda com nossos '}
             <Text
-              onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
+              onPress={() => { haptics.tap(); Linking.openURL(TERMOS_URL); }}
               style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
             >
               Termos de Uso

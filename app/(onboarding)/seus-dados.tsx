@@ -9,7 +9,7 @@ import {
   OB, OB_STEPS, ObScreen, ObPillButton, useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 import { PrivacyIllustration } from '../../components/onboarding/PrivacyIllustration';
-import { PRIVACY_URL } from '../../components/ui/AIConsentModal';
+import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
 
 // Tela 0.2 do fluxo completo — "Sua pele. Seus dados." (LGPD: foto de rosto é dado
 // biométrico). Dois consentimentos com círculo de marcar e "Aceitar e continuar".
@@ -19,9 +19,6 @@ import { PRIVACY_URL } from '../../components/ui/AIConsentModal';
 // chave do `useAIConsent` — por isso a folha de consentimento da preparação do scan
 // e o portão das câmeras (`useScanConsentGate`) não aparecem de novo depois daqui.
 // Os círculos podem ser marcados um a um; o botão funciona com ou sem eles.
-//
-// ⚠️ "Termos de Uso" abre a mesma página da Política de Privacidade — é o que o
-// signup já fazia (não existe URL própria de termos no app).
 const STEP = OB_STEPS.seusDados;
 const STEP_NAME = 'Seus Dados';
 const AI_CONSENT_KEY = 'ai_consent_accepted';
@@ -48,9 +45,10 @@ function CheckCircle({ on, onPress }: { on: boolean; onPress: () => void }) {
 }
 
 function PolicyLink({ label }: { label: string }) {
+  const url = label === 'Termos de Uso' ? TERMOS_URL : PRIVACY_URL;
   return (
     <Text
-      onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
+      onPress={() => { haptics.tap(); Linking.openURL(url); }}
       style={{ color: OB.pink, fontWeight: '500' }}
     >
       {label}

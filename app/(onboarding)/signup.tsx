@@ -1,3 +1,4 @@
+import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
 import { enviarComprovantes } from '../../lib/assinaturaServidor';
 import { useState, useRef, useEffect } from 'react';
 import {
@@ -38,9 +39,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // Lógica de cadastro intacta. → tela de espera (`loading-rotina`, 06/nov/2026), que salva o
 // scan e a rotina e abre a home (04/nov/2026: o compromisso passou para antes, depois da
 // "Comunidade"; de 20/out a 04/nov era → compromisso → home).
-const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
-// ⚠️ Trocar pelo link da página de Termos de Uso no Notion, assim que for publicada.
-const TERMOS_URL = PRIVACY_URL;
 
 export default function Signup() {
   const router = useRouter();

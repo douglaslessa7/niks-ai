@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Animated, Linking, Pressable, StyleSheet 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
-import { PRIVACY_URL } from '../ui/AIConsentModal';
+import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
 import { OB, ObPillButton } from './kit';
 import { PrivacyIllustration } from './PrivacyIllustration';
 
@@ -24,8 +24,6 @@ import { PrivacyIllustration } from './PrivacyIllustration';
 //
 // Aceitar grava `ai_consent_accepted` (pelo `useAIConsent` de quem abre a folha) — a
 // mesma chave do portão das câmeras (`useScanConsentGate`), que não pede de novo.
-// ⚠️ "Termos de Uso" abre a mesma página da Política de Privacidade (não existe URL
-// própria de termos no app).
 export function ConsentSheet({ visible, onAccept, onDecline }: {
   visible: boolean;
   onAccept: () => void;
@@ -122,9 +120,10 @@ function CheckCircle({ on, onPress }: { on: boolean; onPress: () => void }) {
 }
 
 function PolicyLink({ label }: { label: string }) {
+  const url = label === 'Termos de Uso' ? TERMOS_URL : PRIVACY_URL;
   return (
     <Text
-      onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
+      onPress={() => { haptics.tap(); Linking.openURL(url); }}
       style={{ color: OB.pink, fontWeight: '500' }}
     >
       {label}
