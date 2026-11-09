@@ -620,7 +620,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   setSkinPreviewUrl: (url) => set({ skinPreviewUrl: url }),
 
   saveToSupabase: async (userId: string, opts?: { perfil?: boolean; scan?: boolean }) => {
-    const { onboarding, scanResult, scanImageUri, skinImageBase64, pendingName, pendingPushToken } = get()
+    const { onboarding, scanResult, scanImageUri, skinImageBase64, pendingName, pendingPushToken, regioesFoco, analiseRapida } = get()
     const salvarPerfil = opts?.perfil !== false
     const salvarScan = opts?.scan !== false
     if (salvarPerfil) {
@@ -664,6 +664,11 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
           sunscreen: onboarding.sunscreen ?? null,
           frequency: onboarding.frequency ?? null,
           birthday: onboarding.birthday,
+          // Parte B, Fase 4 (migration 20261123120000): só as respostas; a foto não é guardada.
+          goal_desire: onboarding.goal_desire ?? null,
+          makeup: onboarding.makeup ?? null,
+          regioes_foco: regioesFoco,
+          idade_pele_onboarding: analiseRapida?.idade_pele ?? null,
           rotina_manha_horario: onboarding.rotina_manha_horario ?? null,
           rotina_noite_horario: onboarding.rotina_noite_horario ?? null,
           rotina_fuso: onboarding.rotina_fuso ?? null,

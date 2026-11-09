@@ -26,6 +26,7 @@ import { haptics } from '../../lib/haptics';
 import { OB, ObPillButton } from '../../components/onboarding/kit';
 import { iniciarAnaliseCompleta } from '../../lib/onboardingPrefetch';
 import { registrarCompraPendente } from '../../lib/compraPendente';
+import { lerCodigoGrupo } from '../../lib/convidada';
 
 // Compra confirmada (06/nov/2026): a análise completa e a rotina só rodam a partir daqui.
 // Se há um scan do onboarding na memória, guarda a foto e o estado no aparelho (para o app
@@ -50,6 +51,9 @@ export default function PaywallSoft() {
   const setSubscriptionVerified = useAppStore((s) => s.setSubscriptionVerified);
   const falhasRef = useRef(0);
   const [semPaywall, setSemPaywall] = useState(false);
+  // Convite válido no onboarding, ainda sem conta: paywall da convidada, com X e sem downsell.
+  const grupoConvite = useRef<string | null>(null);
+  const placementBase = () => grupoConvite.current !== null ? 'paywall_convidada' : 'paywall_onboarding';
 
   track('paywall_viewed', { screen: 'soft' });
 
@@ -61,10 +65,11 @@ export default function PaywallSoft() {
     if (isCancelled?.()) return;
     pwlog(`registerPlacement ${placement} (${motivo})`); // TEMP-PWGUARD
     try {
+      if (placement === 'paywall_convidada') track('convidada_paywall_aberto', { origem: 'onboarding' });
       await registerPlacement({ placement });
     } catch (e) {
       pwlog(`registerPlacement ${placement} lançou`, String(e)); // TEMP-PWGUARD
-      void paywallNaoApareceu('paywall_onboarding', `registerPlacement(${placement}) lançou`);
+      void paywallNaoApareceu(placementBase(), `registerPlacement(${placement}) lançou`);
     }
   };
 
@@ -101,7 +106,7 @@ export default function PaywallSoft() {
       pwlog(`paywall:${tipo} sem premium confirmado → paywall`); // TEMP-PWGUARD
       await pwDecisao(`onDismiss(${tipo})`, 'PAYWALL de novo (paywall_onboarding)', 'paywall',
         'O Superwall disse que houve compra/restauração, mas o RevenueCat não confirmou o premium.');
-      void present('paywall_onboarding', `${tipo}_sem_premium`);
+      void present(placementBase(), `${tipo}_sem_premium`);
       return;
     }
     const comOnboarding = await liberarAnaliseCompleta();
@@ -146,6 +151,16 @@ export default function PaywallSoft() {
         await confirmarESeguir(result.type);
         return;
       }
+      // Convidada fechou no X: cria a conta e entra só no grupo. Sem downsell.
+      if (grupoConvite.current !== null && result?.type === 'declined') {
+        track('convidada_paywall_fechado', { origem: 'onboarding' });
+        router.replace('/(onboarding)/signup');
+        return;
+      }
+      if (grupoConvite.current !== null) {
+        void present(placementBase(), 'dismiss_convidada');
+        return;
+      }
       // Recusou (X) ou resultado desconhecido: nada de RevenueCat, nada de restore
       // automático. Paywall de novo — na 1ª saída da sessão, o downsell (mesmo flag
       // do cancelamento da folha da Apple).
@@ -158,11 +173,11 @@ export default function PaywallSoft() {
       // Superwall vê com assinatura no Apple ID). Antes liberava se o RevenueCat
       // dissesse premium; agora é sempre paywall (restaurar é pelo botão).
       pwlog('onSkip', reason); // TEMP-PWGUARD
-      void paywallNaoApareceu(nextPaywallPlacement(), `onSkip(${reason?.type ?? '?'})`);
+      void paywallNaoApareceu(grupoConvite.current !== null ? placementBase() : nextPaywallPlacement(), `onSkip(${reason?.type ?? '?'})`);
     },
     onError: (error) => {
       pwlog('onError', String(error)); // TEMP-PWGUARD
-      void paywallNaoApareceu('paywall_onboarding', `onError(${String(error)})`);
+      void paywallNaoApareceu(placementBase(), `onError(${String(error)})`);
     },
   });
 
@@ -194,6 +209,7 @@ export default function PaywallSoft() {
     // marcado e nada acontece — ela segue no paywall.
     onSuperwallEvent: async (eventInfo) => {
       if (eventInfo?.event?.event !== 'transactionAbandon') return;
+      if (grupoConvite.current !== null) return;
       if (!canShowDownsell()) {
         pwlog('transactionAbandon: downsell já mostrado nesta sessão'); // TEMP-PWGUARD
         return;
@@ -225,7 +241,7 @@ export default function PaywallSoft() {
     useCallback(() => {
       if (PULAR_PAYWALL) return;
       if (firstFocus.current) { firstFocus.current = false; return; }
-      const placement = consumeNextPlacement() ?? 'paywall_onboarding';
+      const placement = consumeNextPlacement() ?? placementBase();
       let cancelled = false;
       const task = InteractionManager.runAfterInteractions(() => {
         void present(placement, 'volta_do_cupom', () => cancelled);
@@ -262,7 +278,11 @@ export default function PaywallSoft() {
       // confirmação — senão valeria o premium de uma conta anterior do aparelho.
       await ensureAnonymousRevenueCat('paywall');
       if (cancelled) return;
-      void present('paywall_onboarding', 'inicial', () => cancelled);
+      const { data: { session } } = await supabase.auth.getSession();
+      const convite = session ? null : await lerCodigoGrupo();
+      if (cancelled) return;
+      grupoConvite.current = convite?.grupo ?? null;
+      void present(placementBase(), 'inicial', () => cancelled);
     });
 
     return () => { cancelled = true; task.cancel(); };
@@ -272,7 +292,7 @@ export default function PaywallSoft() {
     haptics.action();
     falhasRef.current = 0;
     setSemPaywall(false);
-    void present('paywall_onboarding', 'tentar_de_novo');
+    void present(placementBase(), 'tentar_de_novo');
   };
 
   return (

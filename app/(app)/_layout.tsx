@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { loginRevenueCat } from '../../lib/revenuecat';
 import { comTetoRc, confirmPremium } from '../../lib/subscriptionGate';
+import { estadoAcesso, meusGrupos } from '../../lib/gruposServidor';
 import { vincularAssinatura } from '../../lib/assinaturaServidor';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { useAppStore } from '../../store/onboarding';
@@ -265,6 +266,15 @@ export default function AppLayout() {
       // paywall. Se o RevenueCat falhar ou não responder, `confirmPremium` confere no Superwall
       // e no servidor antes de negar.
       if (!(await confirmPremium({ label: 'portao' }))) {
+        // Parte B, Fase 4: convidada abre no grupo; sem resposta do servidor, paywall.
+        const estado = await comTetoRc(estadoAcesso());
+        const grupos = estado === 'convidada' ? await comTetoRc(meusGrupos()) : null;
+        if (grupos?.[0]) {
+          void vincularAssinatura(session.user.id);
+          setReady(true);
+          router.replace({ pathname: '/grupo', params: { id: grupos[0].id } } as any);
+          return;
+        }
         router.replace('/(onboarding)/paywall-soft');
         return;
       }
@@ -456,6 +466,7 @@ export default function AppLayout() {
         <Tabs.Screen name="grupo-jornada" options={{ href: null }} />
         <Tabs.Screen name="checkin" options={{ href: null }} />
         <Tabs.Screen name="skincare" options={{ href: null }} />
+        <Tabs.Screen name="revisao-denuncias" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
       {tabBarVisible && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <BalaoEspinha />}

@@ -15,6 +15,9 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { atualizarCompraPendente } from '../../lib/compraPendente';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { comTetoRc, confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { entrarNoGrupoGuardado, lerCodigoGrupo } from '../../lib/convidada';
+import { convidadaLigada, validarCodigo } from '../../lib/gruposServidor';
+import { mensagemDoCodigo } from '../../lib/codigoConvite';
 import { pwDecisao } from '../../lib/paywallDebug';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { haptics } from '../../lib/haptics';
@@ -35,6 +38,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // scan e a rotina e abre a home (04/nov/2026: o compromisso passou para antes, depois da
 // "Comunidade"; de 20/out a 04/nov era → compromisso → home).
 const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
+// ⚠️ Trocar pelo link da página de Termos de Uso no Notion, assim que for publicada.
+const TERMOS_URL = PRIVACY_URL;
 
 export default function Signup() {
   const router = useRouter();
@@ -56,6 +61,13 @@ export default function Signup() {
       await ensureAnonymousRevenueCat('cadastro');
       const ok = await confirmPremium({ label: 'cadastro:abertura' });
       if (!ativo) return;
+      // Convidada: sem assinatura, só com o código ainda válido no servidor e a função ligada.
+      if (!ok) {
+        const convite = await lerCodigoGrupo();
+        const valido = convite && await convidadaLigada() ? await validarCodigo(convite.codigo) : null;
+        if (!ativo) return;
+        if (valido?.valido && !valido.cheio) { setLiberado(true); return; }
+      }
       if (ok) {
         await pwDecisao('Tela de cadastro abriu (trava da abertura)', 'CADASTRO liberado', 'cadastro',
           'O RevenueCat confirmou o premium de novo ao abrir o cadastro.');
@@ -84,9 +96,15 @@ export default function Signup() {
   // Purchases.logIn troca a identidade do RevenueCat). Só então marca o
   // `subscriptionVerified` que faz o guard do (app)/_layout pular a verificação.
   // Sem premium → paywall (já com sessão: comprar ou restaurar leva à home).
+  const grupoDaConvidada = useRef<string | null>(null);
   const finishOnboarding = async () => {
     if (!PULAR_PAYWALL) {
       const ok = await confirmPremium({ attempts: 2, label: 'cadastro:conta_criada' });
+      if (!ok && grupoDaConvidada.current) {
+        track('convidada_conta_criada', { grupo_id: grupoDaConvidada.current });
+        router.replace({ pathname: '/(app)/grupo', params: { id: grupoDaConvidada.current } } as any);
+        return;
+      }
       if (!ok) {
         pwlog('conta criada sem premium na identidade nova → paywall'); // TEMP-PWGUARD
         await pwDecisao('Conta criada (confere na identidade nova)', 'PAYWALL — conta criada sem premium', 'paywall',
@@ -113,6 +131,10 @@ export default function Signup() {
     // usuária entra normalmente; o webhook ainda confirma a conversão.
     attributeCouponIfAny(userId);
     await atualizarCompraPendente({ userId });
+    // Código do onboarding: entra no grupo. Vale para convidada e para quem assinou.
+    const r = await entrarNoGrupoGuardado();
+    if (r && 'grupoId' in r) grupoDaConvidada.current = r.grupoId;
+    else if (r) Alert.alert(mensagemDoCodigo(r.motivo));
   };
 
   // Só conta como "viu o cadastro" depois da trava liberar.
@@ -463,9 +485,9 @@ export default function Signup() {
 
           {/* Termos */}
           <Text style={{ marginTop: 16, paddingHorizontal: 24, textAlign: 'center', fontSize: 13, lineHeight: 18, color: OB.sub }}>
-            {'Ao continuar, você concorda com nossos '}
+            {'Ao criar a conta, você aceita os '}
             <Text
-              onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
+              onPress={() => { haptics.tap(); Linking.openURL(TERMOS_URL); }}
               style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
             >
               Termos de Uso
@@ -477,7 +499,7 @@ export default function Signup() {
             >
               Política de Privacidade
             </Text>
-            {'.'}
+            {'. Não toleramos conteúdo ofensivo nem abuso.'}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

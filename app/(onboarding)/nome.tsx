@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Keyboard, Pressable, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { convidadaLigada } from '../../lib/gruposServidor';
 import {
   OB, OB_STEPS, ObScreen, ObTitle, ObSubtitle, ObPillButton,
   useObFrame, obStep, useOnMount,
@@ -33,16 +34,19 @@ export default function Nome() {
   const [nome, setNome] = useState(pendingName ?? '');
 
   useOnMount(() => track('onboarding_step_viewed', obStep(STEP, STEP_NAME)));
+  const ligada = useRef<Promise<boolean> | null>(null);
+  if (ligada.current === null) ligada.current = convidadaLigada();
 
   const trimmed = nome.trim();
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!trimmed) return;
     haptics.action();
     setPendingName(trimmed);
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
     // Nome → objetivo → gráfico "Sua evolução" → idade (03/nov/2026, pedido do produto).
-    router.push('/(onboarding)/goal-desire');
+    // Com a convidada ligada, a tela de código vem logo depois do nome.
+    router.push(await ligada.current ? '/(onboarding)/codigo-grupo' as any : '/(onboarding)/goal-desire');
   };
 
   return (
