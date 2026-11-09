@@ -2,44 +2,29 @@
 // "Foto do dia" (designs 45b/45c): foto opcional do rosto ao concluir a rotina da
 // manhã. Vai para o bucket privado `routine-photos` ({user_id}/{AAAA-MM-DD}.jpg) +
 // uma linha em `routine_photos` (uma por dia — refazer no dia substitui).
-// As fotos formam o antes/depois ("seu vídeo"), liberado depois de JOURNEY_DAYS
-// dias contados da PRIMEIRA foto. Até lá o app não mostra as fotos antigas.
 // Migration: supabase/migrations/20261001120000_create_routine_photos.sql.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
 import { dateKey, sessionDate } from './routineProgress';
 
-export const JOURNEY_DAYS = 30;
-
 const BUCKET = 'routine-photos';
 
-function daysBetween(a: Date, b: Date): number {
-  const ua = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
-  const ub = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.round((ub - ua) / 86_400_000);
-}
-
-// Em que dia da jornada a foto de HOJE cai: dia 1 = data da primeira foto (ou hoje,
-// se ainda não há nenhuma). `left` = dias que faltam para liberar o vídeo.
-export async function getPhotoJourney(userId: string, now: Date = new Date()): Promise<{ day: number; left: number }> {
-  const today = sessionDate(now);
+// Já existe Foto do dia hoje (sessão-do-dia)? Usado pelo "Iniciar skincare" da home: a foto
+// do check-in vale como Foto do dia, mas a PRIMEIRA do dia vale (a da noite não troca a da
+// manhã). Sem rede, responde `true` — na dúvida, não sobrescreve.
+export async function temFotoDoDia(userId: string, now: Date = new Date()): Promise<boolean> {
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('routine_photos')
       .select('taken_on')
       .eq('user_id', userId)
-      .order('taken_on', { ascending: true })
-      .limit(1)
+      .eq('taken_on', dateKey(sessionDate(now)))
       .maybeSingle();
-    if (data?.taken_on) {
-      const [y, m, d] = String(data.taken_on).split('-').map(Number);
-      const day = daysBetween(new Date(y, m - 1, d), today) + 1;
-      return { day, left: Math.max(0, JOURNEY_DAYS - day) };
-    }
+    if (error) return true;
+    return Boolean(data);
   } catch {
-    // sem tabela/sem rede: trata como o primeiro dia
+    return true;
   }
-  return { day: 1, left: JOURNEY_DAYS - 1 };
 }
 
 // Sobe a foto (JPEG em base64) e registra o dia. Lança em caso de erro — quem chama

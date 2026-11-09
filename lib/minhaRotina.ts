@@ -14,7 +14,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { normStepKey } from './savedProducts';
-import { listColecao, findInColecao, addToColecao } from './colecao';
+import { listColecao, findInColecao, addToColecao, STATUS_COLECAO, type ColecaoStatus } from './colecao';
 import { getUserId } from './currentUser';
 import { listarEscaneados } from './escaneados';
 import { avaliarProduto, codigoTipoPele, type Aviso, type NivelAviso, type PeleParaAviso } from './avisoProduto';
@@ -34,7 +34,13 @@ export type ProdutoDoPasso = {
   nome: string | null;
   imagemUrl: string | null;   // foto original (catálogo: pública; estante/scan: URL assinada)
   recorteUrl: string | null;  // recorte sem fundo, quando pronto
+  status: ColecaoStatus;      // da estante; escaneado fora dela vale "tenho"
 };
+
+/** Texto que vem antes do produto no passo quando ela não o tem agora ("Acabou · "). */
+// A rotina em cache de antes do status vem sem o campo: sem status, sem prefixo.
+export const prefixoStatusProduto = (p: Pick<ProdutoDoPasso, 'status'>): string =>
+  (!p.status || p.status === 'tenho' ? '' : `${STATUS_COLECAO[p.status].rotulo} · `);
 
 export type PassoRotina = {
   id: string;
@@ -85,6 +91,7 @@ function mapPasso(r: any): PassoRotina {
       nome: p.nome ?? null,
       imagemUrl: p.imagem_url ?? null,
       recorteUrl: p.imagem_recorte_status === 'ok' ? (p.imagem_recorte_url ?? null) : null,
+      status: 'tenho',
     } : null,
   };
 }
@@ -121,14 +128,14 @@ export async function listarMinhaRotina(userId: string): Promise<MinhaRotina> {
     if (c) {
       passos[i].produto = {
         origem: 'estante', id: c.id, marca: c.marca, nome: c.nome,
-        imagemUrl: c.photoUrl, recorteUrl: c.cutoutStatus === 'ok' ? c.cutoutUrl : null,
+        imagemUrl: c.photoUrl, recorteUrl: c.cutoutStatus === 'ok' ? c.cutoutUrl : null, status: c.status,
       };
     }
     const sc = r.product_scan_id ? scanPorId.get(r.product_scan_id) : undefined;
     if (sc) {
       passos[i].produto = {
         origem: 'escaneado', id: sc.id, marca: sc.brand, nome: sc.name,
-        imagemUrl: sc.photoUrl, recorteUrl: sc.cutoutUrl ?? null,
+        imagemUrl: sc.photoUrl, recorteUrl: sc.cutoutUrl ?? null, status: 'tenho',
       };
     }
   });

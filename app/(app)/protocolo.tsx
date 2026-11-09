@@ -46,7 +46,9 @@ import { requestAppReview } from '../../lib/storeReview';
 import {
   listarMinhaRotina, garantirMinhaRotina, temProdutosNoCelular, diaDaSemana, passoValeNoDia,
   reordenarPassos, removerPasso, nomeDoPasso, type MinhaRotina, type PassoRotina,
+  prefixoStatusProduto,
 } from '../../lib/minhaRotina';
+import SeletorPeriodo from '../../components/rotina/SeletorPeriodo';
 import EscolherProdutoSheet from '../../components/rotina/EscolherProdutoSheet';
 import StepIcon from '../../components/rotina/StepIcon';
 import RotinaIdealSheet from '../../components/rotina/RotinaIdealSheet';
@@ -59,7 +61,7 @@ import { carregarRotinaIdeal, marcarIdealVista, calcularCobertura, type RotinaId
 import ListaEditavel, { type ItemEditavel } from '../../components/rotina/ListaEditavel';
 import PassoSheet, { type PassoSheetModo } from '../../components/rotina/PassoSheet';
 import { getFacePhotoUrl } from '../../lib/facePhoto';
-import { getPhotoJourney, saveRoutinePhoto } from '../../lib/routinePhotos';
+import { saveRoutinePhoto } from '../../lib/routinePhotos';
 import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
@@ -67,6 +69,10 @@ import { useEstadoCartas, concluirRotina } from '../../lib/cartasServidor';
 import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
 import BalancedText from '../../components/BalancedText';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
+import { SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
+import AlvoGuia from '../../components/coach/AlvoGuia';
+import { avancarGuiaDe, onAtalhoGuia, useGuia } from '../../lib/guia';
+import { verificarDesafios } from '../../lib/missoes';
 
 // LayoutAnimation no Android (iOS já vem ligado) — expandir "Como introduzir os ativos".
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -104,6 +110,9 @@ const NO_PRODUCT_BG = '#FFF5F9';
 
 const DEFAULT_AM = 7 * 60;
 const DEFAULT_PM = 21 * 60;
+// Regras novas das cartas (05/nov/2026): o "Iniciar skincare" daqui abre o mesmo caminho da
+// home (`(app)/skincare`) e o checklist/guia antigo não reabre sozinho. `false` = como antes.
+const CAMINHO_UNICO = true;
 
 // ── Tipos + mapeamento dos DADOS REAIS ───────────────────────────────────────
 // Passo cru salvo pelo generate-protocol (ver README → mapeamento generate-protocol).
@@ -453,7 +462,7 @@ export default function Protocolo() {
       const { data: urow } = await supabase
         .from('users')
         .select(
-          'genero, pregnancy_status, skincare_routine_type, skincare_routine_description, allergy_type, allergy_description, tipo_pele, concerns, sun_exposure, hydration, sleep, birthday',
+          'genero, pregnancy_status, skincare_routine_type, skincare_routine_description, allergy_type, allergy_description, tipo_pele, concerns, sun_exposure, hydration, sleep, birthday, sunscreen, frequency',
         )
         .eq('id', uid)
         .maybeSingle();
@@ -687,7 +696,6 @@ export default function Protocolo() {
   const [run, setRun] = useState(0);            // passo atual do guia
   const [lit, setLit] = useState<number[]>([]); // produtos marcados no checklist
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [journey, setJourney] = useState({ day: 1, left: 29 });
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const shootingRef = useRef(false);
@@ -750,9 +758,12 @@ export default function Protocolo() {
   // ── Tutorial de primeiro acesso (réplica do Claude Design 54a/54b) ──────────
   // Mesma regra da intro antiga: uma vez por conta (`users.rotina_intro_status` null),
   // com a Minha rotina e a ideal carregadas. As 3 opções gravam pelo `escolherIntro`.
+  // Com a dica de um desafio ativa, a intro espera (o desafio da rotina a substitui:
+  // `rotina_intro_status = 'guiado'`, lib/missoes.ts).
+  const guia = useGuia();
   const tutorialVisivel = introDb !== undefined && introDb !== null && introStatus === null
     && usandoMinha && !!ideal && (ideal.am.length + ideal.pm.length) > 0
-    && loadState === 'ready' && !editando;
+    && loadState === 'ready' && !editando && !guia;
   // O tutorial cobre a tela inteira; a navbar (no `_layout`) ficaria por cima: some enquanto ele está aberto.
   useFocusEffect(useCallback(() => {
     setTabBarVisible(!tutorialVisivel);
@@ -787,7 +798,7 @@ export default function Protocolo() {
       chosen, hasProd: !!chosen,
       img: chosen ? (chosen.recorteUrl ?? chosen.imagemUrl ?? '') : '', cut: !!chosen?.recorteUrl, // recorte sem fundo quando pronto
       tint: chosen ? PRODUCT_BG : NO_PRODUCT_BG,
-      pline: chosen ? [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Escolher produto',
+      pline: chosen ? prefixoStatusProduto(chosen) + [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Escolher produto',
       // Ícone da categoria (sem produto) e o nome para mostrar onde cabe um só (nome
       // do passo; sem ele, o do produto) — o nome do passo é opcional (Fase 3).
       tipo: tipoDoPasso(name, ingredient),
@@ -841,7 +852,6 @@ export default function Protocolo() {
     void Promise.allSettled([feita, noServidor]).then(() => reagendarLembretes());
     setPhotoUri(null);
     if (am) {
-      getUserId().then((uid) => { if (uid) void getPhotoJourney(uid).then(setJourney); });
       if (!camPermission?.granted) requestCamPermission();
       setFlow('cam');
     } else {
@@ -901,7 +911,8 @@ export default function Protocolo() {
   // 04:00 (a virada da sessão-do-dia). Fora da janela o botão fica bloqueado.
   const windowOpen = (p: 'am' | 'pm') => (p === 'am' ? (t >= amTime && t < pmTime) : (t >= pmTime || t < 4 * 60));
   const inWindow = windowOpen(period);
-  const canStart = inWindow && !finToday;
+  // Modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`, temporário): o botão funciona fora da janela.
+  const canStart = (SKINCARE_SEMPRE_DISPONIVEL || inWindow) && !finToday;
 
   // Reabre o fluxo que estava ABERTO quando a tela foi recriada / o app morreu — uma
   // vez, quando a rotina já carregou. Checklist/guia só se a rotina daquele período
@@ -911,16 +922,15 @@ export default function Protocolo() {
   flowRef.current = flow;
   const restoredRef = useRef(false);
 
-  // "Iniciar rotina" da HOME (`/protocolo?iniciar=am|pm`): troca para o período e,
-  // quando a rotina carregar, abre direto o guia passo a passo (retomando o passo onde
-  // parou hoje). O parâmetro é consumido na hora para não reabrir ao voltar à aba.
+  // `/protocolo?iniciar=am|pm` (link antigo da home): desde as regras novas das cartas
+  // (05/nov/2026) o caminho é ÚNICO — vai para a lista do "Iniciar skincare" (`(app)/skincare`).
+  // O parâmetro é consumido na hora para não reabrir ao voltar à aba.
   const { iniciar } = useLocalSearchParams<{ iniciar?: string }>();
   const pendingStartRef = useRef<'am' | 'pm' | null>(null);
   useEffect(() => {
     if (iniciar !== 'am' && iniciar !== 'pm') return;
-    pendingStartRef.current = iniciar;
     router.setParams({ iniciar: undefined } as any);
-    if (period !== iniciar) setPeriod(iniciar);
+    router.push({ pathname: '/skincare', params: { periodo: iniciar, am: String(amTime), pm: String(pmTime) } } as any);
   }, [iniciar]);
   useEffect(() => {
     const p = pendingStartRef.current;
@@ -938,6 +948,8 @@ export default function Protocolo() {
   }, [iniciar, loadState, period, canStart, n]);
 
   useEffect(() => {
+    // Caminho único (regras novas): o checklist/guia antigo não reabre sozinho.
+    if (CAMINHO_UNICO) return;
     if (restoredRef.current || loadState !== 'ready' || pendingStartRef.current) return;
     restoredRef.current = true;
     let alive = true;
@@ -961,7 +973,6 @@ export default function Protocolo() {
         setRun(Math.min(s.run, Math.max(0, len - 1)));
         if (s.step === 'cam') {
           setPhotoUri(null);
-          getUserId().then((uid) => { if (uid) void getPhotoJourney(uid).then(setJourney); });
           if (!camPermission?.granted) requestCamPermission();
         }
         setFlow(s.step);
@@ -999,14 +1010,25 @@ export default function Protocolo() {
     parkFlow();
     closeFlow('escolher produto');
     setTimeout(() => setEscolherPasso(passo), tinhaFluxo ? 350 : 0);
+    // Dica do desafio 3: a próxima mora dentro da folha.
+    avancarGuiaDe('d3-escolher', 'd3-folha');
   };
+
+  // ── Dica do desafio 3 (lib/guia.ts) ────────────────────────
+  // Abre no período escolhido (o mais perto de completo) e destaca o "+" do 1º passo vazio.
+  const guiaEscolher = guia?.passo === 'd3-escolher';
+  useEffect(() => {
+    if (guiaEscolher && guia?.periodo && guia.periodo !== period) { setPeriod(guia.periodo); setOpenStep(-1); }
+  }, [guiaEscolher, guia?.periodo]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Atalho "Escanear vários de uma vez" do balão: o lote (mesma entrada da intro).
+  useEffect(() => onAtalhoGuia(() => abrirMontarRotina(router, loteHoje)), [router, loteHoje]);
 
   // ── Modo "Editar rotina" (Fase 3) ────────────────────────────────────────────
   const itensEdicao: ItemEditavel[] = minhaList.map((p) => ({
     id: p.id,
     nome: nomeDoPasso(p),
     sub: [
-      p.produto ? [p.produto.marca, p.produto.nome].filter(Boolean).join(' · ') : 'Sem produto',
+      p.produto ? prefixoStatusProduto(p.produto) + [p.produto.marca, p.produto.nome].filter(Boolean).join(' · ') : 'Sem produto',
       p.dias?.length ? p.dias.join(' · ') : null,
     ].filter(Boolean).join('  ·  '),
     img: p.produto ? (p.produto.recorteUrl ?? p.produto.imagemUrl) : null,
@@ -1043,11 +1065,16 @@ export default function Protocolo() {
     ]);
   };
 
-  // "Iniciar rotina" abre o checklist (45a) — ou retoma onde parou hoje (produtos
-  // marcados, ou o passo do guia), se a usuária tinha fechado no meio.
+  // "Iniciar skincare" da aba Rotina (regras novas das cartas, 05/nov/2026): abre o MESMO
+  // caminho do "Iniciar skincare" da home — a lista do período → concluir → check-in →
+  // carta → mural (`(app)/skincare`). O checklist/guia antigo (45a) fica no código, fora do caminho.
   const startRun = () => {
     if (!n) return;
     haptics.action();
+    if (CAMINHO_UNICO) {
+      router.push({ pathname: '/skincare', params: { periodo: period, am: String(amTime), pm: String(pmTime) } } as any);
+      return;
+    }
     flowLoadedRef.current = true;
     void getRoutineFlow(period).then((s) => {
       const resume = s && s.step !== 'cam' ? s : null;
@@ -1086,11 +1113,7 @@ export default function Protocolo() {
 
   const rs = flow === 'guide' ? steps[Math.min(run, n - 1)] : null;
   const modalVisible = flow != null;
-  const doneSub = photoUri
-    ? (journey.left > 0
-      ? `Foto do dia ${journey.day} salva · seu vídeo fica pronto em ${journey.left} ${journey.left === 1 ? 'dia' : 'dias'}`
-      : `Foto do dia ${journey.day} salva · seu vídeo já está pronto`)
-    : (am ? 'Sem foto hoje. Seu vídeo só não terá este dia.' : 'Até amanhã de manhã');
+  const doneSub = photoUri ? 'Foto do dia salva' : (am ? 'Sem foto hoje' : 'Até amanhã de manhã');
   // Linha da sequência na 45c. Qualquer rotina concluída já vale o dia, então hoje
   // sempre conta. Inclui a rotina recém-concluída mesmo antes de o histórico
   // (AsyncStorage) responder, para não piscar um número menor.
@@ -1104,31 +1127,6 @@ export default function Protocolo() {
   const doneStreakLine = `${doneStreak} ${doneStreak === 1 ? 'dia seguido' : 'dias seguidos'}`;
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const segBtn = (value: 'am' | 'pm', label: string) => {
-    const on = period === value;
-    const ink = on ? INK : SOFT;
-    return (
-      <TouchableOpacity
-        key={value}
-        activeOpacity={0.85}
-        onPress={() => { haptics.select(); setPeriod(value); setOpenStep(-1); }}
-        style={[styles.seg, on && styles.segOn]}
-      >
-        <Svg width={16} height={16} viewBox="0 0 24 24">
-          {value === 'am' ? (
-            <>
-              <Circle cx={12} cy={12} r={4} fill="none" stroke={ink} strokeWidth={1.9} />
-              <Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke={ink} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
-            </>
-          ) : (
-            <Path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="none" stroke={ink} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
-          )}
-        </Svg>
-        <Text style={{ fontSize: 15, fontWeight: on ? '600' : '500', letterSpacing: -0.2, color: ink }}>{label}</Text>
-      </TouchableOpacity>
-    );
-  };
-
   return (
     <View style={{ flex: 1 }}>
       <StatusBar style="dark" />
@@ -1163,10 +1161,7 @@ export default function Protocolo() {
         </View>
 
         {/* ── Manhã / Noite ─────────────────────────────────────────────── */}
-        <View style={styles.segWrap}>
-          {segBtn('am', 'Manhã')}
-          {segBtn('pm', 'Noite')}
-        </View>
+        <SeletorPeriodo valor={period} onChange={(v) => { setPeriod(v); setOpenStep(-1); }} style={{ marginTop: 18 }} />
 
         {loadState === 'loading' || loadState === 'generating' ? (
           <View style={{ paddingTop: 64, alignItems: 'center', gap: 14 }}>
@@ -1201,7 +1196,7 @@ export default function Protocolo() {
                   disabled={!canStart}
                   onPress={startRun}
                   accessibilityState={{ disabled: !canStart }}
-                  style={[styles.heroBtn, !inWindow && styles.heroBtnLocked]}
+                  style={[styles.heroBtn, !inWindow && !SKINCARE_SEMPRE_DISPONIVEL && styles.heroBtnLocked]}
                 >
                   <Svg width={13} height={14} viewBox="0 0 13 14">
                     <Path d="M1 1.6v10.8c0 .8.9 1.3 1.6.9l9-5.4c.6-.4.6-1.3 0-1.7l-9-5.4C1.9.4 1 .8 1 1.6z" fill="#fff" />
@@ -1244,6 +1239,7 @@ export default function Protocolo() {
                 </>
               ) : stepsAll.map((s) => {
                 const open = openStep === s.i;
+                const primeiroVazio = stepsAll.find((x) => !x.hasProd)?.i ?? -1;
                 return (
                   <View key={`${period}-${s.i}`} style={{ flexDirection: 'row', gap: 10 }}>
                     <View style={{ width: 30, alignItems: 'center' }}>
@@ -1271,6 +1267,18 @@ export default function Protocolo() {
                           <View style={[styles.tile, { backgroundColor: s.tint }, finToday && { opacity: 0.55 }]}>
                             <ExpoImage source={{ uri: s.img }} style={{ width: 42, height: 42 }} contentFit="contain" />
                           </View>
+                        ) : guiaEscolher && s.i === primeiroVazio ? (
+                          // Dica do desafio 3: o "+" do 1º passo vazio é o alvo.
+                          <AlvoGuia chave="rot-escolher">
+                            <TouchableOpacity
+                              activeOpacity={0.7}
+                              onPress={() => abrirEscolher(s.i)}
+                              accessibilityLabel={`Escolher produto para ${s.titulo}`}
+                              style={[styles.tile, { backgroundColor: s.tint }, finToday && { opacity: 0.55 }]}
+                            >
+                              <StepIcon tipo={s.tipo} size={24} />
+                            </TouchableOpacity>
+                          </AlvoGuia>
                         ) : (
                           // Sem produto: o quadradinho "+" é um botão próprio e vai direto
                           // escolher o produto. O resto do card continua abrindo/fechando.
@@ -1625,15 +1633,7 @@ export default function Protocolo() {
               <Ellipse cx={125} cy={165} rx={124} ry={164} fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth={2} strokeDasharray={[6, 5]} />
             </Svg>
             <View style={{ position: 'absolute', left: 0, right: 0, top: insets.top + 58, alignItems: 'center', gap: 6 }} pointerEvents="none">
-              <Text style={styles.camTitle}>{`Foto do dia ${journey.day}`}</Text>
-              <Text style={styles.camSub}>
-                {journey.left > 0
-                  ? `Dia ${journey.day} de 30 · faltam ${journey.left} ${journey.left === 1 ? 'dia' : 'dias'} para o seu vídeo`
-                  : `Dia ${journey.day} · seu vídeo já está pronto`}
-              </Text>
-              <View style={styles.camBar}>
-                <View style={{ width: `${Math.min(100, (journey.day / 30) * 100)}%`, height: '100%', backgroundColor: '#FFFFFF', borderRadius: 2 }} />
-              </View>
+              <Text style={styles.camTitle}>Foto do dia</Text>
             </View>
             <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom, alignItems: 'center', gap: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 40 }}>
@@ -1700,9 +1700,9 @@ export default function Protocolo() {
             </View>
             <FolhaCompartilhar
               aberta={folhaGrupo}
-              onCompartilhar={(grupo) => {
-                trackFora('compartilhado', { origem: 'rotina', grupos: 1, com_foto: Boolean(photoUri) });
-                sairParaGrupo({ pathname: '/checkin', params: { rotina: period, grupos: grupo, foto: photoUri ?? '', de: 'rotina' } });
+              onCompartilhar={(grupos) => {
+                trackFora('compartilhado', { origem: 'rotina', grupos: grupos.length, com_foto: Boolean(photoUri) });
+                sairParaGrupo({ pathname: '/checkin', params: { rotina: period, grupos: grupos.join(','), foto: photoUri ?? '', de: 'rotina' } });
               }}
               onCriarGrupo={() => sairParaGrupo('/seus-grupos?criar=1')}
               onFechar={() => setFolhaGrupo(false)}
@@ -1738,6 +1738,8 @@ export default function Protocolo() {
         passo={escolherPasso}
         onClose={() => {
           setEscolherPasso(null);
+          // Fechou sem escolher: a dica volta ao "+" do passo.
+          avancarGuiaDe('d3-folha', 'd3-escolher');
           const semNome = passoNovoSemNome.current;
           passoNovoSemNome.current = null;
           // Foi escanear ou abriu "Ver todos" para este passo → o produto ainda vem; não desfaz.
@@ -1745,7 +1747,15 @@ export default function Protocolo() {
           const seguiu = st.rotinaPassoAlvo?.passoId === semNome || st.escolhaParaPasso?.passoId === semNome;
           if (semNome && !seguiu) void removerPasso(semNome).catch(() => {}).finally(() => { void refreshMinha(); });
         }}
-        onEscolhido={() => { passoNovoSemNome.current = null; void refreshMinha(); }}
+        onEscolhido={() => {
+          passoNovoSemNome.current = null;
+          void refreshMinha();
+          // Desafio 3: a dica vai para o próximo passo vazio até completar o período (o passo
+          // recém-escolhido ainda conta como vazio aqui). Completou → pontos na hora.
+          if (stepsAll.filter((x) => !x.hasProd).length > 1) avancarGuiaDe('d3-folha', 'd3-escolher', { periodo: period });
+          else avancarGuiaDe('d3-folha', 'd3-pronto', { periodo: period });
+          void verificarDesafios();
+        }}
       />
     </View>
   );
@@ -1778,15 +1788,6 @@ const styles = StyleSheet.create({
   },
   streakBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600', lineHeight: 15, letterSpacing: -0.2, textAlign: 'center' },
 
-  segWrap: {
-    marginTop: 18, alignSelf: 'center', flexDirection: 'row', gap: 2, padding: 3,
-    borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.55)',
-  },
-  seg: { height: 36, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, borderRadius: 100 },
-  segOn: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#783C48', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 5,
-  },
 
   heroLabel: { marginTop: 44, height: 22, lineHeight: 22, textAlign: 'center', fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK },
   heroBig: { marginTop: 5, height: 56, lineHeight: 56, textAlign: 'center', fontSize: 48, fontWeight: '700', letterSpacing: -0.6, color: INK },
@@ -1797,7 +1798,6 @@ const styles = StyleSheet.create({
     shadowColor: PINK, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
   },
   // Antes do horário: o mesmo rosa-claro do "Enviar" desabilitado do chat, sem brilho.
-  heroBtnLocked: { backgroundColor: '#FFD3E5', shadowOpacity: 0 },
   doneLine: { marginTop: 26, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   doneLineCheck: { width: 26, height: 26, borderRadius: 13, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
   doneLineText: { fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK },
@@ -1825,6 +1825,7 @@ const styles = StyleSheet.create({
   idealLink: { fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT },
   stepCardOpen: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 9 },
   stepCardClosed: { shadowColor: '#783C48', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 1 },
+  heroBtnLocked: { backgroundColor: '#FFD3E5', shadowOpacity: 0 },
   tile: { width: 52, height: 52, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   stepName: { fontSize: 17, fontWeight: '600', lineHeight: 21, letterSpacing: -0.4, color: INK },
   // Dias da semana do passo (Fase 3) — "Ter · Qui · Sáb" / "Hoje não · …".
@@ -1899,8 +1900,6 @@ const styles = StyleSheet.create({
   camTopShade: { position: 'absolute', left: 0, right: 0, top: 0, height: 280 },
   camBottomShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 300 },
   camTitle: { fontSize: 28, fontWeight: '700', lineHeight: 33, letterSpacing: -0.6, color: '#FFFFFF' },
-  camSub: { fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: '#FFFFFF' },
-  camBar: { marginTop: 6, width: 180, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)', overflow: 'hidden' },
   shutter: { width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFFFFF' },
   camFlipBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },

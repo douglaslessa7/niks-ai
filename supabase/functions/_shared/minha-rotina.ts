@@ -34,7 +34,7 @@ export async function temMinhaRotina(supabase: any, userId: string): Promise<boo
 export async function lerMinhaRotina(supabase: any, userId: string): Promise<{ rotina_am: PassoMinha[]; rotina_pm: PassoMinha[] }> {
   const { data, error } = await supabase
     .from('minha_rotina_passos')
-    .select('id, periodo, ordem, nome, ingrediente, instrucao, dias, colecao_item_id, aviso_nivel, aviso_texto, produto_estante:colecao_produtos(nome, marca)')
+    .select('id, periodo, ordem, nome, ingrediente, instrucao, dias, colecao_item_id, aviso_nivel, aviso_texto, produto_estante:colecao_produtos(nome, marca, status)')
     .eq('user_id', userId)
     .order('ordem', { ascending: true })
   if (error) throw error
@@ -43,7 +43,10 @@ export async function lerMinhaRotina(supabase: any, userId: string): Promise<{ r
     const dias = Array.isArray(r.dias) && r.dias.length ? r.dias : null
     // O produto e os dias entram no texto do ingrediente: é o que a IA e os detectores
     // de ativo/categoria (classifyStep/detectTargetActive) leem.
-    const ingrediente = [r.ingrediente, prod ? `produto: ${prod}` : null].filter(Boolean).join(' · ')
+    // Status da estante: o produto segue no passo, mas a IA precisa saber que ela não o tem agora.
+    const st = r.produto_estante?.status
+    const semEmCasa = st === 'acabou' ? ' (acabou, ela não tem agora)' : st === 'quero_comprar' ? ' (ela ainda não tem, quer comprar)' : ''
+    const ingrediente = [r.ingrediente, prod ? `produto: ${prod}${semEmCasa}` : null].filter(Boolean).join(' · ')
     return {
       id: i + 1,
       _rowId: r.id,

@@ -17,7 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { getUserId } from '../../lib/currentUser';
-import { DIAS_SEMANA, atualizarPasso, criarPasso, definirProdutoDoPasso, type PassoRotina, type Periodo } from '../../lib/minhaRotina';
+import { DIAS_SEMANA, atualizarPasso, criarPasso, definirProdutoDoPasso, prefixoStatusProduto, type PassoRotina, type Periodo } from '../../lib/minhaRotina';
 import { haptics } from '../../lib/haptics';
 
 const INK = '#121212';
@@ -178,7 +178,7 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
               <Text style={[s.label, { marginTop: 20 }]}>Produto</Text>
               <View style={s.prodRow}>
                 <Text style={s.prodNome} numberOfLines={1}>
-                  {editando.produto ? [editando.produto.marca, editando.produto.nome].filter(Boolean).join(' · ') : 'Sem produto'}
+                  {editando.produto ? prefixoStatusProduto(editando.produto) + [editando.produto.marca, editando.produto.nome].filter(Boolean).join(' · ') : 'Sem produto'}
                 </Text>
                 <TouchableOpacity onPress={() => { haptics.tap(); onClose(); setTimeout(() => onEscolherProduto(editando), 350); }} hitSlop={8}>
                   <Text style={s.link}>{editando.produto ? 'Trocar' : 'Escolher'}</Text>

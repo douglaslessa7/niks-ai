@@ -25,6 +25,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Reanimated, { FadeIn } from 'react-native-reanimated';
+import { useGuia } from '../../lib/guia';
 import { Image as ExpoImage } from 'expo-image';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
@@ -133,7 +135,8 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
   });
   const textoScan = (r: any) => [r?.resumo, r?.explicacao].filter(Boolean).join(' ') || null;
 
-  const estante: Candidato[] = colecao.map((c) => {
+  // Só o que ela tem em casa: "Quero comprar" e "Acabou" não entram num passo novo.
+  const estante: Candidato[] = colecao.filter((c) => c.status === 'tenho').map((c) => {
     const p = c.produtoId ? prodPorId.get(c.produtoId) : undefined;
     const sc = c.productScanId ? scanPorId.get(c.productScanId) : undefined;
     return {
@@ -187,6 +190,9 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
   onEscolhido: () => void;            // gravou: a Rotina recarrega
 }) {
   const insets = useSafeAreaInsets();
+  // Dica do desafio 3 (lib/guia.ts): a folha é um Modal (fica por cima do host
+  // das dicas), então a dica mora aqui dentro — uma faixa no topo da lista.
+  const dicaGuia = useGuia()?.passo === 'd3-folha';
   const router = useRouter();
   const { width: W, height: H } = useWindowDimensions();
   const setRotinaPassoAlvo = useAppStore((s) => s.setRotinaPassoAlvo);
@@ -384,6 +390,11 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
           </View>
         ) : (
           <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+            {dicaGuia && (
+              <Reanimated.View entering={FadeIn.duration(220).delay(200)} style={s.dica} accessibilityLiveRegion="polite">
+                <Text style={s.dicaTxt}>Escolha da sua estante, dos recomendados ou escaneie o seu.</Text>
+              </Reanimated.View>
+            )}
             {/* Recomendados SÓ do tipo do passo (ex.: protetores solares) — primeira seção,
                 sem filtros e sem "Ver todos" (a lista é curta). */}
             {(dados?.doPasso.length ?? 0) > 0 && (
@@ -459,6 +470,8 @@ const s = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: INK },
   subtitle: { marginTop: 1, fontSize: 14, letterSpacing: -0.2, color: MUTED },
   secTitle: { marginTop: 8, fontSize: 18, fontWeight: '600', letterSpacing: -0.4, color: INK },
+  dica: { marginTop: 4, marginBottom: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, backgroundColor: '#FFE3EF', borderWidth: 1.5, borderColor: PINK },
+  dicaTxt: { fontSize: 15, fontWeight: '600', lineHeight: 20, letterSpacing: -0.2, color: PINK_DEEP },
   secSub: { marginTop: 2, fontSize: 14, letterSpacing: -0.2, color: MUTED },
   secRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   verTodos: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: PINK_TEXT },
