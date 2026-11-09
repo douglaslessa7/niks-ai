@@ -72,6 +72,8 @@ type Props = {
   showError: boolean;
   /** "Tentar novamente" do estado de erro. */
   onRetry: () => void;
+  /** Troca o título e o botão do erro quando a análise deu certo e só faltou salvar. */
+  erroAoSalvar?: { titulo: string; botao: string } | null;
   /** Fundo branco liso, sem o degradê rosado — usado no onboarding, para combinar com
    *  as outras telas dele (pedido do produto). Os scans de dentro do app seguem o 50a. */
   plainBackground?: boolean;
@@ -87,7 +89,7 @@ type Props = {
 };
 
 export function ScanLoadingView({
-  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry, plainBackground = false, center, footer,
+  kind, percentage, showDemandNotice, countdown, countdownPaused, showError, onRetry, erroAoSalvar, plainBackground = false, center, footer,
 }: Props) {
   const { width } = useWindowDimensions();
   const { y } = useObFrame();
@@ -132,7 +134,11 @@ export function ScanLoadingView({
       </Svg>
 
       {showError ? (
-        <ErrorState copy={copy} onRetry={onRetry} />
+        <ErrorState
+          copy={erroAoSalvar ? { ...copy, errorTitle: erroAoSalvar.titulo, errorHint: '' } : copy}
+          botao={erroAoSalvar?.botao ?? 'Tentar novamente'}
+          onRetry={onRetry}
+        />
       ) : (
         <>
           {/* Eyebrow */}
@@ -283,7 +289,7 @@ function DemandNotice({ top, text, countdown, paused }: { top: number; text: str
   );
 }
 
-function ErrorState({ copy, onRetry }: { copy: (typeof COPY)[ScanLoadingKind]; onRetry: () => void }) {
+function ErrorState({ copy, botao, onRetry }: { copy: (typeof COPY)[ScanLoadingKind]; botao: string; onRetry: () => void }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
       <View style={{
@@ -318,7 +324,7 @@ function ErrorState({ copy, onRetry }: { copy: (typeof COPY)[ScanLoadingKind]; o
       </Text>
 
       {/* Pílula do kit, mais larga: "Tentar novamente" não cabe nos 172 pt de "Continuar". */}
-      <ObPillButton label="Tentar novamente" style={{ width: 210 }} onPress={() => { haptics.action(); onRetry(); }} />
+      <ObPillButton label={botao} style={{ width: 210 }} onPress={() => { haptics.action(); onRetry(); }} />
     </View>
   );
 }

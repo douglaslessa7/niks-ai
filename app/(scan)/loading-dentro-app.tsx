@@ -29,6 +29,8 @@ export default function LoadingDentroApp() {
   const [countdown, setCountdown] = useState(60);
   const [countdownPaused, setCountdownPaused] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [erroAoSalvar, setErroAoSalvar] = useState(false);
+  const salvarRef = useRef<(() => Promise<void>) | null>(null);
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPercentageRef = useRef(0);
   const retryCount = useRef(0);
@@ -124,12 +126,15 @@ export default function LoadingDentroApp() {
         track('scan_completed', { skin_score: data.skin_score, skin_type: data.skin_type_detected });
         setPercentage(100);
 
+        // A análise já foi feita: "Tentar de novo" só salva, com a mesma foto e sem chamar a IA.
+        let fotoUrl = '';
+        const salvarScan = async () => {
         try {
           const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
+          if (!user) throw new Error('sem usuário para salvar o scan');
+          {
             const { skinImageBase64: b64 } = useAppStore.getState();
-            let fotoUrl = '';
-            if (b64) {
+            if (b64 && !fotoUrl) {
               const path = `${user.id}/${Date.now()}.jpg`;
               const binaryStr = atob(b64);
               const bytes = new Uint8Array(binaryStr.length);
@@ -144,7 +149,7 @@ export default function LoadingDentroApp() {
             // Regras novas das cartas: o scan dá NIKS Points sem carta (1 a cada 7 dias, pelo
             // gatilho do servidor). O total de antes, para a barra de nível subir depois.
             const totalAntes = peekCache<EstadoCartas>(chaveEstado(user.id))?.data?.pontos?.total;
-            const { data: scanRow } = await supabase.from('skin_scans').insert({
+            const inserirScan = () => supabase.from('skin_scans').insert({
               user_id: user.id,
               foto_url: fotoUrl,
               skin_score: data.skin_score,
@@ -154,6 +159,12 @@ export default function LoadingDentroApp() {
               resumo: data.headline,
               full_result: data,
             }).select('id').single();
+            let { data: scanRow, error: erroScan } = await inserirScan();
+            if (erroScan) {
+              await new Promise((resolve) => setTimeout(resolve, 1500));
+              ({ data: scanRow, error: erroScan } = await inserirScan());
+            }
+            if (erroScan) throw erroScan;
             // Novo scan = novo score, novas métricas, nova foto. A home lê de
             // cache, então precisa ser invalidada aqui ou mostraria o scan antigo.
             invalidateCache(`home:${user.id}`);
@@ -168,13 +179,22 @@ export default function LoadingDentroApp() {
             void regenerateProtocolInApp(user.id, data, scanRow?.id ?? null);
           }
         } catch (e) {
+          // Resultado que não foi salvo não aparece como se estivesse: some do histórico depois.
           console.warn('Failed to save scan to DB:', e);
+          track('scan_nao_salvo', { error: (e as any)?.message ?? 'unknown' });
+          if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+          setErroAoSalvar(true);
+          setShowError(true);
+          return;
         }
 
         setTimeout(() => {
           // Mesmo relatório do onboarding (49d), em modo app (a `skin-result` antiga saiu do fluxo).
           router.replace('/(scan)/resultado-scan?modo=app' as any);
         }, 500);
+        };
+        salvarRef.current = salvarScan;
+        await salvarScan();
       } catch (err) {
         if (retryCount.current < 2) {
           retryCount.current += 1;
@@ -237,8 +257,17 @@ export default function LoadingDentroApp() {
       countdown={countdown}
       countdownPaused={countdownPaused}
       showError={showError}
-      // Câmera nova do zero (a do giro chega aqui com `replace`, então não há o que "voltar").
-      onRetry={() => router.replace('/(scan)/camera?modo=app' as any)}
+      erroAoSalvar={erroAoSalvar ? { titulo: 'Não conseguimos salvar sua análise', botao: 'Tentar de novo' } : null}
+      onRetry={() => {
+        if (erroAoSalvar) {
+          setErroAoSalvar(false);
+          setShowError(false);
+          void salvarRef.current?.();
+          return;
+        }
+        // Câmera nova do zero (a do giro chega aqui com `replace`, então não há o que "voltar").
+        router.replace('/(scan)/camera?modo=app' as any);
+      }}
     />
   );
 }
