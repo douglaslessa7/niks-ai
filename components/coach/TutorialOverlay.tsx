@@ -18,18 +18,25 @@
 // `setInterval(measure, 300)` do design (pega rolagem, carregamento tardio etc.).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { Animated, Easing, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Animated, BackHandler, Easing, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Svg, { Defs, Mask, Path, Rect } from 'react-native-svg';
+import { useReducedMotion } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '../../lib/haptics';
 import {
   CoachRect, CoachTargetKey, CoachTargets,
   requestCoachMeasure, requestCoachPrepare, useCoachTargets,
 } from '../../lib/coachMarks';
 
+/** Altura da faixa do "Pular" a partir da borda de baixo: 30 + 44 do botão + 10 de folga. */
+const SKIP_FAIXA = 84;
+
 /** Caixa de uma parada (o `a`/`b` do design): união dos alvos `u`, largura fixa `w`
  *  centrada (opcional), folga `pad` e raio (`'pill'` = metade da altura). */
 export type TutSpec = { u: CoachTargetKey[]; pad?: number; r: number | 'pill'; w?: number };
-export type TutStop = { t: string; a: TutSpec; b?: TutSpec; anchor?: 'b'; scroll?: boolean };
+export type TutStop = { t: string; a: TutSpec; b?: TutSpec; anchor?: 'b'; scroll?: boolean | 'mural' };
+
+const rolagem = (st?: TutStop) => (st?.scroll === 'mural' ? 'mural' : st?.scroll ? 'end' : 'top');
 
 type Box = { x: number; y: number; w: number; h: number; r: number };
 
@@ -61,8 +68,9 @@ const NO_ANDROID: AndroidOverlay = { frame: null, measureProps: {} };
 const useAndroidOverlayFrame: () => AndroidOverlay =
   Platform.OS === 'android' ? useAndroidOverlayFrameImpl : () => NO_ANDROID;
 
-/** `box()` do design: união dos alvos → largura fixa → folga → limita a 8pt das bordas. */
-function boxOf(spec: TutSpec, targets: CoachTargets, W: number, off: Frame | null): Box | null {
+/** `box()` do design: união dos alvos → largura fixa → folga → limita a 8pt das bordas.
+ *  Também usado pelas dicas das missões (`GuiaHost`). */
+export function boxOf(spec: TutSpec, targets: CoachTargets, W: number, off: Frame | null): Box | null {
   const rs = spec.u.map((k) => targets[k]).filter(Boolean) as CoachRect[];
   if (!rs.length) return null;
   const ox = off?.x ?? 0, oy = off?.y ?? 0;
@@ -109,8 +117,24 @@ function Ring({ v, opacity }: { v: BoxAnim; opacity: Animated.Value | number }) 
   );
 }
 
-export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: TutStop[]; onFinish: () => void }) {
+type Props = {
+  stops: TutStop[];
+  onFinish: () => void;
+  /** Tutorial obrigatório: sem "Pular". */
+  semPular?: boolean;
+  /** Tutorial em vários trechos: paradas anteriores e total, para o "N de M". */
+  antes?: number;
+  total?: number;
+  /** Avisa a parada atual: posição dela em `stops`. */
+  onParada?: (indice: number) => void;
+};
+
+export default function TutorialOverlay({ stops: allStops, onFinish, semPular = false, antes = 0, total, onParada }: Props) {
   const targets = useCoachTargets();
+  // "Reduzir movimento" (06/nov/2026): o recorte pula direto para a próxima parada e o
+  // balão só esmaece (sem deslizar 6 pt).
+  const reduzir = useReducedMotion();
+  const insets = useSafeAreaInsets();
   let { width: W, height: H } = useWindowDimensions();
   const { frame: androidFrame, measureProps } = useAndroidOverlayFrame();
   if (Platform.OS === 'android' && androidFrame) { W = androidFrame.width; H = androidFrame.height; }
@@ -135,7 +159,7 @@ export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: 
   const [started, setStarted] = useState(false);
   const [graceOver, setGraceOver] = useState(false);
   useEffect(() => {
-    requestCoachPrepare(allStops[0]?.scroll ? 'end' : 'top');
+    requestCoachPrepare(rolagem(allStops[0]));
     const t1 = setTimeout(() => { requestCoachMeasure(); burst(1000); }, 60);
     const t2 = setTimeout(() => setStarted(true), 200);
     const t3 = setTimeout(() => setGraceOver(true), 700);
@@ -148,6 +172,8 @@ export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: 
   }
   const stops = stopsRef.current ?? [];
   const LAST = stops.length - 1;
+  const congelou = stopsRef.current != null;
+  const vazio = congelou && stops.length === 0;
 
   const [s, setS] = useState(0);
   const [tipOn, setTipOn] = useState(true);
@@ -157,6 +183,20 @@ export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: 
   const at = (ms: number, fn: () => void) => { timers.current.push(setTimeout(fn, ms)); };
 
   const st = stops[s];
+  // Nenhum alvo na tela depois da carência: o tutorial obrigatório segue, nunca trava.
+  useEffect(() => {
+    if (vazio && semPular) onFinish();
+  }, [vazio]); // eslint-disable-line react-hooks/exhaustive-deps
+  const indiceReal = st ? allStops.indexOf(st) : -1;
+  useEffect(() => {
+    if (indiceReal >= 0) onParada?.(indiceReal);
+  }, [indiceReal]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Android: o botão voltar não sai do tutorial obrigatório.
+  useEffect(() => {
+    if (!semPular) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, [semPular]);
   const off = Platform.OS === 'android' ? androidFrame : null;
   // Mantém a última caixa válida: uma remedição que some por um instante não pisca.
   const lastA = useRef<Box | null>(null);
@@ -181,8 +221,8 @@ export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: 
     if (!A) return;
     const first = firstRef.current;
     firstRef.current = false;
-    moveBox(av, A, first);
-    moveBox(bv, B ?? A, first);
+    moveBox(av, A, first || reduzir);
+    moveBox(bv, B ?? A, first || reduzir);
     if (first) Animated.timing(ovOp, { toValue: 1, duration: 350, easing: Easing.ease, useNativeDriver: false }).start();
   }, [aKey, bKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -194,18 +234,21 @@ export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: 
   const b = B ?? a;
   const y1 = Math.min(a.y, b.y), y2 = Math.max(a.y + a.h, b.y + b.h);
   const below = y2 + 16 + 150 <= H - 62;
+  // "Pular" fica embaixo, a 30 pt da borda. Se o destaque chega nessa faixa (ícones da barra
+  // de abas, "Escanear produto"), ele vai para o topo, para não ficar em cima do destaque.
+  const skipNoTopo = y2 > H - SKIP_FAIXA;
   const anc = st?.anchor === 'b' && B ? b : a;
   const ax = Math.max(22, Math.min(W - 40 - 36, anc.x + anc.w / 2 - 20 - 7));
   useEffect(() => {
     Animated.parallel([
       Animated.timing(tipOp, { toValue: tipOn ? 1 : 0, duration: 250, easing: Easing.ease, useNativeDriver: true }),
-      Animated.timing(tipY, { toValue: tipOn ? 0 : (below ? 6 : -6), duration: 350, easing: EASE, useNativeDriver: true }),
+      Animated.timing(tipY, { toValue: tipOn || reduzir ? 0 : (below ? 6 : -6), duration: 350, easing: EASE, useNativeDriver: true }),
     ]).start();
   }, [tipOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const go = (n: number) => {
     setTipOn(false);
-    at(180, () => { setS(n); requestCoachPrepare(stops[n].scroll ? 'end' : 'top'); burst(1000); });
+    at(180, () => { setS(n); requestCoachPrepare(rolagem(stops[n])); burst(1000); });
     at(stops[n].scroll ? 820 : 520, () => setTipOn(true));
   };
   const close = () => {
@@ -216,14 +259,57 @@ export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: 
   };
   const next = () => {
     if (closing) return;
-    if (s >= LAST) { haptics.success(); close(); } else { haptics.tap(); go(s + 1); }
+    if (s >= LAST) { if (total == null || antes + s + 1 >= total) haptics.success(); else haptics.tap(); close(); } else { haptics.tap(); go(s + 1); }
   };
 
   // Android: antes de desenhar, o overlay precisa da própria medida.
   if (Platform.OS === 'android' && !androidFrame) {
     return <View style={StyleSheet.absoluteFill} pointerEvents="none" {...measureProps} />;
   }
-  if (!st || !ready) return null;
+  // Obrigatório: enquanto mede, nenhum toque passa para a tela de baixo.
+  if (!st || !ready) return semPular && !vazio ? <View style={StyleSheet.absoluteFill} /> : null;
+
+  const fim = total != null ? antes + s + 1 >= total : s === LAST;
+  const contagem = `${antes + s + 1} de ${total ?? stops.length}`;
+  const dica = fim ? 'Toque para começar' : 'Toque para continuar';
+  const baloes = (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.tip,
+        below ? { top: y2 + 16 } : { bottom: H - y1 + 16 },
+        { opacity: tipOp, transform: [{ translateY: tipY }] },
+      ]}
+    >
+      <View style={[styles.arrow, { left: ax }, below ? { top: -6 } : { bottom: -6 }]} />
+      <Text style={styles.text} lineBreakStrategyIOS="push-out">{st.t}</Text>
+      <View style={styles.foot}>
+        <Text style={styles.count}>{contagem}</Text>
+        <View style={styles.hintRow}>
+          <Text style={styles.hint}>{dica}</Text>
+          <Svg width={13} height={13} viewBox="0 0 24 24">
+            <Path d="M9 6l6 6-6 6" fill="none" stroke="#8A8387" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </View>
+      </View>
+    </Animated.View>
+  );
+  const veu = (
+    <>
+      <Svg width={W} height={H} style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Defs>
+          <Mask id="tut-hole">
+            <Rect x={0} y={0} width={W} height={H} fill="#FFFFFF" />
+            <AnimatedRect x={av.x} y={av.y} width={av.w} height={av.h} rx={av.r} ry={av.r} fill="#000000" />
+            <AnimatedRect x={bv.x} y={bv.y} width={bv.w} height={bv.h} rx={bv.r} ry={bv.r} fill="#000000" />
+          </Mask>
+        </Defs>
+        <Rect x={0} y={0} width={W} height={H} fill={SCRIM} mask="url(#tut-hole)" />
+      </Svg>
+      <Ring v={av} opacity={1} />
+      <Ring v={bv} opacity={ringBOp} />
+    </>
+  );
 
   return (
     <Animated.View
@@ -232,50 +318,19 @@ export default function TutorialOverlay({ stops: allStops, onFinish }: { stops: 
       accessibilityViewIsModal
       {...measureProps}
     >
-      <Pressable style={StyleSheet.absoluteFill} onPress={next} accessibilityRole="button" accessibilityLabel={`${st.t}. ${s === LAST ? 'Toque para começar' : 'Toque para continuar'}.`}>
-        <Svg width={W} height={H} style={StyleSheet.absoluteFill} pointerEvents="none">
-          <Defs>
-            <Mask id="tut-hole">
-              <Rect x={0} y={0} width={W} height={H} fill="#FFFFFF" />
-              <AnimatedRect x={av.x} y={av.y} width={av.w} height={av.h} rx={av.r} ry={av.r} fill="#000000" />
-              <AnimatedRect x={bv.x} y={bv.y} width={bv.w} height={bv.h} rx={bv.r} ry={bv.r} fill="#000000" />
-            </Mask>
-          </Defs>
-          <Rect x={0} y={0} width={W} height={H} fill={SCRIM} mask="url(#tut-hole)" />
-        </Svg>
-
-        <Ring v={av} opacity={1} />
-        <Ring v={bv} opacity={ringBOp} />
-
-        {/* Balão */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.tip,
-            below ? { top: y2 + 16 } : { bottom: H - y1 + 16 },
-            { opacity: tipOp, transform: [{ translateY: tipY }] },
-          ]}
-        >
-          <View style={[styles.arrow, { left: ax }, below ? { top: -6 } : { bottom: -6 }]} />
-          <Text style={styles.text} lineBreakStrategyIOS="push-out">{st.t}</Text>
-          <View style={styles.foot}>
-            <Text style={styles.count}>{`${s + 1} de ${stops.length}`}</Text>
-            <View style={styles.hintRow}>
-              <Text style={styles.hint}>{s === LAST ? 'Toque para começar' : 'Toque para continuar'}</Text>
-              <Svg width={13} height={13} viewBox="0 0 24 24">
-                <Path d="M9 6l6 6-6 6" fill="none" stroke="#8A8387" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            </View>
-          </View>
-        </Animated.View>
+      <Pressable style={StyleSheet.absoluteFill} onPress={next} accessibilityRole="button" accessibilityLabel={`${st.t}. ${dica}.`}>
+        {veu}
+        {baloes}
       </Pressable>
 
       {/* Pular */}
-      <View pointerEvents="box-none" style={styles.skipWrap}>
-        <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); close(); }} style={styles.skip} accessibilityRole="button" accessibilityLabel="Pular tutorial">
-          <Text style={styles.skipText}>Pular</Text>
-        </TouchableOpacity>
-      </View>
+      {!semPular && (
+        <View pointerEvents="box-none" style={[styles.skipWrap, skipNoTopo && { bottom: undefined, top: insets.top + 8 }]}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); close(); }} style={styles.skip} accessibilityRole="button" accessibilityLabel="Pular tutorial">
+            <Text style={styles.skipText}>Pular</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </Animated.View>
   );
 }

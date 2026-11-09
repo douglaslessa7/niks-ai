@@ -1,21 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Tutorial de primeira entrada da HOME — paradas dos designs 58a–58d (Claude
-// Design, NiksHomeTutorial.dc.html). O overlay é o `TutorialOverlay`; aqui ficam
-// só as 5 paradas (a 1ª do design dividida em duas), copiadas do `STOPS` do design (frases, alvos, folgas e raios).
-// Os alvos são registrados pela `home.tsx` (`useCoachMark('home-…')`).
-// Uma vez por conta: ver "Feature: Tutorial de primeiro acesso da home" no README.
+// Tour de primeira entrada da HOME (refeito em 06/nov/2026 — o app de hoje). O overlay é o
+// `TutorialOverlay` (mesmo visual de antes: véu, recorte, balão, "N de M", "Pular"); aqui
+// ficam só as 6 paradas, uma frase cada (textos aprovados pelo produto em 06/nov/2026).
+// Alvos: `home.tsx` (nível, botão, carta do dia, "Seu grupo") e a barra do `(app)/_layout`
+// (Rotina, Produtos). Só contas NOVAS (armado no cadastro), uma vez por conta
+// (`users.home_tutorial_seen_at`). Depois dele, o tutorial guiado (`lib/missoes.ts`).
+// Ver "Feature: Tutorial de primeiro acesso da home" no README.
 // ─────────────────────────────────────────────────────────────────────────────
 import TutorialOverlay, { type TutStop } from './TutorialOverlay';
 
 const STOPS: TutStop[] = [
-  // A parada 1 do design (contador + botão) foi dividida em duas a pedido do Douglas
-  // (11/10/2026): mesmos recortes do design, um de cada vez.
-  { t: 'Aqui você vê quanto tempo falta para o seu próximo skincare.', a: { u: ['home-cnt', 'home-cnt2'], w: 270, pad: 10, r: 22 } },
-  { t: 'Quando chegar a hora, o botão acende e você faz seu skincare passo a passo por aqui.', a: { u: ['home-rot'], pad: 6, r: 'pill' } },
-  { t: 'Cada skincare feito marca o dia no calendário e te faz acumular NIKS Points.', a: { u: ['home-week'], pad: 4, r: 20 }, b: { u: ['home-streak'], pad: 6, r: 'pill' } },
-  { t: 'A cada 7 dias, escaneie seu rosto e veja sua pele evoluir.', a: { u: ['home-scan'], pad: 5, r: 22 } },
-  // "alarme" saiu da frase enquanto o card de alarme está ocultado na home (11/10/2026).
-  { t: 'Deslize para o lado e descubra mais: a NIKS, seu progresso, scan de produtos e dica do dia.', a: { u: ['home-rowTitle', 'home-row'], pad: 6, r: 22 } },
+  { t: 'Cada skincare, check-in e carta vira NIKS Points, e eles sobem o seu nível.', a: { u: ['home-nivel'], pad: 6, r: 14 } },
+  // O texto atual do botão (aprovado em 05/nov/2026).
+  { t: 'Quando chegar a hora, toque aqui para fazer seu skincare e o check-in no seu grupo.', a: { u: ['home-rot'], pad: 6, r: 'pill' } },
+  { t: 'O primeiro skincare do dia libera uma carta para raspar.', a: { u: ['home-carta'], pad: 4, r: 24 } },
+  // "Seu grupo" (ou o convite "Criar grupo") fica mais embaixo: a home rola até ele.
+  { t: 'Faça skincare com suas amigas e veja quem já fez hoje.', a: { u: ['home-grupo'], pad: 4, r: 24 }, scroll: true },
+  { t: 'Sua rotina de manhã e de noite, com os seus produtos.', a: { u: ['nav-rotina'], pad: 2, r: 'pill' } },
+  { t: 'Escaneie um produto e veja se ele combina com a sua pele.', a: { u: ['nav-produtos'], pad: 2, r: 'pill' } },
 ];
 
 export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {

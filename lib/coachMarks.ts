@@ -19,21 +19,35 @@
 //      300 ms (e em rajada durante as transições), como o `setInterval` do design.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import type { View } from 'react-native';
 
 // Nomes = `data-tut` dos designs (NiksHomeFlo / NiksProductsShelf).
 export type CoachTargetKey =
   | 'home-cnt' | 'home-cnt2' | 'home-rot' | 'home-week' | 'home-streak'
   | 'home-scan' | 'home-rowTitle' | 'home-row'
-  | 'prod-shelf' | 'prod-edit' | 'prod-recTitle' | 'prod-recRow' | 'prod-scanBtn';
+  | 'prod-shelf' | 'prod-edit' | 'prod-recTitle' | 'prod-recRow' | 'prod-scanBtn'
+  // Tour novo + dicas das missões (06/nov/2026): linha do nível, carta do dia, "Seu grupo" /
+  // "Criar grupo" da home, os 3 itens da barra, o 1º passo vazio da Rotina, "Concluir
+  // skincare".
+  | 'home-nivel' | 'home-carta' | 'home-grupo'
+  | 'nav-rotina' | 'nav-produtos' | 'nav-grupos'
+  | 'rot-escolher' | 'sk-concluir'
+  // Desafios (08/nov/2026): botão da câmera de produto, "Adicionar à estante" e o último escaneado.
+  | 'scan-foto' | 'scan-estante' | 'prod-escaneado'
+  // Tutorial dos Grupos (08/nov/2026).
+  | 'perfil-foto' | 'perfil-seus-grupos'
+  | 'lista-vazio' | 'lista-criar' | 'lista-card'
+  | 'grupo-membros' | 'grupo-menu' | 'grupo-duelo' | 'grupo-checkin' | 'grupo-ranking' | 'grupo-jornada'
+  | 'grupo-mural' | 'grupo-mural-item';
 
 export type CoachRect = { x: number; y: number; width: number; height: number };
 export type CoachTargets = Partial<Record<CoachTargetKey, CoachRect>>;
-export type CoachStage = 'home' | 'produtos';
-export type CoachScroll = 'top' | 'end';
+export type CoachStage = 'home' | 'produtos' | 'grupos' | 'seusGrupos' | 'grupo';
+export type CoachScroll = 'top' | 'end' | 'mural';
 
 let targets: CoachTargets = {};
-const stageReady: Record<CoachStage, boolean> = { home: false, produtos: false };
+const stageReady: Record<CoachStage, boolean> = { home: false, produtos: false, grupos: false, seusGrupos: false, grupo: false };
 
 const subscribers = new Set<() => void>();
 const prepareListeners = new Set<(scroll: CoachScroll) => void>();
@@ -109,6 +123,19 @@ export function useCoachStageReady(stage: CoachStage): boolean {
     return () => { subscribers.delete(fn); };
   }, [stage]);
   return value;
+}
+
+/** Palco de uma tela de aba: pronto só com a tela em foco e os dados dela carregados. */
+export function useCoachStage(stage: CoachStage, pronto: boolean): void {
+  const [foco, setFoco] = useState(false);
+  useFocusEffect(useCallback(() => {
+    setFoco(true);
+    return () => setFoco(false);
+  }, []));
+  useEffect(() => {
+    setCoachStageReady(stage, foco && pronto);
+    return () => setCoachStageReady(stage, false);
+  }, [stage, foco, pronto]);
 }
 
 /**
