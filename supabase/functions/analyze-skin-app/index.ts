@@ -14,6 +14,8 @@
 // não (implicaria mexer em skin-result/home/store). Ver README "Scan de pele
 // multi-foto (13b)".
 // ═══════════════════════════════════════════════════════════════════════════
+import { travaSeHouverSessao } from '../_shared/assinatura.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -23,6 +25,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // App novo manda a sessão; versões antigas seguem sem ela até a versão mínima.
+  const bloqueio = await travaSeHouverSessao(req, 'analyze-skin-app')
+  if (bloqueio) return bloqueio
 
   try {
     const { imageBase64, imagesBase64, scanLayout, skinProfile } = await req.json()

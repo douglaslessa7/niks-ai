@@ -1,3 +1,5 @@
+import { travaAssinatura, uidDaSessao } from '../_shared/assinatura.ts'
+import { limitePorIp } from '../_shared/limiteIp.ts'
 import { detectTargetActive } from '../_shared/protocol-write.ts'
 
 const corsHeaders = {
@@ -233,6 +235,11 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // Com sessão, exige assinatura; sem sessão é o onboarding, com limite por IP.
+  const uidSessao = await uidDaSessao(req)
+  const bloqueio = uidSessao ? await travaAssinatura(uidSessao, 'generate-protocol') : await limitePorIp(req, 'generate-protocol')
+  if (bloqueio) return bloqueio
 
   try {
     const { scanResult, onboardingData } = await req.json()

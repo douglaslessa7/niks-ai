@@ -168,8 +168,8 @@ serve(async (req) => {
 
   // Sem login: o onboarding decide se mostra a tela de código.
   if (acao === 'convidada_status') {
-    const { data } = await supabase.from('grupos_config').select('convidada_ligada').eq('id', 1).maybeSingle()
-    return json({ ligada: data?.convidada_ligada === true })
+    const { data } = await supabase.from('grupos_config').select('convidada_ligada, versao_minima').eq('id', 1).maybeSingle()
+    return json({ ligada: data?.convidada_ligada === true, versao_minima: data?.versao_minima ?? null })
   }
 
   const authHeader = req.headers.get('authorization')

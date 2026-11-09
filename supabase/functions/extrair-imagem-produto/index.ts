@@ -1,3 +1,4 @@
+import { travaAssinatura } from '../_shared/assinatura.ts'
 import { verifyJWT } from '../_shared/jwt.ts'
 
 // Extrai a FOTO e o TÍTULO de um produto a partir de um link compartilhado com o app
@@ -544,6 +545,8 @@ Deno.serve(async (req) => {
       console.error('extrair-imagem-produto: JWT verification failed')
       return json({ error: 'Unauthorized' }, 401)
     }
+    const bloqueio = await travaAssinatura(jwtPayload.sub, 'extrair-imagem-produto')
+    if (bloqueio) return bloqueio
 
     let sourceUrl = ''
     try {

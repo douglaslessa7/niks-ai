@@ -1,3 +1,5 @@
+import { travaSeHouverSessao } from '../_shared/assinatura.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -7,6 +9,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  // App novo manda a sessão; versões antigas seguem sem ela até a versão mínima.
+  const bloqueio = await travaSeHouverSessao(req, 'analyze-food')
+  if (bloqueio) return bloqueio
 
   try {
     const { imageBase64, skinProfile, mimeType } = await req.json()

@@ -21,6 +21,7 @@
 // idade que ela declarou NÃO é enviada (não puxa a estimativa). Os textos da carta
 // continuam no app (`lib/cartaOnboarding.ts`, `components/cartas/Carta.tsx`).
 // ═══════════════════════════════════════════════════════════════════════════
+import { limitePorIp } from '../_shared/limiteIp.ts'
 import { PROBLEMAS, REGIOES, validar, type Problema } from '../_shared/analise-rapida.ts'
 
 const corsHeaders = {
@@ -91,6 +92,9 @@ const json = (body: unknown, status = 200) =>
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  const bloqueio = await limitePorIp(req, 'analise-rapida')
+  if (bloqueio) return bloqueio
 
   try {
     // `problemas` (o que ela marcou) chega do app e é ignorado de propósito — ver o topo.

@@ -18,6 +18,7 @@
 // alimentam a mesma UI (`skin-result`, home, store). Se mudar a FORMA da resposta
 // aqui, mude lá também. Divergir o PROMPT é o esperado; divergir o schema, não.
 // ═══════════════════════════════════════════════════════════════════════════
+import { limitePorIp } from '../_shared/limiteIp.ts'
 import { validarAncora, type Ancora } from '../_shared/analise-rapida.ts'
 
 const corsHeaders = {
@@ -44,6 +45,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  const bloqueio = await limitePorIp(req, 'analyze-skin')
+  if (bloqueio) return bloqueio
 
   try {
     const { imageBase64, skinProfile, analiseRapida } = await req.json()

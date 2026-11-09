@@ -3,6 +3,7 @@
 // as outras fotos do chat; foto ruim não guarda nada. Se guardar falhar, a análise chega mesmo
 // assim, só sem conversa (`conversation_id: null`).
 // `acao`: 'mensagem' (conversa), 'convite' (o que mostrar ao abrir o app), 'convite_visto'.
+import { travaAssinatura } from '../_shared/assinatura.ts'
 import { verifyJWT } from '../_shared/jwt.ts'
 import { analisar } from './roteador.ts'
 import { analisesDeHoje, createSupabaseClient, montarContexto } from './context.ts'
@@ -39,6 +40,8 @@ Deno.serve(async (req) => {
     const jwt = await verifyJWT(auth.slice(7))
     if (!jwt?.sub) return json({ error: 'Unauthorized' }, 401)
     const userId = jwt.sub
+    const bloqueio = await travaAssinatura(userId, 'sos-espinha')
+    if (bloqueio) return bloqueio
 
     const corpo = JSON.parse(rawBody)
     const { image } = corpo as { image?: { base64?: string; mimeType?: string } }

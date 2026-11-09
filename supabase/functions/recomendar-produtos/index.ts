@@ -6,6 +6,7 @@
 // de elegibilidade (generoso) com corte duro de alérgenos → camada de IA escolhe 1–3
 // por passo, marca o principal e escreve a copy pt-BR → salva o JSON e retorna.
 
+import { travaAssinatura } from '../_shared/assinatura.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { verifyJWT } from '../_shared/jwt.ts'
 
@@ -325,6 +326,8 @@ Deno.serve(async (req) => {
       return json({ error: 'Unauthorized' }, 401)
     }
     const user_id = sessao.sub
+    const bloqueio = await travaAssinatura(user_id, 'recomendar-produtos')
+    if (bloqueio) return bloqueio
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,

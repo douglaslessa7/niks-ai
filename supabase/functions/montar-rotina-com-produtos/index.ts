@@ -26,6 +26,7 @@
 //   passo com `dias`, null = todo dia — / fora_da_rotina / faltam / cobre_tudo),
 //   depois da conferência determinística abaixo.
 // ─────────────────────────────────────────────────────────────────────────────
+import { travaAssinatura } from '../_shared/assinatura.ts'
 import { verifyJWT } from '../_shared/jwt.ts'
 import { createSupabaseClient, buildContext } from '../analisar-produto/context.ts'
 import { buildContextPack } from '../analisar-produto/prompt.ts'
@@ -318,6 +319,8 @@ Deno.serve(async (req) => {
     const jwt = await verifyJWT(authHeader.slice(7))
     if (!jwt?.sub) return json({ error: 'Unauthorized' }, 401)
     const userId = jwt.sub
+    const bloqueio = await travaAssinatura(userId, 'montar-rotina-com-produtos')
+    if (bloqueio) return bloqueio
     const body = await req.json().catch(() => null)
     const supabase = createSupabaseClient()
 

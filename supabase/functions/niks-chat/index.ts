@@ -1,3 +1,4 @@
+import { travaAssinatura } from '../_shared/assinatura.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildContext } from './context.ts'
 import { NIKS_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
@@ -70,6 +71,8 @@ Deno.serve(async (req) => {
       )
     }
     const userId = jwtPayload.sub
+    const bloqueio = await travaAssinatura(userId, 'niks-chat')
+    if (bloqueio) return bloqueio
 
     const body = JSON.parse(rawBody)
     const {

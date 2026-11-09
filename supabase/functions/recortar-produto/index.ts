@@ -1,3 +1,4 @@
+import { travaAssinatura } from '../_shared/assinatura.ts'
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { verifyJWT } from '../_shared/jwt.ts'
@@ -30,6 +31,8 @@ serve(async (req) => {
   const jwtPayload = await verifyJWT(authHeader.slice(7))
   if (!jwtPayload?.sub) return json({ error: 'Unauthorized' }, 401)
   const userId = jwtPayload.sub
+  const bloqueio = await travaAssinatura(userId, 'recortar-produto')
+  if (bloqueio) return bloqueio
 
   const body = await req.json().catch(() => ({}))
   const opts = { fromPhoto: body?.fromPhoto === true, force: body?.force === true }

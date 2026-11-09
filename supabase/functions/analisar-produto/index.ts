@@ -1,3 +1,4 @@
+import { travaAssinatura } from '../_shared/assinatura.ts'
 import { createSupabaseClient, buildContext } from './context.ts'
 import { ANALISAR_PRODUTO_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
 import { ensureScanCutout } from '../_shared/scanCutout.ts'
@@ -131,6 +132,8 @@ Deno.serve(async (req) => {
       )
     }
     const userId = jwtPayload.sub
+    const bloqueio = await travaAssinatura(userId, 'analisar-produto')
+    if (bloqueio) return bloqueio
 
     const body = JSON.parse(rawBody)
     const { images, clientScanId, productName } = body as {
