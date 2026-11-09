@@ -211,6 +211,8 @@ export type DenunciaAberta = {
 };
 export type DecisaoDenuncia = 'manter' | 'apagar' | 'remover_usuaria';
 
+export const produtoCompartilhado = (grupoId: string, compartilhamentoId: string) =>
+  chamar<{ ok: true; resultado: Record<string, unknown>; foto_url: string | null } | Recusa>({ acao: 'produto_compartilhado', grupo_id: grupoId, compartilhamento_id: compartilhamentoId });
 export const moderarFotoPerfil = (base64: string) =>
   chamar<{ ok: true } | Recusa>({ acao: 'moderar_perfil', base64 });
 export const denunciasAbertas = () =>

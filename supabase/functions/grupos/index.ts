@@ -25,6 +25,7 @@ import { moderarImagem } from '../_shared/moderacao.ts'
 //   { acao: 'estado' }                               → { estado: assinante | convidada | sem_acesso }
 //   { acao: 'sair', grupo_id } / { acao: 'remover', grupo_id, user_id }
 //   { acao: 'bloquear', user_id, bloquear? } / { acao: 'denunciar', tipo, grupo_id, user_id?, checkin_id?, compartilhamento_id?, motivo? }
+//   { acao: 'produto_compartilhado', grupo_id, compartilhamento_id } → produto sem a nota de quem escaneou
 //   { acao: 'moderar_perfil', base64 }               → filtro da foto de perfil, antes de subir
 //   { acao: 'denuncias' } / { acao: 'revisar_denuncia', denuncia_id, decisao } → só moderadoras
 //   { acao: 'checkin', foto_path, rotina: 'am'|'pm', grupos: [ids], hora_exibida?, titulo?, descricao? }
@@ -178,7 +179,7 @@ serve(async (req) => {
   const uid = jwtPayload.sub
 
   const gid = typeof body?.grupo_id === 'string' && UUID.test(body.grupo_id) ? body.grupo_id : null
-  const precisaGrupo = ['grupo', 'mural', 'ranking', 'jornada', 'convite', 'sair', 'remover', 'denunciar']
+  const precisaGrupo = ['grupo', 'mural', 'ranking', 'jornada', 'convite', 'sair', 'remover', 'denunciar', 'produto_compartilhado']
   if (precisaGrupo.includes(acao) && !gid) return json({ error: 'grupo_id inválido' }, 400)
 
   try {
@@ -341,6 +342,14 @@ serve(async (req) => {
         }
         const grupos = Array.isArray(body?.grupos) ? body.grupos.filter((g: unknown) => typeof g === 'string' && UUID.test(g)).slice(0, 50) : []
         return json(await rpc(supabase, 'compartilhar_produto', { p_uid: uid, p_scan: scan, p_grupos: grupos }))
+      }
+
+      case 'produto_compartilhado': {
+        if (!UUID.test(String(body?.compartilhamento_id ?? ''))) return json({ error: 'compartilhamento_id inválido' }, 400)
+        const r = await rpc(supabase, 'produto_compartilhado', { p_uid: uid, p_grupo: gid, p_compartilhamento: body.compartilhamento_id })
+        if (!r?.ok) return json(r)
+        const urls = await assinar(supabase, [r.foto_path], 'product-scans')
+        return json({ ok: true, resultado: r.resultado, foto_url: urls.get(r.foto_path) ?? null })
       }
 
       case 'moderar_perfil': {
