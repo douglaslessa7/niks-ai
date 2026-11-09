@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Image } from 'https://deno.land/x/imagescript@1.3.0/mod.ts'
+import { Image } from '../_shared/imagescript/mod.ts'
 
 // Recorte SEM FUNDO das fotos do catálogo (Fase 2) — só para administrador.
 // Para cada produto: foto original → BiRefNet no Replicate (`sprited/birefnet`) →

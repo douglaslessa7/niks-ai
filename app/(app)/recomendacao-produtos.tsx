@@ -8,25 +8,30 @@ import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { concernLabel } from '../../lib/concernLabels';
 import { normStepKey, type SavedProduct } from '../../lib/savedProducts';
-import { produtosDaRotinaPorNome, definirProdutoDoPasso, avisoDoProduto, type RefProduto } from '../../lib/minhaRotina';
+import { definirProdutoDoPasso, avisoDoProduto, type RefProduto } from '../../lib/minhaRotina';
 import { invalidateCache } from '../../lib/cache';
 import ProductAnalysis from '../../components/product/ProductAnalysis';
 import { listColecao, removeFromColecao, requestMissingColecaoCutouts, type ColecaoItem } from '../../lib/colecao';
 import { getScanCutouts, requestMissingScanCutouts } from '../../lib/scanCutouts';
 import { useColecaoToggle } from '../../hooks/useColecaoToggle';
 import Shelf, { type ShelfHandle } from '../../components/product/Shelf';
+import ProdutoEstanteOverlay, { type RetanguloOrigem } from '../../components/product/ProdutoEstanteOverlay';
 import { ShelfAddButton, ShelfRemoveLink, confirmShelfRemove } from '../../components/product/ShelfStatus';
-import { getUserId } from '../../lib/currentUser';
+import { getUserId, peekUserId } from '../../lib/currentUser';
+import { dadoPronto, fonteImagem, revalidar, sincronizar } from '../../lib/produtosTela';
 import { haptics } from '../../lib/haptics';
 import { CAT_ORDER, catOf } from '../../lib/productCategory';
 import { listarEscaneados, type ScanItem } from '../../lib/escaneados';
 import { dedupeByProduct, sameProduct } from '../../lib/productMatch';
-import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
+import { onCoachPrepare, setCoachStageReady, useCoachMark, type CoachTargetKey } from '../../lib/coachMarks';
+import AlvoGuia from '../../components/coach/AlvoGuia';
+import { avancarGuiaDe, irParaGuia, useGuia } from '../../lib/guia';
+import { verificarDesafios } from '../../lib/missoes';
 import { checkProdutosTutorial } from '../../lib/produtosTutorial';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
@@ -165,6 +170,46 @@ function buildItem(passo: RecPasso, prodMap: Map<string, Prod>, prefix: string, 
   };
 }
 
+// Monta as seções a partir do JSON salvo + produtos (sem rede: roda já no primeiro render).
+function montarRec({ passos, prods }: { passos: any[]; prods: any[] }): { am: Item[]; pm: Item[]; flat: RecEntry[] } {
+  const prodMap = new Map<string, Prod>(prods.map((p: any) => [p.id, p]));
+  const amItems: Item[] = [];
+  const pmItems: Item[] = [];
+  for (const passo of passos) {
+    const periodo = passo.periodo ?? '';
+    if (periodo.includes('am')) {
+      const it = buildItem(passo, prodMap, 'am', amItems.length);
+      if (it) amItems.push(it);
+    }
+    if (periodo.includes('pm')) {
+      const it = buildItem(passo, prodMap, 'pm', pmItems.length);
+      if (it) pmItems.push(it);
+    }
+  }
+
+  // Lista plana da aba Recomendados: todo produto recomendado, uma vez só, na ordem
+  // dos passos. Categoria: a do catálogo; senão, o nome do passo ("Protetor Solar").
+  const seen = new Set<string>();
+  const flat: RecEntry[] = [];
+  for (const passo of passos) {
+    if (passo.sem_produto) continue;
+    const step = (passo.passo || passo.categoria || '').trim();
+    for (const x of passo.produtos ?? []) {
+      const prod = prodMap.get(x.produto_id);
+      if (!prod || seen.has(prod.id)) continue;
+      seen.add(prod.id);
+      flat.push({
+        id: prod.id, photoUrl: prod.imagem_url || null, cutoutUrl: cutoutOf(prod), name: prod.nome,
+        cat: catOf(prod.categoria) ?? catOf(step) ?? catOf(passo.categoria),
+        match: typeof x.compatibilidade === 'number' ? Math.round(x.compatibilidade) : null,
+        prod, step, copy: (x.copy || '').trim(),
+      });
+    }
+  }
+
+  return { am: amItems, pm: pmItems, flat };
+}
+
 export default function RecomendacaoProdutos() {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -173,15 +218,34 @@ export default function RecomendacaoProdutos() {
   const s = (n: number) => n * S;
 
   const [detail, setDetail] = useState<Item | null>(null);
-  const [state, setState] = useState<LoadState>('loading');
+  // Primeiro render já com o que a aba tinha guardado (lib/produtosTela).
+  const inicio = useRef((() => {
+    const uid = peekUserId();
+    const rec = dadoPronto('recomendacao', uid);
+    return {
+      rec: rec?.passos.length ? montarRec(rec) : null,
+      colecao: dadoPronto('colecao', uid),
+      scans: dadoPronto('escaneados', uid),
+      salvos: dadoPronto('salvos', uid),
+      foto: dadoPronto('foto', uid),
+    };
+  })()).current;
+  const navigation = useNavigation();
+  const gerarAoFocar = useRef(false);
+  const [state, setState] = useState<LoadState>(inicio.rec ? 'ready' : 'loading');
+  const [focada, setFocada] = useState(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const scanTemDado = useRef(!!inicio.scans);
+  const colTemDado = useRef(!!inicio.colecao);
   // Trava de uma tentativa de geração por montagem da tela (ver `load`).
   const triedGenerate = useRef(false);
-  const [am, setAm] = useState<Item[]>([]);
-  const [pm, setPm] = useState<Item[]>([]);
-  const [recList, setRecList] = useState<RecEntry[]>([]);
+  const [am, setAm] = useState<Item[]>(inicio.rec?.am ?? []);
+  const [pm, setPm] = useState<Item[]>(inicio.rec?.pm ?? []);
+  const [recList, setRecList] = useState<RecEntry[]>(inicio.rec?.flat ?? []);
   const [catR, setCatR] = useState<string>('Todos'); // filtro dos recomendados
   // Produtos escolhidos na rotina (por passo) — os recomendados que estão aqui saem da aba.
-  const [saved, setSaved] = useState<Record<string, SavedProduct>>({});
+  const [saved, setSaved] = useState<Record<string, SavedProduct>>(inicio.salvos ?? {});
 
   // Deep-link da home ("Para você"): produto_id cujo detalhe deve abrir ao entrar aqui.
   const productDetailTarget = useAppStore((s) => s.productDetailTarget);
@@ -228,8 +292,8 @@ export default function RecomendacaoProdutos() {
     if (useAppStore.getState().escolhaParaPasso) { voltarParaRotina(); return; }
     setView('main');
   };
-  const [scanState, setScanState] = useState<LoadState>('loading');
-  const [scans, setScans] = useState<ScanItem[]>([]);
+  const [scanState, setScanState] = useState<LoadState>(inicio.scans ? (inicio.scans.length ? 'ready' : 'empty') : 'loading');
+  const [scans, setScans] = useState<ScanItem[]>(inicio.scans ?? []);
   const [scanDetail, setScanDetail] = useState<ScanItem | null>(null);
   const [catS, setCatS] = useState<string>('Todos'); // filtro dos escaneados
   // Busca (lupa do cabeçalho): filtra os produtos da aba aberta pelo nome/marca.
@@ -282,19 +346,8 @@ export default function RecomendacaoProdutos() {
     });
     return () => sub.remove();
   }, [view]);
-  const [fotoUrl, setFotoUrl] = useState<string | null>(null); // foto do cabeçalho (mesma da home)
+  const [fotoUrl, setFotoUrl] = useState<string | null>(inicio.foto?.url ?? null); // foto do cabeçalho (mesma da home)
 
-
-  // Lê a linha da usuária em `recomendacoes_produtos`. null = erro de rede/RLS.
-  const fetchPassos = useCallback(async (userId: string): Promise<RecPasso[] | null> => {
-    const { data: row, error } = await supabase
-      .from('recomendacoes_produtos')
-      .select('recomendacao')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (error) return null;
-    return Array.isArray(row?.recomendacao) ? (row!.recomendacao as RecPasso[]) : [];
-  }, []);
 
   // Geração SOB DEMANDA — para quem já tem scan + protocolo mas nunca teve a linha em
   // `recomendacoes_produtos` (cadastro anterior à feature). A Edge Function só é chamada
@@ -325,8 +378,9 @@ export default function RecomendacaoProdutos() {
       .maybeSingle();
 
     try {
-      // A função confere que a sessão é da mesma usuária do `user_id` (out/2026).
+      // A função exige a sessão e usa a conta do token (08/nov/2026).
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return 'falhou';
       const res = await fetch(
         'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/recomendar-produtos',
         {
@@ -334,7 +388,7 @@ export default function RecomendacaoProdutos() {
           headers: {
             'Content-Type': 'application/json',
             'apikey': ANON_KEY,
-            'Authorization': `Bearer ${session?.access_token ?? ANON_KEY}`,
+            'Authorization': `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({ user_id: userId, scan_id: scan?.id ?? null }),
         },
@@ -349,83 +403,45 @@ export default function RecomendacaoProdutos() {
   // 1) usuária logada → 2) linha em recomendacoes_produtos (gerando sob demanda se
   // faltar) → 3) resolve TODOS os produto_id de uma vez contra `produtos` → 4) monta
   // as seções AM/PM.
-  const load = useCallback(async () => {
-    setState('loading');
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) { setState('empty'); return; }
+  const aplicarRec = useCallback((r: { passos: any[]; prods: any[] }) => {
+    const m = montarRec(r);
+    if (m.am.length === 0 && m.pm.length === 0 && m.flat.length === 0) { setState('empty'); return; }
+    setAm(m.am);
+    setPm(m.pm);
+    setRecList(m.flat);
+    setState('ready');
+  }, []);
 
-      let passos = await fetchPassos(user.id);
-      if (passos === null) { setState('error'); return; }
+  const load = useCallback(async () => {
+    try {
+      const uid = await getUserId();
+      if (!uid) { setState('empty'); return; }
+      const temRec = stateRef.current === 'ready';
+      let rec = await sincronizar('recomendacao', uid, {
+        temNaTela: temRec,
+        aplicar: (r) => { if (r.passos.length) aplicarRec(r); },
+        semDado: () => setState('loading'),
+      });
+      if (rec === null) { if (!temRec) setState('error'); return; }
 
       // Vazio + nunca tentamos gerar nesta montagem → tenta uma única vez. O ref evita
       // laço infinito se a função responder ok mas a linha continuar vazia.
-      if (passos.length === 0 && !triedGenerate.current) {
+      if (rec.passos.length === 0 && !triedGenerate.current) {
+        // Tela só pré-carregada: a geração gasta IA, então espera ela abrir de verdade.
+        if (!navigation.isFocused()) { gerarAoFocar.current = true; return; }
         triedGenerate.current = true;
         setState('generating');
-        const gen = await generateOnDemand(user.id);
+        const gen = await generateOnDemand(uid);
         // Falha de rede/função: deixa "Tentar de novo" rearmar a trava e chamar de novo.
         if (gen === 'falhou') { triedGenerate.current = false; setState('error'); return; }
-        if (gen === 'ok') passos = (await fetchPassos(user.id)) ?? [];
+        if (gen === 'ok') rec = (await revalidar('recomendacao', uid)).data;
       }
-      if (passos.length === 0) { setState('empty'); return; }
-
-      const ids = [...new Set(
-        passos.flatMap((p) => (p.produtos ?? []).map((x) => x.produto_id)).filter(Boolean),
-      )];
-      const prodMap = new Map<string, Prod>();
-      if (ids.length) {
-        const { data: prods } = await supabase
-          .from('produtos')
-          .select('id, marca, nome, imagem_url, concerns, categoria, imagem_recorte_url, imagem_recorte_status')
-          .in('id', ids);
-        (prods ?? []).forEach((p: any) => prodMap.set(p.id, p));
-      }
-
-      const amItems: Item[] = [];
-      const pmItems: Item[] = [];
-      for (const passo of passos) {
-        const periodo = passo.periodo ?? '';
-        if (periodo.includes('am')) {
-          const it = buildItem(passo, prodMap, 'am', amItems.length);
-          if (it) amItems.push(it);
-        }
-        if (periodo.includes('pm')) {
-          const it = buildItem(passo, prodMap, 'pm', pmItems.length);
-          if (it) pmItems.push(it);
-        }
-      }
-
-      // Lista plana da aba Recomendados: todo produto recomendado, uma vez só, na ordem
-      // dos passos. Categoria: a do catálogo; senão, o nome do passo ("Protetor Solar").
-      const seen = new Set<string>();
-      const flat: RecEntry[] = [];
-      for (const passo of passos) {
-        if (passo.sem_produto) continue;
-        const step = (passo.passo || passo.categoria || '').trim();
-        for (const x of passo.produtos ?? []) {
-          const prod = prodMap.get(x.produto_id);
-          if (!prod || seen.has(prod.id)) continue;
-          seen.add(prod.id);
-          flat.push({
-            id: prod.id, photoUrl: prod.imagem_url || null, cutoutUrl: cutoutOf(prod), name: prod.nome,
-            cat: catOf(prod.categoria) ?? catOf(step) ?? catOf(passo.categoria),
-            match: typeof x.compatibilidade === 'number' ? Math.round(x.compatibilidade) : null,
-            prod, step, copy: (x.copy || '').trim(),
-          });
-        }
-      }
-
-      if (amItems.length === 0 && pmItems.length === 0 && flat.length === 0) { setState('empty'); return; }
-
-      setAm(amItems);
-      setPm(pmItems);
-      setRecList(flat);
-      setState('ready');
+      if (rec.passos.length === 0) { setState('empty'); return; }
+      aplicarRec(rec);
     } catch {
-      setState('error');
+      if (stateRef.current !== 'ready') setState('error');
     }
-  }, [fetchPassos, generateOnDemand]);
+  }, [aplicarRec, generateOnDemand, navigation]);
 
   useEffect(() => {
     let active = true;
@@ -446,15 +462,18 @@ export default function RecomendacaoProdutos() {
   // ── Histórico "Escaneados" (tabela product_scans, RLS = só as próprias linhas) ──
   // A foto está no bucket privado `product-scans`; gera URLs assinadas em lote.
   const loadScans = useCallback(async () => {
-    setScanState('loading');
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) { setScanState('empty'); return; }
-
-      const items = await listarEscaneados(user.id);
-      if (!items.length) { setScanState('empty'); return; }
-      setScans(items);
-      setScanState('ready');
+      const uid = await getUserId();
+      if (!uid) { setScanState('empty'); return; }
+      await sincronizar('escaneados', uid, {
+        temNaTela: scanTemDado.current,
+        aplicar: (items) => {
+          scanTemDado.current = true;
+          setScans(items);
+          setScanState(items.length ? 'ready' : 'empty');
+        },
+        semDado: () => setScanState('loading'),
+      });
     } catch {
       setScanState('error');
     }
@@ -473,7 +492,7 @@ export default function RecomendacaoProdutos() {
   // atualiza a grade conforme ficam prontos. Na estante só os do carrossel (os
   // primeiros); a lista completa pede o resto.
   useEffect(() => {
-    if (view === 'recomendados') return;
+    if (view === 'recomendados' || !focada) return; // recorte é pago: nunca na tela só pré-carregada
     const ok = scansShown.filter((s) => s.result?.status === 'ok');
     void requestMissingScanCutouts(
       (view === 'main' ? ok.slice(0, CAROUSEL_MAX) : ok).map((s) => ({ id: s.id, status: s.cutoutStatus })),
@@ -482,36 +501,43 @@ export default function RecomendacaoProdutos() {
         setScans((list) => list.map((x) => (x.id === id ? { ...x, cutoutStatus: c?.status ?? st, cutoutUrl: c?.url ?? null } : x)));
       },
     );
-  }, [view, scansShown]);
+  }, [view, scansShown, focada]);
 
   // Recarrega os escaneados ao voltar para a tela (ex.: depois de escanear um produto
   // no balão da câmera) — sempre frescos.
   useFocusEffect(useCallback(() => { loadScans(); }, [loadScans]));
+  useFocusEffect(useCallback(() => {
+    setFocada(true);
+    if (gerarAoFocar.current) { gerarAoFocar.current = false; void load(); }
+    return () => setFocada(false);
+  }, [load]));
 
   // Produtos escolhidos na rotina — recarrega ao focar (a usuária pode ter trocado na Rotina).
   // (Minha rotina no servidor, por nome do passo — antes era o savedProducts do celular.)
   const reloadSaved = useCallback(() => {
-    getUserId().then((uid) => (uid ? produtosDaRotinaPorNome(uid) : {})).then(setSaved).catch(() => {});
+    getUserId().then((uid) => { if (uid) return sincronizar('salvos', uid, { temNaTela: false, aplicar: setSaved }); }).catch(() => {});
   }, []);
   useFocusEffect(useCallback(() => { reloadSaved(); }, [reloadSaved]));
 
   // ── Minha coleção (colecao_produtos): o que a usuária marcou "Tenho em casa" ──
-  const [colecao, setColecao] = useState<ColecaoItem[]>([]);
-  const [colState, setColState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [colecao, setColecao] = useState<ColecaoItem[]>(inicio.colecao ?? []);
+  const [colState, setColState] = useState<'loading' | 'ready' | 'error'>(inicio.colecao ? 'ready' : 'loading');
   const loadColecao = useCallback(async () => {
     try {
       const uid = await getUserId();
       if (!uid) { setColecao([]); setColState('ready'); return; }
-      const list = await listColecao(uid);
-      setColecao(list);
-      setColState('ready');
+      const list = await sincronizar('colecao', uid, {
+        temNaTela: colTemDado.current,
+        aplicar: (l) => { colTemDado.current = true; setColecao(l); setColState('ready'); },
+        semDado: () => setColState('loading'),
+      });
       // Itens vindos de scan antigo sem recorte: pede (cota da sessão) e recarrega a
-      // grade a cada um que fica pronto.
-      void requestMissingColecaoCutouts(list, () => { listColecao(uid).then(setColecao).catch(() => {}); });
+      // grade a cada um que fica pronto. Pago: só com a aba aberta.
+      if (list && navigation.isFocused()) void requestMissingColecaoCutouts(list, () => { void revalidar('colecao', uid).then((r) => setColecao(r.data)).catch(() => {}); });
     } catch {
       setColState('error');
     }
-  }, []);
+  }, [navigation]);
   // Recarrega sempre que a tela ganha foco: um "Tenho em casa" marcado no resultado do
   // scan ou em outra tela já aparece na estante na volta.
   useFocusEffect(useCallback(() => { loadColecao(); }, [loadColecao]));
@@ -539,7 +565,31 @@ export default function RecomendacaoProdutos() {
   } : null), [scanDetail]);
   const scanCol = useColecaoToggle(scanSrc, loadColecao);
 
-  // Tocar num item da coleção: scan → a análise dele; catálogo → o detalhe do produto.
+  // Desafio 2 vindo do card: último escaneado → "Adicionar à estante" (a dica do detalhe mora
+  // no `ProductAnalysis`, porque o Modal fica por cima do host). Adicionou: o Modal fecha, para
+  // a barra de pontos e o balão aparecerem.
+  const passoGuia = useGuia()?.passo;
+  const detalheAberto = !!scanDetail;
+  useEffect(() => {
+    if (detalheAberto) avancarGuiaDe('d2-card', 'd2-detalhe');
+    else avancarGuiaDe('d2-detalhe', 'd2-card');
+  }, [detalheAberto]);
+  useEffect(() => {
+    if (passoGuia === 'd2-card') mainScrollRef.current?.scrollToEnd({ animated: true });
+  }, [passoGuia]);
+  useEffect(() => {
+    if (passoGuia !== 'd2-detalhe' || scanCol.owned !== true) return;
+    irParaGuia('d2-pronto');
+    setScanDetail(null);
+    setTimeout(() => { void verificarDesafios(); }, 400);
+  }, [passoGuia, scanCol.owned]);
+
+  // Tela do produto da estante (voo a partir da miniatura). `ocultoId`: a miniatura some só
+  // depois que o Modal apareceu, e volta quando o produto pousa.
+  const [noPalco, setNoPalco] = useState<{ item: ColecaoItem; origem: RetanguloOrigem | null } | null>(null);
+  const [ocultoId, setOcultoId] = useState<string | null>(null);
+
+  // "Detalhes" da tela do produto: scan → a análise dele; catálogo → o detalhe do produto.
   const openColecaoItem = async (c: ColecaoItem) => {
     if (c.origem === 'scan' && c.productScanId) {
       const { data: r } = await supabase.from('product_scans').select('id, resultado, created_at').eq('id', c.productScanId).maybeSingle();
@@ -551,27 +601,28 @@ export default function RecomendacaoProdutos() {
         return;
       }
     }
+    // Descrição e tags: as da recomendação dela; fora dela, as do catálogo.
+    const rec = recList.find((x) => x.id === c.produtoId);
+    let texto = rec?.copy ?? '';
+    let targets = rec ? targetsOf(rec.prod) : [];
+    if (!rec && c.produtoId) {
+      const { data: p } = await supabase.from('produtos').select('concerns, porque_e_especial').eq('id', c.produtoId).maybeSingle();
+      texto = p?.porque_e_especial ?? '';
+      targets = targetsOf({ concerns: p?.concerns ?? [] } as Prod);
+    }
     setDetail({
-      id: c.id, num: '', step: '', productId: c.produtoId ?? undefined,
+      id: c.id, num: '', step: rec?.step ?? '', productId: c.produtoId ?? undefined,
       brand: c.marca ?? undefined, name: c.nome ?? undefined, img: { uri: c.photoUrl ?? c.cutoutUrl ?? '' }, cutout: c.cutoutUrl ?? null,
-      pra: '', praLong: '', targets: [], alts: [], categoria: c.categoria, compat: c.compat,
+      pra: texto, praLong: texto, targets, alts: [], categoria: c.categoria, compat: c.compat,
     });
   };
 
   // Foto do cabeçalho: a mesma da home (escolhida na galeria > foto do último scan).
   useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) return;
-      const [{ data: u }, { data: sc }] = await Promise.all([
-        supabase.from('users').select('foto_home_url').eq('id', user.id).maybeSingle(),
-        supabase.from('skin_scans').select('foto_url').eq('user_id', user.id)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      ]);
-      setFotoUrl(u?.foto_home_url ?? sc?.foto_url ?? null);
-    })().catch(() => {});
+    getUserId().then((uid) => {
+      if (uid) return sincronizar('foto', uid, { temNaTela: false, aplicar: (f) => setFotoUrl(f.url) });
+    }).catch(() => {});
   }, []);
-
 
   // Escanear produto — abre a réplica da tela de câmera (product-camera), o
   // equivalente à câmera do scan de comida, dedicada ao scan de produto.
@@ -643,7 +694,7 @@ export default function RecomendacaoProdutos() {
           </View>
         )}
         {(p.cutoutUrl ?? p.photoUrl)
-          ? <ExpoImage source={{ uri: (p.cutoutUrl ?? p.photoUrl)! }} style={{ width: 108, height: 108 }} contentFit="contain" accessibilityLabel={p.name ?? undefined} />
+          ? <ExpoImage source={fonteImagem((p.cutoutUrl ?? p.photoUrl)!)} cachePolicy="memory-disk" style={{ width: 108, height: 108 }} contentFit="contain" accessibilityLabel={p.name ?? undefined} />
           : <IconHerb />}
       </View>
       <View style={{ gap: 2, paddingHorizontal: 2 }}>
@@ -721,6 +772,7 @@ export default function RecomendacaoProdutos() {
     title: string; items: G[]; onPick: (p: G) => void; subOf: (p: G) => string | null; onAll: () => void;
     shelfOf?: (p: G) => boolean;
     tut?: [object, object]; // alvos "recTitle"/"recRow" do tutorial (só nos Recomendados)
+    alvoPrimeiro?: CoachTargetKey; // dica de desafio no 1º card
   }) => (
     <>
       <View style={p47.sectionRow} {...o.tut?.[0]}>
@@ -731,7 +783,10 @@ export default function RecomendacaoProdutos() {
       </View>
       <View style={{ marginTop: 12 }} {...o.tut?.[1]}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 12 }}>
-        {o.items.slice(0, CAROUSEL_MAX).map((p) => ProductCard(p, o.onPick, o.subOf(p), { width: CARD_W }, !!o.shelfOf?.(p)))}
+        {o.items.slice(0, CAROUSEL_MAX).map((p, i) => {
+          const card = ProductCard(p, o.onPick, o.subOf(p), { width: CARD_W }, !!o.shelfOf?.(p));
+          return i === 0 && o.alvoPrimeiro ? <AlvoGuia key={p.id} chave={o.alvoPrimeiro}>{card}</AlvoGuia> : card;
+        })}
       </ScrollView>
       </View>
     </>
@@ -824,6 +879,14 @@ export default function RecomendacaoProdutos() {
     });
   };
 
+  const removerRef = useRef(confirmRemove);
+  removerRef.current = confirmRemove;
+  // Identidade estável: a estante (cheia de gestos e SVG) só redesenha quando os dados dela mudam.
+  const abrirNoPalco = useCallback((c: ColecaoItem, origem: RetanguloOrigem | null) => setNoPalco({ item: c, origem }), []);
+  const removerDaEstante = useCallback((c: ColecaoItem) => removerRef.current(c), []);
+  const arrastandoEstante = useCallback((active: boolean) => setScrollOn(!active), []);
+  const escanearDaEstante = useCallback(() => router.push('/(scan)/product-camera' as any), [router]);
+
   const colecaoGrid = colecao.map((c) => ({
     id: c.id, photoUrl: c.cutoutUrl ?? c.photoUrl, name: c.nome, cat: catOf(c.categoria), match: c.compat, verdict: c.verdict, c,
   }));
@@ -890,7 +953,7 @@ export default function RecomendacaoProdutos() {
             }
             return (
               <>
-                {col.length > 0 && ProductGrid({ items: col, cat: 'Todos', setCat: () => {}, chips: false, onPick: (p) => { void openColecaoItem(p.c); }, title: 'Na sua estante', subOf: (p) => p.c.marca })}
+                {col.length > 0 && ProductGrid({ items: col, cat: 'Todos', setCat: () => {}, chips: false, onPick: (p) => { setNoPalco({ item: p.c, origem: null }); }, title: 'Na sua estante', subOf: (p) => p.c.marca })}
                 {rec.length > 0 && ProductGrid({ items: rec, cat: 'Todos', setCat: () => {}, chips: false, onPick: openRec, title: 'Recomendados pra você', subOf: recSub, shelfOf: recInShelf })}
                 {sc.length > 0 && ProductGrid({ items: sc, cat: 'Todos', setCat: () => {}, chips: false, onPick: setScanDetail, title: 'Escaneados', subOf: (p) => fmtWhen(p.createdAt), shelfOf: scanInShelf })}
               </>
@@ -903,12 +966,13 @@ export default function RecomendacaoProdutos() {
                 items={colecao}
                 loaded={colState === 'ready'}
                 editing={editing}
-                onPick={(c) => { void openColecaoItem(c); }}
-                onRemove={(c) => confirmRemove(c)}
+                onPick={abrirNoPalco}
+                ocultoId={ocultoId}
+                onRemove={removerDaEstante}
                 // `active` = arrastando → rolagem DESLIGADA. Passar `setScrollOn` direto
                 // invertia: soltar o produto travava a rolagem até sair da aba.
-                onDragActive={(active) => setScrollOn(!active)}
-                onScan={() => router.push('/(scan)/product-camera' as any)}
+                onDragActive={arrastandoEstante}
+                onScan={escanearDaEstante}
                 tutMark={tutShelf}
               />
               {colState === 'error' && <RetryRow text="Não deu pra carregar sua estante agora." onRetry={loadColecao} />}
@@ -938,6 +1002,7 @@ export default function RecomendacaoProdutos() {
               {/* Escaneados recentemente — vazio vira convite para o 1º scan */}
               {scanState === 'ready' && scansShown.length > 0 && Carousel<ScanItem>({
                 title: 'Escaneados recentemente', items: scansShown, onPick: setScanDetail, shelfOf: scanInShelf,
+                alvoPrimeiro: passoGuia === 'd2-card' ? 'prod-escaneado' : undefined,
                 subOf: (p) => fmtWhen(p.createdAt), onAll: () => openList('escaneados'),
               })}
               {scanState === 'empty' && (
@@ -1009,7 +1074,7 @@ export default function RecomendacaoProdutos() {
             <RetryRow text="Não deu pra carregar sua estante agora." onRetry={loadColecao} />
           ) : (
             <Shelf
-              items={colecao}
+              items={colecao.filter((c) => c.status === 'tenho')}
               loaded={colState === 'ready'}
               editing={false}
               semArraste
@@ -1095,6 +1160,18 @@ export default function RecomendacaoProdutos() {
             <Text style={p47.searchCancel}>Cancelar</Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {noPalco && (
+        <ProdutoEstanteOverlay
+          item={noPalco.item}
+          origem={noPalco.origem}
+          onVisivel={() => setOcultoId(noPalco.item.id)}
+          onFechou={() => { setOcultoId(null); setNoPalco(null); }}
+          onStatus={(id, status) => setColecao((l) => l.map((x) => (x.id === id ? { ...x, status } : x)))}
+          onRemovido={(id) => { setColecao((l) => l.filter((x) => x.id !== id)); void loadColecao(); }}
+          onDetalhes={(c) => { void openColecaoItem(c); }}
+        />
       )}
 
       {/* ── Detalhe do produto — réplica do design 47c (NiksProductDetailFlo) ──────

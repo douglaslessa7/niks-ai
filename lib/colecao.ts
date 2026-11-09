@@ -13,8 +13,20 @@ import { sameProduct } from './productMatch';
 
 export type ShelfPos = { s: number; x: number }; // prateleira 0..2 + centro em pt (frame 393)
 
+// Status do produto (migration 20261116120000_colecao_status). Só "tenho" conta como "em
+// casa": a folha "Escolher produto" e a IA ignoram os outros, mas ele segue na estante e no passo.
+export type ColecaoStatus = 'tenho' | 'quero_comprar' | 'acabou';
+export const STATUS_COLECAO: Record<ColecaoStatus, { rotulo: string; cor: string; fundo: string; opacidade: number }> = {
+  tenho:         { rotulo: 'Tenho em casa', cor: '#1E9E63', fundo: 'rgba(30,158,99,0.14)',   opacidade: 1 },
+  quero_comprar: { rotulo: 'Quero comprar', cor: '#E8468F', fundo: 'rgba(232,70,143,0.14)',  opacidade: 0.55 },
+  acabou:        { rotulo: 'Acabou',        cor: '#7D7478', fundo: 'rgba(125,116,120,0.16)', opacidade: 0.38 },
+};
+export const STATUS_ORDEM: ColecaoStatus[] = ['tenho', 'quero_comprar', 'acabou'];
+const lerStatus = (v: unknown): ColecaoStatus => (v === 'quero_comprar' || v === 'acabou' ? v : 'tenho');
+
 export type ColecaoItem = {
   id: string;
+  status: ColecaoStatus;
   origem: 'scan' | 'catalogo';
   productScanId: string | null;
   produtoId: string | null;
@@ -74,11 +86,12 @@ async function compatFallback(userId: string, prodIds: string[], scanIds: string
 // Coleção da usuária, mais antiga primeiro (quem ainda não tem posição ganha a vaga livre
 // nessa ordem — ver `firstFree` em components/product/Shelf.tsx).
 export async function listColecao(userId: string): Promise<ColecaoItem[]> {
-  const { data: rows, error } = await supabase
-    .from('colecao_produtos')
-    .select('id, origem, product_scan_id, produto_id, nome, marca, categoria, compatibilidade, imagem_url, recorte_path, recorte_status, recorte_w, recorte_h, estante, created_at')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: true });
+  const colunas = 'id, origem, product_scan_id, produto_id, nome, marca, categoria, compatibilidade, imagem_url, recorte_path, recorte_status, recorte_w, recorte_h, estante, created_at';
+  const ler = (cols: string) => supabase.from('colecao_produtos').select(cols).eq('user_id', userId).order('created_at', { ascending: true });
+  let { data: rows, error } = await ler(`${colunas}, status`);
+  // Coluna `status` ainda não existe no banco (42703, migration não aplicada): lê sem ela e
+  // todos valem "Tenho em casa". Sem isto a estante e os produtos da rotina sumiriam.
+  if (error?.code === '42703') ({ data: rows, error } = await ler(colunas));
   if (error) throw error;
   const list = rows ?? [];
   const scanPaths = list.filter((r: any) => r.origem === 'scan' && r.imagem_url && !isHttp(r.imagem_url)).map((r: any) => r.imagem_url);
@@ -108,6 +121,7 @@ export async function listColecao(userId: string): Promise<ColecaoItem[]> {
     }
     return {
       id: r.id,
+      status: lerStatus(r.status),
       origem: r.origem,
       productScanId: r.product_scan_id,
       produtoId: r.produto_id,
@@ -224,6 +238,12 @@ export async function findInColecao(userId: string, by: {
   const { data: rows } = await supabase.from('colecao_produtos').select('id, nome, marca').eq('user_id', userId);
   const hit = (rows ?? []).find((r: any) => sameProduct({ marca: r.marca, nome: r.nome }, { marca: by.marca, nome: by.nome }));
   return hit?.id ?? null;
+}
+
+// Grava o status do produto. Lança o erro: quem chama desfaz a troca e avisa.
+export async function setColecaoStatus(id: string, status: ColecaoStatus): Promise<void> {
+  const { error } = await supabase.from('colecao_produtos').update({ status }).eq('id', id);
+  if (error) throw error;
 }
 
 // Grava a posição na estante. (null = sem posição: a estante coloca no 1º espaço livre.)

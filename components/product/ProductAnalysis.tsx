@@ -17,6 +17,8 @@ import {
 } from 'lucide-react-native';
 import { getScoreTheme } from '../../lib/scoreTheme';
 import { haptics } from '../../lib/haptics';
+import AlvoGuia from '../coach/AlvoGuia';
+import { useGuia } from '../../lib/guia';
 import { diasDoPasso } from '../../lib/frequencia';
 import { ShelfAddButton, ShelfRemoveLink } from './ShelfStatus';
 
@@ -200,6 +202,7 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
   // `ShelfStatus` (fonte única com o detalhe dos Recomendados). Atrás, um degradê do
   // fundo da página para o botão não brigar com o conteúdo. O "Escanear outro produto"
   // e o link "Remover da estante" continuam no fim da página.
+  const passoGuia = useGuia()?.passo;
   const FOOTER_FADE = 28;                              // altura do degradê acima do botão
   const footerBottom = Math.max(insets.bottom, 16);
   const FOOTER_H = FOOTER_FADE + 50 + 12 + footerBottom; // degradê + cápsula + folga + safe area
@@ -213,7 +216,19 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
           style={StyleSheet.absoluteFill}
         />
         <View style={{ paddingTop: FOOTER_FADE, paddingBottom: footerBottom + 12, paddingHorizontal: s(20) }}>
-          <ShelfAddButton owned={colecao.owned} busy={colecao.busy} onAdd={colecao.onToggle} />
+          {/* Desafio 2: no detalhe (Modal) a dica mora aqui; no resultado do scan, o host a desenha. */}
+          {passoGuia === 'd2-detalhe' && !colecao.owned && (
+            <View accessibilityLiveRegion="polite" style={{ marginBottom: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, backgroundColor: '#FFE3EF', borderWidth: 1.5, borderColor: '#FF5EA8' }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', lineHeight: 20, letterSpacing: -0.2, color: '#C0206A' }}>Este produto é seu? Coloque na sua estante.</Text>
+            </View>
+          )}
+          {passoGuia === 'd2-adicionar' && !colecao.owned ? (
+            <AlvoGuia chave="scan-estante">
+              <ShelfAddButton owned={colecao.owned} busy={colecao.busy} onAdd={colecao.onToggle} />
+            </AlvoGuia>
+          ) : (
+            <ShelfAddButton owned={colecao.owned} busy={colecao.busy} onAdd={colecao.onToggle} />
+          )}
         </View>
       </View>
     ) : null;

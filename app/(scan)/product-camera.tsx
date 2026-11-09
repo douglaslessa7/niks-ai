@@ -10,6 +10,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Device from 'expo-device';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
 import { haptics } from '../../lib/haptics';
+import AlvoGuia from '../../components/coach/AlvoGuia';
 
 // Réplica da tela de câmera do scan de comida (food-camera.tsx), adaptada para o
 // scan de PRODUTO: mesma UI/animação, com o rótulo/ícone e o handoff de imagem
@@ -350,6 +351,7 @@ export default function ProductCamera() {
           </TouchableOpacity>
 
           {/* Shutter — câmera real no celular, galeria no simulador */}
+          <AlvoGuia chave="scan-foto">
           <TouchableOpacity
             onPress={() => { haptics.action(); isSimulator ? pickAndAnalyze() : handleCapture(); }}
             disabled={picking}
@@ -367,6 +369,7 @@ export default function ProductCamera() {
           >
             <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(255,255,255,0.92)' }} />
           </TouchableOpacity>
+          </AlvoGuia>
 
           {/* Gallery button — sempre visível */}
           <TouchableOpacity

@@ -19,6 +19,9 @@ import { haptics } from '../../lib/haptics';
 import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
 import { compartilharProduto, invalidarGrupos } from '../../lib/gruposServidor';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
+import { ganhouPontos } from '../../lib/pontosAnimacao';
+import { encerrarGuia, irParaGuia, useGuia } from '../../lib/guia';
+import { verificarDesafios } from '../../lib/missoes';
 
 // Tela de RESULTADO do scan de produto (fluxo da câmera → loading → aqui).
 // O layout inteiro vive em `components/product/ProductAnalysis` — o MESMO componente que o
@@ -46,6 +49,19 @@ export default function ProductResult() {
     categoria: r.produto?.categoria ?? null, compat: r.compatibilidade ?? null,
   } : null), [r]);
   const col = useColecaoToggle(colecaoSrc);
+
+  // Desafios do primeiro acesso: o scan salvo conclui o 1; "Adicionar à estante", o 2.
+  const passoGuia = useGuia()?.passo;
+  const statusOk = r?.status === 'ok';
+  useEffect(() => {
+    if (statusOk) void verificarDesafios();
+    else if (r) encerrarGuia(); // pediu outra foto: o card retoma o desafio
+  }, [r?.scan_id, statusOk]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (passoGuia !== 'd2-adicionar' || col.owned !== true) return;
+    irParaGuia('d2-pronto');
+    void verificarDesafios();
+  }, [passoGuia, col.owned]);
 
   // ── "Escanear produto" da folha "Escolher produto" (Rotina, Fase 2) ──────────
   // Se a usuária veio da folha (`rotinaPassoAlvo`, válido por 15 min), o produto
@@ -199,15 +215,16 @@ export default function ProductResult() {
   const fechar = (pedirAvaliacao = true) => { if (pedirAvaliacao) requestAppReview(); router.replace((veioDaRotina ? '/(app)/protocolo' : '/(app)/recomendacao-produtos') as any); };
   const folhaVista = useRef(false);
   const [folhaGrupo, setFolhaGrupo] = useState(false);
-  const [compartilhando, setCompartilhando] = useState<string | null>(null);
+  const [compartilhando, setCompartilhando] = useState(false);
   const podeCompartilhar = !veioDaRotina && !alvo && r?.status === 'ok' && !!r?.scan_id;
   const aoFechar = () => {
     if (podeCompartilhar && !folhaVista.current) { folhaVista.current = true; setFolhaGrupo(true); return; }
     fechar();
   };
-  const compartilhar = async (grupo: string) => {
-    const grupos = [grupo];
-    setCompartilhando(grupo);
+  // Pop-up "Compartilhar com o grupo?": os grupos ATIVADOS (05/nov/2026, ativar/desativar por grupo).
+  const compartilhar = async (grupos: string[]) => {
+    if (!grupos.length) return;
+    setCompartilhando(true);
     try {
       const res = await compartilharProduto(r.scan_id, grupos);
       if (!res.ok) { Alert.alert('Não deu para compartilhar agora', 'Tente de novo em instantes.'); return; }
@@ -217,10 +234,12 @@ export default function ProductResult() {
       setFolhaGrupo(false);
       fechar(false);
       if (res.carta_id) setTimeout(() => router.push(`/(carta)/carta?id=${res.carta_id}` as any), 350);
+      // Regras novas das cartas: produto no grupo dá pontos sem carta (1/dia) — a barra sobe já.
+      else ganhouPontos(res.pontos ?? null);
     } catch {
       Alert.alert('Não deu para compartilhar agora', 'Confira a internet e tente de novo.');
     } finally {
-      setCompartilhando(null);
+      setCompartilhando(false);
     }
   };
 
@@ -256,7 +275,7 @@ export default function ProductResult() {
     <FolhaCompartilhar
       aberta={folhaGrupo}
       ocupado={compartilhando}
-      onCompartilhar={(grupo) => { void compartilhar(grupo); }}
+      onCompartilhar={(grupos) => { void compartilhar(grupos); }}
       onCriarGrupo={() => { setFolhaGrupo(false); router.replace('/(app)/seus-grupos?criar=1' as any); }}
       onFechar={() => { setFolhaGrupo(false); fechar(); }}
     />

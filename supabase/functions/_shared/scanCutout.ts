@@ -12,7 +12,7 @@
 // e o app continua mostrando a foto original.
 // Secrets: REPLICATE_API_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // ─────────────────────────────────────────────────────────────────────────────
-import { Image } from 'https://deno.land/x/imagescript@1.3.0/mod.ts'
+import { Image } from './imagescript/mod.ts'
 
 const MODEL = 'sprited/birefnet'
 const BUCKET = 'product-scans'
@@ -83,6 +83,7 @@ async function removeBackground(imageUrl: string, token: string): Promise<Uint8A
     await sleep(1500)
     pred = (await replicate(`/predictions/${pred.id}`, token)).body
   }
+  if (pred?.status !== 'succeeded' || !pred?.output) console.error('scanCutout: resposta do Replicate', pr.status, JSON.stringify(pred ?? pr.body ?? null).slice(0, 1500))
   if (pred?.status !== 'succeeded' || !pred?.output) throw new Error(pred?.error ?? `predição ${pred?.status ?? 'http ' + pr.status}`)
   const res = await fetch(String(pred.output))
   if (!res.ok) throw new Error(`download do recorte: HTTP ${res.status}`)
@@ -112,6 +113,34 @@ function trimAndFit(img: Image): Image {
     else img.resize(MAX_SIDE, Image.RESIZE_AUTO)
   }
   return img
+}
+
+// Alerta de cobrança (08/nov/2026): o Replicate devolveu 402 (sem crédito) → push no celular de
+// quem cuida do app, UMA vez quando o problema começa: só avisa se nenhum outro scan caiu no
+// 402 nas últimas 6 h. Sem Resend/Slack no projeto, o canal é o mesmo push do app. Nunca lança.
+const ALERTA_EMAIL = 'felipeesteves188@icloud.com'
+const ALERTA_JANELA_H = 6
+export async function enviarAlerta402(supabase: any, teste = false): Promise<unknown> {
+  const { data: u } = await supabase.from('users').select('push_token').eq('email', ALERTA_EMAIL).maybeSingle()
+  if (!u?.push_token) return { erro: 'sem push_token' }
+  const r = await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to: u.push_token, sound: 'default',
+      title: `${teste ? '[Teste] ' : ''}NIKS: recorte de produtos parado`,
+      body: 'O Replicate recusou a cobrança (402, sem crédito). Confira o saldo em replicate.com/account/billing.',
+    }),
+  })
+  return await r.json().catch(() => ({ http: r.status }))
+}
+async function avisarFaltaCredito(supabase: any, scanId: string) {
+  try {
+    const desde = new Date(Date.now() - ALERTA_JANELA_H * 3600_000).toISOString()
+    const { count } = await supabase.from('product_scans').select('id', { count: 'exact', head: true })
+      .eq('recorte_erro', 'predição 402').gte('recorte_em', desde).neq('id', scanId)
+    if (count === 0) console.error('scanCutout: alerta 402 enviado', JSON.stringify(await enviarAlerta402(supabase)))
+  } catch (e) { console.error('scanCutout: alerta 402 falhou', String(e)) }
 }
 
 // fromPhoto: pula catálogo/reuso e recorta a foto do scan · force: refaz mesmo já estando 'ok'
@@ -201,6 +230,7 @@ export async function ensureScanCutout(supabase: any, scanId: string, opts: Opts
   } catch (e) {
     const msg = String((e as Error)?.message ?? e).slice(0, 300)
     console.error('scanCutout:', scanId, msg)
+    if (msg === 'predição 402') await avisarFaltaCredito(supabase, scanId)
     await done({ recorte_status: 'falhou', recorte_erro: msg })
     return { status: 'falhou', erro: msg }
   }

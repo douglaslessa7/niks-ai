@@ -16,6 +16,7 @@ import { supabase } from './supabase';
 import { findInColecao, removeFromColecao } from './colecao';
 import { tipoPorTexto, normTexto, type TipoPasso } from './tipoPasso';
 import { avisoDoProduto, paraEstante, reordenarPassos, type Periodo } from './minhaRotina';
+import type { Aviso } from './avisoProduto';
 
 // Leitura ENXUTA dos passos (sem as fotos assinadas da estante, que a tela usa e aqui
 // só atrasariam o toque): o bastante para achar a posição, o passo trocado e o aviso.
@@ -88,6 +89,24 @@ function textoAviso(tipo: string, periodos: Periodo[], depois: PassoLeve | null,
   return `Adicionado à sua rotina ${quando}`;
 }
 
+/** Cria o passo já com o produto, na posição certa, e renumera o período. */
+async function inserirPassoNovo(
+  userId: string, per: Periodo, lista: PassoLeve[], tipoNovo: TipoPasso | null, d: DecisaoRotina,
+  dias: string[] | null, origem: 'scan_avulso' | 'usuaria', colecaoId: string, aviso: Aviso,
+): Promise<{ id: string; depois: PassoLeve | null }> {
+  const pos = posicao(lista, tipoNovo, d.depois_do_passo_id);
+  const { data: novo, error } = await supabase.from('minha_rotina_passos').insert({
+    user_id: userId, periodo: per, ordem: lista.length + 1,
+    nome: d.passo?.trim() || null, dias, origem,
+    colecao_item_id: colecaoId, aviso_nivel: aviso.nivel, aviso_texto: aviso.texto,
+  }).select('id').single();
+  if (error || !novo) throw error ?? new Error('passo não criado');
+  const ids = lista.map((p) => p.id);
+  ids.splice(pos, 0, novo.id);
+  await reordenarPassos(ids);
+  return { id: novo.id, depois: pos > 0 ? lista[pos - 1] : null };
+}
+
 export async function adicionarDoScan(userId: string, scanId: string, d: DecisaoRotina): Promise<{ aviso: string; desfazer: Desfazer }> {
   const periodos: Periodo[] = d.periodo === 'am+pm' ? ['am', 'pm'] : d.periodo === 'pm' ? ['pm'] : ['am'];
   const dias = Array.isArray(d.dias) && d.dias.length ? d.dias : null;
@@ -131,21 +150,28 @@ export async function adicionarDoScan(userId: string, scanId: string, d: Decisao
     }
 
     // Adicionar: passo novo na posição certa.
-    const pos = posicao(lista, tipoNovo, d.depois_do_passo_id);
-    if (pos > 0) depoisRef = lista[pos - 1];
-    const { data: novo, error } = await supabase.from('minha_rotina_passos').insert({
-      user_id: userId, periodo: per, ordem: lista.length + 1,
-      nome: d.passo?.trim() || null, dias, origem: 'scan_avulso',
-      colecao_item_id: colecaoId, aviso_nivel: aviso.nivel, aviso_texto: aviso.texto,
-    }).select('id').single();
-    if (error || !novo) throw error ?? new Error('passo não criado');
-    desfazer.criados.push(novo.id);
-    const ids = lista.map((p) => p.id);
-    ids.splice(pos, 0, novo.id);
-    await reordenarPassos(ids);
+    const { id, depois } = await inserirPassoNovo(userId, per, lista, tipoNovo, d, dias, 'scan_avulso', colecaoId, aviso);
+    if (depois) depoisRef = depois;
+    desfazer.criados.push(id);
   }
 
   return { aviso: textoAviso(tipoFeito, periodos, depoisRef, trocadoRef), desfazer };
+}
+
+/** Card "Novo passo recomendado" de um produto do catálogo já na estante. */
+export async function adicionarDoCatalogo(userId: string, colecaoId: string, categoria: string | null, d: DecisaoRotina): Promise<{ aviso: string; desfazer: Desfazer }> {
+  const periodos: Periodo[] = d.periodo === 'am+pm' ? ['am', 'pm'] : d.periodo === 'pm' ? ['pm'] : ['am'];
+  const aviso = await avisoDoProduto(userId, { origem: 'estante', id: colecaoId });
+  const rotina = await passosLeves(userId);
+  const tipoNovo = tipoPorTexto(d.passo ?? '') ?? tipoPorTexto(categoria ?? '');
+  const desfazer: Desfazer = { criados: [], trocados: [], estanteNova: null };
+  let depoisRef: PassoLeve | null = null;
+  for (const per of periodos) {
+    const { id, depois } = await inserirPassoNovo(userId, per, rotina[per], tipoNovo, d, null, 'usuaria', colecaoId, aviso);
+    if (depois) depoisRef = depois;
+    desfazer.criados.push(id);
+  }
+  return { aviso: textoAviso('adicionar', periodos, depoisRef, null), desfazer };
 }
 
 /** "Desfazer": apaga os passos criados, devolve os produtos trocados e tira da estante o que entrou agora. */

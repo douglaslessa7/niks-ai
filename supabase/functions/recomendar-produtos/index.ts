@@ -313,25 +313,18 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { user_id, scan_id, regenerate } = await req.json().catch(() => ({}))
-    if (!user_id) return json({ error: 'user_id é obrigatório' }, 400)
+    const { scan_id, regenerate } = await req.json().catch(() => ({}))
 
-    // Segurança (out/2026), em transição. Até aqui a função aceitava qualquer `user_id`
-    // com a chave pública do app. Passo 1: a build nova manda a SESSÃO da usuária — aí o
-    // token tem de ser da mesma usuária do `user_id`. Passo 2 (agora): as builds antigas
-    // ainda mandam a chave pública e continuam funcionando, mas ficam no log
-    // RECOMENDAR_LEGADO. Passo 3 (quando o log zerar): recusar o caminho legado com 401.
+    // Segurança (08/nov/2026): só com sessão válida, e a conta é sempre a do token. O
+    // `user_id` que o app ainda manda no corpo é ignorado.
     const auth = req.headers.get('authorization') ?? ''
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : ''
     const sessao = token ? await verifyJWT(token) : null
-    if (sessao?.sub) {
-      if (sessao.sub !== user_id) {
-        console.warn('RECOMENDAR_RECUSADO', JSON.stringify({ motivo: 'sessao-de-outra-usuaria', user_id }))
-        return json({ error: 'Forbidden' }, 403)
-      }
-    } else {
-      console.warn('RECOMENDAR_LEGADO', JSON.stringify({ user_id, regenerate: !!regenerate }))
+    if (!sessao?.sub) {
+      console.warn('RECOMENDAR_RECUSADO', JSON.stringify({ motivo: 'sem-sessao' }))
+      return json({ error: 'Unauthorized' }, 401)
     }
+    const user_id = sessao.sub
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -384,7 +377,9 @@ Deno.serve(async (req) => {
     const concernCodes = [...new Set<string>([...onboardingConcerns, ...scanConcernCodes(scan)])]
     const cutCodes = allergenCutCodes(user.allergy_description)
     const isSensitive = user.allergy_type === 'sensitive'
-    const isPregnant = user.pregnancy_status === 'pregnant' || user.pregnancy_status === 'breastfeeding'
+    // "Tentando engravidar" entra no MESMO filtro de gestação e amamentação (04/nov/2026) — como
+    // na generate-protocol, na Minha rotina e nos avisos de produto. ⚠️ Só vale depois do deploy.
+    const isPregnant = ['pregnant', 'breastfeeding', 'trying'].includes(String(user.pregnancy_status ?? ''))
 
     // ── Passos únicos do protocolo (AM+PM), dedupe por nome ───────────────────
     type Step = { name: string; ingredient: string; categoria: string; label: string; periodos: Set<string> }

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage } from 'expo-image';
@@ -10,8 +10,10 @@ import Animated, {
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { setShelfPos, type ColecaoItem, type ShelfPos } from '../../lib/colecao';
+import { setShelfPos, STATUS_COLECAO, type ColecaoItem, type ColecaoStatus, type ShelfPos } from '../../lib/colecao';
+import type { RetanguloOrigem } from './ProdutoEstanteOverlay';
 import { haptics } from '../../lib/haptics';
+import { fonteImagem } from '../../lib/produtosTela';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Minha estante" — réplica do design 48a (Claude Design, NiksShelfFlo.dc.html),
@@ -64,7 +66,7 @@ const clamp = (v: number, a: number, b: number) => {
 
 type Prod = {
   id: string; name: string; img: string | null; cut: boolean; pending: boolean;
-  w: number; h: number; pos: ShelfPos | null;
+  w: number; h: number; pos: ShelfPos | null; status: ColecaoStatus;
 };
 
 // Tamanho da miniatura pela proporção do recorte (altura ~96, largura até 64).
@@ -96,13 +98,19 @@ function firstFree(taken: { s: number; x: number; w: number }[], w: number): She
 }
 
 // ── Miniatura arrastável ──────────────────────────────────────────────────────
-function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, onStart, onMove, onDrop, onTap }: {
-  p: Prod; cx: number; by: number; nonce: number; k: number; z: number; editing: boolean; semArraste: boolean;
+function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, oculto, onStart, onMove, onDrop, onTap }: {
+  p: Prod; cx: number; by: number; nonce: number; k: number; z: number; editing: boolean; semArraste: boolean; oculto: boolean;
   onStart: (id: string) => void;
   onMove: (id: string, cx: number, by: number) => void;
   onDrop: (id: string, cx: number, by: number) => void;
-  onTap: (id: string) => void;
+  onTap: (id: string, origem: RetanguloOrigem | null) => void;
 }) {
+  const boxRef = useRef<View>(null);
+  // Mede a miniatura no toque: de lá sai o voo da tela do produto.
+  const tocou = () => {
+    if (!boxRef.current) { onTap(p.id, null); return; }
+    boxRef.current.measureInWindow((x, y, width, height) => onTap(p.id, width > 0 ? { x, y, width, height } : null));
+  };
   const cx = useSharedValue(tcx);
   const by = useSharedValue(tby);
   const dragging = useSharedValue(0);
@@ -174,7 +182,7 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, onSt
     });
   // Toque curto: abre o produto (normal) ou pede para remover (modo Editar).
   const tap = Gesture.Tap().maxDuration(250).maxDistance(8).onEnd((_e, ok) => {
-    if (ok) runOnJS(onTap)(p.id);
+    if (ok) runOnJS(tocou)();
   });
 
   const boxStyle = useAnimatedStyle(() => ({
@@ -200,9 +208,11 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, onSt
   return (
     <GestureDetector gesture={Gesture.Simultaneous(pan, tap)}>
       <Animated.View
+        ref={boxRef as any}
+        collapsable={false}
         accessibilityRole="button"
-        accessibilityLabel={editing ? `Remover ${p.name}` : p.name}
-        style={[{ position: 'absolute', width: p.w, height: p.h, zIndex: z, transformOrigin: '50% 100%' }, boxStyle]}
+        accessibilityLabel={editing ? `Remover ${p.name}` : p.status === 'tenho' ? p.name : `${p.name}, ${STATUS_COLECAO[p.status].rotulo}`}
+        style={[{ position: 'absolute', width: p.w, height: p.h, zIndex: z, transformOrigin: '50% 100%', opacity: oculto ? 0 : 1 }, boxStyle]}
       >
         <Animated.View style={[{ position: 'absolute', left: -p.w * 0.25, width: p.w * 1.5, height: 10 }, groundStyle]} pointerEvents="none">
           <Svg width={p.w * 1.5} height={10}>
@@ -216,19 +226,23 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, onSt
           </Svg>
         </Animated.View>
         {p.cut && p.img ? (
-          <Animated.View style={[StyleSheet.absoluteFill, { shadowColor: 'rgb(110,30,60)' }, imgStyle]}>
-            <ExpoImage source={{ uri: p.img }} style={StyleSheet.absoluteFill} contentFit="contain" contentPosition="bottom" accessibilityLabel={p.name} />
+          <Animated.View style={[StyleSheet.absoluteFill, { shadowColor: 'rgb(110,30,60)', opacity: STATUS_COLECAO[p.status].opacidade }, imgStyle]}>
+            <ExpoImage source={fonteImagem(p.img)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="contain" contentPosition="bottom" accessibilityLabel={p.name} />
           </Animated.View>
         ) : (
           // Recorte ainda sendo feito (ou falhou): cartãozinho com a foto original.
-          <View style={[StyleSheet.absoluteFill, s.pending]}>
-            {p.img ? <ExpoImage source={{ uri: p.img }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+          <View style={[StyleSheet.absoluteFill, s.pending, { opacity: STATUS_COLECAO[p.status].opacidade }]}>
+            {p.img ? <ExpoImage source={fonteImagem(p.img)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
             {p.pending && (
               <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.45)' }]}>
                 <ActivityIndicator size="small" color="#FF5EA8" />
               </View>
             )}
           </View>
+        )}
+        {/* Quem não está em casa ("Quero comprar", "Acabou") ganha um ponto na cor do status. */}
+        {p.status !== 'tenho' && !editing && (
+          <View style={[s.pontoStatus, { backgroundColor: STATUS_COLECAO[p.status].cor }]} pointerEvents="none" />
         )}
         {/* x do modo Editar (canto de cima à esquerda, como no iPhone). O toque vale no
             produto inteiro — numa miniatura de ~44pt um alvo de 20pt seria pequeno demais. */}
@@ -259,16 +273,17 @@ type Props = {
   items: ColecaoItem[];
   loaded: boolean;
   editing: boolean;                        // modo Editar (botão no topo da tela)
-  onPick: (c: ColecaoItem) => void;        // toque num produto (fora do modo Editar)
+  onPick: (c: ColecaoItem, origem: RetanguloOrigem | null) => void; // toque num produto (fora do modo Editar)
   onRemove: (c: ColecaoItem) => void;      // toque num produto no modo Editar
   onDragActive: (active: boolean) => void; // trava/destrava a rolagem da tela
   onScan: () => void;                      // convite da estante vazia + espaço "+"
   semArraste?: boolean;                    // modo escolha: só toque, sem arrastar
+  ocultoId?: string | null;                // produto "em voo" na tela do produto: a miniatura some
   // Alvo "shelf" do tutorial de Produtos (59a): a caixa da estante (useCoachMark).
   tutMark?: { ref: React.RefObject<View | null>; onLayout: () => void; collapsable: false };
 };
 
-const Shelf = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, editing, onPick, onRemove, onDragActive, onScan, semArraste = false, tutMark }, ref) {
+const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, editing, onPick, onRemove, onDragActive, onScan, semArraste = false, ocultoId = null, tutMark }, ref) {
   const { width: W } = useWindowDimensions();
   // Palco no frame do design; encolhe só em tela mais estreita que 393.
   const k = Math.min(1, W / STAGE_W);
@@ -309,7 +324,7 @@ const Shelf = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, edi
     const cut = c.cutoutStatus === 'ok' && !!c.cutoutUrl;
     return {
       id: c.id, name: c.nome ?? 'Produto', img: cut ? c.cutoutUrl : (c.photoUrl ?? c.cutoutUrl),
-      cut, pending: c.cutoutStatus === 'pendente', w, h, pos: pos[c.id],
+      cut, pending: c.cutoutStatus === 'pendente', w, h, pos: pos[c.id], status: c.status,
     };
   }), [items, pos]);
   const byId = useMemo(() => new Map(prods.map((p) => [p.id, p])), [prods]);
@@ -392,10 +407,10 @@ const Shelf = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, edi
     // Sem vaga → volta para onde estava (o nonce força a animação de volta).
     setNonce((n) => ({ ...n, [id]: (n[id] ?? 0) + 1 }));
   }, [target, onDragActive]);
-  const onTap = useCallback((id: string) => {
+  const onTap = useCallback((id: string, origem: RetanguloOrigem | null) => {
     const c = itemById.get(id);
     if (!c) return;
-    if (editing) { haptics.warning(); onRemove(c); } else { haptics.tap(); onPick(c); }
+    if (editing) { haptics.warning(); onRemove(c); } else { haptics.tap(); onPick(c, origem); }
   }, [itemById, editing, onPick, onRemove]);
 
   // Compartilhar: foto só da estante, sobre o rosa do fundo.
@@ -528,13 +543,20 @@ const Shelf = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded, edi
         {prods.map((p, i) => (
           <ShelfItem
             key={p.id} p={p} cx={p.pos!.x} by={shelfY(p.pos!.s)} nonce={nonce[p.id] ?? 0} k={k}
-            z={dragId === p.id ? 60 : 10 + i} editing={editing && !capturing} semArraste={semArraste}
+            z={dragId === p.id ? 60 : 10 + i} editing={editing && !capturing} semArraste={semArraste} oculto={ocultoId === p.id}
             onStart={onStart} onMove={onMove} onDrop={onDrop} onTap={onTap}
           />
         ))}
       </View>
     </View>
   );
+});
+
+// `tutMark` é um objeto novo a cada render, mas com o mesmo ref e a mesma medida.
+const Shelf = memo(ShelfBase, (a, b) => {
+  const { tutMark: _a, ...ra } = a;
+  const { tutMark: _b, ...rb } = b;
+  return (Object.keys(ra) as (keyof typeof ra)[]).every((k) => ra[k] === rb[k]);
 });
 
 export default Shelf;
@@ -555,6 +577,10 @@ const s = StyleSheet.create({
     shadowColor: 'rgb(150,50,90)', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 7,
   },
   pending: { borderRadius: 10, overflow: 'hidden', backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: '#FFFFFF' },
+  pontoStatus: {
+    position: 'absolute', right: -3, top: -3, width: 11, height: 11, borderRadius: 6, zIndex: 5,
+    borderWidth: 1.5, borderColor: '#FFFFFF',
+  },
   addSlot: {
     position: 'absolute', width: ADD_W, height: ADD_H, borderRadius: 12, zIndex: 5,
     borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(232,70,143,0.45)',
