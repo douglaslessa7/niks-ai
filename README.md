@@ -1926,6 +1926,13 @@ As últimas 40 decisões ficam salvas no aparelho.
 
 **Dados (19/out/2026, só leitura):** a tabela `subscriptions` **não é prova de pagamento** — a compra acontece antes da conta, com o RevenueCat anônimo, e o webhook descarta eventos anônimos; 139 contas dos últimos 30 dias usaram o app (passaram pelo guard) sem linha nela. Das 374 contas sem linha e sem uso, 363 vieram do **"Entrar" com Apple/Google** (cria conta de quem nunca teve uma e a manda ao paywall, pulando o onboarding — não é brecha, mas é volume) e 11 do cadastro (a conferir no RevenueCat). Botão "Restaurar compra" do Superwall em 7 dias: 2 sucessos, 68 falhas ("Transactions Failed to Restore") — com o restore automático fora, ele é o único caminho de quem já assina: validar no iPhone.
 
+#### Modo convidada (Parte B, Fase 5, nov/2026 — migration `20261124120000_produto_compartilhado.sql`)
+> ✅ **Servidor no ar desde 09/nov/2026** (migration e função `grupos` v15). O app vai à loja junto com a Fase 8.
+- `lib/acesso.ts`: `assinante`, `convidada` ou `sem_acesso`, com a última resposta no aparelho. `lib/trava.ts` + `components/trava/`: cadeado, aviso com a frase da função e "Ver planos" (`paywall_convidada`); fechar volta para a tela, sem downsell.
+- **Home:** sequência, medalha, horário, calendário, carta do dia, conquistas e card do grupo liberados; o resto com cadeado. Sem foto de perfil, o avatar mostra a inicial do nome. Rotina e Produtos com cadeado na barra. Perfil com moldura, medalha, check-ins, grupos e "Assinar o NIKS".
+- **Sem grupo:** `(onboarding)/sem-grupo`, com a função ligada; assinar ou entrar com código.
+- **Produto da amiga:** `(app)/produto-amiga`. A ação `produto_compartilhado` manda só o produto e o que ele faz; a nota e os textos pessoais não saem do servidor. Convidada vê a compatibilidade borrada; assinante tem "Ver se combina comigo", que analisa a foto para ela.
+
 #### Convite por código e entrada da convidada (Parte B, Fases 3 e 4, 08/nov/2026 — migration `20261123120000_convidada_onboarding.sql`)
 > ✅ **No ar desde 09/nov/2026:** migration, função `grupos` (v14) e campanha `paywall_convidada` (117448). Testado no iPhone, com a flag ligada só durante o teste. Falta testar quem assina tendo código. As Fases 4 e 5 vão à loja juntas, com as travas da Fase 8 ligadas antes.
 - **Fase 3:** a mensagem leva o link da App Store e o código (`lib/convite.ts`). "Entrar com código" fica em Seus grupos; o botão "Colar" do sistema não mostra o alerta do iOS (`components/grupos/BotaoColarCodigo.tsx`).
