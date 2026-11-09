@@ -40,10 +40,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { type, user_ids, dry_run } = await req.json() as {
+    const { type, user_ids, dry_run, testar_expo } = await req.json() as {
       type: NotificationType;
       user_ids?: string[];
       dry_run?: boolean;
+      testar_expo?: boolean;
     };
 
     if (!type || !MESSAGES[type]) {
@@ -153,9 +154,12 @@ Deno.serve(async (req) => {
     }
 
     // Teste: conta quem receberia e não envia nada.
+    // Com `testar_expo`, manda à Expo um lote de tokens inventados: exercita o envio daqui do
+    // servidor, e a Expo recusa cada um, sem chegar a ninguém.
     if (dry_run === true) {
+      const expo = testar_expo === true ? await enviarLotes([lotePontoDeTeste()]) : undefined;
       return new Response(
-        JSON.stringify({ dry_run: true, would_send: users.length, type }),
+        JSON.stringify({ dry_run: true, would_send: users.length, type, expo }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -169,28 +173,11 @@ Deno.serve(async (req) => {
       data: { type },
     }));
 
-    const chunks = chunkArray(messages, 100);
-    let totalSent = 0;
-
-    for (const chunk of chunks) {
-      const response = await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Accept-Encoding': 'gzip, deflate',
-        },
-        body: JSON.stringify(chunk),
-      });
-
-      const result = await response.json();
-      console.log('[send-notifications] Expo response:', JSON.stringify(result));
-      totalSent += chunk.length;
-    }
+    const envio = await enviarLotes(chunkArray(messages, 100));
 
     return new Response(
-      JSON.stringify({ sent: totalSent, type }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      JSON.stringify({ ...envio, type }),
+      { status: envio.sent > 0 ? 200 : 502, headers: { 'Content-Type': 'application/json' } }
     );
 
   } catch (err) {
@@ -208,4 +195,85 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
     chunks.push(arr.slice(i, i + size));
   }
   return chunks;
+}
+
+// ── Envio à Expo ──
+// Em 5–9/nov/2026 a Expo respondeu às 13:00 UTC com texto ("upstream c…") em vez de JSON, e
+// o `response.json()` derrubava a função no 1º lote: ninguém recebia. Agora uma resposta ruim
+// é tentada de novo e não impede os outros lotes.
+const ESPERAS_EXPO_MS = [5_000, 15_000, 30_000];
+const TEMPO_TOTAL_ENVIO_MS = 130_000; // abaixo do limite de execução da Edge Function
+const TIMEOUT_EXPO_MS = 30_000;
+
+type Mensagem = { to: string; title: string; body: string; sound: string; data: unknown };
+type ResultadoEnvio = { sent: number; failed: number; tickets_ok: number; tickets_erro: number };
+
+const semTokens = (texto: string) => texto.replace(/Expo(nent)?PushToken\[[^\]]*\]/g, '<token>');
+const esperar = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function lotePontoDeTeste(): Mensagem[] {
+  const letras = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const inventado = () => Array.from({ length: 22 }, () => letras[Math.floor(Math.random() * letras.length)]).join('');
+  return Array.from({ length: 100 }, () => ({
+    to: `ExponentPushToken[${inventado()}]`, title: 'teste', body: 'teste', sound: 'default', data: { type: 'teste' },
+  }));
+}
+
+/** Devolve os tickets do lote; `null` se a Expo não aceitou. */
+async function enviarLote(
+  lote: Mensagem[], numero: number, esperas: number[], limite: number,
+): Promise<{ status?: string }[] | null> {
+  for (let tentativa = 0; ; tentativa++) {
+    let motivo: string;
+    try {
+      const response = await fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Accept-Encoding': 'gzip, deflate' },
+        body: JSON.stringify(lote),
+        signal: AbortSignal.timeout(TIMEOUT_EXPO_MS),
+      });
+      const texto = await response.text();
+      let json: { data?: { status?: string }[] } | null = null;
+      try { json = JSON.parse(texto); } catch { /* resposta em texto: trata abaixo */ }
+      if (response.ok && Array.isArray(json?.data)) return json!.data!;
+      motivo = `HTTP ${response.status}: ${semTokens(texto).slice(0, 300)}`;
+      // Recusa de verdade (4xx em JSON): repetir daria o mesmo resultado.
+      if (json && response.status >= 400 && response.status < 500 && response.status !== 429) {
+        console.error(`[send-notifications] lote ${numero} recusado: ${motivo}`);
+        return null;
+      }
+    } catch (err) {
+      // Estourou o tempo: a Expo pode ter recebido, e repetir mandaria o push duas vezes.
+      if ((err as Error)?.name === 'TimeoutError') {
+        console.error(`[send-notifications] lote ${numero} sem resposta em ${TIMEOUT_EXPO_MS} ms`);
+        return null;
+      }
+      motivo = String(err);
+    }
+    const espera = esperas[tentativa];
+    if (espera === undefined || Date.now() + espera >= limite) {
+      console.error(`[send-notifications] lote ${numero} falhou após ${tentativa + 1} tentativa(s): ${motivo}`);
+      return null;
+    }
+    console.warn(`[send-notifications] lote ${numero}, tentativa ${tentativa + 1}: ${motivo}`);
+    await esperar(espera);
+  }
+}
+
+async function enviarLotes(
+  lotes: Mensagem[][], esperas = ESPERAS_EXPO_MS, tempoTotal = TEMPO_TOTAL_ENVIO_MS,
+): Promise<ResultadoEnvio> {
+  const limite = Date.now() + tempoTotal;
+  const r: ResultadoEnvio = { sent: 0, failed: 0, tickets_ok: 0, tickets_erro: 0 };
+  for (const [i, lote] of lotes.entries()) {
+    const tickets = Date.now() < limite ? await enviarLote(lote, i + 1, esperas, limite) : null;
+    if (!tickets) { r.failed += lote.length; continue; }
+    const ok = tickets.filter((t) => t.status === 'ok').length;
+    r.sent += lote.length;
+    r.tickets_ok += ok;
+    r.tickets_erro += tickets.length - ok;
+    console.log(`[send-notifications] Expo response: lote ${i + 1}, ok ${ok}, erro ${tickets.length - ok}`);
+  }
+  console.log('[send-notifications] fim do envio:', JSON.stringify(r));
+  return r;
 }
