@@ -14,7 +14,9 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
-import { criarGrupo, invalidarGrupos, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
+import { criarGrupo, entrarComCodigo, invalidarGrupos, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
+import { mensagemDoCodigo } from '../../lib/codigoConvite';
+import BotaoColarCodigo from '../../components/grupos/BotaoColarCodigo';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { useCoachStage } from '../../lib/coachMarks';
@@ -142,9 +144,12 @@ export default function SeusGrupos() {
   const veu = useSharedValue(0);
   const sobe = useSharedValue(0);
   const teclado = useSharedValue(0);
+  const [comCodigo, setComCodigo] = useState(false);
   const ok = nome.trim().length > 0;
 
-  const abrirFolha = () => {
+  const abrirCodigo = () => { setNome(''); setErro(''); setComCodigo(true); mostrarFolha(); };
+  const abrirFolha = () => { setComCodigo(false); mostrarFolha(); };
+  const mostrarFolha = () => {
     haptics.action();
     setTabBarVisible(false);
     setAberta(true);
@@ -206,6 +211,32 @@ export default function SeusGrupos() {
     }
   };
 
+  const entrar = async () => {
+    if (!ok || ocupado) { if (!ok) haptics.error(); return; }
+    haptics.action();
+    setOcupado(true);
+    setErro('');
+    try {
+      const r = await entrarComCodigo(nome.trim());
+      trackFora('entrar_com_codigo', { tela: 'seus_grupos', resultado: r.ok ? 'ok' : r.motivo });
+      if (!r.ok) {
+        setErro(mensagemDoCodigo(r.motivo));
+        haptics.error();
+        return;
+      }
+      haptics.success();
+      await invalidarGrupos(r.grupo_id);
+      fecharFolha();
+      setNome('');
+      setTimeout(() => router.push({ pathname: '/grupo', params: { id: r.grupo_id } } as any), 260);
+    } catch {
+      setErro(mensagemDoCodigo('rede'));
+      haptics.error();
+    } finally {
+      setOcupado(false);
+    }
+  };
+
   const veuSt = useAnimatedStyle(() => ({ opacity: veu.get() }));
   const folhaSt = useAnimatedStyle(() => (rm
     ? { opacity: sobe.get(), transform: [{ translateY: teclado.get() }] }
@@ -240,7 +271,7 @@ export default function SeusGrupos() {
                       <View style={styles.avs}>
                         {/* Cada foto com a moldura da medalha atual dela (08/nov/2026). */}
                         {g.integrantes.slice(0, 5).map((m) => (
-                          <FotoComMoldura key={m.user_id} nivel={m.nivel} foto={m.foto} tamanho={44} pequena vazio="#FCE3EE" style={styles.av} />
+                          <FotoComMoldura key={m.user_id} nivel={m.nivel} foto={m.foto} nome={m.nome} tamanho={44} pequena vazio="#FCE3EE" style={styles.av} />
                         ))}
                       </View>
                       <Text style={styles.hoje}>{so ? 'Só você · convide amigas' : `${g.feitos_hoje} de ${g.total} fizeram hoje`}</Text>
@@ -263,6 +294,9 @@ export default function SeusGrupos() {
                 <View style={styles.criarCirculo}><Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={3} /></View>
                 <Text style={styles.criarT}>Criar grupo</Text>
               </AlvoGuia>
+            </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.7} onPress={abrirCodigo} style={styles.criarLink}>
+              <Text style={styles.criarT}>Entrar com código</Text>
             </TouchableOpacity>
           </Entra>
         </ScrollView>
@@ -304,6 +338,9 @@ export default function SeusGrupos() {
                   <Text style={styles.criarPilulaT}>Criar grupo</Text>
                 </TouchableOpacity>
               </AlvoGuia>
+              <TouchableOpacity activeOpacity={0.7} onPress={abrirCodigo} style={[styles.criarLink, { marginTop: 8 }]}>
+                <Text style={styles.criarT}>Entrar com código</Text>
+              </TouchableOpacity>
             </View>
           </Entra>
         </View>
@@ -320,28 +357,31 @@ export default function SeusGrupos() {
       >
         <View style={styles.alca} />
         <View style={styles.folhaHead}>
-          <Text style={styles.folhaT}>Novo grupo</Text>
+          <Text style={styles.folhaT}>{comCodigo ? 'Entrar em um grupo' : 'Novo grupo'}</Text>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); fecharFolha(); }} style={styles.fechar} accessibilityLabel="Fechar">
             <Icon d="M18 6 6 18M6 6l12 12" size={16} color={INK} sw={2.4} />
           </TouchableOpacity>
         </View>
         <View style={styles.nomeCard}>
-          <Text style={styles.nomeLabel}>Nome do grupo</Text>
+          <Text style={styles.nomeLabel}>{comCodigo ? 'Código do grupo' : 'Nome do grupo'}</Text>
           <TextInput
             value={nome}
             onChangeText={(t) => { setNome(t); if (erro) setErro(''); }}
-            placeholder="Ex.: As Hidratadas"
+            placeholder={comCodigo ? 'NIKS-XXXXXX' : 'Ex.: As Hidratadas'}
             placeholderTextColor="#A9A3A6"
             selectionColor={PINK}
-            maxLength={40}
+            maxLength={comCodigo ? 20 : 40}
+            autoCapitalize={comCodigo ? 'characters' : 'sentences'}
+            autoCorrect={!comCodigo}
             returnKeyType="done"
-            onSubmitEditing={criar}
+            onSubmitEditing={comCodigo ? entrar : criar}
             style={styles.nomeInput}
           />
-          <Text style={[styles.nomeDica, !!erro && { color: '#D93A6B' }]}>{erro || 'Depois você convida as amigas pelo link.'}</Text>
+          <Text style={[styles.nomeDica, !!erro && { color: '#D93A6B' }]}>{erro || (comCodigo ? 'Digite o código que sua amiga te mandou.' : 'Depois você convida as amigas pelo código.')}</Text>
+          {comCodigo && <BotaoColarCodigo onColar={(c) => { setNome(c); setErro(''); }} />}
         </View>
-        <TouchableOpacity activeOpacity={0.85} onPress={criar} disabled={ocupado} style={[styles.cta, !ok && { opacity: 0.45 }]}>
-          {ocupado ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaT}>Criar grupo</Text>}
+        <TouchableOpacity activeOpacity={0.85} onPress={comCodigo ? entrar : criar} disabled={ocupado} style={[styles.cta, !ok && { opacity: 0.45 }]}>
+          {ocupado ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaT}>{comCodigo ? 'Entrar' : 'Criar grupo'}</Text>}
         </TouchableOpacity>
       </Animated.View>
     </View>

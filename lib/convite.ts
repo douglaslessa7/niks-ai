@@ -1,8 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Convite de grupo (fase 3, Parte A): o link é https://…/functions/v1/convite?t=<token>
-// (Edge Function `convite` → 302 niks-ai://convite/<token>, que abre o app). Sem o app
-// instalado o Safari não abre o niks-ai://, então a mensagem leva também a App Store.
-// Universal links / instalação com o convite = Parte B.
+// Convite de grupo (Parte B, Fase 3): a mensagem leva o link da App Store e o código. Quem já
+// tem o app entra por "Entrar com código", em Seus grupos. Links antigos seguem funcionando.
 // Canais da folha (80u) e do menu "Convidar amigas" (80b): WhatsApp, Instagram (folha
 // de compartilhar do sistema — o Instagram não aceita texto por link) e Copiar link.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,8 +11,8 @@ import { trackFora } from './mixpanel/MixpanelProvider';
 export type Canal = 'whatsapp' | 'instagram' | 'copiar';
 const APP_STORE = 'https://apps.apple.com/app/id6760590018';
 
-export function mensagemConvite(nome: string, link: string) {
-  return `Entra no meu grupo "${nome}" no NIKS para a gente fazer skincare juntas: ${link}\n\nAinda não tem o NIKS? Baixe na App Store: ${APP_STORE}`;
+export function mensagemConvite(nome: string, codigo: string) {
+  return `Entra no meu grupo "${nome}" no NIKS para a gente fazer skincare juntas! Baixe aqui: ${APP_STORE}\nSeu código: ${codigo}`;
 }
 
 // expo-clipboard é nativo: até o app ser recompilado com ele, cai na folha do sistema.
@@ -33,7 +31,7 @@ async function copiar(texto: string): Promise<boolean> {
 export async function enviarConvite(canal: Canal, grupoId: string, nomeGrupo: string): Promise<{ copiado: boolean }> {
   const r = await conviteDoGrupo(grupoId);
   if (!('token' in r)) throw new Error(r.motivo);
-  const msg = mensagemConvite(nomeGrupo, r.link);
+  const msg = mensagemConvite(nomeGrupo, r.codigo);
   trackFora('convite_enviado', { canal });
   if (canal === 'whatsapp') {
     const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
@@ -41,7 +39,7 @@ export async function enviarConvite(canal: Canal, grupoId: string, nomeGrupo: st
     await Share.share({ message: msg });
     return { copiado: false };
   }
-  if (canal === 'copiar' && (await copiar(r.link))) return { copiado: true };
+  if (canal === 'copiar' && (await copiar(msg))) return { copiado: true };
   await Share.share({ message: msg });
   return { copiado: false };
 }
