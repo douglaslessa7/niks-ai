@@ -227,7 +227,7 @@ export default function ProductResult() {
     setCompartilhando(true);
     try {
       const res = await compartilharProduto(r.scan_id, grupos);
-      if (!res.ok) { Alert.alert('Não deu para compartilhar agora', 'Tente de novo em instantes.'); return; }
+      if (!res.ok) { Alert.alert(res.motivo === 'filtro' ? 'Essa foto não pode ser publicada no grupo. Tente outra.' : 'Não deu para compartilhar agora', res.motivo === 'filtro' ? undefined : 'Tente de novo em instantes.'); return; }
       trackFora('compartilhado', { origem: 'produto', grupos: res.grupos.length, carta: Boolean(res.carta_id) });
       await Promise.all(res.grupos.map((g) => invalidarGrupos(g)));
       haptics.success();

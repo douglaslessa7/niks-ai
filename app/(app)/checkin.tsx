@@ -315,7 +315,10 @@ export default function Checkin() {
       if (!r.ok) {
         console.warn('[check-in] recusado pelo servidor:', r.motivo);
         haptics.error();
-        if (r.motivo === 'foto') {
+        if (r.motivo === 'filtro' || r.motivo === 'filtro_indisponivel') {
+          if (r.motivo === 'filtro') fotoSubida.current = null;
+          Alert.alert(r.motivo === 'filtro' ? 'Essa foto não pode ser publicada no grupo. Tente outra.' : 'Não conseguimos conferir essa foto agora. Tente de novo.');
+        } else if (r.motivo === 'foto') {
           // O arquivo não está lá (subida interrompida): a próxima tentativa sobe de novo.
           fotoSubida.current = null;
           Alert.alert('A foto não chegou', 'Tente publicar de novo. Se continuar, tire outra foto.');

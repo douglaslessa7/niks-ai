@@ -262,7 +262,7 @@ export default function Grupo() {
       if (k === 'flag') {
         Alert.alert('Denunciar esta foto?', 'A equipe do NIKS vai analisar em até 24 horas.', [
           { text: 'Cancelar', style: 'cancel' },
-          { text: 'Denunciar', style: 'destructive', onPress: () => { denunciar({ tipo: 'foto', grupo_id: g.id, ...(item.tipo === 'produto' ? { compartilhamento_id: item.compartilhamento_id ?? undefined } : { checkin_id: item.checkin_id ?? undefined }) }).then(() => Alert.alert('Denúncia enviada', 'Obrigada por avisar.')).catch(() => {}); } },
+          { text: 'Denunciar', style: 'destructive', onPress: () => { denunciar({ tipo: 'foto', grupo_id: g.id, ...(item.tipo === 'produto' ? { compartilhamento_id: item.compartilhamento_id ?? undefined } : { checkin_id: item.checkin_id ?? undefined }) }).then((r) => { if (r.ok) Alert.alert('Recebemos sua denúncia. Essa foto ficou escondida enquanto revisamos.'); else Alert.alert('Não deu para denunciar agora', 'Tente de novo mais tarde.'); return depois(); }).catch(() => {}); } },
         ]);
       } else {
         Alert.alert(`Bloquear ${item.autora.nome}?`, 'Você deixa de ver as fotos e os avisos dela. Ela não é avisada.', [
@@ -325,7 +325,7 @@ export default function Grupo() {
             <View style={styles.avs}>
               {/* Cada foto com a moldura da medalha atual dela (08/nov/2026). */}
               {(g?.integrantes ?? []).slice(0, 5).map((m) => (
-                <FotoComMoldura key={m.user_id} nivel={m.nivel} foto={m.foto} tamanho={42} pequena vazio="#FCE3EE" style={styles.av} />
+                <FotoComMoldura key={m.user_id} nivel={m.nivel} foto={m.foto} nome={m.nome} tamanho={42} pequena vazio="#FCE3EE" style={styles.av} />
               ))}
             </View>
             <Text style={styles.membrosT}>{g ? (g.total === 1 ? '1 integrante' : `${g.total} integrantes`) : ' '}</Text>
@@ -340,7 +340,7 @@ export default function Grupo() {
                   <Salta delay={rm ? 0 : 60 + i * 70} run={run} rm={rm}>
                     <View style={{ width: 80, height: 80 }}>
                       {/* A moldura da medalha dela (passa 14 pt da caixa de cada lado). */}
-                      <FotoComMoldura nivel={d.nivel} foto={d.foto} tamanho={108} pequena={false} vazio="#FCE3EE" style={{ position: 'absolute', left: -14, top: -14 }} />
+                      <FotoComMoldura nivel={d.nivel} foto={d.foto} nome={d.nome} tamanho={108} pequena={false} vazio="#FCE3EE" style={{ position: 'absolute', left: -14, top: -14 }} />
                       {lead && (
                         <View style={styles.coroa}>
                           <Svg width={15} height={15} viewBox="0 0 24 24"><Path d={ICO.coroa} fill={PINK} stroke={PINK} strokeWidth={1.6} strokeLinejoin="round" /></Svg>
@@ -417,7 +417,7 @@ export default function Grupo() {
                         )}
                       </View>
                       <View style={styles.itemRow}>
-                        <FotoComMoldura nivel={it.autora.nivel} foto={it.autora.foto} tamanho={34} pequena vazio="#F6D3E1" style={styles.itemAv} />
+                        <FotoComMoldura nivel={it.autora.nivel} foto={it.autora.foto} nome={it.autora.nome} tamanho={34} pequena vazio="#F6D3E1" style={styles.itemAv} />
                         <Text style={styles.itemWho} numberOfLines={1}>{it.voce ? 'Você' : it.autora.nome}</Text>
                         <Text style={styles.itemTime}>{hora(it.hora_exibida)}</Text>
                       </View>

@@ -30,6 +30,8 @@ export default function ToquePush() {
     const b = registrarToque('grupo_falta', abrirGrupo);
     return () => { a(); b(); };
   }, [router]);
+  // Nova denúncia (só moderadoras recebem): abre a tela de revisão.
+  useEffect(() => registrarToque('denuncia', () => { router.push('/(app)/revisao-denuncias' as any); }), [router]);
   // Retorno de 24 h da espinha: abre a conversa, com a pergunta da NIKS já lá.
   useEffect(() => registrarToque('espinha_retorno', (d) => {
     if (typeof d.conversation_id !== 'string') return;

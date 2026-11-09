@@ -1,3 +1,4 @@
+import { moderarFotoPerfil } from '../../lib/gruposServidor';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
@@ -167,6 +168,12 @@ export default function AjustarFoto() {
         { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
       if (!out.base64) throw new Error('Falha ao processar a imagem.');
+
+      // Filtro antes de subir: a foto de perfil aparece para as integrantes dos grupos.
+      const filtro = await moderarFotoPerfil(out.base64);
+      if (!filtro.ok) {
+        throw new Error(filtro.motivo === 'filtro' ? 'Essa foto não pode ser publicada no grupo. Tente outra.' : 'Não conseguimos conferir essa foto agora. Tente de novo.');
+      }
 
       // Mesmo bucket privado dos scans; o prefixo `home_` separa da foto de análise.
       const url = await uploadScanPhoto(user.id, out.base64, 'home_');
