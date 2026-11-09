@@ -998,21 +998,6 @@ export default function CartaScreen() {
     later(rm ? 700 : 1550, showRecs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rm, runNumber, showRecs, srvMode, srvId, isPower, isDup, obMode, idadePele, temAlerta]);
-  // TEMP-PULAR-SCAN — só em desenvolvimento: deixa o depurador do Metro revelar a carta sem
-  // raspar (`globalThis.__revelarCarta()`), para gravar o que vem depois. Some no release.
-  useEffect(() => {
-    if (!__DEV__) return;
-    (globalThis as any).__revelarCarta = reveal;
-    return () => { if ((globalThis as any).__revelarCarta === reveal) delete (globalThis as any).__revelarCarta; };
-  }, [reveal]);
-  // TEMP-PULAR-SCAN — idem para o "Continuar" (`globalThis.__continuarCarta()`).
-  useEffect(() => {
-    if (!__DEV__) return;
-    const g = globalThis as any;
-    g.__continuarCarta = () => onContinueRef.current();
-    return () => { delete g.__continuarCarta; };
-  }, []);
-
   // ── 3–5. Toque, arrastar e raspar (gesto no UI thread) ────────────────────
   // Onboarding: sem a pílula "Raspe para ver" (o "Raspe para revelar" já está no título);
   // o primeiro toque some com a mãozinha e para a flutuação.
@@ -1239,7 +1224,6 @@ export default function CartaScreen() {
   // scan — onde vale o `animation: 'none'`. (Um `replace` daqui saía deslizando: a troca
   // acontecia na pilha da raiz, com o deslize padrão.)
   const irParaSolucao = () => router.back();
-  const onContinueRef = useRef<() => void>(() => {});
   const onContinue = () => {
     if (!unlocked) return;
     haptics.action();
@@ -1279,7 +1263,6 @@ export default function CartaScreen() {
     setTipo(ORDEM_CARTAS[(i + 1) % ORDEM_CARTAS.length]);
     setRun((r) => r + 1);
   };
-  onContinueRef.current = onContinue;
   const fill = unlocked ? 0 : Math.min(1, progress / UNLOCK);
 
   const hh = Math.floor(secs / 3600), mm = Math.floor((secs % 3600) / 60);

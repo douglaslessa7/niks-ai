@@ -1,6 +1,6 @@
 import { useAppStore, ScanResult, ProtocolResult, OnboardingData } from '../store/onboarding';
 import { fetchProtocol, saveProtocol, generateAndSaveProtocol } from './generateProtocol';
-import { chamarAnaliseRapida, escolherPontoForte, escolherProblema, problemasMarcados, TODOS_PROBLEMAS, ultimoErroAnaliseRapida, type AnaliseRapida } from './analiseRapida';
+import { chamarAnaliseRapida, escolherPontoForte, escolherProblema, ultimoErroAnaliseRapida, type AnaliseRapida } from './analiseRapida';
 import { atualizarCompraPendente } from './compraPendente';
 
 // Chamadas de IA do ONBOARDING (06/nov/2026 — a análise completa só depois da compra):
@@ -141,49 +141,9 @@ async function callAnalyzeSkin(base64: string, o: OnboardingData, ancora: Return
 }
 let lastReportError = 'unknown';
 
-// ── SÓ TESTE (__DEV__): "Pular scan" da preparação (`lib/dev/scanDeTeste.ts`) ──────
-// Uma foto de exemplo + um relatório pronto no lugar da IA. Vale SÓ para aquela foto (pela
-// chave = uri): a análise rápida sai do relatório de exemplo, o relatório chega depois de
-// alguns segundos e a rotina não é pedida (a tela de espera gera). Um scan real (outra
-// foto) segue normal. Em build de release `__DEV__` é false e nada disto roda.
-// `// TEMP-PULAR-SCAN`
-let scanDeTeste: { uri: string; relatorio: ScanResult } | null = null;
-export function usarScanDeTeste(t: { uri: string; relatorio: ScanResult } | null) {
-  scanDeTeste = __DEV__ ? t : null;
-}
-const ehTeste = (photoUri: string) => __DEV__ && scanDeTeste != null && scanDeTeste.uri === photoUri;
-
-// A análise rápida do "Pular scan": a idade do relatório de exemplo, os 9 problemas (como a
-// função nova, 06/nov/2026) e o ÚLTIMO marcado como o mais intenso (para o teste mostrar a
-// escolha pela intensidade). Os NÃO marcados decidem a Carta 1 (ponto forte) — o caso sai de
-// `globalThis.__pontoForteTeste` (pelo depurador do Metro):
-//   'zero' (padrão): um deles com 1, os outros com 0 → Carta 1 com o 1º de intensidade 0;
-//   'um': todos com 1 → Carta 1 com o 1º de intensidade 1;
-//   'nenhum': todos com 2 → sem Carta 1 (vai direto à transição de alerta).
-function rapidaDeTeste(concerns: readonly string[]): AnaliseRapida {
-  const idade = Number((scanDeTeste?.relatorio as any)?.skin_age) || null;
-  const marcados = problemasMarcados(concerns);
-  const lista = marcados.length ? marcados : TODOS_PROBLEMAS;
-  const caso = (globalThis as any).__pontoForteTeste ?? 'zero';
-  const livre = (p: string) => (caso === 'nenhum' ? 2 : caso === 'um' ? 1 : p === 'manchas' ? 1 : 0) as 0 | 1 | 2;
-  return {
-    foto_valida: true,
-    idade_pele: idade,
-    problemas: TODOS_PROBLEMAS.map((p) => {
-      const i = lista.indexOf(p);
-      const intensidade = i < 0 ? livre(p) : i === lista.length - 1 ? 2 : 1;
-      return { problema: p, intensidade, regiao: intensidade > 0 ? 'bochechas' : null };
-    }),
-  };
-}
-
-// ── Disparo dos jobs ─────────────────────────────────────────────────────────
-
 function startRapida(key: string, photo: { uri: string; base64: string }, concerns: readonly string[]) {
   const job: Job<AnaliseRapida> = { key, status: 'running', result: null, promise: null as any };
-  job.promise = (ehTeste(photo.uri)
-    ? new Promise<AnaliseRapida>((res) => setTimeout(() => res(rapidaDeTeste(concerns)), 2500))
-    : chamarAnaliseRapida(photo, concerns)
+  job.promise = (chamarAnaliseRapida(photo, concerns)
   ).then((r) => {
     job.status = r ? 'ok' : 'failed';
     job.result = r;
@@ -196,11 +156,7 @@ function startRapida(key: string, photo: { uri: string; base64: string }, concer
 
 function startReport(key: string, base64: string, o: OnboardingData) {
   const job: Job<ScanResult> = { key, status: 'running', result: null, promise: null as any };
-  const teste = ehTeste(key) ? scanDeTeste!.relatorio : null;
-  job.promise = (teste
-    ? new Promise<ScanResult>((res) => setTimeout(() => res(teste), 6000))
-    : callAnalyzeSkin(base64, o, ancoraDaCarta())
-  ).then((r) => {
+  job.promise = callAnalyzeSkin(base64, o, ancoraDaCarta()).then((r) => {
     job.status = r ? 'ok' : 'failed';
     job.result = r;
     if (r && reportJob === job) {
@@ -217,8 +173,7 @@ function startReport(key: string, base64: string, o: OnboardingData) {
 
 function startProtocol(key: string, scanResult: ScanResult, o: OnboardingData) {
   const job: Job<ProtocolResult> = { key, status: 'running', result: null, promise: null as any };
-  const teste = __DEV__ && scanDeTeste != null && scanDeTeste.relatorio === scanResult;
-  job.promise = (teste ? Promise.resolve(null) : fetchProtocol(scanResult, o))
+  job.promise = fetchProtocol(scanResult, o)
     .catch((e) => { console.warn('[onboardingPrefetch] generate-protocol falhou:', e); return null; })
     .then((p) => {
       job.status = p ? 'ok' : 'failed';

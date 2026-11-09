@@ -15,13 +15,13 @@ import { soltarPontos } from './pontosAnimacao';
 import { marcarCartaAberta } from './cartaDoDia';
 
 /**
- * ⚠️ MODO DE TESTE LIGADO (05/nov/2026, pedido do Douglas para testar): `true` deixa os botões
+ * Modo de teste, desligado para o lançamento (09/nov/2026): `true` deixa os botões
  * "Iniciar skincare" (home e aba Rotina) disponíveis a qualquer hora — sem a trava de horário;
  * na home o herói ignora as rotinas já feitas hoje — e o "Concluir skincare" funcionando a
- * qualquer hora, mesmo com a rotina do período já feita. VOLTAR PARA `false` ANTES DE
- * PUBLICAR: com `false`, a trava de horário dos botões e a regra da rotina feita voltam sozinhas.
+ * qualquer hora, mesmo com a rotina do período já feita. Com `false`, valem a trava de horário
+ * dos botões e a regra da rotina feita.
  */
-export const SKINCARE_SEMPRE_DISPONIVEL = true;
+export const SKINCARE_SEMPRE_DISPONIVEL = false;
 
 /**
  * A rotina do período pode ser concluída agora? MESMA regra do `windowOpen` da aba Rotina
