@@ -42,6 +42,7 @@ import { useCachedQuery } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
 import { usePickProfilePhoto } from '../../lib/profilePhoto';
 import { clearHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
+import { reverTutorialGrupos } from '../../lib/gruposTutorial';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import HorariosRotina from '../../components/rotina/HorariosRotina';
 
@@ -382,6 +383,15 @@ export default function Perfil() {
                   await clearHomeTutorialSeenOnServer().catch(() => {});
                   replayHomeTutorial();
                   router.push('/home' as any); // mesma forma de trocar de aba que a navbar usa
+                }}
+              />
+              <Row
+                icon={<Sparkles {...ICON} />}
+                label="Rever tutorial dos grupos"
+                onPress={async () => {
+                  haptics.tap();
+                  await reverTutorialGrupos().catch(() => {});
+                  router.push('/grupos' as any);
                 }}
               />
             </Glass>

@@ -20,5 +20,8 @@ export function buildOnboardingDataFromUserRow(urow: any, scanResult: ScanResult
     skincare_routine_description: urow?.skincare_routine_description ?? null,
     allergy_type: urow?.allergy_type ?? null,
     allergy_description: urow?.allergy_description ?? null,
+    // Personalização (04/nov/2026). `makeup` não é persistido em `users`.
+    sunscreen: urow?.sunscreen ?? null,
+    frequency: urow?.frequency ?? null,
   };
 }

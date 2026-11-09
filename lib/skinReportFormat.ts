@@ -52,3 +52,9 @@ export const sebaceoLabel = (i?: string): string => {
     default: return i ?? '—';
   }
 };
+
+/** Idade da pele do relatório (o campo de UI ou o do bloco de envelhecimento). */
+export function idadeDaPele(r: { skin_age?: number; envelhecimento?: { skin_age?: number } } | null | undefined): number | null {
+  const n = Number(r?.skin_age ?? r?.envelhecimento?.skin_age);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}

@@ -32,7 +32,7 @@ Você tem ferramentas de CONSULTA (só leitura) para dados que NÃO estão no co
 const DEFINICOES: Consultas['definicoes'] = [
   {
     name: 'ver_estante',
-    description: 'Lista os produtos que ela tem em casa (a estante do app): nome, marca, categoria, compatibilidade com a pele dela (0-100) e se o produto já está na rotina dela. Use quando ela perguntar o que tem em casa, se algum produto dela serve para algo, ou antes de sugerir comprar algo que ela talvez já tenha.',
+    description: 'A estante do app, em três listas: em_casa (só estes ela tem agora), acabaram e quer_comprar (estes ela NÃO tem agora: não diga para usar). Cada produto traz nome, marca, categoria, compatibilidade com a pele dela (0-100) e se já está na rotina dela. Use quando ela perguntar o que tem em casa, se algum produto dela serve para algo, ou antes de sugerir comprar algo que ela talvez já tenha.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -74,13 +74,16 @@ const DEFINICOES: Consultas['definicoes'] = [
 // ── Leituras ────────────────────────────────────────────────────────────────
 
 async function verEstante(supabase: Supabase, userId: string) {
-  const [{ data: itens, error }, { data: passos }] = await Promise.all([
-    supabase.from('colecao_produtos')
-      .select('id, nome, marca, categoria, compatibilidade, product_scan_id, created_at')
-      .eq('user_id', userId).order('created_at', { ascending: false }).limit(40),
+  const colunas = 'id, nome, marca, categoria, compatibilidade, product_scan_id, created_at'
+  const ler = (cols: string) => supabase.from('colecao_produtos')
+    .select(cols).eq('user_id', userId).order('created_at', { ascending: false }).limit(40)
+  const [leitura, { data: passos }] = await Promise.all([
+    ler(`${colunas}, status`),
     supabase.from('minha_rotina_passos')
       .select('colecao_item_id, periodo, nome').eq('user_id', userId).not('colecao_item_id', 'is', null),
   ])
+  // Coluna `status` ainda não existe (migration 20261116120000 não aplicada): tudo vale "em casa".
+  const { data: itens, error } = leitura.error?.code === '42703' ? await ler(colunas) : leitura
   if (error) throw error
   if (!itens?.length) return 'A estante dela está vazia (nenhum produto cadastrado no app).'
   // Compatibilidade que falta na estante: a do scan do produto, quando houver.
@@ -98,12 +101,15 @@ async function verEstante(supabase: Supabase, userId: string) {
     const onde = `${p.periodo === 'am' ? 'manhã' : 'noite'}${p.nome ? ` (${p.nome})` : ''}`
     naRotina.set(p.colecao_item_id, [...(naRotina.get(p.colecao_item_id) ?? []), onde])
   }
+  const lista = (filtro: (i: any) => boolean) => itens.filter(filtro).map((i: any) => ({
+    nome: i.nome, marca: i.marca, categoria: i.categoria,
+    compatibilidade: i.compatibilidade ?? compatScan.get(i.product_scan_id) ?? null,
+    na_rotina: naRotina.get(i.id) ?? null,
+  }))
   return json({
-    produtos: itens.map((i: any) => ({
-      nome: i.nome, marca: i.marca, categoria: i.categoria,
-      compatibilidade: i.compatibilidade ?? compatScan.get(i.product_scan_id) ?? null,
-      na_rotina: naRotina.get(i.id) ?? null,
-    })),
+    em_casa: lista((i) => i.status !== 'acabou' && i.status !== 'quero_comprar'),
+    acabaram: lista((i) => i.status === 'acabou'),
+    quer_comprar: lista((i) => i.status === 'quero_comprar'),
   })
 }
 

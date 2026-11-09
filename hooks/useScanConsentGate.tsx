@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAIConsent } from './useAIConsent';
 import { AIConsentModal } from '../components/ui/AIConsentModal';
+import { ConsentSheet } from '../components/onboarding/ConsentSheet';
 
 /**
  * Pede o consentimento de uso de IA assim que uma tela de câmera abre.
@@ -19,10 +20,19 @@ import { AIConsentModal } from '../components/ui/AIConsentModal';
  * `share-product-loading`) devem esperar `granted === true` antes de chamar a IA,
  * e podem passar `onDecline` quando não houver tela anterior para onde voltar, e
  * `presentation: 'inline'` para não depender do `<Modal>` nativo (ver AIConsentModal).
+ * `sheet: 'seusDados'` troca o aviso pela folha "Sua pele. Seus dados." do onboarding
+ * (`ConsentSheet`) — é o que a câmera do scan de rosto usa desde 03/nov/2026.
  */
-export function useScanConsentGate(options?: { onDecline?: () => void; presentation?: 'modal' | 'inline' }) {
+export function useScanConsentGate(options?: {
+  onDecline?: () => void;
+  presentation?: 'modal' | 'inline';
+  sheet?: 'aviso' | 'seusDados';
+  /** Aceite separado do geral (SOS espinha), com texto próprio. */
+  chave?: string;
+  body?: string;
+}) {
   const router = useRouter();
-  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent();
+  const { consentModalVisible, requestConsent, handleAccept, handleDecline } = useAIConsent(options?.chave);
   const [granted, setGranted] = useState(false);
 
   useEffect(() => {
@@ -31,16 +41,20 @@ export function useScanConsentGate(options?: { onDecline?: () => void; presentat
     requestConsent(() => setGranted(true));
   }, []);
 
-  const consentGate = (
+  const decline = () => {
+    handleDecline();
+    if (options?.onDecline) options.onDecline();
+    else router.back();
+  };
+  const consentGate = options?.sheet === 'seusDados' ? (
+    <ConsentSheet visible={consentModalVisible} onAccept={handleAccept} onDecline={decline} />
+  ) : (
     <AIConsentModal
       visible={consentModalVisible}
       presentation={options?.presentation}
+      body={options?.body}
       onAccept={handleAccept}
-      onDecline={() => {
-        handleDecline();
-        if (options?.onDecline) options.onDecline();
-        else router.back();
-      }}
+      onDecline={decline}
     />
   );
 

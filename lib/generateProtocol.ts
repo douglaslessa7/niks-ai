@@ -89,9 +89,13 @@ export async function saveProtocol({
   // depois do insert do protocolo — porque `recomendar-produtos` lê o
   // protocolo no banco. Falha aqui não pode quebrar o fluxo do protocolo.
   try {
-    // A função confere que a sessão é da mesma usuária do `user_id` (out/2026). Sem sessão
-    // (não deveria acontecer aqui, logo após o cadastro), cai na chave pública como antes.
+    // A função exige a sessão e usa a conta do token (08/nov/2026). Sem sessão (não deveria
+    // acontecer aqui, logo após o cadastro), a recomendação fica para a aba Produtos.
     const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.error('[generateProtocol] recomendar-produtos: sem sessão, não chamada');
+      return;
+    }
     const recRes = await fetch(
       'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/recomendar-produtos',
       {
@@ -99,7 +103,7 @@ export async function saveProtocol({
         headers: {
           'Content-Type': 'application/json',
           'apikey': ANON_KEY,
-          'Authorization': `Bearer ${session?.access_token ?? ANON_KEY}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null, regenerate: regenerate ?? false }),
       }

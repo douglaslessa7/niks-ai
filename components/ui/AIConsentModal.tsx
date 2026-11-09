@@ -12,9 +12,9 @@ import { useEffect, useRef } from 'react';
 import { ShieldCheck } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 
-// FONTE ÚNICA do texto legal do consentimento de IA — usada também pela folha do
-// onboarding novo (`components/onboarding/ConsentSheet.tsx`, modelo 8b). Mudou aqui,
-// muda nas duas.
+// FONTE ÚNICA do texto legal do consentimento de IA. (Desde 03/nov/2026 a folha do
+// onboarding, `components/onboarding/ConsentSheet.tsx`, mostra o texto da "Seus dados"
+// e só usa daqui o `PRIVACY_URL`.)
 // ⚠️ Desde out/2026 o texto NÃO nomeia os fornecedores (decisão do Douglas): fala em
 // "parceiros" e os nomes (OpenAI e Google Gemini) ficam na Política de Privacidade e
 // na declaração à Apple. Trocou de fornecedor de IA? Atualize a política, não este texto.
@@ -22,6 +22,12 @@ export const CONSENT_BODY =
   'Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e ' +
   'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros. ' +
   'Esses dados são usados exclusivamente para produzir o seu resultado.';
+// SOS espinha (nov/2026): a foto e a análise ficam guardadas junto da conversa de acompanhamento.
+export const CONSENT_SOS_BODY =
+  'Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e ' +
+  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros. ' +
+  'Esses dados são usados para produzir o seu resultado. No SOS espinha, a foto e a análise ' +
+  'ficam guardadas junto da conversa para acompanhar a sua evolução, até você apagar a sua conta.';
 export const CONSENT_AUTH_PREFIX = 'Ao continuar, você autoriza esse processamento conforme nossa ';
 export const PRIVACY_URL =
   'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
@@ -39,9 +45,11 @@ interface AIConsentModalProps {
    * a janela inteira (a camada cobre só a própria tela).
    */
   presentation?: 'modal' | 'inline';
+  /** Texto principal; o padrão é o `CONSENT_BODY`. */
+  body?: string;
 }
 
-export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'modal' }: AIConsentModalProps) {
+export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'modal', body = CONSENT_BODY }: AIConsentModalProps) {
   const translateY = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
@@ -76,7 +84,7 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
         <Text style={styles.title}>Antes de continuar</Text>
 
         {/* Parágrafo principal */}
-        <Text style={styles.body}>{CONSENT_BODY}</Text>
+        <Text style={styles.body}>{body}</Text>
 
         {/* Parágrafo secundário com link inline */}
         <Text style={styles.body}>

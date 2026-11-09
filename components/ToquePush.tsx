@@ -9,6 +9,7 @@ import { registrarToque, useToquePush, type DadosPush } from '../lib/pushToque';
 import { chaveEstado, estadoCartas } from '../lib/cartasServidor';
 import { getUserId } from '../lib/currentUser';
 import { writeCache } from '../lib/cache';
+import { marcarConviteVisto, rotaConversaEspinha, useBalaoEspinha } from '../lib/espinhaAcompanhamento';
 
 export default function ToquePush() {
   const router = useRouter();
@@ -29,5 +30,12 @@ export default function ToquePush() {
     const b = registrarToque('grupo_falta', abrirGrupo);
     return () => { a(); b(); };
   }, [router]);
+  // Retorno de 24 h da espinha: abre a conversa, com a pergunta da NIKS já lá.
+  useEffect(() => registrarToque('espinha_retorno', (d) => {
+    if (typeof d.conversation_id !== 'string') return;
+    marcarConviteVisto(d.conversation_id);
+    useBalaoEspinha.getState().fechar();
+    router.push(rotaConversaEspinha(d.conversation_id));
+  }), [router]);
   return null;
 }

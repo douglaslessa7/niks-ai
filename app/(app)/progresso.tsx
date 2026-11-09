@@ -3,14 +3,14 @@
 // redesign — rotina skincare", NiksProgressFlo.dc.html com v="home2" first): anel com
 // a foto do último scan + Niks Score, o CARD DE MÉTRICAS da home antiga (versão B,
 // commit 8ae3453 — Figma node 1:63: 6 métricas em 3 colunas × 2 linhas,
-// barra no semáforo de `metricColor`; tocar = compartilhar), Sua evolução, Seus scans e
-// Seu timelapse. Abre pelo atalho "Progresso" da home. As letras do card seguem a
+// barra no semáforo de `metricColor`; tocar = compartilhar), Sua evolução e Seus scans.
+// Abre pelo atalho "Progresso" da home. As letras do card seguem a
 // tipografia do app (fonte do sistema/SF Pro, #121212), não mais Lato/Exo 2. Sem botão de scan e sem a frase
 // "Seu primeiro scan" (pedido do produto, out/2026).
 // O mesmo arquivo do design desenha a versão com 2+ scans (43c — `notFirst`): abas +
 // gráfico em "Sua evolução", variação nas métricas e todos os scans na fileira. A
 // tela escolhe pela quantidade de scans da usuária.
-// Dados reais: skin_scans (score, métricas, foto, data) e routine_photos (timelapse).
+// Dados reais: skin_scans (score, métricas, foto, data).
 // Fonte = SF Pro (sistema), rosa #FF5EA8. Medidas do frame 393×852 (barra de status
 // de 54 pt → `insets.top − 54`).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +50,6 @@ const TRACK = '#F6E9EF';
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SCAN_INTERVAL_DAYS = 7;
-const TIMELAPSE_DAYS = 30;
 
 // Quebras de linha dos nomes no card de métricas: "da pele" fica junto na 2ª linha
 // (pedido do produto). Os outros usam o nome de `METRIC_DEFS` (que já quebra
@@ -73,7 +72,7 @@ const BACK_PATH = 'M15 5l-7 7 7 7';
 const SHARE_PATH = 'M12 3v12M7.5 7.5L12 3l4.5 4.5M5 12v6.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V12';
 
 type ScanRow = { created_at: string; skin_score: number | null; foto_url: string | null; full_result: { metricas?: Metricas } | null };
-type ProgressData = { scans: ScanRow[]; firstPhotoOn: string | null; fotoHomeUrl?: string | null };
+type ProgressData = { scans: ScanRow[]; fotoHomeUrl?: string | null };
 
 /** Diferença em dias de calendário (virada às 04:00, igual à rotina). */
 function daysBetween(a: Date, b: Date): number {
@@ -108,24 +107,17 @@ export default function Progresso() {
   const [tipW, setTipW] = useState(0);
 
   const fetchProgress = useCallback(async (): Promise<ProgressData> => {
-    const [{ data: scans }, { data: photo }, { data: userRow }] = await Promise.all([
+    const [{ data: scans }, { data: userRow }] = await Promise.all([
       supabase.from('skin_scans')
         .select('created_at, skin_score, foto_url, full_result')
         .eq('user_id', uid!)
         .order('created_at', { ascending: false })
         .limit(30),
-      supabase.from('routine_photos')
-        .select('taken_on')
-        .eq('user_id', uid!)
-        .order('taken_on', { ascending: true })
-        .limit(1)
-        .maybeSingle(),
       // A foto escolhida pela usuária (galeria → ajuste) vale mais que a do scan, como na home.
       supabase.from('users').select('foto_home_url').eq('id', uid!).maybeSingle(),
     ]);
     return {
       scans: (scans ?? []) as ScanRow[],
-      firstPhotoOn: photo?.taken_on ?? null,
       fotoHomeUrl: userRow?.foto_home_url ?? null,
     };
   }, [uid]);
@@ -186,12 +178,6 @@ export default function Progresso() {
   const evoSub = `${S.label}: ${improved ? (S.better === 'up' ? '+' : '−') + Math.abs(diff) : diff} em ${weeks} ${weeks === 1 ? 'semana' : 'semanas'}`;
   const chartW = width - 36 - 34; // card (18 + 18 de margem) − 17 + 17 de respiro
   const sx = chartW / CW;
-
-  // ── Seu timelapse (fotos do dia: 30 dias a partir da primeira) ──
-  const tlDay = data?.firstPhotoOn
-    ? Math.min(TIMELAPSE_DAYS, daysBetween(new Date(`${data.firstPhotoOn}T12:00:00`), now) + 1)
-    : 1;
-  const tlLeft = TIMELAPSE_DAYS - tlDay;
 
   const photo = data?.fotoHomeUrl ?? last?.foto_url ?? null;
   const pickPhoto = usePickProfilePhoto();
@@ -408,33 +394,6 @@ export default function Progresso() {
           ))}
         </ScrollView>
 
-        {/* Seu timelapse */}
-        <SectionHead style={{ marginTop: 16 }} title="Seu timelapse" right={`Dia ${tlDay} de ${TIMELAPSE_DAYS}`} />
-        <View style={styles.card}>
-          <View style={{ height: 170, overflow: 'hidden', backgroundColor: '#FDE6EF' }}>
-            {photo ? (
-              <Image
-                source={{ uri: photo }} contentFit="cover" blurRadius={14}
-                style={{ position: 'absolute', top: -20, left: -20, right: -20, bottom: -20, opacity: 0.75 }}
-              />
-            ) : null}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,227,239,0.35)' }]} />
-            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', gap: 10 }]}>
-              <LockBadge size={50} icon={24} glow />
-              <Text style={{ fontSize: 28, fontWeight: '700', lineHeight: 33, letterSpacing: -0.6, color: INK }}>
-                {tlLeft === 0 ? 'Seu vídeo está pronto' : `Faltam ${tlLeft} ${tlLeft === 1 ? 'dia' : 'dias'}`}
-              </Text>
-            </View>
-          </View>
-          <View style={{ paddingTop: 14, paddingHorizontal: 17 }}>
-            <View style={styles.bar}><View style={[styles.barFill, { width: `${(tlDay / TIMELAPSE_DAYS) * 100}%` }]} /></View>
-          </View>
-          <View style={{ paddingTop: 12, paddingHorizontal: 17, paddingBottom: 16 }}>
-            <Text style={{ fontSize: 16, lineHeight: 22, letterSpacing: -0.3, color: BODY }}>
-              Tire a foto do dia sempre que terminar sua rotina da manhã. Em 30 dias, elas viram um vídeo da sua evolução.
-            </Text>
-          </View>
-        </View>
         <View style={{ height: 20 }} />
       </ScrollView>
 
@@ -548,8 +507,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   baselineRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
-  bar: { height: 4, borderRadius: 2, backgroundColor: TRACK, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 2, backgroundColor: PINK },
   tab: { height: 32, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 100 },
   tabOn: {
     backgroundColor: '#FFFFFF',

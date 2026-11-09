@@ -17,7 +17,7 @@ export async function regenerateProtocolInApp(
 
   const { data: urow } = await supabase
     .from('users')
-    .select('inapp_protocol_regenerated_at, genero, pregnancy_status, skincare_routine_type, skincare_routine_description, allergy_type, allergy_description, tipo_pele, concerns, sun_exposure, hydration, sleep, birthday')
+    .select('inapp_protocol_regenerated_at, genero, pregnancy_status, skincare_routine_type, skincare_routine_description, allergy_type, allergy_description, tipo_pele, concerns, sun_exposure, hydration, sleep, birthday, sunscreen, frequency')
     .eq('id', userId)
     .maybeSingle();
   if (urow?.inapp_protocol_regenerated_at) return; // já regenerou (entre sessões)

@@ -29,10 +29,21 @@ const MESSAGES: Record<NotificationType, { title: string; body: string }> = {
 };
 
 Deno.serve(async (req) => {
+  // Só o cron pode disparar: sem esta trava, qualquer um mandava push para a base inteira.
+  // O segredo vem do Vault, via pg_cron. Deploy com --no-verify-jwt (o cron não tem sessão).
+  const expected = Deno.env.get('SEND_NOTIFICATIONS_SECRET');
+  if (!expected || req.headers.get('x-cron-secret') !== expected) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
-    const { type, user_ids } = await req.json() as {
+    const { type, user_ids, dry_run } = await req.json() as {
       type: NotificationType;
       user_ids?: string[];
+      dry_run?: boolean;
     };
 
     if (!type || !MESSAGES[type]) {
@@ -137,6 +148,14 @@ Deno.serve(async (req) => {
     if (users.length === 0) {
       return new Response(
         JSON.stringify({ sent: 0, message: 'Nenhum usuário elegível.' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Teste: conta quem receberia e não envia nada.
+    if (dry_run === true) {
+      return new Response(
+        JSON.stringify({ dry_run: true, would_send: users.length, type }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }

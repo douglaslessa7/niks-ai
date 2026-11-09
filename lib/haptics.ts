@@ -18,6 +18,7 @@
 // | `success()`  | dois pulsos ↑ | algo concluído: rotina finalizada, foto salva   |
 // | `warning()`  | dois pulsos   | ação destrutiva/atenção: apagar conta, sair     |
 // | `error()`    | três pulsos   | falha: erro de rede, login recusado             |
+// | `impact()`   | forte         | impacto de animação: a carta do onboarding pousando |
 //
 // ⚠️ NÃO colocar haptic em: fechar teclado, backdrop de modal, scroll, ou
 // qualquer coisa que o usuário não percebe como "apertei um botão". Haptic em
@@ -59,6 +60,12 @@ export const haptics = {
 
   /** Falha: erro de rede, login recusado, análise que não deu certo. */
   error: () => fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)),
+
+  /**
+   * Forte. Algo grande chega e "bate" na tela — a carta do onboarding pousando. Não é
+   * resposta a toque: é o impacto de uma animação, no mesmo quadro do visual.
+   */
+  impact: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)),
 
   /**
    * Pulso de "continue segurando" (tela de compromisso do onboarding). O `stage`

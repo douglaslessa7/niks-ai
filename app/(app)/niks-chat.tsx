@@ -6,7 +6,8 @@ import * as ImagePicker from 'expo-image-picker'
 import { trackNativePresentation } from '../../lib/nativePresentation'
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { marcarConviteVisto, URL_SOS_ESPINHA, useBalaoEspinha } from '../../lib/espinhaAcompanhamento';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -157,6 +158,39 @@ type HistoryConversation = {
   when: string
   prev: string
   recent: boolean
+  espinha?: boolean
+}
+
+// Coluna `tipo` ainda não existe (migration 20261117120000 não aplicada): segue como antes.
+const COLUNA_NAO_EXISTE = '42703'
+
+// A conversa da espinha tem lugar próprio: não entra na retomada do chat comum.
+async function ultimaConversaGeral(uid: string): Promise<string | null> {
+  const consulta = () => supabase.from('coach_conversations').select('id').eq('user_id', uid)
+  const ordem = { ascending: false }
+  const r = await consulta().neq('tipo', 'espinha').order('created_at', ordem).limit(1).maybeSingle()
+  if (r.error?.code !== COLUNA_NAO_EXISTE) return r.data?.id ?? null
+  const antigo = await consulta().order('created_at', ordem).limit(1).maybeSingle()
+  return antigo.data?.id ?? null
+}
+
+// Últimas conversas, com a espinha em acompanhamento sempre no topo.
+async function conversasDoHistorico(uid: string): Promise<{ lista: Array<{ id: string; title: string | null; tipo: string }>; ativa: string | null }> {
+  const r = await supabase.from('coach_conversations').select('id, title, tipo').eq('user_id', uid).order('created_at', { ascending: false }).limit(20)
+  if (r.error?.code === COLUNA_NAO_EXISTE) {
+    const a = await supabase.from('coach_conversations').select('id').eq('user_id', uid).order('created_at', { ascending: false }).limit(20)
+    return { lista: (a.data ?? []).map((c: { id: string }) => ({ id: c.id, title: null, tipo: 'geral' })), ativa: null }
+  }
+  const lista = (r.data ?? []) as Array<{ id: string; title: string | null; tipo: string }>
+  const { data: acomp } = await supabase.from('espinha_acompanhamentos').select('conversation_id').eq('user_id', uid).eq('situacao', 'ativa').maybeSingle()
+  const ativa: string | null = acomp?.conversation_id ?? null
+  if (!ativa) return { lista, ativa }
+  let fixa = lista.find((c) => c.id === ativa)
+  if (!fixa) {
+    const { data } = await supabase.from('coach_conversations').select('id, title, tipo').eq('id', ativa).maybeSingle()
+    if (data) fixa = data as { id: string; title: string | null; tipo: string }
+  }
+  return { lista: fixa ? [fixa, ...lista.filter((c) => c.id !== ativa)] : lista, ativa }
 }
 
 // ── Coach protocol suggestion (card de aprovação — Bloco 3) ───────────────────
@@ -420,6 +454,7 @@ export default function NiksChat() {
   const introTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const sheetAnim = useRef(new Animated.Value(1)).current;
   const modeRef = useRef<'empty' | 'active'>('empty');
+  const espinhaRef = useRef(false);
   const [keyboardOpen,   setKeyboardOpen]   = useState(false);
   const [userId,         setUserId]         = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -472,19 +507,13 @@ export default function NiksChat() {
     const uid = await getUserId()
     if (!uid) throw new Error('sem sessão')
 
-    const [userRes, convRes] = await Promise.all([
+    const [userRes, ultimaConversa] = await Promise.all([
       supabase.from('users').select('nome').eq('id', uid).single(),
-      supabase
-        .from('coach_conversations')
-        .select('id')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+      ultimaConversaGeral(uid),
     ])
 
     const nome = userRes.data?.nome ?? null
-    const convId: string | null = convRes.data?.id ?? null
+    const convId: string | null = ultimaConversa
     if (!convId) return { userId: uid, nome, conversationId: null, msgs: [] as any[] }
 
     const { data: msgs } = await supabase
@@ -508,6 +537,8 @@ export default function NiksChat() {
 
     setUserId(chatData.userId)
     if (chatData.nome) setFirstName(chatData.nome.trim().split(' ')[0] || '')
+    // Com a conversa da espinha aberta, a atualização do cache não pode trocar a tela.
+    if (espinhaRef.current) return
     if (!chatData.conversationId) return
     setConversationId(chatData.conversationId)
 
@@ -590,6 +621,7 @@ export default function NiksChat() {
   );
 
   const startNewChat = () => {
+    espinhaRef.current = false
     setNiksChatMode('empty')
     setMode('empty')
     setMessages([])
@@ -694,6 +726,7 @@ export default function NiksChat() {
       setConversationTime(new Date().toISOString())
     }
 
+    const naEspinha = espinhaRef.current
     const userMsgId       = `user_${Date.now()}`
     const assistantMsgId  = `assistant_${Date.now()}`
     const clientMessageId = `${userId}_${Date.now()}`
@@ -741,7 +774,7 @@ export default function NiksChat() {
 
     let lastLength = 0
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', FUNCTION_URL)
+    xhr.open('POST', naEspinha ? URL_SOS_ESPINHA : FUNCTION_URL)
     xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
     xhr.setRequestHeader('apikey', ANON_KEY)
     xhr.setRequestHeader('Content-Type', 'application/json')
@@ -760,9 +793,12 @@ export default function NiksChat() {
 
     xhr.onload = () => {
       if (xhr.status !== 200) {
+        const erro = naEspinha && xhr.status === 429
+          ? 'Você já mandou 20 mensagens hoje nesta conversa. Amanhã a gente continua por aqui.'
+          : 'Ocorreu um erro. Tente novamente.'
         setMessages(prev => prev.map(m =>
           m.id === assistantMsgId
-            ? { ...m, content: 'Ocorreu um erro. Tente novamente.', isStreaming: false }
+            ? { ...m, content: erro, isStreaming: false }
             : m
         ))
         return
@@ -806,6 +842,7 @@ export default function NiksChat() {
     }
 
     xhr.send(JSON.stringify({
+      ...(naEspinha ? { acao: 'mensagem' } : {}),
       userId,
       conversationId: activeConvId,
       message: text,
@@ -908,14 +945,9 @@ export default function NiksChat() {
     setHistoryLoading(true)
     setHistoryVisible(true)
 
-    const { data: convs } = await supabase
-      .from('coach_conversations')
-      .select('id')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(20)
+    const { lista: convs, ativa: espinhaAtiva } = await conversasDoHistorico(userId)
 
-    if (!convs || convs.length === 0) {
+    if (convs.length === 0) {
       setHistoryConversations([])
       setHistoryLoading(false)
       return
@@ -937,6 +969,7 @@ export default function NiksChat() {
         .order('created_at', { ascending: false }),
     ])
 
+    const convPorId = Object.fromEntries(convs.map(c => [c.id, c]))
     const titleMap: Record<string, string> = {}
     userMsgs?.forEach(msg => {
       if (!titleMap[msg.conversation_id]) titleMap[msg.conversation_id] = msg.content || 'Foto'
@@ -951,15 +984,49 @@ export default function NiksChat() {
       .filter(id => lastMap[id])
       .map(id => ({
         id,
-        title: (titleMap[id] ?? 'Conversa').slice(0, 80),
+        title: (convPorId[id]?.tipo === 'espinha' && convPorId[id]?.title ? convPorId[id].title! : titleMap[id] ?? 'Conversa').slice(0, 80),
+        espinha: convPorId[id]?.tipo === 'espinha',
         when: shortDay(lastMap[id].created_at),
         prev: (lastMap[id].content || 'Foto').replace(/\s+/g, ' '),
-        recent: daysAgo(lastMap[id].created_at) < 7,
+        recent: id === espinhaAtiva || daysAgo(lastMap[id].created_at) < 7,
       })))
     setHistoryLoading(false)
   }
 
+  // Conversa da espinha: pelo balão, pelo push ou pelo histórico. As mensagens desta conversa
+  // vão para a `sos-espinha`, e ela não entra na retomada do chat comum.
+  const abrirEspinha = useCallback(async (convId: string) => {
+    espinhaRef.current = true
+    clearIntro()
+    setHistoryVisible(false)
+    setNiksChatMode('active')
+    marcarConviteVisto(convId)
+    const balao = useBalaoEspinha.getState().balao
+    if (balao?.conversationId === convId) useBalaoEspinha.getState().fechar()
+    const uid = await getUserId()
+    if (!uid) return
+    setUserId(uid)
+    const { data: msgs } = await supabase
+      .from('coach_messages')
+      .select('id, role, content, image_url, created_at')
+      .eq('conversation_id', convId)
+      .eq('user_id', uid)
+      .order('created_at', { ascending: true })
+    if (!msgs || msgs.length === 0) return
+    setConversationId(convId)
+    setConversationTime(msgs[0].created_at)
+    setMessages(msgs.map(toMessage))
+    setMode('active')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const { conversa: conversaParam, t: conversaToque } = useLocalSearchParams<{ conversa?: string; t?: string }>()
+  useEffect(() => {
+    if (conversaParam) void abrirEspinha(conversaParam)
+  }, [conversaParam, conversaToque, abrirEspinha])
+
   const loadConversation = async (convId: string) => {
+    espinhaRef.current = false
     setHistoryVisible(false)
     setNiksChatMode('active')
 
@@ -1187,7 +1254,7 @@ export default function NiksChat() {
     <TouchableOpacity
       key={c.id}
       activeOpacity={0.85}
-      onPress={() => { haptics.tap(); loadConversation(c.id) }}
+      onPress={() => { haptics.tap(); if (c.espinha) void abrirEspinha(c.id); else loadConversation(c.id) }}
       style={[styles.histItem, c.id === conversationId && done && { backgroundColor: '#FDEEF4' }]}
     >
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>

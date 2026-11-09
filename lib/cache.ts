@@ -14,7 +14,7 @@
 // trás, em silêncio — sem estado de loading.
 //
 // ⚠️ NÃO cachear aqui: URLs assinadas do Storage (expiram em 1h — ver
-// `recomendacao-produtos.tsx`) nem nada com base64 de imagem (estoura o
+// `lib/produtosTela.ts`, que controla a idade delas) nem nada com base64 de imagem (estoura o
 // AsyncStorage). Cache é para dados pequenos e relativamente estáveis.
 // ─────────────────────────────────────────────────────────────────────────────
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -35,6 +35,19 @@ const mem = new Map<string, Entry<unknown>>();
 // Requisições em voo, por chave. Duas telas pedindo a mesma coisa ao mesmo tempo
 // compartilham a mesma promise em vez de disparar duas consultas.
 const inFlight = new Map<string, Promise<unknown>>();
+
+// Carrega do disco logo que o módulo sobe: a primeira tela de cada aba já nasce com dado.
+void (async () => {
+  try {
+    const keys = (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(PREFIX));
+    for (const [k, raw] of await AsyncStorage.multiGet(keys)) {
+      const key = k.slice(PREFIX.length);
+      if (!raw || mem.has(key)) continue;
+      const entry = JSON.parse(raw) as Entry<unknown>;
+      if (typeof entry?.at === 'number') mem.set(key, entry);
+    }
+  } catch { /* cache é só atalho: sem ele, a tela busca da rede */ }
+})();
 
 /** Leitura SÍNCRONA (só memória). Devolve null se ainda não foi lido do disco. */
 export function peekCache<T>(key: string): Entry<T> | null {

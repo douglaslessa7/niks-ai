@@ -12,8 +12,8 @@ import { getOnboardingAttempt } from '../onboardingAttempt';
  * Mixpanel são repassados daqui, num ponto só (nenhuma tela chama o Paywallo).
  *
  * - Só passos do funil atual (`step_total === OB_STEP_TOTAL`, o que o `obStep` do kit
- *   gera) e só de 1 até `OB_PAYWALLO_LAST` (a rotina pronta, passo 25). Conta (26) e
- *   compromisso (27) vêm depois do paywall e ficam só no Mixpanel — com eles no funil,
+ *   gera) e só de 1 até `OB_PAYWALLO_LAST` (a rotina pronta, passo 13). Conta (14) e
+ *   compromisso (15) vêm depois do paywall e ficam só no Mixpanel — com eles no funil,
  *   a conclusão aparecia em 0%. Telas fora do fluxo valem 0 e também ficam de fora.
  * - Espera o SDK iniciar: `onboardingStep` antes do init lança NOT_INITIALIZED e o
  *   passo se perderia (a 1ª tela monta cedo). Cada passo aguarda `waitUntilReady()`
@@ -23,7 +23,7 @@ import { getOnboardingAttempt } from '../onboardingAttempt';
  *   sai antes do 1 mesmo que o SDK fique pronto no meio.
  * - Fim do onboarding: `onboardingManager.complete()` no `onboarding_step_completed`
  *   do passo `OB_PAYWALLO_LAST` ("Vamos começar", logo antes do paywall), na MESMA
- *   fila — sai sempre depois do passo 25. No máximo uma vez por instalação: a trava
+ *   fila — sai sempre depois do passo 13. No máximo uma vez por instalação: a trava
  *   fica no AsyncStorage (`PAYWALLO_COMPLETED_KEY`), gravada só depois do sucesso.
  * - Só na 1ª tentativa de onboarding desta instalação (`onboarding_attempt === 1`,
  *   `lib/onboardingAttempt.ts`): quem reabre o app sem conta refaz o onboarding do

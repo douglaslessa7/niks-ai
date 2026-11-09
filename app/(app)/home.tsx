@@ -16,14 +16,21 @@ import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { useCachedQuery } from '../../lib/cache';
 import { contarPassosMinhaRotina } from '../../lib/minhaRotina';
+import { SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { scheduleRoutineReminders } from '../../lib/routineReminders';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
+import BolhaMissoes from '../../components/missoes/BolhaMissoes';
+import type { MissaoId } from '../../components/missoes/CardMissoes';
+import { cardVisivel, periodoDaRotina, useMissoes } from '../../lib/missoes';
+import { iniciarGuia, irParaGuia, useGuia } from '../../lib/guia';
 import { useMeusGrupos } from '../../lib/gruposServidor';
 import Avatar from '../../components/grupos/Avatar';
+import Medalha from '../../components/medalhas/Medalha';
 import Carta from '../../components/cartas/Carta';
 import { useEstadoCartas } from '../../lib/cartasServidor';
+import { cartaJaAberta, marcarCartaAberta } from '../../lib/cartaDoDia';
 import SeloProtegida, { EscudoChama } from '../../components/conquistas/SeloProtegida';
 import AvisoSequencia from '../../components/conquistas/AvisoSequencia';
 import {
@@ -156,15 +163,6 @@ function weekFor(now: Date, hist: RoutineHistory): DayCell[] {
   });
 }
 
-// Tempo até a próxima sessão (04:00 do dia seguinte da sessão de hoje).
-function nextCardIn(now: Date): string {
-  const next = sessionDate(now);
-  next.setDate(next.getDate() + 1);
-  next.setHours(4, 0, 0, 0);
-  const mins = Math.max(0, Math.round((next.getTime() - now.getTime()) / 60_000));
-  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
-}
-
 // ── Ícones (paths copiados do design) ───────────────────────────────────────
 const FLAME = 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z';
 const CHECK = 'M5 12.5l4.5 4.5L19 7.5';
@@ -244,7 +242,7 @@ function useReduceMotion(): boolean {
   return rm;
 }
 
-type CardState = 'locked' | 'ready' | 'claimed';
+type CardState = 'locked' | 'claimed';
 
 export default function Home() {
   const router = useRouter();
@@ -396,13 +394,19 @@ export default function Home() {
 
   const scrollRef = useRef<ScrollView | null>(null);
   const rowRef = useRef<ScrollView | null>(null);
-  // Tutorial: nenhuma parada da home rola — tela e fileira "Pra você" no início.
-  useEffect(() => onCoachPrepare(() => {
+  // "Seu grupo" (y dentro da rolagem): a parada do tour e a dica da missão 3 rolam até ele.
+  const grupoY = useRef(0);
+  const rolarAteGrupo = (animated: boolean) => scrollRef.current?.scrollTo({ y: Math.max(0, grupoY.current - 220), animated });
+  // Tutorial: tela e fileira "Pra você" no início; a parada do "Seu grupo" ('end') rola até ele.
+  useEffect(() => onCoachPrepare((scroll) => {
+    if (scroll === 'end') { rolarAteGrupo(false); return; }
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     rowRef.current?.scrollTo({ x: 0, animated: false });
   }), []);
 
-  const hero = heroFor(now, d, hist);
+  // ⚠️ Modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`, temporário): o herói ignora as rotinas feitas
+  // hoje, para o "Iniciar skincare" ficar sempre à mostra. Com `false`, o herói de sempre.
+  const hero = heroFor(now, d, SKINCARE_SEMPRE_DISPONIVEL ? {} : hist);
   const days = weekFor(now, hist);
   // Sequência = um número só (dias ativos seguidos), do SERVIDOR (estado da função
   // `cartas`); sem ele ainda, o histórico do celular. É o da chama e o do herói.
@@ -425,27 +429,26 @@ export default function Home() {
   }, [cached, estado?.sequencia.atual, estado?.sequencia.ultimo_dia, pv?.dia, pv?.ok]);
   const fezHoje = routinesDoneOn(hist, sessionDate(now)) > 0;
 
-  // Carta do dia (servidor): pronta enquanto houver carta a raspar; resgatada depois da
-  // rotina de hoje; trancada até o 1º skincare do dia. "Raspar agora" abre a carta.
+  // Carta do dia (regras novas, 05/nov/2026 — 1 por dia, a de hoje). O card é um desafio,
+  // sem botão e sem toque: "Complete o skincare do dia · 0/1" antes do skincare, "Raspe sua
+  // carta · 1/1" com a carta ganha e não raspada, e "Resgatada" depois de raspar. A carta abre SOZINHA no fim do fluxo e, se
+  // sobrar uma sem raspar, ao entrar na home (logo abaixo). Antes do estado chegar: pelo
+  // histórico do celular.
   const aRaspar = estado?.a_raspar ?? [];
-  const card: CardState = estado
-    ? (aRaspar.length ? 'ready' : estado.rotina_hoje ? 'claimed' : 'locked')
-    : (fezHoje ? 'claimed' : 'locked');
-  const cota = estado?.cartas_hoje.cota ?? 2;
-  const dadas = card === 'locked' ? 0 : (estado?.cartas_hoje.dadas ?? 1);
-  // 1 carta por rotina: fez só a da manhã → a próxima vem na rotina da noite.
-  const hojeHist = hist[dateKey(sessionDate(now))];
-  const proximaNaNoite = dadas < cota && !!hojeHist?.am && !hojeHist?.pm;
+  const estadoCarta = estado?.carta_hoje?.estado;
+  const cartaLiberada = estadoCarta === 'pronta';
+  const card: CardState = estadoCarta
+    ? (estadoCarta === 'feita' ? 'claimed' : 'locked')
+    : estado
+      ? (!aRaspar.length && estado.rotina_hoje ? 'claimed' : 'locked')
+      : (fezHoje ? 'claimed' : 'locked');
+  // Pontos em dobro valendo hoje (indicador ao lado da barra).
+  const dobroHoje = (estado?.poderes.pontos_dobro_dias ?? []).includes(estado?.hoje ?? dateKey(sessionDate(now)));
 
-  // Nível (NIKS Points): "Nível 4 · Sem Filtro" + barra até o próximo nível.
+  // Nível (NIKS Points): medalha + "Prata 1" + barra até o próximo nível.
   const pontos = estado?.pontos;
-  const fracNivel = pontos ? Math.max(0, Math.min(1, (pontos.total - pontos.piso) / Math.max(1, pontos.teto - pontos.piso))) : 0;
-  const claimCard = () => {
-    const prox = aRaspar[0];
-    if (!prox) return;
-    haptics.action();
-    router.push(`/(carta)/carta?id=${prox.id}` as any);
-  };
+  // No NIKS (último nível, teto === piso) a barra fica cheia.
+  const fracNivel = pontos ? (pontos.teto <= pontos.piso ? 1 : Math.max(0, Math.min(1, (pontos.total - pontos.piso) / Math.max(1, pontos.teto - pontos.piso)))) : 0;
 
   // Aviso 79l: uma vez só, para quem via um número maior na chama (antes ela contava
   // rotinas — 1 ponto por rotina; agora dias, do servidor).
@@ -484,12 +487,57 @@ export default function Home() {
     router.push('/caminhada?celebrar=1' as any);
   }, [pontos?.celebrar, avisoResolvido, tutorialPendente, router]);
 
+  // Sobrou uma carta de hoje sem raspar (ex.: o app fechou no meio do fluxo): ela abre
+  // sozinha ao entrar na home — depois do aviso 79l, fora do tutorial e depois da celebração
+  // de nível. No máximo uma vez por sessão do app por carta (lib/cartaDoDia).
+  const cartaPendente = estadoCarta === 'pronta' ? aRaspar[0]?.id ?? null : null;
+  useFocusEffect(useCallback(() => {
+    if (!cartaPendente || cartaJaAberta(cartaPendente) || !avisoResolvido || tutorialPendente || pontos?.celebrar) return;
+    const t = setTimeout(() => {
+      if (cartaJaAberta(cartaPendente)) return;
+      marcarCartaAberta(cartaPendente);
+      router.push(`/(carta)/carta?id=${cartaPendente}` as any);
+    }, 450);
+    return () => clearTimeout(t);
+  }, [cartaPendente, avisoResolvido, tutorialPendente, pontos?.celebrar, router]));
+
   const { data: meusGrupos } = useMeusGrupos();
   const grupo = meusGrupos?.[0] ?? null;
 
+  // ── Missões (06/nov/2026, lib/missoes.ts) ───────────────────────────────────
+  // Balãozinho ao lado do "Iniciar skincare", para contas novas e existentes, depois do tour (conta nova). Some quando
+  // os 4 desafios foram feitos e a rara foi raspada.
+  const { data: missoes } = useMissoes();
+  const guia = useGuia();
+  const mostrarMissoes = !!missoes && !tutorialPendente && !guia && cardVisivel(missoes);
+  const comecarMissao = (m: MissaoId) => {
+    if (m === 'd1') iniciarGuia({ passo: 'd1-aba' });
+    else if (m === 'd2') iniciarGuia({ passo: 'd2-aba' });
+    else if (m === 'd3') iniciarGuia({ passo: 'd3-aba', periodo: periodoDaRotina(missoes)?.periodo ?? 'am' });
+    else {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      iniciarGuia({ passo: 'd4-iniciar' });
+    }
+  };
+  // A rara das missões abre sozinha (depois da carta do dia, que tem a vez): uma vez por
+  // sessão do app, fora do tutorial e da celebração de nível.
+  const raraMissoes = missoes?.carta && !missoes.carta.raspada_em ? missoes.carta.id : null;
+  useFocusEffect(useCallback(() => {
+    if (!raraMissoes || cartaJaAberta(raraMissoes) || cartaPendente || !avisoResolvido || tutorialPendente || pontos?.celebrar) return;
+    const t = setTimeout(() => {
+      if (cartaJaAberta(raraMissoes)) return;
+      marcarCartaAberta(raraMissoes);
+      router.push(`/(carta)/carta?id=${raraMissoes}` as any);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [raraMissoes, cartaPendente, avisoResolvido, tutorialPendente, pontos?.celebrar, router]));
+
   const go = (path: string) => { haptics.tap(); router.push(path as any); };
 
-  // Alvos do tutorial de primeira entrada (58a–58d).
+  // Alvos do tour (06/nov/2026) e das dicas das missões.
+  const tutNivel = useCoachMark('home-nivel', { enabled: !!pontos });
+  const tutCarta = useCoachMark('home-carta');
+  const tutGrupo = useCoachMark('home-grupo', { enabled: !!meusGrupos });
   const tutCnt = useCoachMark('home-cnt');
   const tutCnt2 = useCoachMark('home-cnt2');
   const tutRot = useCoachMark('home-rot', { enabled: !hero.done });
@@ -498,6 +546,15 @@ export default function Home() {
   const tutScan = useCoachMark('home-scan');
   const tutRowTitle = useCoachMark('home-rowTitle');
   const tutRow = useCoachMark('home-row');
+
+  // Dica do desafio 4 com o botão apagado (fora do horário): o balão diz quando abre.
+  const botaoApagado = !SKINCARE_SEMPRE_DISPONIVEL && (hero.locked || hero.done);
+  useEffect(() => {
+    if (guia?.passo !== 'd4-iniciar' || !botaoApagado) return;
+    const min = hero.focus === 'pm' ? d.pmTime : d.amTime;
+    const hora = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+    irParaGuia('d4-fora', { hora });
+  }, [guia?.passo, botaoApagado, hero.focus, d.amTime, d.pmTime]);
 
   // Scan de rosto a cada 7 dias: o card abre o scan só quando libera.
   // Poder "Scan antecipado" armado: o próximo scan já está liberado.
@@ -516,14 +573,12 @@ export default function Home() {
   const hora = useLayer(!hero.done, rm);
   const feita = useLayer(hero.done, rm);
   const lk = useLayer(card === 'locked', rm);
-  const rd = useLayer(card === 'ready', rm);
   const cl = useLayer(card === 'claimed', rm);
   const todayCheck = useBadge(fezHoje, rm);
   const lockBadge = useBadge(card === 'locked', rm);
   const checkBadge = useBadge(card === 'claimed', rm);
 
   const veil = useRef(new Animated.Value(card === 'locked' ? 1 : 0)).current;
-  const bar = useRef(new Animated.Value(card === 'locked' ? 0 : 1)).current;
   const gxp = useRef(new Animated.Value(fracNivel)).current;
   const pop = useRef(new Animated.Value(1)).current;
   const sheen = useRef(new Animated.Value(0)).current;
@@ -547,11 +602,8 @@ export default function Home() {
     prevCard.current = card;
     Animated.timing(veil, { toValue: card === 'locked' ? 1 : 0, duration: 300, useNativeDriver: true }).start();
     if (was === card) return;
-    const to = card === 'locked' ? 0 : 1;
-    // Barra: mola (z .78, período .6 s); com Reduzir movimento, 240 ms sem mola.
-    if (rm) Animated.timing(bar, { toValue: to, duration: 240, easing: Easing.ease, useNativeDriver: true }).start();
-    else Animated.spring(bar, { toValue: to, stiffness: 109.7, damping: 16.3, mass: 1, useNativeDriver: true }).start();
-    if (card === 'ready' && !rm) {
+    // Acabou de ser resgatada: o "pop" com brilho e faíscas na mini carta.
+    if (card === 'claimed' && was === 'locked' && !rm) {
       const t = setTimeout(() => {
         pop.setValue(1);
         Animated.sequence([
@@ -567,21 +619,13 @@ export default function Home() {
       }, 260);
       return () => clearTimeout(t);
     }
-  }, [card, rm, veil, bar, pop, sparks, runSheen]);
+  }, [card, rm, veil, pop, sparks, runSheen]);
 
-  // Carta pronta brilha a cada 4 s.
-  useEffect(() => {
-    if (card !== 'ready' || rm) return;
-    const id = setInterval(runSheen, 4000);
-    return () => clearInterval(id);
-  }, [card, rm, runSheen]);
 
   // translateX(-160%) → (320%) da faixa de brilho, que tem 46% da carta por dentro da borda (74 × .46).
   const SHEEN_W = 74 * 0.46;
   const sheenX = sheen.interpolate({ inputRange: [0, 1], outputRange: [-1.6 * SHEEN_W, 3.2 * SHEEN_W] });
-  const miniShadow = card === 'ready'
-    ? '0px 10px 28px rgba(255,94,168,0.5), 0px 0px 0px 4px rgba(255,94,168,0.18)'
-    : '0px 6px 14px rgba(200,60,120,0.22)';
+  const miniShadow = '0px 6px 14px rgba(200,60,120,0.22)';
 
   return (
     <View style={styles.root}>
@@ -616,13 +660,19 @@ export default function Home() {
               {/* Nível individual (NIKS Points) → "Sua caminhada". Antes de o estado chegar,
                   a linha fica vazia com a mesma altura (a tela não pula). */}
               {pontos ? (
-                <TouchableOpacity activeOpacity={0.7} onPress={() => go('/caminhada')} style={styles.groupLine} accessibilityLabel={`Nível ${pontos.nivel}, ${pontos.titulo}. Abrir sua caminhada`}>
-                  <Text style={styles.groupLineText}>Nível {pontos.nivel} · {pontos.titulo}</Text>
-                  <View style={styles.miniTrack}>
-                    <Animated.View style={[styles.miniFill, { transform: [{ scaleX: gxp }] }]} />
-                  </View>
-                  <Icon d={CHEVRON} size={10} color={MUTE} sw={2.6} />
-                </TouchableOpacity>
+                <View {...tutNivel} style={{ alignSelf: 'flex-start' }}>
+                  <TouchableOpacity activeOpacity={0.7} onPress={() => go('/caminhada')} style={styles.groupLine} accessibilityLabel={`Nível ${pontos.nivel}, ${pontos.titulo}. Abrir sua caminhada${dobroHoje ? ', pontos em dobro' : ''}`}>
+                    {/* A medalha atual + o nome dela ("Prata 1"), desde 08/nov/2026. */}
+                    <View style={{ width: 22, height: 22, marginVertical: -4, marginRight: -3 }}><Medalha nivel={pontos.nivel} tamanho={22} /></View>
+                    <Text style={styles.groupLineText}>{pontos.titulo}</Text>
+                    <View style={styles.miniTrack}>
+                      <Animated.View style={[styles.miniFill, { transform: [{ scaleX: gxp }] }]} />
+                    </View>
+                    {/* Pontos em dobro valendo: só o indicador, ao lado da barra. */}
+                    {dobroHoje && <Text style={styles.dobroTexto}>x2</Text>}
+                    <Icon d={CHEVRON} size={10} color={MUTE} sw={2.6} />
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <View style={styles.groupLine} />
               )}
@@ -641,6 +691,8 @@ export default function Home() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ── Suas missões (06/nov/2026) ─────────────────────────────────── */}
 
         {/* ── Semana ───────────────────────────────────────────────────── */}
         <View style={styles.week} {...tutWeek}>
@@ -681,12 +733,17 @@ export default function Home() {
             <View style={{ marginTop: 67 }} {...tutRot}>
               <TouchableOpacity
                 activeOpacity={0.85}
-                // Na hora, "Iniciar skincare" cai direto no guia passo a passo da Rotina.
-                // Antes da hora fica apagado e não responde.
-                disabled={hero.locked || hero.done}
-                accessibilityState={{ disabled: hero.locked }}
-                onPress={() => { haptics.action(); router.push(`/protocolo?iniciar=${hero.focus}` as any); }}
-                style={[styles.heroBtn, hero.locked && { opacity: 0.4 }]}
+                // "Iniciar skincare" abre a lista de produtos do período (`(app)/skincare`, 05/nov/2026):
+                // Concluir skincare → "Compartilhar com o grupo?" → câmera → Novo check-in → carta →
+                // mural. Antes ia para o guia passo a passo da aba Rotina. Antes da hora fica apagado e
+                // não responde — menos no modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`), sempre disponível.
+                disabled={!SKINCARE_SEMPRE_DISPONIVEL && (hero.locked || hero.done)}
+                accessibilityState={{ disabled: !SKINCARE_SEMPRE_DISPONIVEL && hero.locked }}
+                onPress={() => {
+                  haptics.action();
+                  router.push({ pathname: '/skincare', params: { periodo: hero.focus, am: String(d.amTime), pm: String(d.pmTime) } } as any);
+                }}
+                style={[styles.heroBtn, !SKINCARE_SEMPRE_DISPONIVEL && hero.locked && { opacity: 0.4 }]}
               >
                 <Svg width={16} height={16} viewBox="0 0 24 24">
                   <Path d="M6 3.8v16.4a1 1 0 0 0 1.5.86l13.6-8.2a1 1 0 0 0 0-1.72L7.5 2.94A1 1 0 0 0 6 3.8z" fill="#fff" />
@@ -706,49 +763,25 @@ export default function Home() {
             </View>
             {protegida && <SeloProtegida rm={rm} animar={false} style={{ marginTop: 6, alignSelf: 'center' }} />}
           </Animated.View>
+          {/* Balãozinho das missões: ao lado do "Iniciar skincare", sem empurrar nada. O painel só abre no toque. */}
+          {mostrarMissoes && missoes && <BolhaMissoes estado={missoes} onMissao={comecarMissao} />}
         </View>
 
         {/* ── Sua carta do dia ─────────────────────────────────────────── */}
-        <View style={styles.carta}>
+        <View style={styles.carta} {...tutCarta}>
           <View style={styles.cartaText}>
-            <Animated.View style={[StyleSheet.absoluteFill, lk.style]} pointerEvents={lk.pointerEvents}>
+            {/* O desafio (sem botão e sem toque): completar o skincare libera a carta. */}
+            <Animated.View style={[StyleSheet.absoluteFill, lk.style]} pointerEvents="none">
               <Text style={styles.cartaTitle}>Sua carta do dia</Text>
-              <Text style={styles.cartaSub}>Conclua sua rotina para liberar</Text>
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, rd.style]} pointerEvents={rd.pointerEvents}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.cartaTitle}>Sua carta está pronta</Text>
-                <Svg width={20} height={20} viewBox="0 0 24 24">
-                  <Path fill={PINK} d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-                  <Path d="M20 2v4M22 4h-4" stroke={PINK} strokeWidth={1.8} strokeLinecap="round" fill="none" />
-                </Svg>
-              </View>
-              <TouchableOpacity activeOpacity={0.85} onPress={claimCard} style={styles.raspar}>
-                <Icon
-                  d={['M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2', 'M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2', 'M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8', 'M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15']}
-                  size={15} color="#fff" sw={2}
-                />
-                <Text style={styles.rasparText}>Raspar agora</Text>
-              </TouchableOpacity>
-            </Animated.View>
-            <Animated.View style={[StyleSheet.absoluteFill, cl.style]} pointerEvents={cl.pointerEvents}>
-              <Text style={styles.cartaTitle}>Carta resgatada</Text>
-              <View style={styles.nextRow}>
-                <Svg width={14} height={14} viewBox="0 0 24 24">
-                  <Circle cx={12} cy={13} r={8} fill="none" stroke={MUTE} strokeWidth={2.2} />
-                  <Path d="M12 9v4l2.5 1.5M9 2h6M12 2v3" fill="none" stroke={MUTE} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-                </Svg>
-                <Text style={styles.cartaSubInline}>{proximaNaNoite ? 'Próxima carta na rotina da noite' : `Próxima carta em ${nextCardIn(now)}`}</Text>
-              </View>
-            </Animated.View>
-          </View>
-          <View style={styles.cartaTrack}>
-            <Animated.View style={[styles.cartaFill, { transform: [{ scaleX: bar }] }]} />
-            <View style={styles.cartaTrackLabelWrap}>
-              <Text style={[styles.cartaTrackLabel, { color: card === 'locked' ? MUTE : '#fff' }]}>
-                {`${dadas} / ${cota}`}
+              <Text style={styles.cartaSub} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+                {cartaLiberada ? 'Raspe sua carta' : 'Complete o skincare do dia'}
               </Text>
-            </View>
+              <Text style={styles.cartaProgresso}>{cartaLiberada ? '1/1' : '0/1'}</Text>
+            </Animated.View>
+            <Animated.View style={[StyleSheet.absoluteFill, cl.style]} pointerEvents="none">
+              <Text style={styles.cartaTitle}>Sua carta do dia</Text>
+              <Text style={styles.cartaSub}>Resgatada</Text>
+            </Animated.View>
           </View>
 
           {/* Mini carta inclinada (8°) à direita */}
@@ -806,7 +839,7 @@ export default function Home() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 10, paddingTop: 16, paddingHorizontal: 18, paddingBottom: 6 }}
           >
-            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/niks-chat')} style={styles.forCard}>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/(scan)/sos-camera')} style={styles.forCard}>
               <Text style={styles.forText}>{'Apareceu\numa espinha?'}</Text>
               <View style={[styles.forCircle, styles.forCirclePink]}>
                 <Icon d={['M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z', 'M12 9v4.5', 'M12 17.2h.01']} size={30} color="#fff" sw={1.9} />
@@ -866,8 +899,9 @@ export default function Home() {
         </View>
 
         {/* ── Seu grupo ───────────────────────────────────────────────── */}
-        {meusGrupos && <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Seu grupo</Text>}
+        {meusGrupos && <Text style={[styles.sectionTitle, { marginTop: 18 }]} onLayout={(e) => { grupoY.current = e.nativeEvent.layout.y; }}>Seu grupo</Text>}
         {!meusGrupos ? null : grupo ? (
+          <View {...tutGrupo}>
           <TouchableOpacity activeOpacity={0.85} onPress={() => go(`/grupo?id=${grupo.id}&de=home`)} style={styles.groupCard}>
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
@@ -879,14 +913,15 @@ export default function Home() {
             <View style={styles.groupFoot}>
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {grupo.integrantes.slice(0, 5).map((m) => (
-                  <Avatar key={m.user_id} img={null} uri={m.voce ? (d.fotoUrl ?? m.foto) : m.foto} done={m.fez_hoje} size={40} />
+                  <Avatar key={m.user_id} img={null} uri={m.voce ? (d.fotoUrl ?? m.foto) : m.foto} done={m.fez_hoje} size={40} nivel={m.nivel} />
                 ))}
               </View>
               <Text style={styles.groupCount}>{grupo.feitos_hoje} de {grupo.total} hoje</Text>
             </View>
           </TouchableOpacity>
+          </View>
         ) : (
-          <View style={styles.groupCard}>
+          <View style={styles.groupCard} {...tutGrupo}>
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.groupName}>{'Faça skincare\ncom suas amigas'}</Text>
@@ -900,10 +935,14 @@ export default function Home() {
               </View>
             </View>
             <View style={styles.inviteBtns}>
-              <TouchableOpacity activeOpacity={0.85} onPress={() => go('/seus-grupos?criar=1')} style={styles.criarBtn}>
-                <Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={2.6} />
-                <Text style={styles.criarText}>Criar grupo</Text>
-              </TouchableOpacity>
+              {/* `flex: 1` no embrulho do tutorial: sem ele o botão encolhia até o texto e o
+                  "Criar grupo" encostava na borda da pílula (08/nov/2026). */}
+              <View style={{ flex: 1 }}>
+                <TouchableOpacity activeOpacity={0.85} onPress={() => go('/seus-grupos?criar=1')} style={styles.criarBtn}>
+                  <Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={2.6} />
+                  <Text style={styles.criarText}>Criar grupo</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         )}
@@ -966,7 +1005,7 @@ const styles = StyleSheet.create({
 
   // Cabeçalho
   hdrRow: {
-    height: 36, paddingHorizontal: 20,
+    minHeight: 36, paddingHorizontal: 20,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   hdrLeft: { flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -979,6 +1018,7 @@ const styles = StyleSheet.create({
   greet: { fontSize: 17, fontWeight: '400', lineHeight: 20, letterSpacing: -0.3, color: INK },
   groupLine: { height: 15, flexDirection: 'row', alignItems: 'center', gap: 7 },
   groupLineText: { fontSize: 12, fontWeight: '500', letterSpacing: -0.1, color: '#515151' },
+  dobroTexto: { fontSize: 12, fontWeight: '700', letterSpacing: -0.2, color: '#FF5EA8' },
   miniTrack: { width: 38, height: 4, borderRadius: 100, backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden' },
   miniFill: { ...StyleSheet.absoluteFillObject, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'left center' },
   streakBtn: {
@@ -1044,21 +1084,7 @@ const styles = StyleSheet.create({
   cartaText: { height: 66, marginRight: 96 },
   cartaTitle: { fontSize: 20, fontWeight: '700', lineHeight: 24, letterSpacing: -0.5, color: INK },
   cartaSub: { marginTop: 5, fontSize: 14, lineHeight: 18, color: MUTE, letterSpacing: -0.1 },
-  cartaSubInline: { fontSize: 14, lineHeight: 18, color: MUTE, letterSpacing: -0.1, fontVariant: ['tabular-nums'] },
-  nextRow: { marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  raspar: {
-    marginTop: 8, alignSelf: 'flex-start', height: 34, paddingHorizontal: 16, borderRadius: 100,
-    backgroundColor: PINK, flexDirection: 'row', alignItems: 'center', gap: 7,
-    boxShadow: '0px 6px 12px rgba(255,94,168,0.35)',
-  },
-  rasparText: { color: '#fff', fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
-  cartaTrack: {
-    marginTop: 14, marginRight: 96, height: 12, borderRadius: 100,
-    backgroundColor: 'rgba(18,18,18,0.08)', overflow: 'hidden',
-  },
-  cartaFill: { ...StyleSheet.absoluteFillObject, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'left center' },
-  cartaTrackLabelWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  cartaTrackLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  cartaProgresso: { marginTop: 3, fontSize: 14, fontWeight: '700', lineHeight: 16, color: PINK, fontVariant: ['tabular-nums'] },
   mini: { position: 'absolute', right: -10, top: '50%', marginTop: -53, width: 78, height: 106 },
   miniCard: { ...StyleSheet.absoluteFillObject, borderRadius: 22 * (78 / 220) },
   miniClip: { flex: 1, borderRadius: 22 * (78 / 220), overflow: 'hidden' },
@@ -1112,8 +1138,8 @@ const styles = StyleSheet.create({
   },
   inviteBtns: { marginTop: 14, flexDirection: 'row', gap: 8 },
   criarBtn: {
-    flex: 1, height: 44, borderRadius: 100, backgroundColor: PINK,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    height: 46, borderRadius: 100, backgroundColor: PINK, paddingHorizontal: 22,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     boxShadow: '0px 6px 12px rgba(255,94,168,0.35)',
   },
   criarText: { color: '#fff', fontSize: 15, fontWeight: '600', letterSpacing: -0.3 },
