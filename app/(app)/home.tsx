@@ -913,7 +913,7 @@ export default function Home() {
             <View style={styles.groupFoot}>
               <View style={{ flexDirection: 'row', gap: 6 }}>
                 {grupo.integrantes.slice(0, 5).map((m) => (
-                  <Avatar key={m.user_id} img={null} uri={m.voce ? (d.fotoUrl ?? m.foto) : m.foto} done={m.fez_hoje} size={40} nivel={m.nivel} />
+                  <Avatar key={m.user_id} img={null} uri={m.foto} done={m.fez_hoje} size={40} nivel={m.nivel} nome={m.nome} />
                 ))}
               </View>
               <Text style={styles.groupCount}>{grupo.feitos_hoje} de {grupo.total} hoje</Text>

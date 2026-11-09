@@ -31,12 +31,12 @@ function DashedRing({ size }: { size: number }) {
 // Com `nivel` (08/nov/2026): a foto ganha a MOLDURA da medalha atual dela (5 molduras, uma
 // por material) no lugar do anel; quem ainda não fez hoje continua com a foto apagada e cinza.
 // A moldura passa 8 pt da caixa de cada lado (a flor sai para fora), sem mudar o layout.
-export default function Avatar({ img, uri, done, size, nivel }: { img: ImageSourcePropType | null; uri: string | null; done: boolean; size: number; nivel?: number }) {
+export default function Avatar({ img, uri, done, size, nivel, nome }: { nome?: string | null; img: ImageSourcePropType | null; uri: string | null; done: boolean; size: number; nivel?: number }) {
   if (nivel != null && !img) {
     const m = size + 16;
     return (
       <View style={{ width: size, height: size }}>
-        <FotoComMoldura nivel={nivel} foto={uri} tamanho={m} pequena apagada={!done} vazio="#F6D3E1" style={{ position: 'absolute', left: -8, top: -8 }} />
+        <FotoComMoldura nivel={nivel} foto={uri} nome={nome} tamanho={m} pequena apagada={!done} vazio="#F6D3E1" style={{ position: 'absolute', left: -8, top: -8 }} />
       </View>
     );
   }

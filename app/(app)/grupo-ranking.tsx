@@ -95,7 +95,7 @@ function Linha({ r, i, ultima, rm }: { r: LinhaRanking; i: number; ultima: boole
       </View>
       {/* A foto com a moldura da medalha atual dela (08/nov/2026); passa 9 pt de cada lado. */}
       <View style={{ width: 48, height: 48 }}>
-        <FotoComMoldura nivel={r.nivel} foto={r.foto} tamanho={66} pequena vazio="#FCE3EE" style={{ position: 'absolute', left: -9, top: -9 }} />
+        <FotoComMoldura nivel={r.nivel} foto={r.foto} nome={r.nome} tamanho={66} pequena vazio="#FCE3EE" style={{ position: 'absolute', left: -9, top: -9 }} />
       </View>
       <View style={[styles.rowBody, { borderBottomColor: ultima ? 'transparent' : 'rgba(18,18,18,0.07)' }]}>
         <View style={{ flex: 1, minWidth: 0 }}>

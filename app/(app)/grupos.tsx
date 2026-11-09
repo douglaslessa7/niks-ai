@@ -112,7 +112,7 @@ export default function Grupos() {
               O quadrado da moldura é maior que a foto e fica em volta dela. */}
           <Salta key={`foto${abertura}`} delay={60} de={0.86} rm={rm} style={{ position: 'absolute', top: y(116) + FOTO / 2 - MOLDURA / 2, left: W / 2 - MOLDURA / 2 }}>
             <AlvoGuia chave="perfil-foto">
-              <FotoComMoldura nivel={pontos?.nivel ?? p?.nivel ?? 1} foto={p?.foto} tamanho={MOLDURA} pequena={false} vazio="#FCE3EE" />
+              <FotoComMoldura nivel={pontos?.nivel ?? p?.nivel ?? 1} foto={p?.foto} nome={p?.nome} tamanho={MOLDURA} pequena={false} vazio="#FCE3EE" />
             </AlvoGuia>
           </Salta>
           <Text style={[styles.nome, { top: y(216) }]} numberOfLines={1}>{p?.nome ?? ''}</Text>

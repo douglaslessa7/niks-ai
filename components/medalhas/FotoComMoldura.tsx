@@ -7,7 +7,7 @@
 // `tamanho` é o da MOLDURA inteira; a foto ocupa ~57% do lado, no centro.
 // ─────────────────────────────────────────────────────────────────────────────
 import { memo, useMemo } from 'react';
-import { Image, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Text, Image, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 import { FOTO_NA_MOLDURA, molduraSvg } from '../../lib/medalhas';
 import { medalhaDoNivel } from '../../lib/niveis';
@@ -15,6 +15,8 @@ import { medalhaDoNivel } from '../../lib/niveis';
 type Props = {
   nivel: number;
   foto: string | null | undefined;
+  /** Sem foto, mostra a inicial deste nome. */
+  nome?: string | null;
   tamanho: number;
   pequena?: boolean;
   /** Fundo do círculo sem foto (o design usa #F4F4F4). */
@@ -24,12 +26,13 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
-function FotoComMoldura({ nivel, foto, tamanho, pequena, vazio = '#F4F4F4', apagada, style }: Props) {
+function FotoComMoldura({ nivel, foto, nome, tamanho, pequena, vazio = '#F4F4F4', apagada, style }: Props) {
   const p = pequena ?? tamanho <= 100;
   const { material } = medalhaDoNivel(nivel);
   const xml = useMemo(() => molduraSvg(material, p), [material, p]);
   const g = p ? FOTO_NA_MOLDURA.pequena : FOTO_NA_MOLDURA.grande;
   const lado = tamanho * g.lado;
+  const inicial = Array.from((nome ?? '').trim())[0]?.toLocaleUpperCase('pt-BR') ?? '';
   return (
     <View style={[{ width: tamanho, height: tamanho }, style]}>
       <View style={{
@@ -37,7 +40,11 @@ function FotoComMoldura({ nivel, foto, tamanho, pequena, vazio = '#F4F4F4', apag
         borderRadius: lado / 2, overflow: 'hidden', backgroundColor: vazio,
         opacity: apagada ? 0.5 : 1, isolation: 'isolate',
       }}>
-        {foto ? <Image source={{ uri: foto }} style={{ width: '100%', height: '100%', transform: [{ scale: 1.14 }] }} resizeMode="cover" /> : null}
+        {foto ? <Image source={{ uri: foto }} style={{ width: '100%', height: '100%', transform: [{ scale: 1.14 }] }} resizeMode="cover" /> : !!inicial && (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text allowFontScaling={false} style={{ fontSize: lado * 0.46, fontWeight: '700', color: '#E0447F' }}>{inicial}</Text>
+          </View>
+        )}
         {apagada && <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#808080', opacity: 0.7, mixBlendMode: 'saturation' }} />}
       </View>
       <SvgXml xml={xml} width={tamanho} height={tamanho} style={{ position: 'absolute', left: 0, top: 0 }} />

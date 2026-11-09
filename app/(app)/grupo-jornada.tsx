@@ -91,7 +91,7 @@ function Integrante({ m, ordem, y, rm, run }: { m: LinhaJornada; ordem: number; 
     <>
       {/* A foto com a moldura da medalha atual dela (5 molduras, uma por material). */}
       <Animated.View style={[styles.av, { top: y - AV / 2 }, st]}>
-        <FotoComMoldura nivel={m.nivel} foto={m.foto} tamanho={AV} pequena vazio="#FCE3EE" />
+        <FotoComMoldura nivel={m.nivel} foto={m.foto} nome={m.nome} tamanho={AV} pequena vazio="#FCE3EE" />
       </Animated.View>
       <Animated.View style={[styles.pill, { top: y - 14, backgroundColor: m.voce ? PINK : '#fff' }, st]}>
         <Text style={[styles.pillNome, { color: m.voce ? '#fff' : INK }]} numberOfLines={1}>{m.voce ? 'Você' : m.nome}</Text>
