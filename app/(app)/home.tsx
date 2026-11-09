@@ -1,3 +1,7 @@
+import { useEhConvidada } from '../../lib/acesso';
+import { abrirTrava, type FRASES } from '../../lib/trava';
+import CadeadoSobre from '../../components/trava/CadeadoSobre';
+import { Lock } from 'lucide-react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, Image, Animated, Easing, StyleSheet,
@@ -244,8 +248,36 @@ function useReduceMotion(): boolean {
 
 type CardState = 'locked' | 'claimed';
 
+// Cards de "Pra você" trancados para a convidada. "Suas conquistas" fica aberto.
+const ROTAS_TRANCADAS: Record<string, keyof typeof FRASES> = {
+  '/(scan)/sos-camera': 'espinha',
+  '/niks-chat': 'chat',
+  '/progresso': 'scan',
+  '/(scan)/product-camera': 'produtos',
+};
+
+// Card de "Pra você". Trancado: o card inteiro fica apagado (o círculo passa da borda, então
+// um véu por cima não o cobriria) e o cadeado fica no centro, sem apagar junto.
+function CardPraVoce({ trancado, onPress, children }: { trancado: boolean; onPress: () => void; children: React.ReactNode }) {
+  return (
+    <View>
+      <TouchableOpacity activeOpacity={trancado ? 0.38 : 0.85} onPress={onPress} style={[styles.forCard, trancado && { opacity: 0.38 }]}>
+        {children}
+      </TouchableOpacity>
+      {trancado && (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+            <Lock size={18} color="#E0447F" strokeWidth={2.4} />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
+  const convidada = useEhConvidada();
   const insets = useSafeAreaInsets();
   const { startFaceScan } = useFaceScan();
   const setStoreSkinScore = useAppStore((s) => s.setSkinScore);
@@ -509,7 +541,7 @@ export default function Home() {
   // os 4 desafios foram feitos e a rara foi raspada.
   const { data: missoes } = useMissoes();
   const guia = useGuia();
-  const mostrarMissoes = !!missoes && !tutorialPendente && !guia && cardVisivel(missoes);
+  const mostrarMissoes = !convidada && !!missoes && !tutorialPendente && !guia && cardVisivel(missoes);
   const comecarMissao = (m: MissaoId) => {
     if (m === 'd1') iniciarGuia({ passo: 'd1-aba' });
     else if (m === 'd2') iniciarGuia({ passo: 'd2-aba' });
@@ -532,7 +564,12 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [raraMissoes, cartaPendente, avisoResolvido, tutorialPendente, pontos?.celebrar, router]));
 
-  const go = (path: string) => { haptics.tap(); router.push(path as any); };
+  const go = (path: string) => {
+    haptics.tap();
+    const trava = convidada ? ROTAS_TRANCADAS[path] : undefined;
+    if (trava) { abrirTrava(trava); return; }
+    router.push(path as any);
+  };
 
   // Alvos do tour (06/nov/2026) e das dicas das missões.
   const tutNivel = useCoachMark('home-nivel', { enabled: !!pontos });
@@ -651,7 +688,9 @@ export default function Home() {
               {d.fotoUrl ? (
                 <Image source={{ uri: d.fotoUrl }} style={styles.avatar} />
               ) : (
-                <View style={[styles.avatar, { backgroundColor: '#F6D3E1' }]} />
+                <View style={[styles.avatar, { backgroundColor: '#F6D3E1', alignItems: 'center', justifyContent: 'center' }]}>
+                  <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: '700', color: '#E0447F' }}>{d.firstName ? Array.from(d.firstName.trim())[0]?.toLocaleUpperCase('pt-BR') : ''}</Text>
+                </View>
               )}
               <View style={styles.avatarDot} />
             </TouchableOpacity>
@@ -732,22 +771,23 @@ export default function Home() {
             <Text style={styles.heroNum} {...tutCnt2}>{hero.done ? '' : hero.num}</Text>
             <View style={{ marginTop: 67 }} {...tutRot}>
               <TouchableOpacity
-                activeOpacity={0.85}
+                activeOpacity={convidada ? 0.4 : 0.85}
                 // "Iniciar skincare" abre a lista de produtos do período (`(app)/skincare`, 05/nov/2026):
                 // Concluir skincare → "Compartilhar com o grupo?" → câmera → Novo check-in → carta →
                 // mural. Antes ia para o guia passo a passo da aba Rotina. Antes da hora fica apagado e
                 // não responde — menos no modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`), sempre disponível.
-                disabled={!SKINCARE_SEMPRE_DISPONIVEL && (hero.locked || hero.done)}
+                disabled={!convidada && !SKINCARE_SEMPRE_DISPONIVEL && (hero.locked || hero.done)}
                 accessibilityState={{ disabled: !SKINCARE_SEMPRE_DISPONIVEL && hero.locked }}
                 onPress={() => {
                   haptics.action();
+                  if (convidada) { abrirTrava('skincare'); return; }
                   router.push({ pathname: '/skincare', params: { periodo: hero.focus, am: String(d.amTime), pm: String(d.pmTime) } } as any);
                 }}
-                style={[styles.heroBtn, !SKINCARE_SEMPRE_DISPONIVEL && hero.locked && { opacity: 0.4 }]}
+                style={[styles.heroBtn, ((!SKINCARE_SEMPRE_DISPONIVEL && hero.locked) || convidada) && { opacity: 0.4 }]}
               >
-                <Svg width={16} height={16} viewBox="0 0 24 24">
+                {convidada ? <Lock size={16} color="#fff" strokeWidth={2.4} /> : <Svg width={16} height={16} viewBox="0 0 24 24">
                   <Path d="M6 3.8v16.4a1 1 0 0 0 1.5.86l13.6-8.2a1 1 0 0 0 0-1.72L7.5 2.94A1 1 0 0 0 6 3.8z" fill="#fff" />
-                </Svg>
+                </Svg>}
                 <Text style={styles.heroBtnText}>Iniciar skincare</Text>
               </TouchableOpacity>
             </View>
@@ -839,39 +879,39 @@ export default function Home() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 10, paddingTop: 16, paddingHorizontal: 18, paddingBottom: 6 }}
           >
-            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/(scan)/sos-camera')} style={styles.forCard}>
+            <CardPraVoce trancado={convidada} onPress={() => go('/(scan)/sos-camera')}>
               <Text style={styles.forText}>{'Apareceu\numa espinha?'}</Text>
               <View style={[styles.forCircle, styles.forCirclePink]}>
                 <Icon d={['M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z', 'M12 9v4.5', 'M12 17.2h.01']} size={30} color="#fff" sw={1.9} />
               </View>
               <View style={styles.novo}><Text style={styles.novoText}>Novo</Text></View>
-            </TouchableOpacity>
+            </CardPraVoce>
             <View {...tutScan}>
-              <TouchableOpacity activeOpacity={0.85} onPress={onScan} style={styles.forCard}>
-                <Text style={styles.forText}>Analisar minha pele</Text>
+              <CardPraVoce trancado={convidada} onPress={() => { if (convidada) { haptics.tap(); abrirTrava('scan'); return; } onScan(); }}>
+              <Text style={styles.forText}>Analisar minha pele</Text>
                 <View style={[styles.forCircle, styles.forCircleWhite]}>
                   <Svg width={30} height={30} viewBox="0 0 24 24">
                     <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" fill="none" stroke={PINK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
                     <Circle cx={12} cy={13} r={3} fill="none" stroke={PINK} strokeWidth={1.9} />
                   </Svg>
                 </View>
-              </TouchableOpacity>
+              </CardPraVoce>
             </View>
-            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/niks-chat')} style={styles.forCard}>
+            <CardPraVoce trancado={convidada} onPress={() => go('/niks-chat')}>
               <Text style={styles.forText}>NIKS Chat</Text>
               <View style={[styles.forCircle, styles.forCirclePink]}>
                 <Icon d={['M21 12a8.5 8.5 0 0 1-12.2 7.6L3.5 21l1.3-4.8A8.5 8.5 0 1 1 21 12z', 'M8.5 11h7M8.5 14h4.5']} size={30} color="#fff" sw={1.9} />
               </View>
-            </TouchableOpacity>
+            </CardPraVoce>
             {/* Cards da home anterior no padrão do design 74 (pedido do Douglas, 01/nov/2026),
                 seguindo a alternância de círculo branco / rosa dos três primeiros. */}
-            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/progresso')} style={styles.forCard}>
+            <CardPraVoce trancado={convidada} onPress={() => go('/progresso')}>
               <Text style={styles.forText}>Progresso</Text>
               <View style={[styles.forCircle, styles.forCircleWhite]}>
                 <Icon d="M3 17l6-6 4 4 8-8M15 7h6v6" size={30} color={PINK} sw={1.9} />
               </View>
-            </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/(scan)/product-camera')} style={styles.forCard}>
+            </CardPraVoce>
+            <CardPraVoce trancado={convidada} onPress={() => go('/(scan)/product-camera')}>
               <Text style={styles.forText}>Escanear produto</Text>
               <View style={[styles.forCircle, styles.forCirclePink]}>
                 <Icon
@@ -879,7 +919,7 @@ export default function Home() {
                   size={30} color="#fff" sw={1.9}
                 />
               </View>
-            </TouchableOpacity>
+            </CardPraVoce>
             {/* Suas conquistas: abre o mesmo hub da chama (canto superior direito). */}
             <TouchableOpacity activeOpacity={0.85} onPress={() => go('/conquistas')} style={styles.forCard}>
               <Text style={styles.forText}>Suas conquistas</Text>
@@ -951,6 +991,7 @@ export default function Home() {
         {products.length > 0 && (
           <View style={styles.surfaceShadow}>
             <View style={styles.surface}>
+              {convidada && <CadeadoSobre funcao="produtos" />}
               <Text style={styles.surfaceTitle}>
                 Seus produtos · Skincare {hero.focus === 'am' ? 'matinal' : 'noturno'}
               </Text>

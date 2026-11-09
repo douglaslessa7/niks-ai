@@ -13,6 +13,15 @@
 //   • Sair da conta (pílula) + "Apagar minha conta" (link) + versão.
 // Vermelho #D4183D continua como cor SEMÂNTICA de ação destrutiva.
 // ─────────────────────────────────────────────────────────────────────────────
+import { useEhConvidada } from '../../lib/acesso';
+import { useUserId } from '../../lib/currentUser';
+import { useEstadoCartas } from '../../lib/cartasServidor';
+import { sessionDate } from '../../lib/routineProgress';
+import { mesKey } from '../../components/grupos/CalendarioCheckins';
+import { abrirPaywallConvidada } from '../../lib/trava';
+import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
+import Medalha from '../../components/medalhas/Medalha';
+import { chavePerfilGrupos, perfilGrupos, useMeusGrupos, type PerfilGrupos } from '../../lib/gruposServidor';
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Linking, Alert, Image, StyleSheet, ActionSheetIOS, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -103,6 +112,14 @@ function Row({
 const ICON = { size: 19, color: '#FFFFFF', strokeWidth: 2 } as const;
 
 export default function Perfil() {
+  const convidada = useEhConvidada();
+  const userIdC = useUserId();
+  const mk = mesKey(sessionDate());
+  const perfilFn = useCallback(() => perfilGrupos(mk), [mk]);
+  const { data: pg } = useCachedQuery<PerfilGrupos>(convidada && userIdC ? chavePerfilGrupos(userIdC, mk) : null, perfilFn, { staleMs: 0 });
+  const { data: gruposC } = useMeusGrupos();
+  const { data: estadoC } = useEstadoCartas();
+  const pontosC = estadoC?.pontos;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, signOut, deleteAccount } = useAuth();
@@ -302,6 +319,9 @@ export default function Perfil() {
       >
         {/* ── Topo: foto + nome + Premium ─────────────────────────────────── */}
         <TouchableOpacity activeOpacity={0.85} onPress={openEditOptions} style={styles.hero} accessibilityLabel="Editar foto ou nome">
+          {convidada ? (
+            <FotoComMoldura nivel={pontosC?.nivel ?? pg?.nivel ?? 1} foto={fotoUrl} nome={nome} tamanho={132} pequena={false} vazio="#FCE3EE" />
+          ) : (
           <View style={styles.avatarShadow}>
             {fotoUrl ? (
               <Image source={{ uri: fotoUrl }} style={styles.avatar} />
@@ -314,19 +334,32 @@ export default function Perfil() {
               <Pencil size={13} color="#FFFFFF" strokeWidth={2.4} />
             </View>
           </View>
+          )}
 
           <Text style={styles.name} numberOfLines={1}>{nome || 'Toque para definir'}</Text>
 
-          <View style={styles.premium}>
-            <Crown size={13} color={PINK_DEEP} fill={PINK_DEEP} />
-            <Text style={styles.premiumText}>Premium</Text>
-          </View>
+          {convidada ? (
+            <>
+              {pontosC && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}><View style={{ width: 24, height: 24 }}><Medalha nivel={pontosC.nivel} tamanho={24} /></View><Text style={styles.premiumText}>{pontosC.titulo}</Text></View>}
+              <Text style={{ marginTop: 6, fontSize: 14, color: '#7A7076' }}>{pg?.checkins ?? 0} check-ins · {gruposC?.length ?? 0} grupos</Text>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.action(); abrirPaywallConvidada(); }} style={{ marginTop: 12, height: 44, paddingHorizontal: 22, borderRadius: 22, backgroundColor: '#FF5EA8', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Assinar o NIKS</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.premium}>
+              <Crown size={13} color={PINK_DEEP} fill={PINK_DEEP} />
+              <Text style={styles.premiumText}>Premium</Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         {/* ── Horário da rotina (os mesmos cartões do Alarme) ─────────────── */}
         <Text style={styles.sectionTitle}>Mudar o horário da minha rotina</Text>
         <HorariosRotina />
 
+        {!convidada && (
+          <>
         {/* ── Assinatura ──────────────────────────────────────────────────── */}
         <Text style={styles.sectionTitle}>Assinatura</Text>
         <Glass style={styles.card}>
@@ -337,6 +370,8 @@ export default function Perfil() {
             onPress={() => { haptics.tap(); Linking.openURL(manageSubscriptionsUrl()); }}
           />
         </Glass>
+          </>
+        )}
 
         {/* ── Sua conta ───────────────────────────────────────────────────── */}
         <Text style={styles.sectionTitle}>Sua conta</Text>
