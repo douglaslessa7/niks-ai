@@ -26,6 +26,9 @@ import type { CartaGanha, EstadoPoder } from '../../lib/cartasServidor';
 // correndo e sem faíscas piscando (ficam paradas).
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Produto da carta de conversão: aparece só como sombra, sem dar para ver qual é.
+const PRODUTO_CAMUFLADO = require('../../assets/onboarding/demo-produto-recorte.png');
+
 const INK = '#121212';
 const PINK = '#FF5EA8';
 const MUTE = '#818181';
@@ -79,8 +82,10 @@ export type VisualCarta =
   | { k: 'poder'; subtipo: string; misteriosa: boolean; estado: EstadoPoder | null }
   | { k: 'conhecimento'; titulo: string; texto: string | null }
   | { k: 'convidada'; tipo: 'produto'; foto?: any }
-  | { k: 'convidada'; tipo: 'idade'; foto?: any }
-  | { k: 'convidada'; tipo: 'rotina'; passos: PassoPrevia[] }
+  | { k: 'convidada'; tipo: 'idade'; foto?: any; idade?: number | null }
+  | { k: 'convidada'; tipo: 'rotina'; passos: PassoPrevia[]; titulo?: string }
+  | { k: 'convidada'; tipo: 'chat' }
+  | { k: 'convidada'; tipo: 'produto2' }
   /** A carta do onboarding (03/nov/2026): a idade da pele do scan, na identidade da rara.
    *  `numero` null = ainda não revelada (nada do número aparece). `contar`: ao aparecer, o
    *  número sobe de 0 até `numero` (`Contador`); sem ele, aparece pronto. */
@@ -105,6 +110,18 @@ export type VisualCarta =
 /** O visual de uma carta do servidor (família, subtipo, rara, origem e o estado do poder). */
 export function visualDe(c: Pick<CartaGanha, 'origem' | 'conteudo'> & { carta: CartaGanha['carta'] }, estado?: EstadoPoder | null): VisualCarta {
   const cat = c.carta;
+  if (c.origem === 'convidada') {
+    const q = (c.conteudo ?? {}) as { tipo?: string; idade?: number | null; preocupacoes?: string[] | null };
+    if (q.tipo === 'produto') return { k: 'convidada', tipo: 'produto', foto: PRODUTO_CAMUFLADO };
+    if (q.tipo === 'idade') return { k: 'convidada', tipo: 'idade', idade: q.idade ?? null };
+    if (q.tipo === 'chat') return { k: 'convidada', tipo: 'chat' };
+    if (q.tipo === 'produto2') return { k: 'convidada', tipo: 'produto2' };
+    const lista = (q.preocupacoes ?? []).slice(0, 3).map((p) => p.toLocaleLowerCase('pt-BR'));
+    return {
+      k: 'convidada', tipo: 'rotina', titulo: lista.length ? `Sua rotina para ${lista.length > 1 ? `${lista.slice(0, -1).join(', ')} e ${lista[lista.length - 1]}` : lista[0]} está pronta.` : 'Sua rotina está pronta.',
+      passos: [{ nome: 'Limpeza', sub: 'Primeiro passo' }, { nome: 'Tratamento', sub: 'Segundo passo' }, { nome: 'Proteção', sub: 'Terceiro passo' }],
+    };
+  }
   if (cat?.familia === 'poder') {
     // Regras novas: a "Carta misteriosa" deixou de existir como tipo na tela (a Carta de volta é um Pontos em dobro).
     return { k: 'poder', subtipo: cat.subtipo ?? 'pontos_dobro', misteriosa: false, estado: estado ?? null };
@@ -500,34 +517,63 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
     if (v.tipo === 'produto') {
       corpo = (
         <>
-          <BalancedText text="Achamos o produto perfeito para sua pele" style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.4 * s }]} />
+          <BalancedText text="Achamos o produto perfeito para sua pele." style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.4 * s }]} />
           {v.foto && (
-            <Image source={v.foto} resizeMode="contain" style={{ position: 'absolute', left: wi / 2 - 70 * s, top: Y(184) - 90 * s, width: 140 * s, height: 180 * s, opacity: 0.2, tintColor: '#000', transform: [{ rotate: '-4deg' }] }} />
+            <Image source={v.foto} resizeMode="contain" style={{ position: 'absolute', left: 0, right: 0, alignSelf: 'center', top: Y(160) - 72 * s, height: 144 * s, width: wi, opacity: 0.2, tintColor: '#000' }} />
           )}
-          {botao('Ver produto', { position: 'absolute', alignSelf: 'center', top: Y(184) - 23 * s, height: 46 * s, paddingHorizontal: 24 * s, boxShadow: `0px ${8 * s}px ${20 * s}px rgba(255,94,168,0.4)` }, 16)}
+          {botao('Ver produto', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
         </>
       );
     } else if (v.tipo === 'idade') {
       corpo = (
         <>
-          <BalancedText text="Descubra a idade da sua pele" style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s }]} />
-          <View style={{ position: 'absolute', left: wi / 2 - 54 * s, top: Y(150) - 54 * s, width: 108 * s, height: 108 * s, borderRadius: 54 * s, borderWidth: 3 * s, borderColor: '#fff', overflow: 'hidden', backgroundColor: '#FCE3EE', boxShadow: `0px ${8 * s}px ${20 * s}px rgba(255,94,168,0.22)` }}>
-            {v.foto && <Image source={v.foto} blurRadius={10} style={{ width: '100%', height: '100%', transform: [{ scale: 1.12 }] }} />}
-          </View>
-          <View style={[styles.rodape, { top: Y(196) }]}>
-            <View style={{ height: 30 * s, paddingHorizontal: 14 * s, borderRadius: 100, backgroundColor: '#fff', boxShadow: `0px ${4 * s}px ${10 * s}px rgba(255,94,168,0.18)`, flexDirection: 'row', alignItems: 'center', gap: 4 * s }}>
-              <Text style={{ fontSize: 13 * s, fontWeight: '700', color: PINK }}>??</Text>
-              <Text style={{ fontSize: 13 * s, color: INK }}>anos</Text>
+          <BalancedText text="Sabemos exatamente a idade da sua pele" style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s }]} />
+          {/* Número camuflado: dá para ver que há um número, mas não dá para ler. */}
+          <View style={{ position: 'absolute', left: 0, right: 0, top: Y(92), height: Y(130), alignItems: 'center', justifyContent: 'center' }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <View style={{ paddingHorizontal: 24 * s, borderRadius: 44 * s, overflow: 'hidden' }}>
+              <Text allowFontScaling={false} style={{ fontSize: 76 * s, lineHeight: 88 * s, fontWeight: '800', color: PINK }}>{v.idade != null ? String(v.idade) : '28'}</Text>
+              <BlurView intensity={58} tint="light" style={[StyleSheet.absoluteFill, { margin: -12 * s }]} />
             </View>
           </View>
           {botao('Descobrir', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
+        </>
+      );
+    } else if (v.tipo === 'produto2') {
+      corpo = (
+        <>
+          <BalancedText text="Esse produto pode deixar sua pele com aparência mais jovem." style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }]} />
+          {/* Silhueta de um sérum com conta-gotas: outro formato, sem dar para ver qual é. */}
+          <View style={{ position: 'absolute', left: 0, right: 0, top: Y(170) - 50 * s, alignItems: 'center', opacity: 0.2 }}>
+            <Svg width={67 * s} height={100 * s} viewBox="0 0 100 150">
+              <Path d="M38 12a12 12 0 0 1 24 0v22H38z" fill="#000" />
+              <Path d="M33 37h34a3 3 0 0 1 3 3v16a3 3 0 0 1-3 3H33a3 3 0 0 1-3-3V40a3 3 0 0 1 3-3z" fill="#000" />
+              <Path d="M30 62h40c11 0 18 8 18 18v58a12 12 0 0 1-12 12H24a12 12 0 0 1-12-12V80c0-10 7-18 18-18z" fill="#000" />
+            </Svg>
+          </View>
+          {botao('Ver produto', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
+        </>
+      );
+    } else if (v.tipo === 'chat') {
+      // Mensagens camufladas: só a forma das bolhas, sem dar para ler.
+      const bolha = (texto: string, top: number, sua: boolean) => (
+        <View style={{ position: 'absolute', top: Y(top), ...(sua ? { right: X(22) } : { left: X(22) }), maxWidth: wi * 0.68, borderRadius: 14 * s, overflow: 'hidden', backgroundColor: sua ? 'rgba(255,94,168,0.28)' : '#fff', paddingVertical: 8 * s, paddingHorizontal: 12 * s }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Text numberOfLines={2} style={{ fontSize: 11 * s, lineHeight: 14 * s, color: INK }}>{texto}</Text>
+          <BlurView intensity={22} tint="light" style={StyleSheet.absoluteFill} />
+        </View>
+      );
+      corpo = (
+        <>
+          <BalancedText text="O NIKS Chat quer enviar uma mensagem pra você" style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }]} />
+          {bolha('Olhei a sua pele e separei uma dica para você', 104, false)}
+          {bolha('Me conta o que você viu', 160, true)}
+          {botao('Ver mensagem', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
         </>
       );
     } else {
       corpo = (
         <>
           <View style={{ position: 'absolute', left: X(18), right: X(18), top: Y(24) }}>
-            <BalancedText text="Já temos sua rotina completa de skincare." style={{ textAlign: 'center', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }} />
+            <BalancedText text={v.titulo ?? 'Já temos sua rotina completa de skincare.'} style={{ textAlign: 'center', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }} />
             <Text style={{ marginTop: 3 * s, textAlign: 'center', fontSize: 13 * s, lineHeight: 17 * s, color: '#3d3d3d' }}>Toque para ver</Text>
           </View>
           <View style={{ position: 'absolute', left: X(26), right: X(26), top: Y(106), paddingVertical: 8 * s, paddingHorizontal: 10 * s, borderRadius: 14 * s, backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)', gap: 4 * s }}>

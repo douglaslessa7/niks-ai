@@ -346,7 +346,8 @@ export default function Checkin() {
       }
       if (r.carta_id) {
         ganhouPontos(r.pontos, { segurar: true });   // sobem junto com a carta, depois de raspar
-        router.replace(`/(carta)/carta?id=${r.carta_id}` as any);
+        // Veio de um grupo: depois da carta, volta para ele.
+        router.replace({ pathname: '/(carta)/carta', params: { id: r.carta_id, ...(de === 'grupo' && grupo ? { depois: `/grupo?id=${grupo}` } : {}) } } as any);
       } else {
         ganhouPontos(r.pontos);                       // sem carta: a barra sobe já
         sair();

@@ -47,7 +47,7 @@ export type CartaCatalogo = {
 
 export type CartaGanha = {
   id: string;
-  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco' | 'volta' | 'scan_rosto' | 'checkin_grupo' | 'produto_grupo' | 'campea' | 'missoes';
+  origem: 'rotina' | 'sos' | 'surpresa' | 'grupo' | 'marco' | 'volta' | 'scan_rosto' | 'checkin_grupo' | 'produto_grupo' | 'campea' | 'missoes' | 'convidada';
   dia: string;
   ganha_em: string;
   raspada_em: string | null;

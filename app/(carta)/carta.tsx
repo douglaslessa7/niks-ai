@@ -1,3 +1,5 @@
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
+import { paywallAposCarta } from '../../lib/trava';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, Alert, AppState, BackHandler, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -923,10 +925,12 @@ export default function CartaScreen() {
     if (srvMode) {
       setRevelada(true);
       reveladaEm.current = Date.now();
+      if (visual?.k === 'convidada') trackFora('convidada_carta_especial', { tipo: visual.tipo, numero_checkin: (srv?.carta.conteudo as any)?.numero ?? null });
       // O servidor marca a carta como raspada e, se for Poder, já aplica (79k: "Ativado agora").
       const id = srvId!;
       rasparCarta(id)
         .then((r) => {
+          proximaCarta.current = estadoCartas().catch(() => null);
           // Regras novas: a carta de outro dia venceu às 04:00 — fecha (o card da home já mostra).
           if (r.vencida) { fechar(); return; }
           if (r.pontos) {
@@ -1120,6 +1124,23 @@ export default function CartaScreen() {
       if (was && ph.get() === PH_SCRATCH) measure();
     });
 
+  // Carta especial da convidada, já raspada: tocar leva ao paywall. É um gesto junto com o de
+  // raspar porque o Pan começa no primeiro toque e cancelaria um botão comum por cima.
+  const toqueCarta = Gesture.Tap()
+    .enabled(srvMode && visual?.k === 'convidada' && revelada)
+    .runOnJS(true)
+    .onEnd((_e, ok) => {
+      if (!ok) return;
+      haptics.action();
+      // O Superwall não abre por cima deste modal (e não dá erro): quem abre é o AvisoCadeado,
+      // depois que a carta sair da tela.
+      // Subiu de nível: a caminhada só abre depois de ela fechar o paywall.
+      paywallAposCarta('carta', subiuNivel.current);
+      subiuNivel.current = false;
+      fechar();
+    });
+  const gestoCarta = Gesture.Simultaneous(gesture, toqueCarta);
+
   // ── Estilos animados ──────────────────────────────────────────────────────
   // ⚠️ Os valores animados são lidos DIRETO em cada useAnimatedStyle: o Reanimated só
   // refaz o estilo quando o próprio worklet lê os shared values — lidos dentro de uma
@@ -1209,6 +1230,8 @@ export default function CartaScreen() {
   // ── Continuar ─────────────────────────────────────────────────────────────
   const unlocked = progress >= UNLOCK || phase === 'revealed' || phase === 'recs';
   const saindoOb = useRef(false);
+  // Consulta feita logo depois de raspar: o "Continuar" não espera a rede.
+  const proximaCarta = useRef<Promise<Awaited<ReturnType<typeof estadoCartas>> | null> | null>(null);
   const saidaOb = useSharedValue(0);
   const saidaObStyle = useAnimatedStyle(() => ({ opacity: saidaOb.get() }));
   // A carta (modal da raiz, sem animação) só FECHA: o loading que está por baixo já mostra o
@@ -1236,12 +1259,15 @@ export default function CartaScreen() {
       // Próxima carta a raspar (Carta extra, marco); sem mais nenhuma, volta — ou, se ela
       // subiu de nível, vai para a "Sua caminhada", que anima os pontos e celebra (68d/68e).
       const atual = srvId;
+      const consulta = proximaCarta.current ?? estadoCartas();
+      proximaCarta.current = null;
       const sair = () => {
         fechar();
         if (subiuNivel.current) { subiuNivel.current = false; router.push('/(app)/caminhada' as any); }
       };
-      estadoCartas()
+      consulta
         .then((e) => {
+          if (!e) { sair(); return; }
           const prox = e.a_raspar.find((x) => x.id !== atual);
           if (prox) { setSrvId(prox.id); setRun((r) => r + 1); }
           else sair();
@@ -1353,7 +1379,7 @@ export default function CartaScreen() {
       </Animated.View>
 
       {/* A carta */}
-      <GestureDetector gesture={gesture}>
+      <GestureDetector gesture={gestoCarta}>
         <View style={[styles.stage, { left: stageX, top: stageY }, K !== 1 && { transform: [{ scale: K }] }]}>
           <Animated.View pointerEvents="none" style={[styles.cardGlow, obMode && styles.cardGlowOb, cardGlowStyle]} />
           {!srvMode && tipo === 'idade' && (
