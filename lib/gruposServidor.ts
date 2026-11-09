@@ -4,6 +4,7 @@
 // devolve as fotos (check-in, banner) como URLs assinadas de 1 h. Fetch direto com o
 // token da sessão (padrão do app, como lib/cartasServidor.ts).
 // ─────────────────────────────────────────────────────────────────────────────
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { trackFora } from './mixpanel/MixpanelProvider';
 import { useCallback } from 'react';
 import { supabase } from './supabase';
@@ -130,13 +131,13 @@ export const conviteDoGrupo = (grupoId: string) =>
   chamar<{ ok: true; token: string; codigo: string; link: string } | Recusa>({ acao: 'convite', grupo_id: grupoId });
 export const entrarNoGrupo = (token: string) =>
   chamar<{ ok: true; grupo_id: string; nome?: string; ja_era?: boolean } | Recusa>({ acao: 'entrar', token });
-async function semLogin<T>(body: Record<string, unknown>, tetoMs: number): Promise<T | null> {
+async function semLogin<T>(body: Record<string, unknown>, tetoMs: number, token?: string): Promise<T | null> {
   const controle = new AbortController();
   const relogio = setTimeout(() => controle.abort(), tetoMs);
   try {
     const resp = await fetch(FN_URL, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token ?? ANON_KEY}`, apikey: ANON_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: controle.signal,
     });
@@ -152,8 +153,22 @@ export const validarCodigo = (codigo: string) =>
   semLogin<{ valido: boolean; nome?: string; convidou?: string; cheio?: boolean; motivo?: string }>({ acao: 'validar_codigo', codigo }, 8000);
 /** Sem login. Sem resposta conta como desligada: a tela de código não aparece. */
 export const statusApp = () => semLogin<{ ligada: boolean; versao_minima: string | null }>({ acao: 'convidada_status' }, 3000);
-export const convidadaLigada = () =>
-  semLogin<{ ligada: boolean }>({ acao: 'convidada_status' }, 3000).then((r) => r?.ligada === true);
+
+// Fase 9: conta da lista de teste vê o modo convidada. Sem sessão o servidor não sabe quem é,
+// então o aparelho lembra, para o onboarding de uma conta nova. Só muda o que aparece na tela.
+const APARELHO_DE_TESTE = 'niks_convidada_aparelho_teste';
+
+export async function convidadaLigada(): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const r = await semLogin<{ ligada: boolean; teste?: boolean }>({ acao: 'convidada_status' }, 3000, session?.access_token);
+  if (session && r) {
+    if (r.teste) await AsyncStorage.setItem(APARELHO_DE_TESTE, '1').catch(() => {});
+    else await AsyncStorage.removeItem(APARELHO_DE_TESTE).catch(() => {});
+  }
+  if (r?.ligada) return true;
+  if (session) return false;
+  return (await AsyncStorage.getItem(APARELHO_DE_TESTE).catch(() => null)) === '1';
+}
 export const estadoAcesso = () =>
   chamar<{ estado: 'assinante' | 'convidada' | 'sem_acesso' }>({ acao: 'estado' }).then((r) => r.estado);
 export const entrarComCodigo = (codigo: string) =>

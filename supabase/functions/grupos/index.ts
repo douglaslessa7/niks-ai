@@ -169,7 +169,18 @@ serve(async (req) => {
   // Sem login: o onboarding decide se mostra a tela de código.
   if (acao === 'convidada_status') {
     const { data } = await supabase.from('grupos_config').select('convidada_ligada, versao_minima').eq('id', 1).maybeSingle()
-    return json({ ligada: data?.convidada_ligada === true, versao_minima: data?.versao_minima ?? null })
+    const ligada = data?.convidada_ligada === true
+    let teste = false
+    const auth = req.headers.get('authorization') ?? ''
+    const sessao = !ligada && auth.startsWith('Bearer ') ? await verifyJWT(auth.slice(7)) : null
+    if (sessao?.sub) {
+      try {
+        teste = await rpc(supabase, 'convidada_ativa', { p_uid: sessao.sub }) === true
+      } catch (e) {
+        console.error('[grupos] convidada_ativa:', (e as Error).message)
+      }
+    }
+    return json({ ligada: ligada || teste, teste, versao_minima: data?.versao_minima ?? null })
   }
 
   const authHeader = req.headers.get('authorization')
