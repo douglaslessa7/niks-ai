@@ -26,7 +26,9 @@
         "NSPhotoLibraryUsageDescription": "O NIKS AI precisa acessar suas fotos para análise de pele.",
         "NSUserTrackingUsageDescription": "Usamos isso para mostrar anúncios mais relevantes e medir a eficácia das campanhas.",
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["whatsapp"]
+        "LSApplicationQueriesSchemes": [
+          "whatsapp"
+        ]
       },
       "privacyManifests": {
         "NSPrivacyTracking": false
@@ -133,8 +135,14 @@
           "ios": {
             "buildReactNativeFromSource": true,
             "extraPods": [
-              { "name": "GoogleUtilities", "modular_headers": true },
-              { "name": "RecaptchaInterop", "modular_headers": true }
+              {
+                "name": "GoogleUtilities",
+                "modular_headers": true
+              },
+              {
+                "name": "RecaptchaInterop",
+                "modular_headers": true
+              }
             ]
           }
         }
@@ -148,7 +156,8 @@
           "backgroundColor": "#FFFFFF"
         }
       ],
-      "./plugins/withSplashLogoFix"
+      "./plugins/withSplashLogoFix",
+      "expo-iap"
     ],
     "fonts": [
       "./assets/fonts/PlayfairDisplay-Regular.ttf",
