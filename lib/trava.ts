@@ -1,4 +1,5 @@
 // Cadeados da convidada (Parte B, Fase 5): tocar abre o aviso com a frase da função.
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 export const FRASES = {
@@ -13,11 +14,32 @@ export const FRASES = {
   carta: 'Assine para ter tudo no NIKS',
 } as const;
 
-export const useTrava = create<{ frase: string | null; funcao: string | null; abrirPaywall: number }>(() => ({ frase: null, funcao: null, abrirPaywall: 0 }));
+export const useTrava = create<{ frase: string | null; funcao: string | null; aposCarta: string | null; caminhadaDepois: boolean }>(() => ({ frase: null, funcao: null, aposCarta: null, caminhadaDepois: false }));
 
 export function abrirTrava(funcao: keyof typeof FRASES) {
   useTrava.setState({ frase: FRASES[funcao], funcao });
 }
 export const fecharTrava = () => useTrava.setState({ frase: null, funcao: null });
-/** Abre direto o paywall da convidada (botão "Assinar o NIKS" do Perfil). */
-export const abrirPaywallConvidada = () => useTrava.setState((s) => ({ abrirPaywall: s.abrirPaywall + 1 }));
+/** Abre direto o paywall da convidada (Perfil, carta especial, subida de medalha). */
+export const abrirPaywallConvidada = (origem = 'perfil') => abridorPaywall?.(origem);
+
+/** Pede o paywall para depois que a carta sair da tela: por cima dela o Superwall não abre. */
+export const paywallAposCarta = (origem: string, caminhadaDepois = false) => useTrava.setState({ aposCarta: origem, caminhadaDepois });
+
+// Chamada direta, sem passar por efeito de tela: com a carta aberta por cima, as telas de
+// baixo ficam congeladas e um efeito do `(app)/_layout` não rodaria.
+let abridorPaywall: ((origem: string) => void) | null = null;
+export const definirAbridorPaywall = (f: ((origem: string) => void) | null) => { abridorPaywall = f; };
+
+const CHAVE_MEDALHA = 'convidada:medalha:paywall';
+let pularPaywallDaMedalha = false;
+export const pularProximoPaywallDaMedalha = () => { pularPaywallDaMedalha = true; };
+/** Depois da celebração: abre o paywall uma vez por medalha. */
+export async function paywallDaMedalha(nivel: number): Promise<void> {
+  const ultimo = Number(await AsyncStorage.getItem(CHAVE_MEDALHA).catch(() => null)) || 0;
+  if (nivel <= ultimo) return;
+  await AsyncStorage.setItem(CHAVE_MEDALHA, String(nivel)).catch(() => {});
+  // Acabou de ver o paywall na carta: não mostra outro logo em seguida.
+  if (pularPaywallDaMedalha) { pularPaywallDaMedalha = false; return; }
+  abrirPaywallConvidada('medalha');
+}

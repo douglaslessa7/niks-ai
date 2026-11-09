@@ -1,3 +1,5 @@
+import { useAcesso } from '../../lib/acesso';
+import { paywallDaMedalha } from '../../lib/trava';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTelaFocada } from '../../hooks/useTelaFocada';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions } from 'react-native';
@@ -239,7 +241,10 @@ export default function Caminhada() {
     afterCel.current = null;
     later(rm ? 60 : 300, () => rolar(sMark(xp.get(), D.current.lim, D.current.ic, vph), 1, 0.6, () => { pulsar(); d?.(); }));
     // Celebrou o último nível que ela tem: o servidor para de pedir a celebração.
-    if (!d) marcarNivelVisto(visto).catch(() => {});
+    if (!d) {
+      marcarNivelVisto(visto).catch(() => {});
+      if (useAcesso.getState().estado === 'convidada') void paywallDaMedalha(visto);
+    }
   }, [cel, celO, later, rm, rolar, xp, vph, pulsar]);
 
   // ── 68d · ganhar pontos e subir ────────────────────────────────────────────

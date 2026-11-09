@@ -1,3 +1,4 @@
+import { useAcesso } from './acesso';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ANDROID_CHANNEL_ID } from './notifications';
@@ -73,6 +74,8 @@ export function routineReminderContent(period: RoutinePeriod, kind: Kind = 'hora
     : { title: '🌙 Boa noite!', body: 'Não esqueça sua rotina de skincare noturna antes de dormir.' };
 }
 
+const LEMBRETE_CONVIDADA = { title: 'Hora do skincare!', body: 'Faça seu check-in no grupo.' };
+
 export const CARTA_MISTERIOSA = { title: 'Uma carta misteriosa está esperando por você ✨' };
 
 type Slot = { minutes: number };
@@ -147,19 +150,20 @@ export async function scheduleRoutineReminders(slots: Record<RoutinePeriod, Slot
     for (const d of doServidor) if (d && !fezNoDia(hist, d)) hist[d] = { ...hist[d], am: 1 };
     const risco = sequenciaEmRisco(hist, hoje, estado);
 
+    const convidada = useAcesso.getState().estado === 'convidada';
     // "hora": diário, manhã e noite.
     for (const period of ['am', 'pm'] as const) {
       const { minutes } = slots[period];
       wanted.add(dailyId(period));
       await upsert(
-        scheduled, dailyId(period), routineReminderContent(period, 'hora'), { period, kind: 'hora' },
+        scheduled, dailyId(period), convidada ? LEMBRETE_CONVIDADA : routineReminderContent(period, 'hora'), { period, kind: 'hora' },
         { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: Math.floor(minutes / 60) % 24, minute: minutes % 60, channelId: ANDROID_CHANNEL_ID },
       );
     }
 
     // "ainda dá tempo": 1 h depois da noite, só nos dias sem nenhuma rotina.
     const pm = slots.pm.minutes;
-    for (let i = 0; i <= DAYS_AHEAD; i++) {
+    for (let i = 0; !convidada && i <= DAYS_AHEAD; i++) {
       const fire = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, 0, pm + LATE_OFFSET_MIN);
       if (fire.getTime() <= now.getTime() + 30_000) continue;
       const day = dateKey(sessionDate(fire));
@@ -177,7 +181,7 @@ export async function scheduleRoutineReminders(slots: Record<RoutinePeriod, Slot
     // não houve rotina depois do último dia que o servidor conhece.
     const pv = estado?.proxima_volta;
     const ultimoLocal = Object.keys(hist).filter((d) => fezNoDia(hist, d)).sort().pop() ?? null;
-    if (pv?.ok && !(ultimoLocal && ultimoLocal > pv.ultimo_dia)) {
+    if (!convidada && pv?.ok && !(ultimoLocal && ultimoLocal > pv.ultimo_dia)) {
       const [y, m, d] = pv.dia.split('-').map(Number);
       const fire = new Date(y, m - 1, d, 0, MISTERIOSA_MIN);
       if (fire.getTime() > now.getTime() + 30_000) {

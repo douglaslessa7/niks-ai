@@ -814,7 +814,7 @@ export default function Home() {
             <Animated.View style={[StyleSheet.absoluteFill, lk.style]} pointerEvents="none">
               <Text style={styles.cartaTitle}>Sua carta do dia</Text>
               <Text style={styles.cartaSub} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
-                {cartaLiberada ? 'Raspe sua carta' : 'Complete o skincare do dia'}
+                {cartaLiberada ? 'Raspe sua carta' : convidada ? 'Faça o check-in do dia' : 'Complete o skincare do dia'}
               </Text>
               <Text style={styles.cartaProgresso}>{cartaLiberada ? '1/1' : '0/1'}</Text>
             </Animated.View>
