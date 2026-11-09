@@ -1926,6 +1926,31 @@ As últimas 40 decisões ficam salvas no aparelho.
 
 **Dados (19/out/2026, só leitura):** a tabela `subscriptions` **não é prova de pagamento** — a compra acontece antes da conta, com o RevenueCat anônimo, e o webhook descarta eventos anônimos; 139 contas dos últimos 30 dias usaram o app (passaram pelo guard) sem linha nela. Das 374 contas sem linha e sem uso, 363 vieram do **"Entrar" com Apple/Google** (cria conta de quem nunca teve uma e a manda ao paywall, pulando o onboarding — não é brecha, mas é volume) e 11 do cadastro (a conferir no RevenueCat). Botão "Restaurar compra" do Superwall em 7 dias: 2 sucessos, 68 falhas ("Transactions Failed to Restore") — com o restore automático fora, ele é o único caminho de quem já assina: validar no iPhone.
 
+#### Convite por código e entrada da convidada (Parte B, Fases 3 e 4, 08/nov/2026 — migration `20261123120000_convidada_onboarding.sql`)
+> ✅ **No ar desde 09/nov/2026:** migration, função `grupos` (v14) e campanha `paywall_convidada` (117448). Testado no iPhone, com a flag ligada só durante o teste. Falta testar quem assina tendo código. As Fases 4 e 5 vão à loja juntas, com as travas da Fase 8 ligadas antes.
+- **Fase 3:** a mensagem leva o link da App Store e o código (`lib/convite.ts`). "Entrar com código" fica em Seus grupos; o botão "Colar" do sistema não mostra o alerta do iOS (`components/grupos/BotaoColarCodigo.tsx`).
+- **Tela `codigo-grupo`:** depois do nome, só com `convidada_ligada` ligada (ação `convidada_status`, sem login; sem resposta, não aparece). O código fica no aparelho (`lib/convidada.ts`).
+- **Paywall:** com código e sem sessão, placement `paywall_convidada`, que aponta para o paywall publicado "Paywall OG + X pra downsell" (282361): o "Paywall OG" do A/B não tem X. Fechar no X vai ao cadastro; sem downsell.
+- **Cadastro:** sem assinatura, exige o código válido no servidor e a função ligada. Depois da conta, entra no grupo. Quem assinou segue as boas-vindas e também entra.
+- **Portão:** sem assinatura, consulta `estado_acesso`; convidada abre no grupo, e os cadeados são da Fase 5.
+
+#### Moderação das fotos dos grupos (Parte B, Fase 2, 08/nov/2026 — migration `20261122120000_moderacao_fotos.sql`)
+> ✅ **No ar desde 08/nov/2026** (função `grupos` v13). Denúncia, push e tela de revisão testados no iPhone. O bloqueio de imagem imprópria só foi testado com resposta simulada.
+- **Filtro** (`_shared/moderacao.ts`, OpenAI `omni-moderation-latest`, gratuito): check-in, banner, produto compartilhado e foto de perfil (`moderar_perfil`, antes de subir). Bloqueia `sexual`, `violence/graphic` e `self-harm*`. Em imagens, a OpenAI não tem `sexual/minors`. Se ela falhar, a foto não é publicada.
+- **Foto de perfil:** o filtro roda no app antes de gravar `users.foto_home_url`; quem chamar o banco direto passa por fora dele. Nos grupos, o avatar nunca usa a foto do scan de pele: sem foto de perfil, mostra a inicial do nome.
+- **Denúncia:** foto some do mural na hora (`oculto_em`, reversível), o ranking segue contando. Até 10 por conta em 24 h.
+- **Revisão:** `app/(app)/revisao-denuncias.tsx`, aberta pelo push (`data.type = denuncia`), liberada no servidor só para quem está em `moderadores`. Manter, Apagar ou Remover usuária (sai de todos os grupos e não entra nem cria outros: `grupos_banidas`). Denúncia aberta há mais de 20 h gera um push (cron `denuncias-prazo`).
+- **Termos de Uso:** `TERMOS_URL` em `signup.tsx` ainda aponta para a Política de Privacidade. Trocar quando a página for publicada.
+
+#### Convidada: regras dos grupos (Parte B, Fase 1, 08/nov/2026 — migration `20261121120000_convidada_regras.sql`)
+> ✅ **No ar desde 08/nov/2026** (função `grupos` v12). `convidada_ligada` segue `false`.
+- **Código:** todo convite tem `codigo` (`NIKS-4F7K2M`, 6 caracteres, sem 0, O, 1 e I). `normalizar_codigo` aceita minúscula, sem prefixo e com espaços.
+- **Sem login:** `grupos`, ação `validar_codigo`, devolve só `valido`, `nome`, `convidou` e `cheio`. Limite: 30 por IP a cada 10 min (guarda só o hash do IP, por até 1 dia). `entrar_codigo`: 20 por conta a cada 10 min.
+- **Limite:** 100 integrantes em `entrar_grupo`, com trava no grupo, valendo também para quem volta. Removida continua sem voltar.
+- **Tipo:** decidido no banco (`tipo_de_entrada`), nunca pelo app. `grupo_membros.tipo` diz só como ela entrou; quem é convidada hoje vem de `estado_acesso` (`assinante`, `convidada` ou `sem_acesso`).
+- **Desligada:** com `grupos_config.convidada_ligada = false` (padrão), ninguém vira convidada e o comportamento atual não muda.
+- `criar_grupo` e `e_convidada` não mudaram: barrar por `assinante()` agora travaria quem paga e ainda não está ligada no servidor.
+
 #### Ligar compra à conta sem o RevenueCat (Parte B, Fase 0A, 08/nov/2026 — migration `20261119120000_assinaturas_vinculo.sql`)
 > ✅ **0A no ar (08/nov/2026):** migration aplicada e função `assinatura` v9; conferida no simulador com conta real (id do Superwall gravado em `contas_rc`). Compra sandbox no iPhone (08/nov/2026): `identify` ligado sem mudar o A/B, Superwall `ACTIVE` (entitlement `pro`) e compra ligada à conta nova pelo id do Superwall. Em sandbox, `assinante()` só vale para contas em `cartas_config.testers`.
 > **0C, Etapa 1 (local, 08/nov/2026):** `confirmPremium` decide por Superwall → servidor → RevenueCat como reserva. Compra ligada a outra conta (`comprovar-assinatura` com conflito) vai ao paywall, mesmo com o RevenueCat dizendo sim. Sem sessão, só Superwall e RevenueCat respondem. Cada discordância do RevenueCat vai para `assinatura_divergencias` (origem `rc_discordou`; depende de publicar a função `assinatura`). Portão, login e layout do onboarding usam `confirmPremium`; `logIn` e `restore` têm teto.
