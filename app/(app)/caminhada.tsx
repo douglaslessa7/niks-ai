@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTelaFocada } from '../../hooks/useTelaFocada';
 import { View, Text, Image, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -14,16 +15,16 @@ import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useUserId } from '../../lib/currentUser';
-import { writeCache } from '../../lib/cache';
+import { peekCache, writeCache } from '../../lib/cache';
 import {
   estadoCartas, marcarNivelVisto, chaveEstado, useEstadoCartas, PODER_INFO, type EstadoCartas,
 } from '../../lib/cartasServidor';
 import { nivelDe, type Nivel } from '../../lib/niveis';
+import Medalha from '../../components/medalhas/Medalha';
 import CartaNivel from '../../components/caminhada/CartaNivel';
 import Faiscas, { type FaiscasRef } from '../../components/caminhada/Faiscas';
-import Padrao from '../../components/caminhada/Padrao';
 import {
-  CARD_BG, CARD_LEFT, CONTENT_H, EIO, EO, GAVETA, HOLO, ICON_BG, INK, MUTE, NIVEIS_TRILHA, PAD_TOP, PINK, ROW,
+  CARD_LEFT, CONTENT_H, EIO, EO, GAVETA, INK, MUTE, NIVEIS_TRILHA, PAD_TOP, PINK, ROW,
   cardTop, dotY, fmt, railK, sCard, sMark, xpY, type Icone, type Limites,
 } from '../../components/caminhada/geometria';
 
@@ -31,7 +32,7 @@ import {
 // "Sua caminhada" — réplica do design 68a–68f do Claude Design (projeto "NIKS home
 // redesign", NiksCaminhada.dc.html), com "XP" trocado por "NIKS Points":
 //   68b · abrir: entra da direita (420 ms, gaveta) já no "Você está aqui"; 350 ms depois
-//         a trilha sobe até o Ícone (mola ζ1 .6 s) e volta (ζ1 .75 s); o marcador pulsa.
+//         a trilha sobe até o NIKS (mola ζ1 .6 s) e volta (ζ1 .75 s); o marcador pulsa.
 //         O passeio só acontece na PRIMEIRA abertura (`caminhada:passeio_visto:<uid>`);
 //         depois, só o pulso do marcador. Qualquer toque interrompe o passeio.
 //   68c · tocar numa carta trancada: tremida de 380 ms e, 220 ms depois, a folha
@@ -41,12 +42,16 @@ import {
 //         o marcador e o trilho sobem juntos (mola ζ.8 .55 s).
 //   68e · subir de nível: a trilha rola até a carta nova, o cadeado se parte, faíscas, e
 //         "Você agora é <título>" em tela cheia; o fundo fica mais rosado a cada nível.
-// Dados reais (servidor): total, nível, a tabela dos 11 níveis e as faixas de pontos.
+// MEDALHAS (08/nov/2026, pedido do produto): os níveis são as 13 medalhas (Bronze 1 … NIKS,
+// `lib/niveis.ts`); a medalha (`components/medalhas/Medalha`, desenho do NiksMolduras 3a)
+// substitui a logo nas cartas da trilha, no cabeçalho, na folha "quanto falta" e no "Você
+// agora é". "Você agora é Prata 1".
+// Dados reais (servidor): total, nível, a tabela dos 13 níveis e as faixas de pontos.
 // O ganho anima a diferença entre o total que ela viu da última vez (AsyncStorage, por
 // conta) e o de agora — é assim que a carta raspada vira 68d/68e aqui. Celebração dos
 // pontos retroativos = 68e com "Você já é" (uma vez; confirmada no servidor).
-// Depois do Ícone (Ícone II, III…) a carta do Ícone fica aberta no topo e o cabeçalho
-// mostra a barra até o próximo. Reduzir movimento: sem passeio, tremida, voo ou
+// No NIKS (o último) não há próximo nível: os pontos continuam somando, o cabeçalho mostra
+// o total e "Nível máximo", e a subida não tenta cruzar um teto que não existe. Reduzir movimento: sem passeio, tremida, voo ou
 // faíscas — trocas em fade, o cadeado some em 220 ms e a barra enche direto.
 // Frame de 393 × 852, barra de status de 54: Y do design → tela = insets.top + y − 54.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,17 +146,25 @@ export default function Caminhada() {
   const chipX = useSharedValue(0), chipY = useSharedValue(0), chipS = useSharedValue(0.7), chipO = useSharedValue(0);
   const flying = useSharedValue(false);
   const scrimO = useSharedValue(0), sheetY = useSharedValue(1);
-  const celO = useSharedValue(0), celIn = useSharedValue(0), celSheen = useSharedValue(0);
+  const celO = useSharedValue(0), celIn = useSharedValue(0);
   const aref = useAnimatedRef<Animated.ScrollView>();
+  const arrastou = useRef(false); // ela já mexeu na lista nesta visita
 
-  const onScroll = useAnimatedScrollHandler({ onScroll: (e) => { scrollY.set(e.contentOffset.y); } });
+  const rolando = useSharedValue(false);
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => { scrollY.set(e.contentOffset.y); },
+    onBeginDrag: () => { rolando.set(true); },
+    onEndDrag: (e) => { if (Math.abs(e.velocity?.y ?? 0) < 0.01) rolando.set(false); },
+    onMomentumBegin: () => { rolando.set(true); },
+    onMomentumEnd: () => { rolando.set(false); },
+  });
   useAnimatedReaction(() => scrollAnim.get(), (v) => { if (v >= 0) scrollTo(aref, 0, v, false); });
 
   const aplicarNivel = useCallback((n: Nivel) => {
     setNivel(n);
     pisoSV.set(n.piso);
     tetoSV.set(n.teto);
-    const t = Math.min(1, Math.max(0, (Math.min(n.nivel, NIVEIS_TRILHA) - 1) / 10));
+    const t = Math.min(1, Math.max(0, (Math.min(n.nivel, NIVEIS_TRILHA) - 1) / (NIVEIS_TRILHA - 1)));
     bgT.set(rm ? t : withTiming(t, { duration: 800, easing: Easing.ease }));
   }, [pisoSV, tetoSV, bgT, rm]);
 
@@ -212,11 +225,9 @@ export default function Caminhada() {
     celIn.set(0);
     celIn.set(rm ? 1 : withDelay(60, withTiming(1, { duration: 520, easing: eo })));
     if (!rm) {
-      celSheen.set(0);
-      celSheen.set(withDelay(380, withTiming(1, { duration: 950, easing: eio })));
       later(260, () => fx.current?.burst(ox + 196, y(395), 30, 150));
     }
-  }, [celO, celIn, celSheen, rm, later, ox, y, setTabBarVisible]);
+  }, [celO, celIn, rm, later, ox, y, setTabBarVisible]);
 
   const continuarCel = useCallback(() => {
     if (!cel) return;
@@ -265,8 +276,10 @@ export default function Caminhada() {
   }, [rolar, vph, later, rm, vpTop, scrollY, ox, aplicarNivel, xp, mostrarCel]);
 
   const subir = useCallback((to: number, n: Nivel, subiu: boolean) => {
-    const seg = Math.min(to, n.teto);
-    const cruza = seg >= n.teto;
+    // No último nível (NIKS, teto === piso) não há o que cruzar: os pontos só somam.
+    const ultimo = n.teto <= n.piso;
+    const seg = ultimo ? to : Math.min(to, n.teto);
+    const cruza = !ultimo && seg >= n.teto;
     xp.set(withSpring(seg, rm ? spr(1, 0.25, 0, 0.4) : spr(cruza ? 1 : 0.8, 0.55, 0, 0.4), (fim) => {
       'worklet';
       if (!fim) return;
@@ -319,11 +332,7 @@ export default function Caminhada() {
   const rastro = useCallback((x: number, yy: number) => {
     fx.current?.spark(x, yy + 10, (Math.random() - 0.5) * 24, 20 + Math.random() * 20, 520);
   }, []);
-  useFrameCallback(() => {
-    if (!flying.get()) return;
-    tick.set(tick.get() + 1);
-    if (tick.get() % 3 === 0) scheduleOnRN(rastro, chipX.get(), chipY.get());
-  });
+  const focada = useTelaFocada(); // o quadro a quadro só existe com a tela à vista
 
   const ganhar = useCallback((de: number, para: number) => {
     if (busy.current || para <= de) return;
@@ -335,6 +344,21 @@ export default function Caminhada() {
     const k = (Math.min(para, n.teto) - n.piso) / Math.max(1, n.teto - n.piso);
     voar(`+${fmt(para - de)} NIKS Points`, k, () => subir(para, n, false));
   }, [pararRolagem, rolar, vph, voar, subir]);
+
+  // Conteúdo já visível: mostra o último estado guardado na hora, sem esperar a função `cartas`
+  // (~1 s). O que vem da rede só anima se os pontos mudaram.
+  const mostrarGuardado = useCallback((e: EstadoCartas) => {
+    const p = e.pontos;
+    if (!p || !e.niveis?.length) return;
+    const icn = e.icone ?? { passo: 945, incremento: 45 };
+    const limites = e.niveis.map((l) => l.pontos);
+    D.current = { tab: e.niveis, lim: limites, ic: icn };
+    const n = nivelDe(p.total, e.niveis, icn);
+    xp.set(p.total);
+    setXpJS(p.total);
+    aplicarNivel(n);
+    pularPara(sMark(p.total, limites, icn, vph));
+  }, [xp, aplicarNivel, pularPara, vph]);
 
   // ── Abrir (cada foco: a aba fica montada) ──────────────────────────────────
   const iniciar = useCallback(async (e: EstadoCartas) => {
@@ -352,8 +376,9 @@ export default function Caminhada() {
       xp.set(total);
       setXpJS(total);
       aplicarNivel(n);
-      bgT.set(Math.min(1, Math.max(0, (Math.min(n.nivel, NIVEIS_TRILHA) - 1) / 10)));
-      pularPara(sMark(total, limites, icn, vph));
+      bgT.set(Math.min(1, Math.max(0, (Math.min(n.nivel, NIVEIS_TRILHA) - 1) / (NIVEIS_TRILHA - 1))));
+      // Já rolando (o conteúdo aparece antes da rede): não puxa de volta.
+      if (!arrastou.current) pularPara(sMark(total, limites, icn, vph));
       return n;
     };
 
@@ -379,6 +404,9 @@ export default function Caminhada() {
     enter.set(0);
     enter.set(withTiming(1, { duration: rm ? 220 : 420, easing: rm ? Easing.ease : gaveta }));
     let vivo = true;
+    arrastou.current = false;
+    const guardado = uid ? peekCache<EstadoCartas>(chaveEstado(uid))?.data : null;
+    if (guardado) { setEstado(guardado); mostrarGuardado(guardado); }
     // Sempre o estado fresco (a carta raspada acabou de mudar o total).
     estadoCartas()
       .then((e) => {
@@ -398,7 +426,6 @@ export default function Caminhada() {
       setCel(null); celO.set(0);
       setSheetN(null); scrimO.set(0); sheetY.set(1);
       chipO.set(0);
-      setNivel(null); // a próxima visita não mostra os números desta enquanto carrega
       setTabBarVisible(true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -465,13 +492,12 @@ export default function Caminhada() {
     const p = celIn.get();
     return { transform: [{ translateY: 14 * (1 - p) }, { scale: 0.96 + 0.04 * p }] };
   });
-  const celSheenSt = useAnimatedStyle(() => ({ transform: [{ translateX: 165 * 0.4 * (-1.6 + 5.4 * celSheen.get()) }, { skewX: '-18deg' }] }));
 
   // ── Textos ────────────────────────────────────────────────────────────────
   const L = nivel?.nivel ?? 1;
   const naTrilha = Math.min(L, NIVEIS_TRILHA);
-  const icone = L >= NIVEIS_TRILHA;
   const teto = nivel?.teto ?? 0;
+  const ultimoNivel = !!nivel && nivel.teto <= nivel.piso;
   const shL = sheetN ?? lastSheet;
   const shLv = tabela[shL - 1];
   const shFalta = shLv ? Math.max(0, shLv.pontos - xpJS) : 0;
@@ -492,20 +518,20 @@ export default function Caminhada() {
       <View style={[styles.hdr, { top: y(104) }]}>
         <View style={{ opacity: nivel ? 1 : 0 }}>
         <View style={styles.hdrRow}>
-          <View style={[styles.thumb, { experimental_backgroundImage: icone ? ICON_BG : CARD_BG, borderColor: icone ? '#E7B67C' : '#FFFFFF' }]}>
-            <Image source={LOGO} style={{ width: 24, height: 24 }} />
+          <View style={styles.thumb}>
+            <Medalha nivel={L} tamanho={56} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.hdrLvl}>{nivel ? `Nível ${L}` : ' '}</Text>
-            {/* Títulos longos ("Inimiga da Espinha") encolhem até 78% para caber inteiros
-                ao lado de "faltam N NIKS Points" (o design tinha "XP", mais curto). */}
+            {/* O nome da medalha ("Diamante 3") encolhe até 78% se não couber ao lado de
+                "faltam N NIKS Points" (o design tinha "XP", mais curto). */}
             <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{nivel?.titulo ?? ' '}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            {/* "NIKS Points" só na linha de baixo: com a unidade nas duas, o título do nível
-                (ex.: "Inimiga da Espinha") não cabia e era cortado. */}
-            <Vivo xp={xp} fmtFn={(v) => (nivel ? `${fmt(v)} / ${fmt(teto)}` : ' ')} style={styles.hdrXp} />
-            <Vivo xp={xp} fmtFn={(v) => (nivel ? `faltam ${fmt(Math.max(0, teto - v))} NIKS Points` : ' ')} style={styles.hdrFalta} />
+            {/* "NIKS Points" só na linha de baixo (com a unidade nas duas, o nome não cabia).
+                No NIKS (último nível) não há próximo: só o total e "Nível máximo". */}
+            <Vivo xp={xp} fmtFn={(v) => (nivel ? (ultimoNivel ? fmt(v) : `${fmt(v)} / ${fmt(teto)}`) : ' ')} style={styles.hdrXp} />
+            <Vivo xp={xp} fmtFn={(v) => (nivel ? (ultimoNivel ? 'Nível máximo' : `faltam ${fmt(Math.max(0, teto - v))} NIKS Points`) : ' ')} style={styles.hdrFalta} />
           </View>
         </View>
         <View style={styles.barWrap}>
@@ -522,7 +548,7 @@ export default function Caminhada() {
           onScroll={onScroll}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
-          onScrollBeginDrag={pararRolagem}
+          onScrollBeginDrag={() => { arrastou.current = true; pararRolagem(); }}
           onTouchStart={() => { if (touring.current) pararRolagem(); }}
           contentContainerStyle={{ height: CONTENT_H }}
         >
@@ -539,7 +565,7 @@ export default function Caminhada() {
                   <RotuloNivel n={lv.n} texto={`${fmt(lv.pontos)} NIKS Points`} cor={locked ? MUTE : INK} xp={xp} lim={lim} ic={ic} />
                   <CartaNivel
                     n={lv.n} locked={locked} isCurrent={lv.n === naTrilha} isIcon={isIcon}
-                    left={CARD_LEFT} top={cardTop(lv.n)} scrollY={scrollY} vph={vph}
+                    left={CARD_LEFT} top={cardTop(lv.n)} rolando={rolando} vph={vph}
                     shakeKey={shakes[lv.n] ?? 0} breakKey={breaks[lv.n] ?? 0} rm={rm}
                     onTap={locked ? () => tocarCarta(lv.n) : undefined}
                   />
@@ -583,7 +609,8 @@ export default function Caminhada() {
         <Text style={styles.chipText}>{chipTxt}</Text>
       </Animated.View>
 
-      <Faiscas ref={fx} off={rm} />
+      {focada && <Faiscas ref={fx} off={rm} />}
+      {focada && <RastroDoVoo flying={flying} tick={tick} chipX={chipX} chipY={chipY} rastro={rastro} />}
 
       {/* 68c · folha "quanto falta" */}
       {sheetN != null && (
@@ -594,8 +621,8 @@ export default function Caminhada() {
           <Animated.View style={[styles.sheet, { paddingBottom: 40 }, sheetSt]}>
             <View style={styles.handle} />
             <View style={{ marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-              <View style={[styles.shThumb, { borderColor: shL === NIVEIS_TRILHA ? '#E7B67C' : 'rgba(255,94,168,0.45)' }]}>
-                <Image source={LOGO} style={{ width: 34, height: 35 }} />
+              <View style={styles.shThumb}>
+                <Medalha nivel={shL} tamanho={88} />
                 <View style={styles.shLock}>
                   <Svg width={12} height={12} viewBox="0 0 24 24">
                     <Path d="M6 11h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" fill="none" stroke={PINK} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
@@ -638,19 +665,7 @@ export default function Caminhada() {
           <Animated.View style={[styles.celContent, { top: y(128) }, celInSt]}>
             <Text style={styles.celPre}>{cel.retro ? 'Você já é' : 'Você agora é'}</Text>
             <Text style={styles.celName}>{cel.nivel.titulo}</Text>
-            <View style={[styles.celCardShadow]}>
-              <View style={[styles.celCard, {
-                experimental_backgroundImage: cel.nivel.nivel >= NIVEIS_TRILHA ? ICON_BG : CARD_BG,
-                borderColor: cel.nivel.nivel >= NIVEIS_TRILHA ? '#E7B67C' : 'rgba(255,255,255,0.95)',
-              }]}>
-                <View style={[styles.celInner, { borderColor: cel.nivel.nivel >= NIVEIS_TRILHA ? 'rgba(255,236,205,0.95)' : 'rgba(255,255,255,0.95)' }]} />
-                <View style={{ position: 'absolute', left: 16, top: 16 }}><Padrao w={165 - 32} h={231 - 32} tile={20} opacity={0.22} /></View>
-                <View pointerEvents="none" style={[styles.celHolo, { experimental_backgroundImage: HOLO }]} />
-                <View style={styles.celCircle}><Image source={LOGO} style={{ width: 60, height: 61 }} /></View>
-                <View style={styles.celNum}><Text style={styles.celNumText}>{cel.nivel.nivel}</Text></View>
-                <Animated.View pointerEvents="none" style={[styles.celSheen, { experimental_backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.85), rgba(255,255,255,0))' }, celSheenSt]} />
-              </View>
-            </View>
+            <View style={styles.celMedalha}><Medalha nivel={cel.nivel.nivel} tamanho={240} /></View>
             <Text style={styles.celSub}>{`Nível ${cel.nivel.nivel} · ${fmt(cel.nivel.piso)} NIKS Points`}</Text>
           </Animated.View>
           <TouchableOpacity activeOpacity={0.85} onPress={continuarCel} style={[styles.pinkBtn, styles.celBtn, { bottom: 40 }]}>
@@ -663,14 +678,25 @@ export default function Caminhada() {
 }
 
 /** Rótulo de pontos ao lado do ponto do nível; some quando o marcador passa perto. */
+// Rastro de brilho do selo voando. Componente à parte para o callback de quadro nascer e morrer
+// com a tela: não usar `setActive`, que corre contra o registro assíncrono da Reanimated.
+const RastroDoVoo = memo(function RastroDoVoo({ flying, tick, chipX, chipY, rastro }: {
+  flying: SharedValue<boolean>; tick: SharedValue<number>; chipX: SharedValue<number>; chipY: SharedValue<number>;
+  rastro: (x: number, y: number) => void;
+}) {
+  useFrameCallback(() => {
+    if (!flying.get()) return;
+    tick.set(tick.get() + 1);
+    if (tick.get() % 3 === 0) scheduleOnRN(rastro, chipX.get(), chipY.get());
+  });
+  return null;
+});
+
 function RotuloNivel({ n, texto, cor, xp, lim, ic }: { n: number; texto: string; cor: string; xp: SharedValue<number>; lim: Limites; ic: Icone }) {
   const st = useAnimatedStyle(() => ({ opacity: lim.length && Math.abs(xpY(xp.get(), lim, ic) - dotY(n)) < 34 ? 0 : 1 }), [lim, ic, n]);
   return <Animated.Text style={[styles.dotLabel, { top: dotY(n) - 7, color: cor }, st]}>{texto}</Animated.Text>;
 }
 
-// Holo do card da celebração: posição fixa 62% 38% (design), camada 260%.
-const CEL_IW = 168 - 3;
-const CEL_IH = 234 - 3;
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -688,10 +714,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: PINK, borderRadius: 20, backgroundColor: '#fff', boxShadow: '0px 6px 18px rgba(255,94,168,0.12)',
   },
   hdrRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  thumb: {
-    width: 40, height: 56, borderRadius: 8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0px 4px 10px rgba(200,60,120,0.18)',
-  },
+  // Só a medalha, sem carta atrás. O desenho tem folga nas laterais, por isso a margem negativa.
+  thumb: { width: 56, height: 56, marginHorizontal: -4, alignItems: 'center', justifyContent: 'center' },
   hdrLvl: { fontSize: 13, lineHeight: 16, fontWeight: '600', color: PINK },
   hdrName: { marginTop: 2, fontSize: 22, lineHeight: 27, fontWeight: '700', letterSpacing: -0.6, color: INK },
   hdrXp: { fontSize: 14, lineHeight: 18, fontWeight: '600', letterSpacing: -0.2, color: INK, fontVariant: ['tabular-nums'] },
@@ -702,8 +726,9 @@ const styles = StyleSheet.create({
   barFill: { ...StyleSheet.absoluteFillObject, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'left center' },
 
   vp: { position: 'absolute', left: 0, right: 0 },
-  railBase: { position: 'absolute', left: 32, top: PAD_TOP, width: 3, height: 2750, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.95)' },
-  rail: { position: 'absolute', left: 32, top: PAD_TOP, width: 3, height: 2750, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'center bottom' },
+  // A altura acompanha o número de níveis: a base do trilho é o ponto do nível 1 (dotY(1)).
+  railBase: { position: 'absolute', left: 32, top: PAD_TOP, width: 3, height: NIVEIS_TRILHA * ROW, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.95)' },
+  rail: { position: 'absolute', left: 32, top: PAD_TOP, width: 3, height: NIVEIS_TRILHA * ROW, borderRadius: 100, backgroundColor: PINK, transformOrigin: 'center bottom' },
   dot: { position: 'absolute', left: 28, width: 11, height: 11, borderRadius: 5.5, borderWidth: 2 },
   dotLabel: { position: 'absolute', left: 46, fontSize: 11, lineHeight: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
   nameBlock: { position: 'absolute', left: 116, width: 220, alignItems: 'center' },
@@ -744,12 +769,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, boxShadow: '0px -10px 30px rgba(190,70,120,0.14)',
   },
   handle: { width: 36, height: 5, borderRadius: 100, backgroundColor: '#F0F0F0', alignSelf: 'center' },
-  shThumb: {
-    width: 64, height: 88, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
-    experimental_backgroundImage: 'linear-gradient(160deg, #FBF6F8 0%, #F2EBEF 100%)',
-  },
+  shThumb: { width: 88, height: 88, alignItems: 'center', justifyContent: 'center' },
   shLock: {
-    position: 'absolute', left: (64 - 3) / 2 - 12, bottom: -9, width: 24, height: 24, borderRadius: 12,
+    position: 'absolute', left: 88 / 2 - 12, bottom: -2, width: 24, height: 24, borderRadius: 12,
     backgroundColor: '#fff', borderWidth: 1.5, borderColor: PINK, alignItems: 'center', justifyContent: 'center',
   },
   shName: { marginTop: 2, fontSize: 24, lineHeight: 29, fontWeight: '700', letterSpacing: -0.7, color: INK },
@@ -773,24 +795,8 @@ const styles = StyleSheet.create({
   celContent: { position: 'absolute', left: 24, right: 24, alignItems: 'center' },
   celPre: { fontSize: 17, lineHeight: 22, color: MUTE, letterSpacing: -0.2, textAlign: 'center' },
   celName: { marginTop: 4, fontSize: 36, lineHeight: 40, fontWeight: '800', letterSpacing: -1.3, color: INK, textAlign: 'center' },
-  celCardShadow: { marginTop: 28, width: 168, height: 234, borderRadius: 18, boxShadow: '0px 20px 44px rgba(200,60,120,0.26)' },
-  celCard: { width: 168, height: 234, borderRadius: 18, overflow: 'hidden', borderWidth: 1.5 },
-  celInner: { position: 'absolute', left: 8, top: 8, right: 8, bottom: 8, borderRadius: 11, borderWidth: 1 },
-  celHolo: {
-    position: 'absolute', left: (CEL_IW - CEL_IW * 2.6) * 0.62, top: (CEL_IH - CEL_IH * 2.6) * 0.38,
-    width: CEL_IW * 2.6, height: CEL_IH * 2.6, mixBlendMode: 'overlay', opacity: 0.6,
-  },
-  celCircle: {
-    position: 'absolute', left: CEL_IW / 2 - 48, top: CEL_IH * 0.46 - 48, width: 96, height: 96, borderRadius: 48,
-    backgroundColor: 'rgba(255,255,255,0.66)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.95)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  celNum: {
-    position: 'absolute', left: 11, top: 11, minWidth: 26, height: 26, paddingHorizontal: 7, borderRadius: 100,
-    backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
-  },
-  celNumText: { color: PINK, fontSize: 13, fontWeight: '700' },
-  celSheen: { position: 'absolute', left: 0, top: -CEL_IH * 0.3, width: CEL_IW * 0.4, height: CEL_IH * 1.6 },
+  // Só a medalha do nível novo, sem carta em volta (08/nov/2026, pedido do produto).
+  celMedalha: { marginTop: 18, width: 240, height: 240, alignItems: 'center', justifyContent: 'center' },
   celSub: { marginTop: 16, fontSize: 14, lineHeight: 18, color: MUTE, textAlign: 'center' },
   celBtn: { position: 'absolute', left: 24, right: 24, height: 56 },
 });

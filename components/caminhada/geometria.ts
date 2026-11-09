@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // "Sua caminhada" — números do design 68a–68f (Claude Design, projeto "NIKS home
 // redesign", NiksCaminhada.dc.html). Frame de 393 × 852 com barra de status de 54.
-// A trilha tem 2.846 pt; cada nível ocupa uma faixa de 250 pt, o 1 embaixo e o
-// Ícone (11) no topo. Funções marcadas com 'worklet' rodam também no UI thread.
+// Cada nível ocupa uma faixa de 250 pt, o 1 embaixo e o último no topo. Desde 08/nov/2026
+// são 13 níveis-medalha (Bronze 1 … NIKS) no lugar dos 11 do design (Cara Lavada … Ícone):
+// a trilha cresceu de 2.846 para 3.346 pt. Funções marcadas com 'worklet' rodam no UI thread.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const PINK = '#FF5EA8';
@@ -11,14 +12,15 @@ export const MUTE = '#818181';
 
 export const PAD_TOP = 56;
 export const ROW = 250;
-export const CONTENT_H = 2846;
-export const NIVEIS_TRILHA = 11;          // o design desenha do 1 ao Ícone
+export const NIVEIS_TRILHA = 13;          // Bronze 1 … NIKS (lib/niveis.ts)
+export const CONTENT_H = PAD_TOP + NIVEIS_TRILHA * ROW + 40;   // 3.346 (o design: 56 + 11 × 250 + 40)
 
 export const CARD_LEFT = 160;
 export const CARD_W = 132;
 export const CARD_H = 184;
 
-// Fundos das cartas (design): aberta, Ícone e o véu das trancadas.
+// Fundos das cartas (design): aberta, a do último nível (no design, a do Ícone; hoje, a do
+// NIKS) e o véu das trancadas.
 export const CARD_BG = 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)';
 export const ICON_BG = 'linear-gradient(150deg, #FFEBD9 0%, #FFD3E2 36%, #F7DDB8 64%, #FFE0EC 100%)';
 export const MUTED_BG = 'linear-gradient(160deg, #FBF6F8 0%, #F2EBEF 100%)';
@@ -33,32 +35,25 @@ export const dotY = (L: number) => { 'worklet'; return rowTop(L) + ROW; };
 export const cardTop = (L: number) => { 'worklet'; return rowTop(L) + 10; };
 export const cardCY = (L: number) => { 'worklet'; return cardTop(L) + 92; };
 
-/** Limites dos 11 níveis da trilha (pontos), do servidor. */
+/** Limites dos níveis da trilha (pontos), do servidor. */
 export type Limites = number[];
-/** Depois do Ícone: o Ícone II pede `passo` e cada seguinte +`incremento` (servidor). */
+/** Sobra da regra antiga ("Ícone II…"); ignorado desde as medalhas. */
 export type Icone = { passo: number; incremento: number };
 
-/** Nível (1..11, o 11 cobre Ícone II+) e a fração dentro dele, para posicionar o marcador. */
-export function nivelTrilha(xp: number, lim: Limites, ic: Icone) {
+/** Nível (1..13) e a fração dentro dele, para posicionar o marcador. No último nível (NIKS)
+ *  o marcador fica no ponto dele: não há nível acima. */
+export function nivelTrilha(xp: number, lim: Limites, _ic?: Icone) {
   'worklet';
   let L = 1;
   for (let i = 0; i < lim.length; i++) if (xp >= lim[i]) L = i + 1;
-  if (L >= NIVEIS_TRILHA) {
-    // Depois do Ícone, o marcador sobe no máximo (ROW − 60) dentro do passo atual.
-    let piso = lim[NIVEIS_TRILHA - 1];
-    let passo = ic.passo;
-    let guard = 0;
-    while (xp >= piso + passo && guard < 1000) { piso += passo; passo += ic.incremento; guard++; }
-    return { L: NIVEIS_TRILHA, k: Math.min(1, (xp - piso) / passo) };
-  }
-  return { L, k: (xp - lim[L - 1]) / (lim[L] - lim[L - 1]) };
+  if (L >= NIVEIS_TRILHA || L >= lim.length) return { L: Math.min(L, NIVEIS_TRILHA), k: 0 };
+  return { L, k: (xp - lim[L - 1]) / Math.max(1, lim[L] - lim[L - 1]) };
 }
 
 /** Y do marcador "Você está aqui" na trilha. */
 export function xpY(xp: number, lim: Limites, ic: Icone) {
   'worklet';
   const { L, k } = nivelTrilha(xp, lim, ic);
-  if (L >= NIVEIS_TRILHA) return dotY(NIVEIS_TRILHA) - k * (ROW - 60);
   return dotY(L) - k * ROW;
 }
 
@@ -80,7 +75,7 @@ export const sCard = (L: number, vph: number) => { 'worklet'; return clamp(cardC
 
 /** Fundo da tela: fica mais rosado a cada nível (design: bgFor/glowFor). */
 export function bgT(L: number) {
-  return Math.min(1, Math.max(0, (L - 1) / 10));
+  return Math.min(1, Math.max(0, (L - 1) / (NIVEIS_TRILHA - 1)));
 }
 
 /** 1234 → '1.234'. */
