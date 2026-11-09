@@ -1926,6 +1926,12 @@ As últimas 40 decisões ficam salvas no aparelho.
 
 **Dados (19/out/2026, só leitura):** a tabela `subscriptions` **não é prova de pagamento** — a compra acontece antes da conta, com o RevenueCat anônimo, e o webhook descarta eventos anônimos; 139 contas dos últimos 30 dias usaram o app (passaram pelo guard) sem linha nela. Das 374 contas sem linha e sem uso, 363 vieram do **"Entrar" com Apple/Google** (cria conta de quem nunca teve uma e a manda ao paywall, pulando o onboarding — não é brecha, mas é volume) e 11 do cadastro (a conferir no RevenueCat). Botão "Restaurar compra" do Superwall em 7 dias: 2 sucessos, 68 falhas ("Transactions Failed to Restore") — com o restore automático fora, ele é o único caminho de quem já assina: validar no iPhone.
 
+#### Saída, vencimento e assinatura da convidada (Parte B, Fase 7, nov/2026)
+> ⚠️ **Sem teste no iPhone: pendência obrigatória antes da Fase 9**, com Sandbox Tester novo (vencimento, sair do último grupo, compra pela convidada, boas-vindas sem cadastro, scan novo e quem assina tendo código). Só app; depende da flag `convidada_ligada`.
+- `reconferirAcesso` (`lib/acesso.ts`): ao voltar ao app, no máximo 1 vez por minuto. Sem resposta do servidor, nada muda. Assinatura vencida com grupo vira convidada, sem aviso; sem grupo, vai para `sem-grupo`.
+- Convidada que assina dentro do app: boas-vindas sem o cadastro (`boasVindasEx`), e a última tela leva ao scan novo. A rotina sai do scan, com as respostas salvas no onboarding. Se ela não fizer o scan, a aba Rotina continua pedindo.
+- Criar grupo tem cadeado para convidada; a trava de servidor entra na Fase 9.
+
 #### Recompensas da convidada (Parte B, Fase 6, nov/2026 — migration `20261125120000_convidada_recompensas.sql`)
 > ✅ **Migration no ar desde 09/nov/2026.** ⚠️ O catálogo real segue inativo (só testers recebem cartas): ativar por id as 4 cartas `niks-flor`, `niks-flor-rara`, `niks-protecao-sequencia` e `niks-pontos-dobro` é item obrigatório da Fase 9, junto com a build nova.
 - **Cartas especiais:** check-ins ímpares (1º, 3º, 5º, 7º, 9º…), alternando produto, idade da pele, rotina, NIKS Chat e produto (sérum) (`convidada_carta_do_checkin`, migration `20261126120000`). Substituem a carta do dia e rendem os pontos dela ao raspar. O catálogo fica `ativa = false`, fora do sorteio.
