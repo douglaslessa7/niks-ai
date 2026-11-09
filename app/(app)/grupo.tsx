@@ -403,7 +403,7 @@ export default function Grupo() {
               {d.itens.map((it) => (
                 <Entra key={it.id} i={iIn++} run={run} rm={rm}>
                   <AlvoItem primeiro={it.id === dias[0]?.itens[0]?.id}>
-                  <View style={styles.item}>
+                  <Pressable disabled={it.tipo !== 'produto' || it.voce || !it.compartilhamento_id} onPress={() => { haptics.tap(); router.push({ pathname: '/produto-amiga', params: { grupo: g!.id, id: it.compartilhamento_id! } } as any); }} style={styles.item}>
                     <View style={styles.itemFoto}>
                       {it.foto_url ? <Image source={{ uri: it.foto_url }} style={{ width: '100%', height: '100%' }} /> : null}
                     </View>
@@ -422,7 +422,7 @@ export default function Grupo() {
                         <Text style={styles.itemTime}>{hora(it.hora_exibida)}</Text>
                       </View>
                     </View>
-                  </View>
+                  </Pressable>
                   </AlvoItem>
                 </Entra>
               ))}

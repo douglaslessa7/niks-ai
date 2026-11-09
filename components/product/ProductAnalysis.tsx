@@ -90,9 +90,11 @@ type Props = {
   /** "Adicionar à minha rotina" (Rotina, Fase 8): só quando a sugestão é adicionar ou
    *  substituir. Sem ela, o card "Sobre a sua rotina" fica só informativo. */
   rotina?: { estado: 'livre' | 'fazendo' | 'feito'; onAdd: () => void };
+  /** Produto de uma amiga: substitui a nota, que é pessoal de quem escaneou. */
+  blocoCompatibilidade?: React.ReactNode;
 };
 
-export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClose, onRescan, rescanLabel = 'Escanear outro produto', colecao, rotina }: Props) {
+export default function ProductAnalysis({ blocoCompatibilidade, result: r, photoUri, cutoutUri, onClose, onRescan, rescanLabel = 'Escanear outro produto', colecao, rotina }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const S = width / 393;
@@ -355,6 +357,7 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
 
         <SafeAreaView edges={['top']} style={{ backgroundColor: 'transparent' }}>
           {/* ── Score de compatibilidade ────────────────────────────────── */}
+          {blocoCompatibilidade ?? (
           <View style={{ alignItems: 'center', paddingTop: s(2) }}>
             <Image
               source={theme.logo}
@@ -367,6 +370,7 @@ export default function ProductAnalysis({ result: r, photoUri, cutoutUri, onClos
               Compatibilidade de pele
             </Text>
           </View>
+          )}
 
           {/* ── Foto do produto no anel colorido pela faixa (Ellipse 23 + 24) ── */}
           <View style={{ alignItems: 'center', marginTop: s(36), zIndex: 1 }}>
