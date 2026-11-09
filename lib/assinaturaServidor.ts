@@ -87,6 +87,18 @@ export async function vincularAssinatura(uid: string): Promise<void> {
   }
 }
 
+/** Liga a compra à conta logada pela prova da Apple. Usado logo depois do cadastro. */
+export async function enviarComprovantes(): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+    const jws = await comprovantesApple();
+    if (jws.length) await fetch(FN_COMPROVANTE, { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ jws }) });
+  } catch {
+    // tenta de novo na próxima abertura
+  }
+}
+
 /** Ao sair da conta: a próxima pessoa do aparelho recebe um id anônimo novo. */
 export async function limparIdentidadeSuperwall(): Promise<void> {
   try {

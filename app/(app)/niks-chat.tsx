@@ -1,3 +1,4 @@
+import { avisarSeSemAssinatura } from '../../lib/respostaIA';
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput, Animated, Easing,
   KeyboardAvoidingView, Platform, Keyboard, Image, ActionSheetIOS, Alert, StyleSheet, AccessibilityInfo,
@@ -793,6 +794,7 @@ export default function NiksChat() {
 
     xhr.onload = () => {
       if (xhr.status !== 200) {
+        avisarSeSemAssinatura(xhr.status);
         const erro = naEspinha && xhr.status === 429
           ? 'Você já mandou 20 mensagens hoje nesta conversa. Amanhã a gente continua por aqui.'
           : 'Ocorreu um erro. Tente novamente.'

@@ -11,7 +11,8 @@ import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { loginRevenueCat } from '../../lib/revenuecat';
 import { comTetoRc, confirmPremium } from '../../lib/subscriptionGate';
-import { convidadaLigada, meusGrupos } from '../../lib/gruposServidor';
+import { convidadaLigada, meusGrupos, statusApp } from '../../lib/gruposServidor';
+import Constants from 'expo-constants';
 import { carregarAcesso, definirAcesso, reconferirAcesso, useAcesso, useEhConvidada } from '../../lib/acesso';
 import { abrirTrava } from '../../lib/trava';
 import AvisoCadeado from '../../components/trava/AvisoCadeado';
@@ -222,6 +223,15 @@ function GlobalBottomBar() {
 // Id da conta em memória desde já: as telas montam com o cache dela no primeiro render.
 void getUserId();
 
+function versaoMenor(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d < 0;
+  }
+  return false;
+}
+
 export default function AppLayout() {
   const router = useRouter();
   // Depois que a home assentou: traz os dados das telas principais (sem montar nenhuma).
@@ -243,6 +253,13 @@ export default function AppLayout() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
         router.replace('/');
+        return;
+      }
+
+      // Parte B, Fase 8: versão abaixo da mínima não entra. Sem resposta, segue.
+      const app = PULAR_PAYWALL ? null : await statusApp();
+      if (app?.versao_minima && versaoMenor(Constants.expoConfig?.version ?? '', app.versao_minima)) {
+        router.replace('/atualize' as any);
         return;
       }
 

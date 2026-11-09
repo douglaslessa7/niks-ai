@@ -1,3 +1,4 @@
+import { avisarSeSemAssinatura } from '../lib/respostaIA';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../store/onboarding';
@@ -121,6 +122,7 @@ export function useProductAnalysis({
           }),
         });
         if (!response.ok) {
+          avisarSeSemAssinatura(response.status);
           const errBody = await response.json().catch(() => ({}));
           throw new Error(JSON.stringify(errBody));
         }

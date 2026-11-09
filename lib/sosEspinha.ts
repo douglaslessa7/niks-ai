@@ -1,6 +1,7 @@
 // SOS espinha (08/nov/2026): conversa com a função `sos-espinha` e guarda a última análise.
 // A foto fica só na memória, entre a câmera e o fim do carregamento. A resposta fica só neste
 // aparelho, por 24 h, separada por conta.
+import { avisarSeSemAssinatura } from './respostaIA';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { getAccessToken } from './sessionToken';
@@ -56,6 +57,7 @@ export async function analisarEspinha(): Promise<ResultadoSos> {
       signal: controller.signal,
     });
     if (resp.status === 429) return { status: 'limite' };
+    avisarSeSemAssinatura(resp.status);
     if (!resp.ok) return { status: 'erro' };
     const data = await resp.json();
     if (data?.status === 'precisa_foto') return { status: 'precisa_foto' };

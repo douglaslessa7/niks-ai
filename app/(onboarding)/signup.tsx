@@ -1,3 +1,4 @@
+import { enviarComprovantes } from '../../lib/assinaturaServidor';
 import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
@@ -127,6 +128,8 @@ export default function Signup() {
   // user_id — se o app fechar agora, a retomada salva nesta conta.
   const salvarConta = async (userId: string) => {
     await saveToSupabase(userId, { scan: false });
+    // Antes de gerar a rotina: quem acabou de pagar já fica reconhecida no servidor.
+    await enviarComprovantes();
     // Liga o cupom (se houver) ao user_id real. Não bloqueia: se falhar, a
     // usuária entra normalmente; o webhook ainda confirma a conversão.
     attributeCouponIfAny(userId);

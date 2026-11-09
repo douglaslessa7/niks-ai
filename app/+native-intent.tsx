@@ -13,8 +13,6 @@ import { guardarConvite } from '../lib/convitePendente';
 // compra confirmada, e um `niks-ai://signup` digitado no Safari o abria direto,
 // sem paywall. A própria tela tem trava (`lib/subscriptionGate.ts`); este desvio é
 // a camada de fora. Mesma saída do link do share.
-// ⚠️ PENDENTE (fora desta mudança): os links para as telas de `(scan)`, `(share)` e
-// `(foto)` continuam abrindo direto, sem guard — ver "Guard de assinatura" no README.
 const CADASTRO = /^\/?(?:\(onboarding\)\/)?signup(?:[/?#]|$)/i;
 // Link secreto do diagnóstico do paywall (lib/paywallDebug.ts): liga/desliga e não
 // navega para lugar nenhum.
@@ -23,6 +21,10 @@ const DIAGNOSTICO = new RegExp(`^/?${PWDIAG_LINK}(-off)?(?:[/?#]|$)`, 'i');
 // O token fica guardado e o `ConvitePendente` do (app)/_layout trata depois do guard
 // de assinatura — o link nunca pula o paywall.
 const CONVITE = /^\/?convite\/([A-Za-z0-9_-]{16,64})(?:[/?#]|$)/i;
+
+// Parte B, Fase 8: telas de câmera, compartilhamento e foto só abrem por dentro do app. Um link
+// externo não pode pular o portão de assinatura.
+const SEM_LINK = /^\/?(?:\((?:scan|share|foto)\)\/)?(?:analisando-foto|camera|camera-multi|demo-scan|demo-transicao|food-camera|food-report|loading|loading-dentro-app|lote-camera|lote-montando|lote-resultado|lote-revisao|pergunta|personalizar|product-camera|product-loading|product-result|rate-us|resultado-scan|results|scan-prep|scan-prep-app|seu-caminho|share-product-loading|solucao|sos-camera|sos-loading|sos-resultado|share-capture|share-preview|ajustar-foto)(?:[/?#]|$)/i;
 
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }) {
   if (path.includes('dataUrl=')) {
@@ -36,6 +38,9 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   const convite = pathSemScheme(path).match(CONVITE);
   if (convite) {
     guardarConvite(convite[1]);
+    return initial ? '/' : null;
+  }
+  if (SEM_LINK.test(pathSemScheme(path))) {
     return initial ? '/' : null;
   }
   if (CADASTRO.test(pathSemScheme(path))) {

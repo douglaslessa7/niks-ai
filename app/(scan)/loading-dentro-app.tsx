@@ -1,3 +1,4 @@
+import { avisarSeSemAssinatura, autorizacaoIA } from '../../lib/respostaIA';
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -84,7 +85,7 @@ export default function LoadingDentroApp() {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'Authorization': await autorizacaoIA(SUPABASE_ANON_KEY),
               'apikey': SUPABASE_ANON_KEY,
             },
             body: JSON.stringify({
@@ -112,6 +113,7 @@ export default function LoadingDentroApp() {
           }
         );
         if (!response.ok) {
+          avisarSeSemAssinatura(response.status);
           const errBody = await response.json().catch(() => ({}));
           throw new Error(JSON.stringify(errBody));
         }

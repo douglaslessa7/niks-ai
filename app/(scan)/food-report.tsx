@@ -1,3 +1,4 @@
+import { avisarSeSemAssinatura, autorizacaoIA } from '../../lib/respostaIA';
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Animated, Image } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -431,7 +432,7 @@ export default function FoodReport() {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI`,
+                'Authorization': await autorizacaoIA('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI'),
               },
               body: JSON.stringify({
                 imageBase64: foodImageBase64,
@@ -445,6 +446,7 @@ export default function FoodReport() {
           );
 
           if (!response.ok) {
+            avisarSeSemAssinatura(response.status);
             const errBody = await response.text();
             throw new Error(`analyze-food error: ${response.status} ${errBody}`);
           }

@@ -151,6 +151,7 @@ async function semLogin<T>(body: Record<string, unknown>, tetoMs: number): Promi
 export const validarCodigo = (codigo: string) =>
   semLogin<{ valido: boolean; nome?: string; convidou?: string; cheio?: boolean; motivo?: string }>({ acao: 'validar_codigo', codigo }, 8000);
 /** Sem login. Sem resposta conta como desligada: a tela de código não aparece. */
+export const statusApp = () => semLogin<{ ligada: boolean; versao_minima: string | null }>({ acao: 'convidada_status' }, 3000);
 export const convidadaLigada = () =>
   semLogin<{ ligada: boolean }>({ acao: 'convidada_status' }, 3000).then((r) => r?.ligada === true);
 export const estadoAcesso = () =>

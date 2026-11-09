@@ -1,3 +1,4 @@
+import { avisarSeSemAssinatura, autorizacaoIA } from './respostaIA';
 import { supabase } from './supabase';
 import { ScanResult, ProtocolResult, OnboardingData } from '../store/onboarding';
 
@@ -21,13 +22,14 @@ export async function fetchProtocol(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${ANON_KEY}`,
+            'Authorization': await autorizacaoIA(ANON_KEY),
           },
           body: JSON.stringify({ scanResult, onboardingData }),
         }
       );
 
       if (!response.ok) {
+        avisarSeSemAssinatura(response.status);
         const errorBody = await response.text();
         const is503 = response.status === 503 || errorBody.includes('UNAVAILABLE') || errorBody.includes('high demand');
         if (is503 && attempt < 3) {
