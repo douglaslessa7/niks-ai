@@ -1,9 +1,14 @@
 // Verificação de assinatura "fail closed" do caminho paywall → cadastro → app.
 //
 // REGRA DE NEGÓCIO (out/2026): a tela de cadastro (`(onboarding)/signup.tsx`) só
-// aparece para quem tem o entitlement `premium` CONFIRMADO no RevenueCat. Qualquer
-// outra resposta — erro, timeout, sem internet, resposta estranha — conta como
-// "sem premium" e a usuária volta para o paywall. Na dúvida, paywall.
+// aparece para quem tem assinatura CONFIRMADA. Qualquer outra resposta — erro, timeout,
+// sem internet, resposta estranha — conta como "sem assinatura" e a usuária volta para o
+// paywall. Na dúvida, paywall.
+//
+// Parte B, Fase 0C, Etapa 1 (08/nov/2026): quem decide é o Superwall e depois o servidor.
+// O RevenueCat fica só como reserva até a versão nova estar adotada, e cada discordância
+// dele é registrada em `assinatura_divergencias`. Compra ligada a outra conta vai ao
+// paywall, mesmo que o RevenueCat diga sim.
 //
 // Uma assinatura que já existe no Apple ID conta como "pagou", mas SÓ quando a
 // usuária toca em "Restaurar compra" no paywall. Nada aqui restaura sozinho: o
@@ -13,6 +18,7 @@
 import Purchases from 'react-native-purchases';
 import type { CustomerInfo } from 'react-native-purchases';
 import { isSubscribed } from './revenuecat';
+import { conferirPortao, registrarDiscordanciaRc } from './assinaturaServidor';
 import { supabase } from './supabase';
 import { registrarPasso } from './paywallDebug'; // TEMP-PWGUARD
 
@@ -43,6 +49,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   });
 }
 
+/** Chamada ao RevenueCat com teto: se ele não responder, o fluxo segue. */
+export function comTetoRc<T>(promise: Promise<T>, ms = RC_TIMEOUT_MS): Promise<T | null> {
+  return withTimeout(promise, ms);
+}
+
 type Source =
   | 'cache'    // getCustomerInfo — o que o RevenueCat já sabe
   | 'sync'     // syncPurchasesForResult — manda a compra recém-feita ao RevenueCat, sem pedir senha
@@ -58,8 +69,8 @@ async function readCustomerInfo(source: Source): Promise<CustomerInfo | null> {
 }
 
 /**
- * `true` SÓ com o `premium` ativo confirmado pelo RevenueCat. Erro, timeout ou
- * resposta sem o entitlement → `false`. Nunca lança.
+ * `true` SÓ com assinatura confirmada: Superwall → servidor → RevenueCat (reserva).
+ * Nenhuma confirmação → `false`. Nunca lança.
  */
 export async function confirmPremium({
   source = 'cache',
@@ -67,10 +78,23 @@ export async function confirmPremium({
   label,
 }: { source?: Source; attempts?: number; label: string }): Promise<boolean> {
   for (let i = 1; i <= attempts; i++) {
+    const c = await conferirPortao();
+    pwlog(`${label}: tentativa ${i}/${attempts} (${source}) → superwall=${c.superwall} servidor=${c.servidor} outraConta=${c.outraConta}`); // TEMP-PWGUARD
+    if (c.outraConta) return false;
+    if (c.confirmado) {
+      // Não atrasa a entrada: só compara. Também mantém o RevenueCat a par da compra.
+      void readCustomerInfo(source).then((info) => {
+        if (info == null || !isSubscribed(info)) void registrarDiscordanciaRc(c, info == null ? null : false);
+      });
+      return true;
+    }
     const info = await readCustomerInfo(source);
-    const ok = info != null && isSubscribed(info);
-    pwlog(`${label}: tentativa ${i}/${attempts} (${source}) →`, info == null ? 'sem resposta' : ok ? 'premium' : 'sem premium'); // TEMP-PWGUARD
-    if (ok) return true;
+    const rcOk = info != null && isSubscribed(info);
+    pwlog(`${label}: reserva RevenueCat (${source}) →`, info == null ? 'sem resposta' : rcOk ? 'premium' : 'sem premium'); // TEMP-PWGUARD
+    if (rcOk) {
+      void registrarDiscordanciaRc(c, true);
+      return true;
+    }
     if (i < attempts) await new Promise((r) => setTimeout(r, 1500));
   }
   return false;

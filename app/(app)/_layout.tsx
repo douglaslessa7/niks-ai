@@ -1,3 +1,6 @@
+import { AppState } from 'react-native';
+import BalaoEspinha from '../../components/espinha/BalaoEspinha';
+import { buscarConvite } from '../../lib/espinhaAcompanhamento';
 import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
@@ -6,13 +9,17 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
-import { getCustomerInfo, isSubscribed, loginRevenueCat } from '../../lib/revenuecat';
+import { loginRevenueCat } from '../../lib/revenuecat';
+import { comTetoRc, confirmPremium } from '../../lib/subscriptionGate';
 import { vincularAssinatura } from '../../lib/assinaturaServidor';
+import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { useAppStore } from '../../store/onboarding';
 import NameCapture from '../../components/onboarding/NameCapture';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { isNativePresentationOpen, waitForNativePresentationToClose } from '../../lib/nativePresentation';
 import { useCoachStageReady } from '../../lib/coachMarks';
+import { preaquecerApp } from '../../lib/preaquecer';
+import { getUserId } from '../../lib/currentUser';
 import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
 import { finishProdutosTutorial, useProdutosTutorialPending } from '../../lib/produtosTutorial';
@@ -20,6 +27,13 @@ import AvisoLote from '../../components/rotina/AvisoLote';
 import ConvitePendente from '../../components/grupos/ConvitePendente';
 import ToquePush from '../../components/ToquePush';
 import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
+import AlvoGuia from '../../components/coach/AlvoGuia';
+import { useGuia } from '../../lib/guia';
+import { comecarDesafios } from '../../lib/missoes';
+import TutorialOverlay from '../../components/coach/TutorialOverlay';
+import {
+  avancarTutorialGrupos, registrarParada, retomarTutorialGrupos, useEtapaTutorialGrupos,
+} from '../../lib/gruposTutorial';
 
 // ── Bottom navbar — réplica da `nav` "splitHouse" da tela 57d do Claude Design
 // (projeto "NIKS home redesign", `NiksHomeFlo.dc.html`). Flutua a 26 pt da base:
@@ -167,16 +181,18 @@ function GlobalBottomBar() {
           <View style={[styles.pill, { backgroundColor: surface }]}>
             {NAV_ITEMS.map((it) => {
               const active = isActive(it.route);
+              // Alvo do tour e das dicas (06/nov/2026): o item inteiro (60 × 46).
               return (
-                <TouchableOpacity
-                  key={it.key}
-                  activeOpacity={0.85}
-                  onPress={() => { haptics.tap(); router.push(it.route as any); }}
-                  style={styles.item}
-                >
-                  {/* Sem o ponto embaixo da aba ativa: no design 75 a aba ativa é só o ícone rosa. */}
-                  <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
-                </TouchableOpacity>
+                <AlvoGuia key={it.key} chave={`nav-${it.key}` as 'nav-rotina' | 'nav-produtos' | 'nav-grupos'} style={styles.item}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => { haptics.tap(); router.push(it.route as any); }}
+                    style={styles.item}
+                  >
+                    {/* Sem o ponto embaixo da aba ativa: no design 75 a aba ativa é só o ícone rosa. */}
+                    <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
+                  </TouchableOpacity>
+                </AlvoGuia>
               );
             })}
           </View>
@@ -186,8 +202,19 @@ function GlobalBottomBar() {
   );
 }
 
+// Id da conta em memória desde já: as telas montam com o cache dela no primeiro render.
+void getUserId();
+
 export default function AppLayout() {
   const router = useRouter();
+  // Depois que a home assentou: traz os dados das telas principais (sem montar nenhuma).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void preaquecerApp();
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [ready, setReady] = useState(false);
   const [needsName, setNeedsName] = useState(false);
   const tabBarVisible = useAppStore((s) => s.tabBarVisible);
@@ -223,7 +250,7 @@ export default function AppLayout() {
       }
 
       // Pula o check de assinatura se já foi verificado nesta sessão (evita tela branca no remount)
-      if (__DEV__ || subscriptionVerified) {
+      if (PULAR_PAYWALL || subscriptionVerified) {
         // Servidor: liga as compras anônimas do RevenueCat à conta (uma vez; não bloqueia).
         void vincularAssinatura(session.user.id);
         setReady(true);
@@ -232,32 +259,18 @@ export default function AppLayout() {
 
       // Garante que o RC está logado com o usuário correto antes de verificar a assinatura
       // (corrige race condition: _layout.tsx faz loginRevenueCat de forma assíncrona)
-      try {
-        await loginRevenueCat(session.user.id);
-      } catch {
-        // ignora — prossegue para o check de assinatura
-      }
+      await comTetoRc(loginRevenueCat(session.user.id));
 
-      // Guard de assinatura — fail closed: qualquer dúvida vai para o paywall
-      try {
-        const infoPromise = getCustomerInfo();
-        const timeoutPromise = new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), 8000)
-        );
-        const info = await Promise.race([infoPromise, timeoutPromise]);
-
-        if (!info || !isSubscribed(info)) {
-          router.replace('/(onboarding)/paywall-soft');
-          return;
-        }
-      } catch {
+      // Guard de assinatura — fail closed: resposta negativa ou nenhuma confirmação vai para o
+      // paywall. Se o RevenueCat falhar ou não responder, `confirmPremium` confere no Superwall
+      // e no servidor antes de negar.
+      if (!(await confirmPremium({ label: 'portao' }))) {
         router.replace('/(onboarding)/paywall-soft');
         return;
       }
 
       setSubscriptionVerified(true);
-      // Servidor: liga as compras anônimas do RevenueCat à conta (uma vez; não bloqueia).
-      // Depois do loginRevenueCat: o originalAppUserId já é o da compra.
+      // Servidor: liga as compras à conta (não bloqueia).
       void vincularAssinatura(session.user.id);
       setReady(true);
     });
@@ -269,6 +282,14 @@ export default function AppLayout() {
   useEffect(() => {
     if (ready) markSplashDestinationReady();
   }, [ready]);
+
+  // Convite de retorno da espinha (12 h / 24 h): o servidor decide, ao abrir o app.
+  useEffect(() => {
+    if (!ready || needsName) return;
+    void buscarConvite();
+    const sub = AppState.addEventListener('change', (estado) => { if (estado === 'active') void buscarConvite(); });
+    return () => sub.remove();
+  }, [ready, needsName]);
 
   // "Compartilhar com o NIKS": ÚNICO ponto que abre a análise de um produto
   // compartilhado. Só roda com `ready` (sessão + assinatura já verificadas pelo
@@ -333,10 +354,14 @@ export default function AppLayout() {
   // esperar a rede) e o servidor guarda o "esta CONTA já viu", que é o que
   // sobrevive a logout, reinstalação e troca de aparelho. A escrita é
   // fire-and-forget — ver `lib/homeTutorial.ts`.
+  // Depois do tour (só conta nova), os desafios — começando pelo scan de produto
+  // (`lib/missoes.ts`). "Pular" também leva a eles (o "Pular" pula o TOUR).
   const handleCoachFinish = useCallback(() => {
     finishHomeTutorial();
     void markHomeTutorialSeenOnServer();
+    void comecarDesafios();
   }, [finishHomeTutorial]);
+  const guiaAtiva = useGuia() != null;
   const coachStageReady = useCoachStageReady('home');
   const pathname = usePathname();
   // O tutorial só começa depois que a splash de abertura terminou o fade — senão
@@ -364,9 +389,36 @@ export default function AppLayout() {
     !needsName &&
     !pendingShare &&
     !showCoachMarks &&
+    !guiaAtiva && // durante um desafio o tutorial da aba espera (ela está seguindo a dica)
     pathname === '/recomendacao-produtos' &&
     produtosTutorialPending &&
     produtosStageReady;
+
+  // ── Tutorial dos Grupos: obrigatório, um de cada vez, atravessa até 3 telas ────────
+  const etapaGrupos = useEtapaTutorialGrupos();
+  const gruposLiberado = splashDone && ready && !needsName && !pendingShare && !showCoachMarks && !guiaAtiva;
+  const gruposStageReady = useCoachStageReady(etapaGrupos?.stage ?? 'grupos');
+  const showGruposTutorial = gruposLiberado && !!etapaGrupos && pathname === etapaGrupos.rota && gruposStageReady;
+  const tutorialGruposAtivo = !!etapaGrupos;
+  // Reabriu com o tutorial pela metade: ele volta sozinho.
+  useEffect(() => {
+    if (gruposLiberado) retomarTutorialGrupos();
+  }, [gruposLiberado]);
+  // Leva à tela de cada trecho, uma vez por trecho (um push no meio não é arrastado de volta).
+  const etapaLevada = useRef<string | null>(null);
+  const [trocandoDeTela, setTrocandoDeTela] = useState(false);
+  useEffect(() => {
+    if (!etapaGrupos) { etapaLevada.current = null; setTrocandoDeTela(false); return; }
+    if (!gruposLiberado || etapaLevada.current === etapaGrupos.chave) return;
+    etapaLevada.current = etapaGrupos.chave;
+    if (etapaGrupos.rota === '/grupo') router.navigate({ pathname: '/grupo', params: { id: etapaGrupos.grupoId ?? '' } } as any);
+    else if (pathname !== etapaGrupos.rota) router.navigate(etapaGrupos.rota as any);
+    // Barra toques entre uma tela e outra; sem rede, solta e o tutorial espera a tela carregar.
+    setTrocandoDeTela(true);
+    const t = setTimeout(() => setTrocandoDeTela(false), 8000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapaGrupos?.chave, gruposLiberado]);
 
   if (!ready) return null;
 
@@ -403,8 +455,10 @@ export default function AppLayout() {
         <Tabs.Screen name="grupo-ranking" options={{ href: null }} />
         <Tabs.Screen name="grupo-jornada" options={{ href: null }} />
         <Tabs.Screen name="checkin" options={{ href: null }} />
+        <Tabs.Screen name="skincare" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
+      {tabBarVisible && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <BalaoEspinha />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
           escurecer a tela inteira, navbar inclusive (designs 58/59). Dentro da
           `home.tsx` ele ficaria ABAIXO da navbar por mais zIndex que levasse
@@ -412,11 +466,23 @@ export default function AppLayout() {
           <Tabs>). Ver "Feature: Tutorial de primeiro acesso" no README. */}
       {showCoachMarks && <HomeCoachMarks onFinish={handleCoachFinish} />}
       {showProdutosCoachMarks && <ProdutosCoachMarks onFinish={() => { void finishProdutosTutorial(); }} />}
+      {showGruposTutorial && etapaGrupos && (
+        <TutorialOverlay
+          key={etapaGrupos.chave}
+          stops={etapaGrupos.stops}
+          semPular
+          antes={etapaGrupos.antes}
+          total={etapaGrupos.total}
+          onParada={registrarParada}
+          onFinish={() => { void avancarTutorialGrupos(); }}
+        />
+      )}
+      {tutorialGruposAtivo && trocandoDeTela && !showGruposTutorial && <View style={[StyleSheet.absoluteFill, { zIndex: 40 }]} />}
       {/* Aviso "Sua rotina está pronta" do lote "Montar minha rotina" (Fase 6) + toque
           no push dele. Irmão da navbar pelo mesmo motivo: fica por cima de qualquer aba. */}
-      {!showCoachMarks && !showProdutosCoachMarks && <AvisoLote />}
+      {!showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <AvisoLote />}
       {/* Convite de grupo aberto pelo link (lib/convitePendente.ts): só depois do guard. */}
-      {!showCoachMarks && !showProdutosCoachMarks && <ConvitePendente />}
+      {!showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <ConvitePendente />}
       {/* Toque em qualquer push (inclusive o que abriu o app) → lib/pushToque.ts. Fora do
           tutorial também: o toque do lote espera o aviso montar. */}
       <ToquePush />

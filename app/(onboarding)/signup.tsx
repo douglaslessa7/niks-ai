@@ -12,10 +12,11 @@ import { useAuth } from '../../hooks/useAuth';
 import { useAppStore } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
-import { saveOnboardingProtocol } from '../../lib/onboardingPrefetch';
+import { atualizarCompraPendente } from '../../lib/compraPendente';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
-import { confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { comTetoRc, confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
 import { pwDecisao } from '../../lib/paywallDebug';
+import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { haptics } from '../../lib/haptics';
 import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
 
@@ -28,13 +29,17 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // "ou", Google e Apple, termos) no VISUAL do kit (fonte do sistema, #FF5EA8, campos
 // #F0F0F0), sem o X e sem a etiqueta "sua conta" (pedido do produto, out/2026). A tela
 // "#1 app de skincare com IA" (modelo 10a) saiu; `SignupHeroText.tsx` ficou no repo.
-// Lógica de cadastro intacta. → compromisso → home (20/out/2026).
+// 07/nov/2026: fundo da home (`ObScreen variant="home"`, tela 9 do design NiksBoasVindas —
+// vem depois das boas-vindas pós-pagamento); campos e Google em branco para ler no rosa.
+// Lógica de cadastro intacta. → tela de espera (`loading-rotina`, 06/nov/2026), que salva o
+// scan e a rotina e abre a home (04/nov/2026: o compromisso passou para antes, depois da
+// "Comunidade"; de 20/out a 04/nov era → compromisso → home).
 const PRIVACY_URL = 'https://niks-ai-privacidade.notion.site/POL-TICA-DE-PRIVACIDADE-NIKS-AI-323c5d237bfe80a2a446fcf57b35aef5';
 
 export default function Signup() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, loading } = useAuth();
-  const { saveToSupabase, scanResult, onboarding, setProtocolResult, setProtocolGenerating, armHomeTutorial, setSubscriptionVerified } = useAppStore();
+  const { saveToSupabase, armHomeTutorial, setSubscriptionVerified } = useAppStore();
   const { track, identify } = useMixpanel();
 
   // ── Trava: o cadastro só aparece com `premium` CONFIRMADO no RevenueCat ──────
@@ -42,10 +47,10 @@ export default function Signup() {
   // internet, link direto `niks-ai://signup`, qualquer caminho que um dia chegue
   // aqui por engano — volta para o paywall. Na dúvida, paywall. Ver
   // `lib/subscriptionGate.ts` e "Guard de assinatura" no README.
-  // Em __DEV__ o paywall é pulado de propósito (atalho de dev) — a trava também.
-  const [liberado, setLiberado] = useState(__DEV__);
+  // Com o atalho de dev (`lib/devPaywall.ts`) o paywall é pulado de propósito — a trava também.
+  const [liberado, setLiberado] = useState(PULAR_PAYWALL);
   useEffect(() => {
-    if (__DEV__) return;
+    if (PULAR_PAYWALL) return;
     let ativo = true;
     (async () => {
       await ensureAnonymousRevenueCat('cadastro');
@@ -66,8 +71,9 @@ export default function Signup() {
     return () => { ativo = false; };
   }, []);
 
-  // Conta criada → compromisso → home (20/out/2026: o compromisso saiu de antes do
-  // paywall e virou a última tela antes do app; ele só leva à home). A permissão de
+  // Conta criada → home (04/nov/2026, pedido do produto: o compromisso foi para antes, logo
+  // depois da "Comunidade"; de 20/out a 04/nov/2026 a conta ia ao compromisso, que levava à
+  // home). A permissão de
   // notificação é pedida ANTES da conta (depois do horário da rotina; o token vai no
   // `saveToSupabase`), então a tela de notificações pós-cadastro saiu do fluxo
   // (out/2026). Este é agora o ÚNICO ponto em que uma usuária NOVA entra no app — por
@@ -79,7 +85,7 @@ export default function Signup() {
   // `subscriptionVerified` que faz o guard do (app)/_layout pular a verificação.
   // Sem premium → paywall (já com sessão: comprar ou restaurar leva à home).
   const finishOnboarding = async () => {
-    if (!__DEV__) {
+    if (!PULAR_PAYWALL) {
       const ok = await confirmPremium({ attempts: 2, label: 'cadastro:conta_criada' });
       if (!ok) {
         pwlog('conta criada sem premium na identidade nova → paywall'); // TEMP-PWGUARD
@@ -93,27 +99,20 @@ export default function Signup() {
     }
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
     armHomeTutorial();
-    // `replace`: o cadastro sai da pilha — do compromisso não se volta para cá.
-    router.replace('/(onboarding)/compromisso' as any);
+    // 06/nov/2026: a conta vai para a TELA DE ESPERA, que aguarda a análise completa (disparada
+    // na compra), grava o scan e a rotina e só então abre a home. `replace`: não volta ao cadastro.
+    router.replace('/(onboarding)/loading-rotina' as any);
   };
 
-  const startProtocolGeneration = (userId: string) => {
-    if (!scanResult) return;
-    // Lê skinScanId diretamente do store após saveToSupabase tê-lo setado —
-    // o closure do render ainda teria o valor antigo (null).
-    const freshSkinScanId = useAppStore.getState().skinScanId;
-    setProtocolGenerating(true);
-    // A rotina costuma já estar pronta (gerada em segundo plano desde o objetivo):
-    // aqui ela só é gravada com o user_id. Se as respostas mudaram, falhou ou não
-    // existe, gera como antes. Não bloqueia a navegação. Ver `lib/onboardingPrefetch.ts`.
-    saveOnboardingProtocol({
-      scanResult,
-      onboardingData: onboarding,
-      skinScanId: freshSkinScanId,
-      userId,
-      onSuccess: setProtocolResult,
-      onFinally: () => setProtocolGenerating(false),
-    });
+  // Conta criada: o perfil (`users`) é gravado já; o scan e a rotina, pela tela de espera
+  // (o relatório completo só chega depois da compra). O registro da compra pendente ganha o
+  // user_id — se o app fechar agora, a retomada salva nesta conta.
+  const salvarConta = async (userId: string) => {
+    await saveToSupabase(userId, { scan: false });
+    // Liga o cupom (se houver) ao user_id real. Não bloqueia: se falhar, a
+    // usuária entra normalmente; o webhook ainda confirma a conversão.
+    attributeCouponIfAny(userId);
+    await atualizarCompraPendente({ userId });
   };
 
   // Só conta como "viu o cadastro" depois da trava liberar.
@@ -133,6 +132,21 @@ export default function Signup() {
   const [resendCooldown, setResendCooldown] = useState(0);
   const { insets } = useObFrame();
   const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Opções → campo de e-mail (só depois do toque em "Continuar com e-mail").
+  const [comEmail, setComEmail] = useState(false);
+  const abrirEmail = () => {
+    haptics.tap();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setComEmail(true);
+  };
+  const fecharEmail = () => {
+    haptics.tap();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setComEmail(false);
+    setStep('email');
+    setPassword('');
+  };
 
   const handleEmailContinue = () => {
     haptics.action();
@@ -166,20 +180,16 @@ export default function Signup() {
         if (data.session.user?.id) {
           try {
             const Purchases = (await import('react-native-purchases')).default;
-            await Purchases.logIn(data.session.user.id);
+            await comTetoRc(Purchases.logIn(data.session.user.id));
             // Sincroniza o receipt da Apple com o usuário RC identificado.
             // Sem isso, a compra feita pelo usuário anônimo não é transferida
             // quando o usuário identificado já existia no RC (fluxo: paywall → signup).
-            await Purchases.restorePurchases();
+            await comTetoRc(Purchases.restorePurchases(), 30000);
           } catch (rcErr) {
             console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
           }
           identify(data.session.user.id);
-          await saveToSupabase(data.session.user.id);
-          // Liga o cupom (se houver) ao user_id real. Não bloqueia: se falhar, a
-          // usuária entra normalmente; o webhook ainda confirma a conversão.
-          attributeCouponIfAny(data.session.user.id);
-          startProtocolGeneration(data.session.user.id);
+          await salvarConta(data.session.user.id);
           await finishOnboarding();
         }
       }
@@ -215,15 +225,13 @@ export default function Signup() {
       if (data.user?.id) {
         try {
           const Purchases = (await import('react-native-purchases')).default;
-          await Purchases.logIn(data.user.id);
-          await Purchases.restorePurchases();
+          await comTetoRc(Purchases.logIn(data.user.id));
+          await comTetoRc(Purchases.restorePurchases(), 30000);
         } catch (rcErr) {
           console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
         }
         identify(data.user.id);
-        await saveToSupabase(data.user.id);
-        attributeCouponIfAny(data.user.id);
-        startProtocolGeneration(data.user.id);
+        await salvarConta(data.user.id);
         // Só com conta criada (antes ia para a home mesmo sem `user.id`).
         await finishOnboarding();
       }
@@ -239,15 +247,13 @@ export default function Signup() {
       if (session?.user?.id) {
         try {
           const Purchases = (await import('react-native-purchases')).default;
-          await Purchases.logIn(session.user.id);
-          await Purchases.restorePurchases();
+          await comTetoRc(Purchases.logIn(session.user.id));
+          await comTetoRc(Purchases.restorePurchases(), 30000);
         } catch (rcErr) {
           console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
         }
         identify(session.user.id);
-        await saveToSupabase(session.user.id);
-        attributeCouponIfAny(session.user.id);
-        startProtocolGeneration(session.user.id);
+        await salvarConta(session.user.id);
         // Só com conta criada (antes ia para a home mesmo sem sessão).
         await finishOnboarding();
       }
@@ -261,7 +267,7 @@ export default function Signup() {
 
   const fieldLabel = { fontSize: 15, lineHeight: 20, fontWeight: '600' as const, color: OB.ink, marginBottom: 8 };
   const field = (focused: boolean) => ({
-    height: 57, borderRadius: 12, backgroundColor: OB.option, paddingHorizontal: 16,
+    height: 57, borderRadius: 12, backgroundColor: '#FFFFFF', paddingHorizontal: 16,
     borderWidth: 1.5, borderColor: focused ? OB.pink : 'transparent',
   });
   const wide = { width: '100%' as const, height: 50, borderRadius: 25 };
@@ -269,7 +275,7 @@ export default function Signup() {
   // Trava ainda conferindo o `premium`: nada do formulário aparece.
   if (!liberado) {
     return (
-      <ObScreen>
+      <ObScreen variant="home">
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={OB.pink} />
         </View>
@@ -279,7 +285,7 @@ export default function Signup() {
 
   if (waitingConfirmation) {
     return (
-      <ObScreen>
+      <ObScreen variant="home">
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingBottom: 32 }}>
           <View style={{ marginBottom: 24 }}>
             <Mail size={64} color={OB.pink} />
@@ -310,7 +316,7 @@ export default function Signup() {
   }
 
   return (
-    <ObScreen>
+    <ObScreen variant="home">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, paddingTop: insets.top + 40, paddingBottom: Math.max(18, insets.bottom) }}
@@ -331,97 +337,11 @@ export default function Signup() {
 
           <View style={{ flex: 1, minHeight: 32 }} />
 
-          {/* Formulário */}
+          {/* Apple e Google primeiro — são os principais (pedido do produto, 07/nov/2026). O
+              e-mail é opcional, embaixo: só um botão; o campo aparece depois do toque. */}
           <View style={{ paddingHorizontal: 24, gap: 14 }}>
-            <View>
-              <Text style={fieldLabel}>Endereço de e-mail</Text>
-              <View style={[field(focusedField === 'email'), { justifyContent: 'center' }]}>
-                <TextInput
-                  placeholder="seuemail@exemplo.com"
-                  placeholderTextColor={OB.sub}
-                  value={email}
-                  onChangeText={handleEmailChange}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  selectionColor={OB.pink}
-                  cursorColor={OB.pink}
-                  onFocus={() => setFocusedField('email')}
-                  onBlur={() => setFocusedField(null)}
-                  style={{ fontSize: 17, color: OB.ink }}
-                />
-              </View>
-            </View>
-
-            {step === 'password' && (
-              <View>
-                <Text style={fieldLabel}>Defina uma senha para a sua conta</Text>
-                <View style={[field(focusedField === 'password'), { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
-                  <TextInput
-                    placeholder="Mínimo 8 caracteres"
-                    placeholderTextColor={OB.sub}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoFocus
-                    selectionColor={OB.pink}
-                    cursorColor={OB.pink}
-                    onFocus={() => setFocusedField('password')}
-                    onBlur={() => setFocusedField(null)}
-                    style={{ flex: 1, fontSize: 17, color: OB.ink }}
-                  />
-                  <TouchableOpacity
-                    onPress={() => { haptics.tap(); setShowPassword(!showPassword); }}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    {showPassword
-                      ? <EyeOff size={20} color={OB.sub} />
-                      : <Eye size={20} color={OB.sub} />}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {step === 'email' ? (
-              <ObPillButton onPress={handleEmailContinue} disabled={!emailActive} style={wide} />
-            ) : localLoading ? (
-              <View style={[wide, { backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }]}>
-                <ActivityIndicator color="#FFFFFF" />
-              </View>
-            ) : (
-              <ObPillButton label="Criar minha conta" onPress={handleCreateAccount} disabled={!passwordActive} style={wide} />
-            )}
-
-            {/* "ou" + Google + Apple — só no passo do e-mail */}
-            {step === 'email' && (
+            {!comEmail ? (
               <>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 4 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: OB.divider }} />
-                  <Text style={{ fontSize: 15, color: OB.sub }}>ou</Text>
-                  <View style={{ flex: 1, height: 1, backgroundColor: OB.divider }} />
-                </View>
-
-                <TouchableOpacity
-                  onPress={handleGoogleSignIn}
-                  activeOpacity={0.85}
-                  disabled={loading}
-                  style={[wide, {
-                    backgroundColor: OB.option, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
-                  }]}
-                >
-                  {loading ? <ActivityIndicator color={OB.ink} /> : (
-                    <>
-                      <Svg width={20} height={20} viewBox="0 0 48 48">
-                        <Path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                        <Path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                        <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                        <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                      </Svg>
-                      <Text style={{ fontSize: 17, fontWeight: '600', color: OB.ink }}>Continuar com o Google</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
                 {Platform.OS === 'ios' && (
                   <TouchableOpacity
                     onPress={handleAppleSignIn}
@@ -441,6 +361,102 @@ export default function Signup() {
                     )}
                   </TouchableOpacity>
                 )}
+                <TouchableOpacity
+                  onPress={handleGoogleSignIn}
+                  activeOpacity={0.85}
+                  disabled={loading}
+                  style={[wide, {
+                    backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
+                  }]}
+                >
+                  {loading ? <ActivityIndicator color={OB.ink} /> : (
+                    <>
+                      <Svg width={20} height={20} viewBox="0 0 48 48">
+                        <Path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                        <Path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                        <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                        <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                      </Svg>
+                      <Text style={{ fontSize: 17, fontWeight: '600', color: OB.ink }}>Continuar com o Google</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={abrirEmail}
+                  activeOpacity={0.7}
+                  style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={{ fontSize: 17, fontWeight: '600', color: OB.pink }}>Continuar com e-mail</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View>
+                  <Text style={fieldLabel}>Endereço de e-mail</Text>
+                  <View style={[field(focusedField === 'email'), { justifyContent: 'center' }]}>
+                    <TextInput
+                      placeholder="seuemail@exemplo.com"
+                      placeholderTextColor={OB.sub}
+                      value={email}
+                      onChangeText={handleEmailChange}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      selectionColor={OB.pink}
+                      cursorColor={OB.pink}
+                      onFocus={() => setFocusedField('email')}
+                      onBlur={() => setFocusedField(null)}
+                      autoFocus
+                      style={{ fontSize: 17, color: OB.ink }}
+                    />
+                  </View>
+                </View>
+
+                {step === 'password' && (
+                  <View>
+                    <Text style={fieldLabel}>Defina uma senha para a sua conta</Text>
+                    <View style={[field(focusedField === 'password'), { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
+                      <TextInput
+                        placeholder="Mínimo 8 caracteres"
+                        placeholderTextColor={OB.sub}
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry={!showPassword}
+                        autoFocus
+                        selectionColor={OB.pink}
+                        cursorColor={OB.pink}
+                        onFocus={() => setFocusedField('password')}
+                        onBlur={() => setFocusedField(null)}
+                        style={{ flex: 1, fontSize: 17, color: OB.ink }}
+                      />
+                      <TouchableOpacity
+                        onPress={() => { haptics.tap(); setShowPassword(!showPassword); }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        {showPassword
+                          ? <EyeOff size={20} color={OB.sub} />
+                          : <Eye size={20} color={OB.sub} />}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {step === 'email' ? (
+                  <ObPillButton onPress={handleEmailContinue} disabled={!emailActive} style={wide} />
+                ) : localLoading ? (
+                  <View style={[wide, { backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }]}>
+                    <ActivityIndicator color="#FFFFFF" />
+                  </View>
+                ) : (
+                  <ObPillButton label="Criar minha conta" onPress={handleCreateAccount} disabled={!passwordActive} style={wide} />
+                )}
+                <TouchableOpacity
+                  onPress={fecharEmail}
+                  activeOpacity={0.7}
+                  style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={{ fontSize: 16, color: OB.sub }}>Voltar para Apple e Google</Text>
+                </TouchableOpacity>
               </>
             )}
           </View>

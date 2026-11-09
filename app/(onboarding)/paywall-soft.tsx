@@ -20,9 +20,24 @@ import {
 } from '../../lib/paywallFlow';
 import { confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
 import { pwDecisao } from '../../lib/paywallDebug';
+import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { haptics } from '../../lib/haptics';
 import { OB, ObPillButton } from '../../components/onboarding/kit';
+import { iniciarAnaliseCompleta } from '../../lib/onboardingPrefetch';
+import { registrarCompraPendente } from '../../lib/compraPendente';
+
+// Compra confirmada (06/nov/2026): a análise completa e a rotina só rodam a partir daqui.
+// Se há um scan do onboarding na memória, guarda a foto e o estado no aparelho (para o app
+// poder fechar até a conta ficar pronta — `lib/compraPendente.ts`) e dispara a análise.
+// Devolve se havia onboarding (→ a tela de espera salva tudo na conta).
+async function liberarAnaliseCompleta(): Promise<boolean> {
+  const s = useAppStore.getState();
+  if (s.scanSource !== 'onboarding' || !s.skinImageBase64) return false;
+  await registrarCompraPendente();
+  iniciarAnaliseCompleta();
+  return true;
+}
 
 // Paywall sem resposta (onSkip / onError / register que lança) seguidas vezes:
 // depois disso para de pedir em ciclo e mostra "Tentar de novo". Nunca o cadastro.
@@ -89,6 +104,7 @@ export default function PaywallSoft() {
       void present('paywall_onboarding', `${tipo}_sem_premium`);
       return;
     }
+    const comOnboarding = await liberarAnaliseCompleta();
     const { data: { session } } = await supabase.auth.getSession();
     await pwDecisao(`onDismiss(${tipo})`, session?.user ? 'HOME (já tinha conta)' : 'CADASTRO', session?.user ? 'home' : 'cadastro',
       tipo === 'restored'
@@ -101,12 +117,15 @@ export default function PaywallSoft() {
       setSubscriptionVerified(true);
       attributeCouponIfAny(session.user.id);
       pwlog('premium confirmado, com sessão → home'); // TEMP-PWGUARD
-      router.replace('/(app)/home');
+      // Refez o onboarding já logada: a tela de espera salva o scan e a rotina nesta conta.
+      router.replace(comOnboarding ? '/(onboarding)/loading-rotina' as any : '/(app)/home');
     } else {
       // Nova usuária. O `subscriptionVerified` NÃO é marcado aqui: a identidade
       // muda no cadastro (Purchases.logIn), e é o signup que confere de novo e marca.
-      pwlog('premium confirmado, sem sessão → cadastro'); // TEMP-PWGUARD
-      router.replace('/(onboarding)/signup');
+      // 07/nov/2026: antes do cadastro, as boas-vindas pós-pagamento (`bv-*`, telas 1–8 do
+      // design NiksBoasVindas); a última leva ao cadastro (que confere o premium de novo).
+      pwlog('premium confirmado, sem sessão → boas-vindas → cadastro'); // TEMP-PWGUARD
+      router.replace('/(onboarding)/bv-entrou' as any);
     }
   };
 
@@ -192,7 +211,7 @@ export default function PaywallSoft() {
   // o placement — é este registro, e não um `Superwall.shared.register` solto, que
   // carrega os callbacks de fail closed acima (onSkip/onError → paywall).
   useEffect(() => {
-    if (__DEV__) return;
+    if (PULAR_PAYWALL) return;
     return subscribeDownsellRequest(() => {
       void present('paywall_downsell', 'transactionAbandon');
     });
@@ -204,7 +223,7 @@ export default function PaywallSoft() {
   const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
-      if (__DEV__) return;
+      if (PULAR_PAYWALL) return;
       if (firstFocus.current) { firstFocus.current = false; return; }
       const placement = consumeNextPlacement() ?? 'paywall_onboarding';
       let cancelled = false;
@@ -221,16 +240,16 @@ export default function PaywallSoft() {
   }, []);
 
   useEffect(() => {
-    if (__DEV__) {
+    if (PULAR_PAYWALL) {
       // Atalho de dev: pula o paywall. Mas NÃO pode mandar todo mundo pro signup —
       // quem já tem sessão (login pela tela "Entrar") já tem conta e deve ir pra home.
       // Sem esse check, logar numa conta existente em dev caía na tela de criar conta.
-      // ⚠️ Só existe em __DEV__ (Metro). Em Release/TestFlight/App Store o __DEV__ é
-      // false e este bloco não roda.
-      supabase.auth.getSession().then(({ data: { session } }) => {
+      // ⚠️ Só existe no Metro e sem EXPO_PUBLIC_PAYWALL_REAL=1 (`lib/devPaywall.ts`). Em
+      // Release/TestFlight/App Store é sempre false e este bloco não roda.
+      liberarAnaliseCompleta().then((comOnboarding) => supabase.auth.getSession().then(({ data: { session } }) => {
         setSubscriptionVerified(true);
-        router.replace(session?.user ? '/(app)/home' : '/(onboarding)/signup');
-      });
+        router.replace(session?.user ? (comOnboarding ? '/(onboarding)/loading-rotina' as any : '/(app)/home') : '/(onboarding)/bv-entrou' as any);
+      }));
       return;
     }
 

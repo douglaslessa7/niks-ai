@@ -1,6 +1,6 @@
 import '../global.css';
 import { useEffect, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaywalloProvider } from '@virex-tech/paywallo-sdk';
@@ -14,13 +14,15 @@ import { SuperwallProvider, CustomPurchaseControllerProvider } from 'expo-superw
 import type { PurchaseResult, RestoreResult } from 'expo-superwall';
 import Superwall from 'expo-superwall/compat';
 import Purchases from 'react-native-purchases';
-import { MixpanelProvider, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
+import { MixpanelProvider, trackFora, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
 import { ShareIntentProvider } from 'expo-share-intent';
 import { ShareIntentBridge } from '../components/share/ShareIntentBridge';
 import * as SplashScreen from 'expo-splash-screen';
 import SplashOverlay from '../components/SplashOverlay';
 import PaywallDiagnostico from '../components/debug/PaywallDiagnostico';
+import BarraPontosHost from '../components/cartas/BarraPontosHost';
+import GuiaHost from '../components/coach/GuiaHost';
 
 // Segura a splash NATIVA até a cópia JS (SplashOverlay) desenhar o 1º quadro —
 // é ela quem esconde a nativa, sem fade (as duas são idênticas). Precisa rodar no
@@ -195,6 +197,34 @@ function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Rede de proteção: um erro ao desenhar qualquer tela cai aqui, em vez de fechar o app ou
+// deixar a tela branca. O Expo Router envolve a rota com este componente, FORA dos providers
+// (sem SafeArea, tema ou store): por isso usa só componentes básicos do React Native.
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Promise<void> }) {
+  useEffect(() => {
+    console.error('[ErrorBoundary] erro de tela:', error);
+    try {
+      trackFora('erro_tela', { nome: error?.name ?? 'Error', mensagem: String(error?.message ?? '').slice(0, 200) });
+    } catch {}
+  }, [error]);
+
+  return (
+    <View style={erroStyles.tela}>
+      <Text style={erroStyles.titulo} accessibilityRole="header">Algo deu errado</Text>
+      <Pressable onPress={() => { void retry(); }} style={erroStyles.botao} accessibilityRole="button" accessibilityLabel="Tentar de novo">
+        <Text style={erroStyles.botaoTexto}>Tentar de novo</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const erroStyles = StyleSheet.create({
+  tela: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 24, padding: 24, backgroundColor: '#F9F2F5' },
+  titulo: { fontSize: 22, fontWeight: '700', letterSpacing: -0.5, color: '#121212', textAlign: 'center' },
+  botao: { height: 52, paddingHorizontal: 32, borderRadius: 100, backgroundColor: '#FF5EA8', justifyContent: 'center' },
+  botaoTexto: { fontSize: 17, fontWeight: '600', letterSpacing: -0.4, color: '#FFFFFF' },
+});
+
 export default function RootLayout() {
   const attResolved = useAttResolved();
 
@@ -322,6 +352,10 @@ export default function RootLayout() {
                 {/* Diagnóstico do paywall: `null` a menos que ligado pelo link secreto
                     (lib/paywallDebug.ts). Por cima de todas as telas. */}
                 <PaywallDiagnostico />
+                {/* Dicas dos desafios do primeiro acesso: passam pelas telas de scan, fora do (app). */}
+                <GuiaHost />
+                {/* Barra de nível no topo para os NIKS Points ganhos sem carta (regras novas). */}
+                <BarraPontosHost />
               </SafeAreaProvider>
             </GestureHandlerRootView>
           </CustomPurchaseControllerProvider>

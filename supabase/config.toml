@@ -10,6 +10,14 @@ entrypoint = "./functions/analyze-skin/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/analyze-skin/*.html" ]
 
+[functions.analise-rapida]
+enabled = true
+# Análise leve do scan do onboarding (06/nov/2026), ANTES da conta: o app chama com a anon
+# key, como a analyze-skin — que é um JWT válido, então o gateway aceita com a verificação
+# ligada. Sem sessão de usuária; a trava contra abuso é o teto da foto e a resposta mínima.
+verify_jwt = true
+entrypoint = "./functions/analise-rapida/index.ts"
+
 [functions.revenuecat-webhook]
 enabled = true
 verify_jwt = false
@@ -74,6 +82,13 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/montar-rotina-com-produtos/index.ts"
 
+[functions.sos-espinha]
+enabled = true
+# Mesmo padrão do analisar-produto: o gateway não barra, e a função verifica o JWT
+# localmente (_shared/jwt.ts) — o user_id vem do token, nunca do corpo.
+verify_jwt = false
+entrypoint = "./functions/sos-espinha/index.ts"
+
 [functions.superwall-webhook]
 enabled = true
 # Eventos de loja do Superwall → assinaturas_loja. Sem sessão: a trava é a assinatura
@@ -87,6 +102,13 @@ enabled = true
 # padrão da cartas: o gateway não barra, a função verifica o JWT localmente.
 verify_jwt = false
 entrypoint = "./functions/assinatura/index.ts"
+
+[functions.comprovar-assinatura]
+enabled = true
+# Prova da Apple (Fase 0B): liga a compra à conta pelo JWS do StoreKit. Mesmo padrão da
+# cartas: o gateway não barra, a função verifica o JWT localmente.
+verify_jwt = false
+entrypoint = "./functions/comprovar-assinatura/index.ts"
 
 [functions.grupos]
 enabled = true

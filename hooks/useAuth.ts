@@ -4,6 +4,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin'
 import { Session } from '@supabase/supabase-js'
 import * as AppleAuthentication from 'expo-apple-authentication'
 import * as Crypto from 'expo-crypto'
+import { limparIdentidadeSuperwall } from '../lib/assinaturaServidor'
 import { clearAllCache } from '../lib/cache'
 import { resetUserId } from '../lib/currentUser'
 import { cancelRoutineReminders } from '../lib/routineReminders'
@@ -156,6 +157,7 @@ export function useAuth() {
     // o logOut, o `premium` desta conta liberaria o cadastro de outra.
     useAppStore.getState().setSubscriptionVerified(false)
     await resetRevenueCatIdentity()
+    await limparIdentidadeSuperwall()
     await clearAllCache()
     // Os lembretes da rotina são desta conta (horários dela) — a próxima agenda os seus.
     await cancelRoutineReminders()
