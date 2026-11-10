@@ -13,6 +13,8 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { Contador } from '../../components/cartas/Carta';
 import { OB, ObHeader } from '../../components/onboarding/kit';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — demonstração do scan de produto, telas 3 e 4 (04/nov/2026), depois da transição
 // rosa "Nem todo produto serve para a sua pele…" (`(scan)/demo-transicao`, que termina com o
@@ -190,6 +192,7 @@ function Entra({ i, t, style, children }: { i: number; t: SharedValue<number>; s
 }
 
 export default function DemoScan() {
+  useObPassoVisto(OB_STEPS.demoScan, 'Demo: scan de produto');
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: W, height: H } = useWindowDimensions();

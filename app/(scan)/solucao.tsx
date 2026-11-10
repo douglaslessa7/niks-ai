@@ -9,6 +9,8 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { haptics } from '../../lib/haptics';
 import BalancedText from '../../components/BalancedText';
 import { useObName } from '../../components/onboarding/kit';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — "Calma, <nome>." (04/nov/2026): entre a carta revelada ("Quero resolver
 // isso") e o "Seu caminho". Sem botão, sem voltar, sem avanço por toque: segue sozinha.
@@ -36,6 +38,7 @@ const EO = Easing.bezier(0.23, 1, 0.32, 1);           // ease-out forte
 const BRANCO_CURVA = Easing.inOut(Easing.quad);
 
 export default function Solucao() {
+  useObPassoVisto(OB_STEPS.calma, 'Calma');
   const router = useRouter();
   const nome = useObName();
   const { height: H } = useWindowDimensions();

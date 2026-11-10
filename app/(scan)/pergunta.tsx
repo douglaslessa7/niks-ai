@@ -5,6 +5,9 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { OB, ObChoiceScreen, ObHeader, ObPillButton, ObScreen, ObTitle, useObFrame } from '../../components/onboarding/kit';
 import { PERGUNTAS, PRIMEIRA, PerguntaId, depoisDe, ehPergunta } from '../../components/onboarding/personalizacao';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { ORDEM } from '../../components/onboarding/personalizacao';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — uma pergunta da personalização da rotina (`?q=<id>`; ordem, textos e opções em
 // `components/onboarding/personalizacao.ts`). Como as telas antigas de pergunta: uma tela por
@@ -20,6 +23,9 @@ export default function PerguntaPersonalizacao() {
   const onboarding = useAppStore((s) => s.onboarding);
   const setOnboardingField = useAppStore((s) => s.setOnboardingField);
   const primeira = q === PRIMEIRA;
+  // Funil v2: 17 + posição em ORDEM (17 a 23); a condicional ("Qual ativo…") fica fora.
+  const posicao = (ORDEM as readonly string[]).indexOf(q);
+  useObPassoVisto(posicao >= 0 ? OB_STEPS.pergunta + posicao : 0, `Pergunta: ${q}`);
 
   useEffect(() => {
     if (!primeira) return;

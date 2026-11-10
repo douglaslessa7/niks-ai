@@ -2,6 +2,8 @@ import { Image, ImageSourcePropType, Text, View, useWindowDimensions } from 'rea
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
 import { OB, ObHeader, ObPillButton, OB_BOTAO_H, ObScreen, useObFrame } from '../../components/onboarding/kit';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — "Transformação real" (antes e depois), logo depois do objetivo ("Qual pele
 // você quer ter?") e antes do gráfico "Sua evolução" (04/nov/2026, pedido do produto).
@@ -44,6 +46,7 @@ const TRANSFORMACAO: {
 const PROPORCAO = 352.7 / 271;   // largura ÷ altura do card do Tapfit
 
 export default function Transformacao() {
+  useObPassoVisto(OB_STEPS.transformacao, 'Transformação real');
   const router = useRouter();
   const { width: W } = useWindowDimensions();
   const { y, buttonBottom } = useObFrame();

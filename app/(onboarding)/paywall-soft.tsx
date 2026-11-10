@@ -305,6 +305,7 @@ export default function PaywallSoft() {
         if (deveriaPerguntar({ convite: false, sinal: null, ...a })) {
           pwlog(`assinatura no Apple ID (sessão=${a.temSessao}, outraConta=${a.outraConta}) → pergunta`); // TEMP-PWGUARD
           setPergunta(true);
+          track('assinatura_pergunta_vista', { com_sessao: a.temSessao, outra_conta: a.outraConta });
           return;
         }
       }
@@ -316,10 +317,12 @@ export default function PaywallSoft() {
 
   // "Usar nesta conta" = o mesmo que tocar em "Restaurar compra" (origem `restaurar`).
   const usarAssinatura = async () => {
+    track('assinatura_pergunta_usou');
     setPergunta(false);
     await confirmarESeguir('restored');
   };
   const recusarAssinatura = () => {
+    track('assinatura_pergunta_recusou');
     setPergunta(false);
     void present(placementBase(), 'recusou_usar_assinatura');
   };

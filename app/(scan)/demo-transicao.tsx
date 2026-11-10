@@ -8,6 +8,8 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { haptics } from '../../lib/haptics';
 import BalancedText from '../../components/BalancedText';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — transição da demonstração do scan de produto (04/nov/2026), logo depois da
 // pergunta da água; substituiu as 2 telas de preparação (educação + apresentação), a pedido do
@@ -36,6 +38,7 @@ const FRASE_1 = 'Nem todo produto serve para a sua pele. Alguns podem até estar
 const FRASE_2 = 'O NIKS analisa cada um para você.';
 
 export default function DemoTransicao() {
+  useObPassoVisto(OB_STEPS.demoTransicao, 'Demo: transição');
   const router = useRouter();
   const reduce = useReducedMotion();
   const [barraEscura, setBarraEscura] = useState(false);

@@ -9,6 +9,8 @@ import { scheduleOnRN } from 'react-native-worklets';
 import BalancedText from '../../components/BalancedText';
 import { useObName } from '../../components/onboarding/kit';
 import { PRIMEIRA } from '../../components/onboarding/personalizacao';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — transição da personalização (04/nov/2026), logo depois do "Seu caminho":
 // "Agora vamos personalizar sua rotina, <nome>." no estilo da "Calma, <nome>."
@@ -25,6 +27,7 @@ const EO = Easing.bezier(0.23, 1, 0.32, 1);           // ease-out forte
 const BRANCO_CURVA = Easing.inOut(Easing.quad);
 
 export default function Personalizar() {
+  useObPassoVisto(OB_STEPS.personalizar, 'Personalizar');
   const router = useRouter();
   const nome = useObName();
   const { height: H } = useWindowDimensions();

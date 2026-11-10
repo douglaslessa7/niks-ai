@@ -47,38 +47,32 @@ export const OB = {
 // As telas condicionais (detalhe da rotina, detalhe da alergia) mantêm o número mesmo
 // quando não aparecem — o funil mostra o pulo, não renumera.
 export const OB_STEPS = {
-  // Abertura com vídeo ("NF 1" do novo fluxo) no lugar do "Olá" + "Seus dados", e o
-  // nome indo direto para a idade, sem o "Prazer" (03/nov/2026, pedido do produto):
-  // todos os passos andaram para trás (−2) e o total foi de 27 para 25.
-  // "O que mais te incomoda" logo depois da idade e, depois dela, o mapa do rosto e a
-  // reação com o foco ("NF 5" e "NF 6" do novo fluxo) — 03/nov/2026, pedido do
-  // produto. Os passos seguintes andaram duas casas e o total foi de 25 para 27.
-  // Nome → objetivo → gráfico "Sua evolução" → idade → incômodos (03/nov/2026).
-  abertura: 1, nome: 2, objetivo: 3, evolucao: 4, idade: 5, incomoda: 6,
-  mapaRosto: 7, focoRosto: 8,
-  // Depois do foco, direto o tutorial do scan (com o pop-up "Sua pele. Seus dados.") e a
-  // câmera (03/nov/2026, pedido do produto). As perguntas que vinham no meio (gravidez →
-  // "Com × Sem NIKS") saíram do caminho e valem 0 até voltarem a ter lugar no fluxo.
-  prepScan: 9, camera: 10, analisando: 11, resultadoScan: 12, rotinaPronta: 13,
-  // Paywall (Superwall) entre a rotina pronta e a conta — não é tela nossa, não conta.
-  // O compromisso passou para DEPOIS da conta (20/out/2026, pedido do produto): é a
-  // última tela antes da home.
-  // Conta e compromisso ficam só no Mixpanel: o funil do Paywallo termina na rotina
-  // pronta (`OB_PAYWALLO_LAST`, abaixo).
-  criarConta: 14, compromisso: 15,
-  // Fora do caminho desde 03/nov/2026 (esperando lugar no fluxo novo).
+  // Funil v2 (09/nov/2026, `onboarding_version: '2.0'`): TODA tela antes do paywall, na ordem
+  // real e sem buracos — antes 11 telas seguidas (cartas → comunidade) não tinham passo e a
+  // queda delas aparecia como se fosse no "Analisando foto". Não comparar com o funil 1.0.
+  // Código do grupo (só com convite), pergunta da assinatura, boas-vindas e cadastro (depois
+  // do pagamento) ficam fora do funil numerado, com eventos próprios no Mixpanel.
+  abertura: 1, nome: 2, objetivo: 3, transformacao: 4, evolucao: 5, idade: 6, incomoda: 7,
+  mapaRosto: 8, focoRosto: 9, prepScan: 10, camera: 11, analisando: 12,
+  cartas: 13, calma: 14, seuCaminho: 15, personalizar: 16,
+  // As 7 perguntas da personalização: 17 + posição em `ORDEM` (personalizacao.ts) = 17 a 23.
+  // "Qual ativo ou produto causou?" é condicional: fica fora (0).
+  pergunta: 17,
+  demoTransicao: 24, demoScan: 25, horarioManha: 26, horarioNoite: 27, notificacoes: 28,
+  comunidade: 29, rotinaPronta: 30,
+  // Depois do paywall: só no Mixpanel (acima de OB_PAYWALLO_LAST, o repasse ao Paywallo ignora).
+  criarConta: 31,
+  // Fora do caminho (arquivos no repo; o 0 garante que nada delas entra no funil).
+  resultadoScan: 0, compromisso: 0,
   gravidez: 0, alergias: 0, alergiaDetalhe: 0, potencial: 0,
-  tipoPele: 0, sol: 0, hidratacao: 0, sono: 0, rotinaAtual: 0,
-  horarioManha: 0, horarioNoite: 0, notificacoes: 0, comSemNiks: 0,
-  // Telas FORA do fluxo (arquivos ficaram no repo, nada navega até elas): o 0
-  // garante que nada delas entra no funil se alguém navegar até lá.
+  tipoPele: 0, sol: 0, hidratacao: 0, sono: 0, rotinaAtual: 0, comSemNiks: 0,
   ola: 0, seusDados: 0, prazer: 0,
   avisoLembretes: 0, pedidoNotificacao: 0, entendi: 0, idadePele: 0, transicaoRotina: 0,
   aguaSono: 0, rotinaDetalhe: 0, horarioRotina: 0, empatia: 0,
   loadingRotina: 0, incomodaRotina: 0,
   loading: 0, relatorio: 0, planPreview: 0, apresentacao: 0,
 } as const;
-export const OB_STEP_TOTAL = 15;
+export const OB_STEP_TOTAL = 30;
 /**
  * Último passo repassado ao funil do Paywallo (tela Dropout). Os passos depois dele
  * (paywall → conta → compromisso) ficam só no Mixpanel; o `onboardingManager.complete()`

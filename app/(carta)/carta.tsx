@@ -31,6 +31,8 @@ import { dateKey, sessionDate } from '../../lib/routineProgress';
 import { useAppStore } from '../../store/onboarding';
 import { useObName } from '../../components/onboarding/kit';
 import { cartaDoOnboarding, pontoForteDoOnboarding } from '../../lib/cartaOnboarding';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Carta de raspar — réplica do protótipo 67a do Claude Design ("Cartas de raspar",
@@ -392,6 +394,7 @@ export default function CartaScreen() {
   // (nada no servidor); mesma carta da rodada 84 (verso e camada de raspar), frente na
   // identidade da rara. Sem fechar, sem voltar; toca uma vez (`cartaChegadaVista`).
   const obMode = params.modo === 'onboarding';
+  useObPassoVisto(OB_STEPS.cartas, 'Cartas', obMode);
   const nome = useObName();
   // A carta vem da ANÁLISE RÁPIDA (antes da compra) e dos problemas que ela marcou
   // (`lib/cartaOnboarding.ts`, 06/nov/2026). A da idade está fora do onboarding por enquanto.

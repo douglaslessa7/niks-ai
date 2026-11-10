@@ -50,8 +50,8 @@ export default function OnboardingLayout() {
     if (!isReady || !isInOnboarding || hasTrackedStart.current) return;
     hasTrackedStart.current = true;
     timeEvent('onboarding_completed');
-    track('onboarding_started', { onboarding_version: '1.0', total_steps: OB_STEP_TOTAL });
-    registerSuperProperties({ onboarding_version: '1.0' });
+    track('onboarding_started', { onboarding_version: '2.0', total_steps: OB_STEP_TOTAL });
+    registerSuperProperties({ onboarding_version: '2.0' });
   }, [isReady, isInOnboarding]);
 
   return <Stack screenOptions={{ headerShown: false }} />;

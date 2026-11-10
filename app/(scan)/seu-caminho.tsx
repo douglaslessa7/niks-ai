@@ -12,6 +12,8 @@ import { useAppStore } from '../../store/onboarding';
 import BalancedText from '../../components/BalancedText';
 import { OB, ObPillButton, ObScreen, useObFrame } from '../../components/onboarding/kit';
 import { caminhoDaCarta, cartaDoOnboarding } from '../../lib/cartaOnboarding';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — "Seu caminho" (04/nov/2026): depois da carta revelada ("Quero resolver
 // isso") e da "Calma, <nome>.", antes do resultado do scan. Réplica da trilha do Tapfit ("Como funciona")
@@ -100,6 +102,7 @@ function Ponto({ Icone }: { Icone: typeof ScanFace }) {
 }
 
 export default function SeuCaminho() {
+  useObPassoVisto(OB_STEPS.seuCaminho, 'Seu caminho');
   const router = useRouter();
   const { y, buttonBottom } = useObFrame();
   const { width: telaW } = useWindowDimensions();

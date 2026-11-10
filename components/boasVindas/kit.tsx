@@ -11,7 +11,8 @@ import { useEffect } from 'react';
 import { View, Text, TouchableOpacity, BackHandler, useWindowDimensions, type ViewStyle, type StyleProp } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import Svg, { Defs, RadialGradient, Stop, Circle, Path } from 'react-native-svg';
 import { useObFrame } from '../onboarding/kit';
 import { haptics } from '../../lib/haptics';
@@ -85,6 +86,10 @@ function useTravaPagamento() {
 
 export function BvScreen({ children }: { children: React.ReactNode }) {
   useTravaPagamento();
+  // Depois do pagamento: fora do funil numerado (Paywallo), só no Mixpanel.
+  const { track } = useMixpanel();
+  const tela = usePathname();
+  useEffect(() => { track('bv_tela_vista', { tela }); }, [tela]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const s = BackHandler.addEventListener('hardwareBackPress', () => true);
     return () => s.remove();

@@ -7,6 +7,8 @@ import {
   OB, ObHeader, ObPillButton, OB_BOTAO_H, ObScreen, ObSubtitle, ObTitle, useObFrame,
 } from '../../components/onboarding/kit';
 import { DEPOIMENTOS, type Depoimento } from '../../components/onboarding/depoimentos';
+import { useObPassoVisto } from '../../components/onboarding/passo';
+import { OB_STEPS } from '../../components/onboarding/kit';
 
 // Onboarding — "Comunidade" (prova social, 04/nov/2026, pedido do produto), depois das
 // notificações. Layout da tela "Comunidade" do Tapfit (`~/Downloads/Captura de Tela
@@ -31,6 +33,7 @@ import { DEPOIMENTOS, type Depoimento } from '../../components/onboarding/depoim
 const ESTRELA = 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z';
 
 export default function Comunidade() {
+  useObPassoVisto(OB_STEPS.comunidade, 'Comunidade');
   const router = useRouter();
   const { y, buttonBottom } = useObFrame();
 
