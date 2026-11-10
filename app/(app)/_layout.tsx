@@ -5,7 +5,9 @@ import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
+import { GlassView } from 'expo-glass-effect';
+import { useVidroNavbar } from '../../lib/vidroNavbar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
@@ -67,6 +69,14 @@ const NAV_ACTIVE_DARK = '#FF9D9D';
 const NAV_INACTIVE_DARK = '#8B93A8';
 const NAV_BG_DARK = '#1A1F2E';
 const NAV_ICON = 27;
+// Liquid Glass (10/nov/2026, iOS 26+ — quando liga: `lib/vidroNavbar.ts`):
+//   • estilo `regular` do sistema na casa e na pílula;
+//   • SEM o véu de baixo: o véu (85% de branco-rosado) apagava o que passa por trás e o vidro
+//     ficava igual à navbar branca de antes (comparação com `clear` e com véu: 10/nov/2026);
+//   • a borda em degradê da pílula vira um CONTORNO desenhado por cima (o degradê de hoje é um
+//     preenchimento atrás da pílula branca; atrás de um vidro pintaria a pílula inteira de rosa).
+const BORDA_NO_VIDRO = true;
+const PILL_W = 10 + 60 * 3 + 4 * 2 + 10; // padding + 3 itens de 60 + 2 gaps de 4 = 208
 
 type NavKey = 'rotina' | 'produtos' | 'grupos' | 'perfil';
 
@@ -165,6 +175,71 @@ function GlobalBottomBar() {
   const homeActive = isActive('/home');
   // 26 pt da base no frame de 852 (home indicator de 34 → 8 dentro dele).
   const bottom = Math.max(16, insets.bottom - 8);
+  const vidro = useVidroNavbar();
+
+  const itens = NAV_ITEMS.map((it) => {
+    const active = isActive(it.route);
+    // Alvo do tour e das dicas (06/nov/2026): o item inteiro (60 × 46).
+    return (
+      <AlvoGuia key={it.key} chave={`nav-${it.key}` as 'nav-rotina' | 'nav-produtos' | 'nav-grupos'} style={styles.item}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => {
+            haptics.tap();
+            if (convidada && it.key !== 'grupos') { abrirTrava(it.key === 'rotina' ? 'rotina' : 'produtos'); return; }
+            router.push(it.route as any);
+          }}
+          style={styles.item}
+        >
+          {/* Sem o ponto embaixo da aba ativa: no design 75 a aba ativa é só o ícone rosa. */}
+          <View style={{ opacity: convidada && it.key !== 'grupos' ? 0.25 : 1 }}>
+            <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
+          </View>
+          {convidada && it.key !== 'grupos' && (
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+              <Lock size={16} color="#E0447F" strokeWidth={2.6} />
+            </View>
+          )}
+        </TouchableOpacity>
+      </AlvoGuia>
+    );
+  });
+
+  if (vidro) {
+    // ⚠️ Nada com opacidade < 1 POR FORA dos GlassView (quebra o vidro); por dentro, pode.
+    const esquema = isDark ? 'dark' : 'light';
+    return (
+      <>
+        <View pointerEvents="box-none" style={[styles.navbar, { bottom }]}>
+          <GlassView glassEffectStyle="regular" colorScheme={esquema} isInteractive style={styles.homeVidro}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => { haptics.tap(); router.push('/home' as any); }}
+              style={styles.homeToque}
+              accessibilityLabel="Início"
+            >
+              <HouseGlyph color={homeActive ? activeColor : inactiveColor} active={homeActive} />
+            </TouchableOpacity>
+          </GlassView>
+          <GlassView glassEffectStyle="regular" colorScheme={esquema} isInteractive style={styles.pillVidro}>
+            {itens}
+            {BORDA_NO_VIDRO && (
+              <Svg pointerEvents="none" style={StyleSheet.absoluteFill} viewBox={`0 0 ${PILL_W} 60`}>
+                <Defs>
+                  <SvgLinearGradient id="bordaNav" x1="0" y1="0.41" x2="1" y2="0.59">
+                    <Stop offset="0" stopColor="#FFC2DB" />
+                    <Stop offset="0.55" stopColor="#FF5EA8" />
+                    <Stop offset="1" stopColor="#F86B79" />
+                  </SvgLinearGradient>
+                </Defs>
+                <Rect x={0.75} y={0.75} width={PILL_W - 1.5} height={58.5} rx={29.25} fill="none" stroke="url(#bordaNav)" strokeWidth={1.5} />
+              </Svg>
+            )}
+          </GlassView>
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
@@ -195,33 +270,7 @@ function GlobalBottomBar() {
           style={styles.pillBorder}
         >
           <View style={[styles.pill, { backgroundColor: surface }]}>
-            {NAV_ITEMS.map((it) => {
-              const active = isActive(it.route);
-              // Alvo do tour e das dicas (06/nov/2026): o item inteiro (60 × 46).
-              return (
-                <AlvoGuia key={it.key} chave={`nav-${it.key}` as 'nav-rotina' | 'nav-produtos' | 'nav-grupos'} style={styles.item}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      haptics.tap();
-                      if (convidada && it.key !== 'grupos') { abrirTrava(it.key === 'rotina' ? 'rotina' : 'produtos'); return; }
-                      router.push(it.route as any);
-                    }}
-                    style={styles.item}
-                  >
-                    {/* Sem o ponto embaixo da aba ativa: no design 75 a aba ativa é só o ícone rosa. */}
-                    <View style={{ opacity: convidada && it.key !== 'grupos' ? 0.25 : 1 }}>
-                      <NavGlyph name={it.key} color={active ? activeColor : inactiveColor} active={active} />
-                    </View>
-                    {convidada && it.key !== 'grupos' && (
-                      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-                        <Lock size={16} color="#E0447F" strokeWidth={2.6} />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </AlvoGuia>
-              );
-            })}
+            {itens}
           </View>
         </LinearGradient>
       </View>
@@ -633,5 +682,26 @@ const styles = StyleSheet.create({
     height: 46,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Liquid Glass (TESTE): mesmas medidas da casa e da pílula, sem fundo nem sombra rosa
+  // (o vidro do sistema tem sombra e brilho próprios).
+  homeVidro: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  homeToque: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillVidro: {
+    width: PILL_W,
+    height: 60,
+    borderRadius: 30,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
 });
