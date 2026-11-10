@@ -51,6 +51,15 @@ import {
 // O NIKS Chat SAIU da navbar (out/2026). Ícones inativos #7A7076; a aba ativa fica
 // rosa #FF5EA8 com o ponto rosa embaixo (como antes); a casa ativa é a casa rosa do
 // design e, fora da Home, fica cinza como os outros.
+// Telas de tela cheia: a navbar NUNCA aparece nelas, decidido pela rota (10/nov/2026).
+// Antes dependia só do `tabBarVisible`, que cada tela liga no blur e desliga no foco — e
+// "quem escreve por último vence": indo de uma tela cheia para OUTRA já montada (ex.:
+// lista do skincare → câmera do check-in), o foco da nova vinha ANTES do blur da antiga,
+// e o `setTabBarVisible(true)` do blur deixava a navbar por cima da câmera.
+const TELA_CHEIA = new Set([
+  '/checkin', '/skincare', '/checkin-detalhe', '/calendario', '/conquistas',
+  '/dica-do-dia', '/grupo-jornada', '/grupo-ranking', '/niks-chat',
+]);
 const NAV_INACTIVE = '#7A7076';
 const NAV_ACTIVE = '#FF5EA8';
 // Modo noturno da tab bar (sincronizado com o tema da tela — ex.: protocolo à noite)
@@ -427,6 +436,7 @@ export default function AppLayout() {
   const guiaAtiva = useGuia() != null;
   const coachStageReady = useCoachStageReady('home');
   const pathname = usePathname();
+  const navbarVisivel = tabBarVisible && !TELA_CHEIA.has(pathname);
   // O tutorial só começa depois que a splash de abertura terminou o fade — senão
   // ele mediria/desenharia por baixo da logo.
   const splashDone = useAppStore((s) => s.splashDone);
@@ -538,9 +548,9 @@ export default function AppLayout() {
         <Tabs.Screen name="produto-amiga" options={{ href: null }} />
         <Tabs.Screen name="checkin-detalhe" options={{ href: null }} />
       </Tabs>
-      {tabBarVisible && <GlobalBottomBar />}
+      {navbarVisivel && <GlobalBottomBar />}
       {aquecer && <PreaquecerVeu />}
-      {tabBarVisible && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && !convidadaNoApp && <BalaoEspinha />}
+      {navbarVisivel && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && !convidadaNoApp && <BalaoEspinha />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
           escurecer a tela inteira, navbar inclusive (designs 58/59). Dentro da
           `home.tsx` ele ficaria ABAIXO da navbar por mais zIndex que levasse

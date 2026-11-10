@@ -14,7 +14,9 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
-import { getRoutinePeriodForNow, sessionDate } from '../../lib/routineProgress';
+import { clearRoutineFlow, getRoutinePeriodForNow, markRoutineDone, sessionDate } from '../../lib/routineProgress';
+import { invalidarCartas } from '../../lib/cartasServidor';
+import { reagendarLembretes } from '../../lib/routineReminders';
 import { invalidarGrupos, publicarCheckin, subirFoto, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
 import { invalidarMissoes } from '../../lib/missoes';
 import RodaHora from '../../components/grupos/RodaHora';
@@ -334,6 +336,13 @@ export default function Checkin() {
       }
       trackFora('checkin_feito', { rotina, grupos: r.grupos.length, com_titulo: Boolean(titulo.trim()), carta: Boolean(r.carta_id) });
       void invalidarMissoes(); // desafio 4: o check-in também registra o skincare
+      // O check-in conta como o skincare do período (o servidor já registrou). A home, a
+      // semana e a aba Rotina leem o histórico do CELULAR: sem gravar aqui, quem fazia o
+      // check-in pelo grupo voltava à home com o "Iniciar skincare" ainda disponível
+      // (10/nov/2026). Idempotente — no fluxo do skincare a rotina já estava gravada.
+      await markRoutineDone(rotina);
+      void clearRoutineFlow(rotina);
+      void invalidarCartas().finally(() => reagendarLembretes());
       await Promise.all([invalidarGrupos(), ...r.grupos.map((g) => invalidarGrupos(g))]);
       if (skincare) {
         // Carta(s) e, no fim, o mural do 1º grupo publicado (na ordem da lista escolhida).
