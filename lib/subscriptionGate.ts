@@ -15,10 +15,11 @@
 // `restorePurchases()` só roda depois de o Superwall devolver `restored`.
 //
 // Ver "Guard de assinatura — Superwall + RevenueCat" no README.
+import { Alert } from 'react-native';
 import Purchases from 'react-native-purchases';
 import type { CustomerInfo } from 'react-native-purchases';
 import { isSubscribed } from './revenuecat';
-import { conferirPortao, registrarDiscordanciaRc } from './assinaturaServidor';
+import { conferirPortao, registrarDiscordanciaRc, type OrigemTransferencia } from './assinaturaServidor';
 import { supabase } from './supabase';
 import { registrarPasso } from './paywallDebug'; // TEMP-PWGUARD
 
@@ -76,10 +77,20 @@ export async function confirmPremium({
   source = 'cache',
   attempts = 1,
   label,
-}: { source?: Source; attempts?: number; label: string }): Promise<boolean> {
+  transferir,
+  onTransferenciaFalhou,
+}: {
+  source?: Source;
+  attempts?: number;
+  label: string;
+  /** Só quando ela comprou ou restaurou neste aparelho: traz a compra de outra conta para esta. */
+  transferir?: OrigemTransferencia;
+  onTransferenciaFalhou?: () => void;
+}): Promise<boolean> {
   for (let i = 1; i <= attempts; i++) {
-    const c = await conferirPortao();
+    const c = await conferirPortao(transferir);
     pwlog(`${label}: tentativa ${i}/${attempts} (${source}) → superwall=${c.superwall} servidor=${c.servidor} outraConta=${c.outraConta}`); // TEMP-PWGUARD
+    if (c.transferenciaFalhou) onTransferenciaFalhou?.();
     if (c.outraConta) return false;
     if (c.confirmado) {
       // Não atrasa a entrada: só compara. Também mantém o RevenueCat a par da compra.
@@ -98,6 +109,21 @@ export async function confirmPremium({
     if (i < attempts) await new Promise((r) => setTimeout(r, 1500));
   }
   return false;
+}
+
+const AVISO_TRANSFERENCIA = {
+  titulo: 'Não conseguimos transferir sua assinatura',
+  texto: 'Sua assinatura da Apple está ligada a outra conta do NIKS e não conseguimos trazê-la para esta conta agora. Confira sua internet e toque em "Restaurar compra". Se continuar, escreva para support@niksaiapp.com.',
+  botao: 'Entendi',
+};
+
+/** Resolve quando ela fecha o aviso, para o paywall não abrir por cima dele. */
+export function avisarTransferenciaFalhou(): Promise<void> {
+  return new Promise((resolve) => {
+    Alert.alert(AVISO_TRANSFERENCIA.titulo, AVISO_TRANSFERENCIA.texto, [
+      { text: AVISO_TRANSFERENCIA.botao, onPress: () => resolve() },
+    ], { cancelable: false });
+  });
 }
 
 /**

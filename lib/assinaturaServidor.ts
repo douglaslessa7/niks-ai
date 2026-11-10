@@ -87,13 +87,16 @@ export async function vincularAssinatura(uid: string): Promise<void> {
   }
 }
 
+/** Por que a compra pode mudar de conta: só quando ela comprou ou restaurou neste aparelho. */
+export type OrigemTransferencia = 'restaurar' | 'compra' | 'cadastro';
+
 /** Liga a compra à conta logada pela prova da Apple. Usado logo depois do cadastro. */
-export async function enviarComprovantes(): Promise<void> {
+export async function enviarComprovantes(transferir?: OrigemTransferencia): Promise<void> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return;
     const jws = await comprovantesApple();
-    if (jws.length) await fetch(FN_COMPROVANTE, { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ jws }) });
+    if (jws.length) await fetch(FN_COMPROVANTE, { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ jws, transferir }) });
   } catch {
     // tenta de novo na próxima abertura
   }
@@ -141,20 +144,23 @@ async function servidorConfirma(token: string): Promise<boolean | null> {
   return typeof r?.assinante === 'boolean' ? r.assinante : null;
 }
 
-/** A assinatura do Apple ID deste aparelho está ligada a OUTRA conta NIKS? Na dúvida, não. */
-async function compraDeOutraConta(token: string): Promise<boolean> {
+/** Manda a prova da Apple ao servidor. Sem comprovante ou sem resposta, tudo zero: na dúvida, sem conflito. */
+async function enviarProvaApple(token: string, transferir?: OrigemTransferencia): Promise<{ ligadas: number; conflitos: number }> {
+  const nada = { ligadas: 0, conflitos: 0 };
   const jws = await comprovantesApple();
-  if (!jws.length) return false;
-  const resp = await comTeto(fetch(FN_COMPROVANTE, { method: 'POST', headers: cabecalhos(token), body: JSON.stringify({ jws }) }));
-  if (!resp?.ok) return false;
+  if (!jws.length) return nada;
+  const resp = await comTeto(fetch(FN_COMPROVANTE, { method: 'POST', headers: cabecalhos(token), body: JSON.stringify({ jws, transferir }) }));
+  if (!resp?.ok) return nada;
   const r = await comTeto(resp.json());
-  return Number(r?.conflitos) > 0 && Number(r?.ligadas) === 0;
+  return { ligadas: Number(r?.ligadas) || 0, conflitos: Number(r?.conflitos) || 0 };
 }
 
 export type ConferenciaPortao = {
   confirmado: boolean;
   /** Compra ligada a outra conta: vai ao paywall, e o RevenueCat não pode liberar. */
   outraConta: boolean;
+  /** Tentou trazer a compra para esta conta e o servidor recusou. */
+  transferenciaFalhou: boolean;
   superwall: StatusSuperwall;
   servidor: boolean | null;
   token: string | null;
@@ -164,8 +170,8 @@ export type ConferenciaPortao = {
  * Parte B, Fase 0C, Etapa 1: Superwall → servidor. Quem chama (`confirmPremium`) usa o
  * RevenueCat só como reserva. Sem sessão, só o Superwall pode responder. Nunca lança.
  */
-export async function conferirPortao(): Promise<ConferenciaPortao> {
-  const base: ConferenciaPortao = { confirmado: false, outraConta: false, superwall: null, servidor: null, token: null };
+export async function conferirPortao(transferir?: OrigemTransferencia): Promise<ConferenciaPortao> {
+  const base: ConferenciaPortao = { confirmado: false, outraConta: false, transferenciaFalhou: false, superwall: null, servidor: null, token: null };
   try {
     base.superwall = await statusSuperwall();
     const { data: { session } } = await supabase.auth.getSession();
@@ -173,9 +179,14 @@ export async function conferirPortao(): Promise<ConferenciaPortao> {
     if (!base.token) return { ...base, confirmado: base.superwall === 'ACTIVE' };
     base.servidor = await servidorConfirma(base.token);
     if (base.servidor === true) return { ...base, confirmado: true };
-    if (base.superwall !== 'ACTIVE') return base;
-    const outraConta = await compraDeOutraConta(base.token);
-    return { ...base, confirmado: !outraConta, outraConta };
+    // Com `transferir` a prova vai mesmo sem o Superwall ativo: logo depois da restauração ele
+    // pode ainda não ter atualizado, e a própria Apple confirma a assinatura.
+    if (base.superwall !== 'ACTIVE' && !transferir) return base;
+    const prova = await enviarProvaApple(base.token, transferir);
+    if (prova.conflitos > 0 && prova.ligadas === 0) {
+      return { ...base, outraConta: true, transferenciaFalhou: !!transferir };
+    }
+    return { ...base, confirmado: base.superwall === 'ACTIVE' || (!!transferir && prova.ligadas > 0) };
   } catch {
     return base;
   }

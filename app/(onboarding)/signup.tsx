@@ -16,7 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { atualizarCompraPendente } from '../../lib/compraPendente';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
-import { comTetoRc, confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { avisarTransferenciaFalhou, comTetoRc, confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
 import { entrarNoGrupoGuardado, lerCodigoGrupo } from '../../lib/convidada';
 import { convidadaLigada, validarCodigo } from '../../lib/gruposServidor';
 import { mensagemDoCodigo } from '../../lib/codigoConvite';
@@ -53,6 +53,8 @@ export default function Signup() {
   // `lib/subscriptionGate.ts` e "Guard de assinatura" no README.
   // Com o atalho de dev (`lib/devPaywall.ts`) o paywall é pulado de propósito — a trava também.
   const [liberado, setLiberado] = useState(PULAR_PAYWALL);
+  // Chegou aqui pagando neste aparelho (não como convidada): a compra pode vir de outra conta.
+  const pagouNesteAparelho = useRef(false);
   useEffect(() => {
     if (PULAR_PAYWALL) return;
     let ativo = true;
@@ -68,6 +70,7 @@ export default function Signup() {
         if (valido?.valido && !valido.cheio) { setLiberado(true); return; }
       }
       if (ok) {
+        pagouNesteAparelho.current = true;
         await pwDecisao('Tela de cadastro abriu (trava da abertura)', 'CADASTRO liberado', 'cadastro',
           'O RevenueCat confirmou o premium de novo ao abrir o cadastro.');
         if (!ativo) return;
@@ -98,7 +101,13 @@ export default function Signup() {
   const grupoDaConvidada = useRef<string | null>(null);
   const finishOnboarding = async () => {
     if (!PULAR_PAYWALL) {
-      const ok = await confirmPremium({ attempts: 2, label: 'cadastro:conta_criada' });
+      let transferenciaFalhou = false;
+      const ok = await confirmPremium({
+        attempts: 2,
+        label: 'cadastro:conta_criada',
+        transferir: pagouNesteAparelho.current ? 'cadastro' : undefined,
+        onTransferenciaFalhou: () => { transferenciaFalhou = true; },
+      });
       if (!ok && grupoDaConvidada.current) {
         track('convidada_conta_criada', { grupo_id: grupoDaConvidada.current });
         router.replace({ pathname: '/(app)/grupo', params: { id: grupoDaConvidada.current } } as any);
@@ -108,6 +117,7 @@ export default function Signup() {
         pwlog('conta criada sem premium na identidade nova → paywall'); // TEMP-PWGUARD
         await pwDecisao('Conta criada (confere na identidade nova)', 'PAYWALL — conta criada sem premium', 'paywall',
           'Depois do Purchases.logIn a conta nova não tinha o premium.');
+        if (transferenciaFalhou) await avisarTransferenciaFalhou();
         router.replace('/(onboarding)/paywall-soft');
         return;
       }
@@ -127,7 +137,7 @@ export default function Signup() {
   const salvarConta = async (userId: string) => {
     await saveToSupabase(userId, { scan: false });
     // Antes de gerar a rotina: quem acabou de pagar já fica reconhecida no servidor.
-    await enviarComprovantes();
+    await enviarComprovantes(pagouNesteAparelho.current ? 'cadastro' : undefined);
     // Liga o cupom (se houver) ao user_id real. Não bloqueia: se falhar, a
     // usuária entra normalmente; o webhook ainda confirma a conversão.
     attributeCouponIfAny(userId);

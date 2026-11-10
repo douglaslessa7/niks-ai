@@ -6,12 +6,15 @@ import { registrarDivergencia, verificarAssinatura } from '../_shared/assinatura
 
 // Prova da Apple (Parte B, Fase 0B; migration 20261120120000). O app envia as transações
 // assinadas do StoreKit; cada uma validada é ligada à conta do JWT.
-//   { jws: string[] } → { ok, ligadas, conflitos, invalidas }
-// Compra já ligada a outra conta não muda de dona: fica em `assinatura_divergencias`.
+//   { jws: string[], transferir?: 'restaurar' | 'compra' | 'cadastro' }
+//     → { ok, ligadas, conflitos, invalidas, transferidas }
+// Compra ligada a outra conta só muda de dona com `transferir` (a usuária comprou ou restaurou
+// neste aparelho; migration 20261130120000). Sem ele, fica em `assinatura_divergencias`.
 // Saída: 200 JSON · 400 entrada inválida · 401 sem JWT válido.
 
 const BUNDLE_ID = 'br.com.niksai.app'
 const MAXIMO = 5
+const ORIGENS_DE_TRANSFERENCIA = ['restaurar', 'compra', 'cadastro']
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -25,10 +28,12 @@ serve(async (req) => {
 
   const body = await req.json().catch(() => ({}))
   if (!Array.isArray(body?.jws) || body.jws.length > MAXIMO) return json({ error: 'jws inválido' }, 400)
+  const origem = ORIGENS_DE_TRANSFERENCIA.includes(body?.transferir) ? String(body.transferir) : null
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
   try {
-    let ligadas = 0, conflitos = 0, invalidas = 0
+    let ligadas = 0, conflitos = 0, invalidas = 0, transferidas = 0
+    let compraEmConflito: string | null = null
     for (const jws of body.jws) {
       const t = typeof jws === 'string' && jws.length < 20000 ? await validarJws(jws, BUNDLE_ID) : null
       if (!t) { invalidas++; continue }
@@ -39,16 +44,23 @@ serve(async (req) => {
         p_ambiente: t.ambiente,
         p_expira: t.expiraEm.toISOString(),
         p_quando: t.assinadoEm.toISOString(),
+        p_transferir: origem !== null,
+        p_origem: origem,
       })
       if (error) throw error
-      if (data?.ok) ligadas++
-      else conflitos++
+      if (data?.ok) {
+        ligadas++
+        if (data.transferida) transferidas++
+      } else {
+        conflitos++
+        compraEmConflito = t.originalTransactionId
+      }
     }
     if (conflitos) {
       const servidor = await verificarAssinatura(supabase, userId)
-      await registrarDivergencia(supabase, userId, 'comprovante', servidor, null, 'compra de outra conta')
+      await registrarDivergencia(supabase, userId, 'comprovante', servidor, null, 'compra de outra conta', compraEmConflito)
     }
-    return json({ ok: true, ligadas, conflitos, invalidas })
+    return json({ ok: true, ligadas, conflitos, invalidas, transferidas })
   } catch (e) {
     console.error('[comprovar-assinatura]', (e as Error).message)
     return json({ error: 'Erro interno' }, 500)

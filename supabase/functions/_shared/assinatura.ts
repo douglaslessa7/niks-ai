@@ -23,6 +23,7 @@ export async function registrarDivergencia(
   servidor: boolean,
   appPremium: boolean | null,
   motivoVinculo: string | null = null,
+  originalTransactionId: string | null = null,
 ): Promise<void> {
   const dia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
   const { error } = await supabase.from('assinatura_divergencias').upsert({
@@ -32,6 +33,7 @@ export async function registrarDivergencia(
     app_premium: appPremium,
     servidor,
     motivo_vinculo: motivoVinculo,
+    ...(originalTransactionId ? { original_transaction_id: originalTransactionId } : {}),
     ultimo_em: new Date().toISOString(),
   })
   if (error) console.error('[assinatura] divergência:', error.message)

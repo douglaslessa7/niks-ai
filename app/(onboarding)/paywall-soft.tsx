@@ -18,7 +18,7 @@ import {
   requestDownsell,
   subscribeDownsellRequest,
 } from '../../lib/paywallFlow';
-import { confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { avisarTransferenciaFalhou, confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
 import { pwDecisao } from '../../lib/paywallDebug';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
@@ -96,16 +96,23 @@ export default function PaywallSoft() {
   // para liberar. Confirmou o `premium` → cadastro (nova usuária) ou home (já tem
   // conta). Não confirmou → paywall de novo (ela pode tocar em "Restaurar compra").
   const confirmarESeguir = async (tipo: 'purchased' | 'restored') => {
-    let ok = await confirmPremium({ source: 'sync', attempts: 3, label: `paywall:${tipo}` });
+    // Comprou ou restaurou neste aparelho: a compra que estiver em outra conta vem para esta.
+    let transferenciaFalhou = false;
+    const transferencia = {
+      transferir: tipo === 'restored' ? 'restaurar' as const : 'compra' as const,
+      onTransferenciaFalhou: () => { transferenciaFalhou = true; },
+    };
+    let ok = await confirmPremium({ source: 'sync', attempts: 3, label: `paywall:${tipo}`, ...transferencia });
     // "Restaurar compra" que o sync não resolveu: aí sim o restore do RevenueCat
     // (foi ela quem pediu para restaurar).
-    if (!ok && tipo === 'restored') {
-      ok = await confirmPremium({ source: 'restore', label: 'paywall:restored' });
+    if (!ok && tipo === 'restored' && !transferenciaFalhou) {
+      ok = await confirmPremium({ source: 'restore', label: 'paywall:restored', ...transferencia });
     }
     if (!ok) {
       pwlog(`paywall:${tipo} sem premium confirmado → paywall`); // TEMP-PWGUARD
       await pwDecisao(`onDismiss(${tipo})`, 'PAYWALL de novo (paywall_onboarding)', 'paywall',
         'O Superwall disse que houve compra/restauração, mas o RevenueCat não confirmou o premium.');
+      if (transferenciaFalhou) await avisarTransferenciaFalhou();
       void present(placementBase(), `${tipo}_sem_premium`);
       return;
     }

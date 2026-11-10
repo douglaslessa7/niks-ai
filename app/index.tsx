@@ -4,7 +4,8 @@ import { useRouter } from 'expo-router';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { startOnboardingAttempt } from '../lib/onboardingAttempt';
-import { confirmPremium, ensureAnonymousRevenueCat } from '../lib/subscriptionGate';
+import { comTetoRc, confirmPremium, ensureAnonymousRevenueCat } from '../lib/subscriptionGate';
+import { loginRevenueCat } from '../lib/revenuecat';
 import { PULAR_PAYWALL } from '../lib/devPaywall';
 import {
   apagarCompraPendente, apagarFotosDeCompra, compraPendenteVencida, lerCompraPendente,
@@ -46,7 +47,11 @@ export default function Index() {
           } else {
             await retomarCompraPendente(reg);
             if (destino === 'espera') {
-              router.replace('/(onboarding)/loading-rotina' as any);
+              // Antes de gerar a rotina. Sem assinatura, a home manda ao paywall; restaurar
+              // ali volta para esta tela, porque o registro da compra continua no aparelho.
+              await comTetoRc(loginRevenueCat(session.user.id));
+              const pago = PULAR_PAYWALL || await confirmPremium({ label: 'retomada:com_sessao' });
+              router.replace(pago ? '/(onboarding)/loading-rotina' as any : '/(app)/home');
               return;
             }
             if (!reg.adiada) await adiarCompraPendente(reg.falhas ?? 0);
