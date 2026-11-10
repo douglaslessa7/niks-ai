@@ -103,9 +103,9 @@ export default function Checkin() {
   }>();
   const skincare = fluxo === 'skincare';
   // fluxo=skincare: fechar a câmera termina o fluxo — a carta de hoje abre sozinha e depois a home.
-  const sair = () => (skincare ? void terminar('/home') : router.navigate((
-    de === 'grupo' && grupo ? { pathname: '/grupo', params: { id: grupo } } : de === 'rotina' ? '/protocolo' : '/grupos'
-  ) as any));
+  // Para onde o check-in volta (fora do fluxo do skincare): o grupo de onde veio, a Rotina ou a aba Grupos.
+  const destino = de === 'grupo' && grupo ? `/grupo?id=${grupo}` : de === 'rotina' ? '/protocolo' : '/grupos';
+  const sair = () => (skincare ? void terminar('/home') : router.navigate(destino as any));
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const { data: grupos } = useMeusGrupos();
   const y = (v: number) => insets.top + v - 54;
@@ -355,8 +355,12 @@ export default function Checkin() {
       }
       if (r.carta_id) {
         ganhouPontos(r.pontos, { segurar: true });   // sobem junto com a carta, depois de raspar
-        // Veio de um grupo: depois da carta, volta para ele.
-        router.replace({ pathname: '/(carta)/carta', params: { id: r.carta_id, ...(de === 'grupo' && grupo ? { depois: `/grupo?id=${grupo}` } : {}) } } as any);
+        // A carta abre POR CIMA (`push`), e o `depois` diz para onde ir quando ela fechar.
+        // ⚠️ Nunca `replace` (10/nov/2026): a carta é um modal do Stack RAIZ, então o
+        // `replace` trocava a (app) INTEIRA por ela; ao fechar, o `navigate(depois)`
+        // empilhava uma (app) nova sobre o modal e o app todo virava uma folha do iOS.
+        // O `depois` vai sempre: sem ele, o `back()` da carta voltaria para esta tela.
+        router.push({ pathname: '/(carta)/carta', params: { id: r.carta_id, depois: destino } } as any);
       } else {
         ganhouPontos(r.pontos);                       // sem carta: a barra sobe já
         sair();
