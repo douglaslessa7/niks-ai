@@ -33,6 +33,7 @@ import AlvoGuia from '../../components/coach/AlvoGuia';
 import { avancarGuiaDe, irParaGuia, useGuia } from '../../lib/guia';
 import { verificarDesafios } from '../../lib/missoes';
 import { checkProdutosTutorial } from '../../lib/produtosTutorial';
+import InicialAvatar from '../../components/InicialAvatar';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
 // Reformada para a linguagem visual do app (home / protocolo / niks-chat): fundo
@@ -347,6 +348,7 @@ export default function RecomendacaoProdutos() {
     return () => sub.remove();
   }, [view]);
   const [fotoUrl, setFotoUrl] = useState<string | null>(inicio.foto?.url ?? null); // foto do cabeçalho (mesma da home)
+  const [nomeAvatar, setNomeAvatar] = useState<string | null>(inicio.foto?.nome ?? null);
 
 
   // Geração SOB DEMANDA — para quem já tem scan + protocolo mas nunca teve a linha em
@@ -617,10 +619,10 @@ export default function RecomendacaoProdutos() {
     });
   };
 
-  // Foto do cabeçalho: a mesma da home (escolhida na galeria > foto do último scan).
+  // Foto do cabeçalho: a mesma da home (só a foto de perfil; sem ela, a inicial).
   useEffect(() => {
     getUserId().then((uid) => {
-      if (uid) return sincronizar('foto', uid, { temNaTela: false, aplicar: (f) => setFotoUrl(f.url) });
+      if (uid) return sincronizar('foto', uid, { temNaTela: false, aplicar: (f) => { setFotoUrl(f.url); setNomeAvatar(f.nome ?? null); } });
     }).catch(() => {});
   }, []);
 
@@ -650,7 +652,7 @@ export default function RecomendacaoProdutos() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             {fotoUrl
               ? <Image source={{ uri: fotoUrl }} style={p47.avatar} />
-              : <View style={[p47.avatar, { backgroundColor: '#F6D3E1' }]} />}
+              : <InicialAvatar nome={nomeAvatar} tamanho={32} style={p47.avatar} />}
             <Text style={p47.topTitle}>Minha estante</Text>
           </View>
         ) : (

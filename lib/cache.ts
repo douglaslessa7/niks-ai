@@ -86,6 +86,11 @@ export function invalidateCache(key: string): void {
   if (hit) mem.set(key, { ...hit, at: 0 });
 }
 
+/** Marca como velhas todas as chaves que começam com `prefixo` (ex.: `grupos:`). */
+export function invalidateCachePrefixo(prefixo: string): void {
+  for (const [key, hit] of mem) if (key.startsWith(prefixo)) mem.set(key, { ...hit, at: 0 });
+}
+
 /** Apaga tudo. Chamar no logout — o cache é por usuário. */
 export async function clearAllCache(): Promise<void> {
   mem.clear();

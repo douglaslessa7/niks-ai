@@ -60,7 +60,7 @@ import { abrirMontarRotina } from '../../lib/abrirMontarRotina';
 import { carregarRotinaIdeal, marcarIdealVista, calcularCobertura, type RotinaIdeal } from '../../lib/rotinaIdeal';
 import ListaEditavel, { type ItemEditavel } from '../../components/rotina/ListaEditavel';
 import PassoSheet, { type PassoSheetModo } from '../../components/rotina/PassoSheet';
-import { getFacePhotoUrl } from '../../lib/facePhoto';
+import { getFotoPerfilUrl } from '../../lib/facePhoto';
 import { saveRoutinePhoto } from '../../lib/routinePhotos';
 import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { getUserId, useUserId } from '../../lib/currentUser';
@@ -73,6 +73,7 @@ import { SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { avancarGuiaDe, onAtalhoGuia, useGuia } from '../../lib/guia';
 import { verificarDesafios } from '../../lib/missoes';
+import InicialAvatar from '../../components/InicialAvatar';
 
 // LayoutAnimation no Android (iOS já vem ligado) — expandir "Como introduzir os ativos".
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -561,12 +562,13 @@ export default function Protocolo() {
   const fetchExtras = useCallback(async () => {
     const uid = await getUserId();
     if (!uid) throw new Error('sem sessão');
-    const [foto, userRes] = await Promise.all([
-      getFacePhotoUrl(uid),
+    const [perfil, userRes] = await Promise.all([
+      getFotoPerfilUrl(uid),
       supabase.from('users').select('rotina_manha_horario, rotina_noite_horario').eq('id', uid).maybeSingle(),
     ]);
     return {
-      foto,
+      foto: perfil.foto,
+      nome: perfil.nome,
       amTime: parseTime(userRes.data?.rotina_manha_horario, DEFAULT_AM),
       pmTime: parseTime(userRes.data?.rotina_noite_horario, DEFAULT_PM),
     };
@@ -1144,7 +1146,7 @@ export default function Protocolo() {
               {extras?.foto ? (
                 <Image source={{ uri: extras.foto }} style={styles.avatar} />
               ) : (
-                <View style={[styles.avatar, { backgroundColor: '#F6D3E1' }]} />
+                <InicialAvatar nome={extras?.nome} tamanho={32} style={styles.avatar} />
               )}
               <View style={styles.avatarDot} />
             </View>

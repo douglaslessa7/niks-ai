@@ -143,20 +143,12 @@ export default function Perfil() {
     const { data } = await supabase.auth.getSession();
     const u = data.session?.user;
     if (!u?.id) return { nome: null, email: null, fotoUrl: null };
-    const [userRes, scanRes] = await Promise.all([
-      supabase.from('users').select('nome, foto_home_url').eq('id', u.id).maybeSingle(),
-      supabase
-        .from('skin_scans')
-        .select('foto_url')
-        .eq('user_id', u.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+    const userRes = await supabase.from('users').select('nome, foto_home_url').eq('id', u.id).maybeSingle();
     return {
       nome: userRes.data?.nome ?? null,
       email: u.email ?? null,
-      fotoUrl: userRes.data?.foto_home_url ?? scanRes.data?.foto_url ?? null,
+      // Só a foto de perfil (09/nov/2026): a do scan nunca vira avatar; sem ela, a inicial.
+      fotoUrl: userRes.data?.foto_home_url ?? null,
     };
   }, []);
 
@@ -279,10 +271,12 @@ export default function Perfil() {
 
   // Tocar na foto/nome: folha de ações nativa do iOS (no Android, o alerta do sistema).
   const openEditOptions = () => {
+    // Sem foto de perfil, "Adicionar"; com foto, "Mudar" (09/nov/2026).
+    const textoFoto = fotoUrl ? 'Mudar foto de perfil' : 'Adicionar foto de perfil';
     haptics.tap();
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
-        { options: ['Mudar foto de perfil', 'Mudar nome', 'Cancelar'], cancelButtonIndex: 2 },
+        { options: [textoFoto, 'Mudar nome', 'Cancelar'], cancelButtonIndex: 2 },
         (i) => {
           if (i === 0) pickPhoto();
           else if (i === 1) editName();
@@ -291,7 +285,7 @@ export default function Perfil() {
       return;
     }
     Alert.alert('Editar perfil', undefined, [
-      { text: 'Mudar foto de perfil', onPress: () => { pickPhoto(); } },
+      { text: textoFoto, onPress: () => { pickPhoto(); } },
       { text: 'Mudar nome', onPress: editName },
       { text: 'Cancelar', style: 'cancel' },
     ]);

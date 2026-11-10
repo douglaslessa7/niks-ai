@@ -25,7 +25,7 @@ type Tipos = {
   escaneados: ScanItem[];
   salvos: Awaited<ReturnType<typeof produtosDaRotinaPorNome>>;
   recomendacao: RecomendacaoCrua;
-  foto: { url: string | null };
+  foto: { url: string | null; nome?: string | null };
 };
 export type TipoProdutos = keyof Tipos;
 
@@ -48,12 +48,9 @@ async function buscarRecomendacao(uid: string): Promise<RecomendacaoCrua> {
   return { passos, prods: prods ?? [] };
 }
 
-async function buscarFoto(uid: string): Promise<{ url: string | null }> {
-  const [{ data: u }, { data: sc }] = await Promise.all([
-    supabase.from('users').select('foto_home_url').eq('id', uid).maybeSingle(),
-    supabase.from('skin_scans').select('foto_url').eq('user_id', uid).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-  ]);
-  return { url: u?.foto_home_url ?? sc?.foto_url ?? null };
+async function buscarFoto(uid: string): Promise<{ url: string | null; nome: string | null }> {
+  const { data: u } = await supabase.from('users').select('foto_home_url, nome').eq('id', uid).maybeSingle();
+  return { url: u?.foto_home_url ?? null, nome: u?.nome ?? null }; // avatar = só a foto de perfil; sem ela, a inicial
 }
 
 const BUSCAS: { [K in TipoProdutos]: (uid: string) => Promise<Tipos[K]> } = {

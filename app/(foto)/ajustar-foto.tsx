@@ -14,7 +14,7 @@ import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-nativ
 import { useAppStore, uploadScanPhoto } from '../../store/onboarding';
 import { supabase } from '../../lib/supabase';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
-import { invalidateCache } from '../../lib/cache';
+import { invalidateCache, invalidateCachePrefixo } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
 
 // ── Ajustar a foto de perfil ────────────────────────────────────────────────────
@@ -190,6 +190,8 @@ export default function AjustarFoto() {
       invalidateCache(`home:${user.id}`);
       invalidateCache(`progresso:${user.id}`);
       invalidateCache(`perfil:${user.id}`);
+      // Os grupos mostram a mesma foto (lista, integrantes, ranking, mural): relê na próxima vez.
+      invalidateCachePrefixo('grupos:');
       router.back(); // a home revalida ao ganhar foco — sem callback nem estado extra
     } catch (e: any) {
       setSaving(false); // a tela fica aberta: nada foi gravado, ela pode tentar de novo

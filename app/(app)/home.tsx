@@ -381,7 +381,8 @@ export default function Home() {
     const full = (scan?.full_result ?? null) as { skin_score?: number } | null;
     return {
       // Precedência ABSOLUTA da foto escolhida na galeria (ver README).
-      fotoUrl: user?.foto_home_url ?? scan?.foto_url ?? null,
+      // Avatar = só a foto de perfil (09/nov/2026): a foto do scan nunca vira avatar; sem foto, a inicial.
+      fotoUrl: user?.foto_home_url ?? null,
       skinScore: typeof full?.skin_score === 'number' ? full.skin_score : null,
       firstName: String(user?.nome ?? '').trim().split(/\s+/)[0] ?? '',
       amTime: parseTime(user?.rotina_manha_horario, DEFAULT_AM),

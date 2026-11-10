@@ -2978,6 +2978,8 @@ A usuária toca na **própria foto circular da home** → abre a galeria → enq
 
 **Foto inicial (08/nov/2026):** a foto de ponto de partida das boas-vindas pós-compra (`bv-foto`) também é gravada em `users.foto_home_url` ao concluir o cadastro (`concluirBoasVindas`, em `lib/boasVindas.ts`, arquivo `home_*` no bucket `scans`), para ela não entrar no app sem foto. Só grava se a coluna estiver vazia. Pular a foto mantém a regra antiga (último scan ou inicial).
 
+> ✅ **09/nov/2026 (1.0.60 (3)) — avatar = SÓ a foto de perfil, em todo lugar.** Home, Perfil, Rotina, Produtos, Progresso e grupos usam só `users.foto_home_url`; sem ela, a inicial do nome (`components/InicialAvatar.tsx`). A foto do scan de pele nunca vira avatar (é foto de análise, com consentimento só para isso, e não passa pelo filtro de moderação). A regra antiga (`foto_home_url ?? foto do último scan`) que este trecho descreve abaixo vale hoje só para o rosto do "Compartilhar com o NIKS" (`getFacePhotoUrl`); avatar usa `getFotoPerfilUrl`. No Perfil, sem foto o menu diz "Adicionar foto de perfil" (com foto, "Mudar foto de perfil"). Trocar a foto invalida também os caches `grupos:` (`invalidateCachePrefixo`).
+
 **⚠️ A REGRA CENTRAL — precedência absoluta.** A partir do momento em que ela escolhe uma foto da galeria, **novos scans de pele NUNCA MAIS trocam a foto da home**. O scan continua atualizando o Niks score e as 6 métricas normalmente; só a foto fica congelada na escolha dela. A única forma de trocar é tocar na foto de novo e escolher outra da galeria. **Não existe caminho de volta pra foto do scan** — foi decisão explícita do usuário, não um esquecimento. Não "consertar" isso adicionando um botão de resetar.
 
 A regra vive numa linha só, no `useFocusEffect` da home:

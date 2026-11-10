@@ -37,6 +37,7 @@ import { sessionDate, dateKey } from '../../lib/routineProgress';
 import { BG_STOPS } from '../../lib/homeTheme';
 import { getScoreTheme, getScoreScreenTheme } from '../../lib/scoreTheme';
 import { useEstadoCartas } from '../../lib/cartasServidor';
+import InicialAvatar from '../../components/InicialAvatar';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -72,7 +73,7 @@ const BACK_PATH = 'M15 5l-7 7 7 7';
 const SHARE_PATH = 'M12 3v12M7.5 7.5L12 3l4.5 4.5M5 12v6.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V12';
 
 type ScanRow = { created_at: string; skin_score: number | null; foto_url: string | null; full_result: { metricas?: Metricas } | null };
-type ProgressData = { scans: ScanRow[]; fotoHomeUrl?: string | null };
+type ProgressData = { scans: ScanRow[]; fotoHomeUrl?: string | null; nome?: string | null };
 
 /** Diferença em dias de calendário (virada às 04:00, igual à rotina). */
 function daysBetween(a: Date, b: Date): number {
@@ -114,13 +115,14 @@ export default function Progresso() {
         .order('created_at', { ascending: false })
         .limit(30),
       // A foto escolhida pela usuária (galeria → ajuste) vale mais que a do scan, como na home.
-      supabase.from('users').select('foto_home_url').eq('id', uid!).maybeSingle(),
+      supabase.from('users').select('foto_home_url, nome').eq('id', uid!).maybeSingle(),
     ]);
     // Leitura com falha não vira "sem scans": o erro faz o cache manter a última versão boa.
     if (erroScans ?? erroUser) throw erroScans ?? erroUser;
     return {
       scans: (scans ?? []) as ScanRow[],
       fotoHomeUrl: userRow?.foto_home_url ?? null,
+      nome: userRow?.nome ?? null,
     };
   }, [uid]);
 
@@ -181,7 +183,7 @@ export default function Progresso() {
   const chartW = width - 36 - 34; // card (18 + 18 de margem) − 17 + 17 de respiro
   const sx = chartW / CW;
 
-  const photo = data?.fotoHomeUrl ?? last?.foto_url ?? null;
+  const photo = data?.fotoHomeUrl ?? null; // avatar = só a foto de perfil (09/nov/2026)
   const pickPhoto = usePickProfilePhoto();
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -218,7 +220,9 @@ export default function Progresso() {
               style={styles.photoRingFill}
             >
               <View style={styles.photoInner}>
-                {photo ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+                {photo
+                  ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  : <InicialAvatar nome={data?.nome} tamanho={90} style={StyleSheet.absoluteFill} />}
               </View>
             </LinearGradient>
           </TouchableOpacity>
