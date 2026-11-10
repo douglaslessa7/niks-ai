@@ -404,7 +404,16 @@ export default function Grupo() {
               {d.itens.map((it) => (
                 <Entra key={it.id} i={iIn++} run={run} rm={rm}>
                   <AlvoItem primeiro={it.id === dias[0]?.itens[0]?.id}>
-                  <Pressable disabled={it.tipo !== 'produto' || it.voce || !it.compartilhamento_id} onPress={() => { haptics.tap(); router.push({ pathname: '/produto-amiga', params: { grupo: g!.id, id: it.compartilhamento_id! } } as any); }} style={styles.item}>
+                  <Pressable
+                    disabled={it.tipo === 'produto' ? (it.voce || !it.compartilhamento_id) : !it.checkin_id}
+                    onPress={() => {
+                      haptics.tap();
+                      // Check-in (meu ou de uma amiga) → tela de detalhes; produto de amiga → produto-amiga.
+                      if (it.tipo === 'produto') router.push({ pathname: '/produto-amiga', params: { grupo: g!.id, id: it.compartilhamento_id! } } as any);
+                      else router.push({ pathname: '/checkin-detalhe', params: { ids: it.checkin_id!, grupo: g!.id } } as any);
+                    }}
+                    style={styles.item}
+                  >
                     <View style={styles.itemFoto}>
                       {it.foto_url ? <Image source={{ uri: it.foto_url }} style={{ width: '100%', height: '100%' }} /> : null}
                     </View>

@@ -536,6 +536,7 @@ export default function AppLayout() {
         <Tabs.Screen name="skincare" options={{ href: null }} />
         <Tabs.Screen name="revisao-denuncias" options={{ href: null }} />
         <Tabs.Screen name="produto-amiga" options={{ href: null }} />
+        <Tabs.Screen name="checkin-detalhe" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
       {aquecer && <PreaquecerVeu />}

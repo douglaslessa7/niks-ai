@@ -82,7 +82,24 @@ export type PerfilGrupos = Perfil & {
   /** Mês do 1º check-in ('AAAA-MM-01') — até onde a seta volta. */
   primeiro_mes: string | null;
   mes: string;
-  dias: { dia: string; foto_url: string | null }[];
+  /** `checkins`: os do dia (manhã/noite), para abrir o detalhe. Ausente antes da migration 20261201120000. */
+  dias: { dia: string; foto_url: string | null; checkins?: { id: string; rotina: 'am' | 'pm' }[] }[];
+};
+
+/** Um check-in para a tela de detalhes (migration 20261201120000, ação `checkin_detalhe`). */
+export type CheckinDetalhe = {
+  checkin_id: string;
+  user_id: string;
+  rotina: 'am' | 'pm';
+  dia: string;
+  titulo: string;
+  descricao: string | null;
+  hora_exibida: string;
+  foto_url: string | null;
+  voce: boolean;
+  /** Um grupo em comum (a denúncia precisa dele); null no próprio check-in sem grupo. */
+  grupo_id: string | null;
+  autora: Perfil;
 };
 
 export type ConviteInfo = {
@@ -112,6 +129,11 @@ async function chamar<T>(body: Record<string, unknown>): Promise<T> {
 
 // ── Leituras ────────────────────────────────────────────────────────────────────
 export const meusGrupos = () => chamar<{ grupos: GrupoResumo[] }>({ acao: 'meus_grupos' }).then((r) => r.grupos);
+/** null = não existe mais ou ela não pode ver (moderação, bloqueio, saiu do grupo). */
+export const checkinDetalhe = (checkinId: string) =>
+  chamar<{ checkin: CheckinDetalhe }>({ acao: 'checkin_detalhe', checkin_id: checkinId })
+    .then((r) => r.checkin)
+    .catch((e: Error) => { if (/não encontrado|HTTP 404/.test(e.message)) return null; throw e; });
 export const grupoDetalhe = (grupoId: string) => chamar<{ grupo: GrupoResumo }>({ acao: 'grupo', grupo_id: grupoId }).then((r) => r.grupo);
 export const muralGrupo = (grupoId: string, antes?: string) =>
   chamar<{ itens: ItemMural[] }>({ acao: 'mural', grupo_id: grupoId, antes }).then((r) => r.itens);

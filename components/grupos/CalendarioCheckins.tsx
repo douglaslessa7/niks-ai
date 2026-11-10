@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'expo-router';
 import { View, Text, TouchableOpacity, Image, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Animated, {
@@ -67,6 +68,8 @@ type Props = {
 
 export default function CalendarioCheckins({ abertura, rm, entrada = true, style }: Props) {
   const userId = useUserId();
+  const router = useRouter();
+  const pathname = usePathname();
   const hoje = sessionDate();
   const hojeKey = dateKey(hoje);
   const [mes, setMes] = useState(() => new Date(hoje.getFullYear(), hoje.getMonth(), 1));
@@ -107,6 +110,14 @@ export default function CalendarioCheckins({ abertura, rm, entrada = true, style
   // ── Calendário (domingo primeiro) ──────────────────────────────────────────────
   const carregado = !!p && p.mes === mk;
   const fotos = new Map((carregado ? p.dias : []).map((d) => [d.dia, d.foto_url]));
+  // Os check-ins do dia (manhã/noite) → tela de detalhes, voltando para esta tela.
+  const doDia = new Map((carregado ? p.dias : []).map((d) => [d.dia, (d.checkins ?? []).map((c) => c.id)]));
+  const abrirDia = (key: string) => {
+    const ids = doDia.get(key) ?? [];
+    if (!ids.length) return;
+    haptics.tap();
+    router.push({ pathname: '/checkin-detalhe', params: { ids: ids.join(','), volta: pathname } } as any);
+  };
   const inicio = mes.getDay();
   const total = new Date(mes.getFullYear(), mes.getMonth() + 1, 0).getDate();
   const cells: ({ n: number; key: string; foto: string | null; today: boolean } | null)[] = [
@@ -147,11 +158,11 @@ export default function CalendarioCheckins({ abertura, rm, entrada = true, style
               if (c.foto) {
                 const ordem = iFoto++;
                 return (
-                  <View key={c.key} style={styles.cell}>
+                  <TouchableOpacity key={c.key} activeOpacity={0.75} disabled={!doDia.get(c.key)?.length} onPress={() => abrirDia(c.key)} style={styles.cell} accessibilityLabel={`Check-in do dia ${c.n}`}>
                     <Salta delay={trocou ? 60 + ordem * 18 : 260 + ordem * 22} de={trocou ? 0.85 : 0.8} rm={rm} style={[styles.fotoDia, { borderColor: c.today ? PINK : '#fff' }]}>
                       <Image source={{ uri: c.foto }} style={styles.fotoImg} />
                     </Salta>
-                  </View>
+                  </TouchableOpacity>
                 );
               }
               return (

@@ -243,6 +243,17 @@ serve(async (req) => {
         return json({ perfil: { ...p, dias: (p?.dias ?? []).map(({ foto_path, ...d }: any) => ({ ...d, foto_url: urls.get(foto_path) ?? null })) } })
       }
 
+      // Tela de detalhes do check-in (09/nov/2026): só quem fez ou integrante de um grupo em comum
+      // (migration 20261201120000). Escondido pela moderação não abre para as outras.
+      case 'checkin_detalhe': {
+        if (!UUID.test(String(body?.checkin_id ?? ''))) return json({ error: 'checkin_id inválido' }, 400)
+        const c = await rpc(supabase, 'checkin_detalhe', { p_uid: uid, p_checkin: body.checkin_id })
+        if (!c) return json({ error: 'Check-in não encontrado' }, 404)
+        const { foto_path, ...resto } = c
+        const urls = await assinar(supabase, [foto_path])
+        return json({ checkin: { ...resto, foto_url: urls.get(foto_path) ?? null } })
+      }
+
       case 'upload_url': {
         const tipo = body?.tipo === 'banner' ? 'banner' : 'checkin'
         const path = `${uid}/${tipo}-${crypto.randomUUID()}.jpg`
