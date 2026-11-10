@@ -73,6 +73,16 @@ export function useGuia(): Guia | null {
   );
 }
 
+// Pulou um desafio: quem sabe começar o próximo é a home (precisa do horário e da rotina).
+const proximoOuvintes = new Set<() => void>();
+export function onProximoDesafio(f: () => void): () => void {
+  proximoOuvintes.add(f);
+  return () => { proximoOuvintes.delete(f); };
+}
+export function pedirProximoDesafio() {
+  proximoOuvintes.forEach((f) => f());
+}
+
 // Atalho "Escanear vários de uma vez" (balão do passo d3-escolher): quem sabe abrir o lote é
 // a aba Rotina (precisa do lote de hoje), então o host só avisa.
 const atalhos = new Set<() => void>();

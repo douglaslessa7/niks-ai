@@ -51,7 +51,7 @@ const stageReady: Record<CoachStage, boolean> = { home: false, produtos: false, 
 
 const subscribers = new Set<() => void>();
 const prepareListeners = new Set<(scroll: CoachScroll) => void>();
-const measureListeners = new Set<() => void>();
+const measureListeners = new Map<() => void, CoachTargetKey>();
 
 function emit() {
   subscribers.forEach((fn) => fn());
@@ -91,9 +91,9 @@ export function requestCoachPrepare(scroll: CoachScroll): void {
   prepareListeners.forEach((fn) => fn(scroll));
 }
 
-/** Canal 2 — "agora meça". */
-export function requestCoachMeasure(): void {
-  measureListeners.forEach((fn) => fn());
+/** Canal 2 — "agora meça". Com `keys`, só esses alvos (cada medida é uma ida ao thread de UI). */
+export function requestCoachMeasure(keys?: CoachTargetKey[]): void {
+  measureListeners.forEach((key, fn) => { if (!keys || keys.includes(key)) fn(); });
 }
 
 export function onCoachPrepare(fn: (scroll: CoachScroll) => void): () => void {
@@ -163,7 +163,7 @@ export function useCoachMark(key: CoachTargetKey, options?: { enabled?: boolean 
 
   useEffect(() => {
     if (!enabled) { registerCoachTarget(key, null); return; }
-    measureListeners.add(measure);
+    measureListeners.set(measure, key);
     measure();
     return () => { measureListeners.delete(measure); };
   }, [measure, enabled, key]);

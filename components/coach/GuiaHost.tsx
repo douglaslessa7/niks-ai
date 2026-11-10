@@ -16,15 +16,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { usePathname } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, Mask, Rect } from 'react-native-svg';
+import { Canvas, Fill, RoundedRect } from '@shopify/react-native-skia';
 import Animated, {
   Easing, FadeIn, FadeOut, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming,
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
 import { requestCoachMeasure, useCoachTargets, type CoachTargetKey } from '../../lib/coachMarks';
 import { dispararAtalhoGuia, encerrarGuia, irParaGuia, useGuia, type Guia, type PassoGuia } from '../../lib/guia';
+import { pularDesafio, type DesafioId } from '../../lib/missoes';
 import { boxOf } from './TutorialOverlay';
 
 const SCRIM = 'rgba(26,8,18,0.62)';
@@ -45,14 +46,16 @@ type Passo = {
   some?: number;
   /** Sem véu e sem bloquear o toque: só o contorno e o balão. */
   livre?: boolean;
+  /** Desafio que exige um produto em mãos: mostra "Não tenho um produto agora". */
+  pular?: DesafioId;
 };
 
 const D4 = 'Fazer o skincare';
 const ESTANTE = 'Este produto é seu? Coloque na sua estante.';
 const PASSOS: Record<PassoGuia, Passo> = {
-  'd1-aba': { alvo: 'nav-produtos', pad: 4, r: 'pill', texto: () => 'Vamos escanear um produto seu. Toque em Produtos.', rotas: ['/home'], avanca: [{ rota: '/recomendacao-produtos', para: 'd1-scan' }] },
-  'd1-scan': { alvo: 'prod-scanBtn', pad: 6, r: 'pill', texto: () => 'Toque aqui para abrir o scanner.', rotas: ['/recomendacao-produtos'], avanca: [{ rota: '/product-camera', para: 'd1-foto' }] },
-  'd1-foto': { alvo: 'scan-foto', pad: 6, r: 'pill', texto: () => 'Aponte para o produto e toque para tirar a foto.', rotas: ['/product-camera'], avanca: [{ rota: '/product-loading', para: 'd1-espera' }] },
+  'd1-aba': { alvo: 'nav-produtos', pad: 4, r: 'pill', texto: () => 'Vamos escanear um produto seu. Toque em Produtos.', rotas: ['/home'], avanca: [{ rota: '/recomendacao-produtos', para: 'd1-scan' }], pular: 'd1' },
+  'd1-scan': { alvo: 'prod-scanBtn', pad: 6, r: 'pill', texto: () => 'Toque aqui para abrir o scanner.', rotas: ['/recomendacao-produtos'], avanca: [{ rota: '/product-camera', para: 'd1-foto' }], pular: 'd1' },
+  'd1-foto': { alvo: 'scan-foto', pad: 6, r: 'pill', texto: () => 'Aponte para o produto e toque para tirar a foto.', rotas: ['/product-camera'], avanca: [{ rota: '/product-loading', para: 'd1-espera' }], pular: 'd1' },
   'd1-espera': { texto: () => null, rotas: ['/product-loading'], avanca: [{ rota: '/product-result', para: 'd2-adicionar' }, { rota: '/product-camera', para: 'd1-foto' }] },
   'd2-aba': { alvo: 'nav-produtos', pad: 4, r: 'pill', texto: () => 'Vamos montar sua estante. Toque em Produtos.', rotas: ['/home'], avanca: [{ rota: '/recomendacao-produtos', para: 'd2-card' }] },
   'd2-card': { alvo: 'prod-escaneado', pad: 4, r: 18, texto: () => 'Toque no produto que você tem em casa.', rotas: ['/recomendacao-produtos'] },
@@ -60,8 +63,8 @@ const PASSOS: Record<PassoGuia, Passo> = {
   'd2-detalhe': { texto: () => null, rotas: ['/recomendacao-produtos'] },
   'd2-adicionar': { alvo: 'scan-estante', pad: 4, r: 'pill', texto: () => ESTANTE, rotas: ['/product-result'], livre: true },
   'd2-pronto': { texto: () => 'Produto na estante! Seu próximo desafio está na Home.', rotas: [], some: 4000 },
-  'd3-aba': { alvo: 'nav-rotina', pad: 4, r: 'pill', texto: () => 'Vamos montar sua rotina. Toque em Rotina.', rotas: ['/home'], avanca: [{ rota: '/protocolo', para: 'd3-escolher' }] },
-  'd3-escolher': { alvo: 'rot-escolher', pad: 6, r: 14, texto: () => 'Toque aqui para escolher o produto deste passo.', rotas: ['/protocolo'], atalho: true },
+  'd3-aba': { alvo: 'nav-rotina', pad: 4, r: 'pill', texto: () => 'Vamos montar sua rotina. Toque em Rotina.', rotas: ['/home'], avanca: [{ rota: '/protocolo', para: 'd3-escolher' }], pular: 'd3' },
+  'd3-escolher': { alvo: 'rot-escolher', pad: 6, r: 14, texto: () => 'Toque aqui para escolher o produto deste passo.', rotas: ['/protocolo'], atalho: true, pular: 'd3' },
   // Dentro da folha de produtos (Modal): a dica mora nela (`EscolherProdutoSheet`).
   'd3-folha': { texto: () => null, rotas: ['/protocolo'] },
   'd3-pronto': { texto: (g) => `Pronto! Sua rotina da ${g.periodo === 'pm' ? 'noite' : 'manhã'} está completa.`, rotas: [], some: 4500 },
@@ -101,13 +104,16 @@ function Recorte({ passo, texto }: { passo: Passo; texto: string }) {
   const targets = useCoachTargets();
   const { width: W, height: H } = useWindowDimensions();
   const reduzir = useReducedMotion();
+  const router = useRouter();
+  const pathname = usePathname();
   const pulso = useSharedValue(1);
 
   useEffect(() => {
-    requestCoachMeasure();
-    const iv = setInterval(requestCoachMeasure, 300);
+    const medir = () => requestCoachMeasure([passo.alvo!]);
+    medir();
+    const iv = setInterval(medir, 500); // a tela de baixo pode assentar depois da dica aparecer
     return () => clearInterval(iv);
-  }, []);
+  }, [passo.alvo]);
   useEffect(() => {
     if (reduzir) { pulso.set(1); return; }
     pulso.set(withRepeat(withTiming(0.35, { duration: 1200, easing: Easing.inOut(Easing.sin) }), -1, true));
@@ -124,15 +130,14 @@ function Recorte({ passo, texto }: { passo: Passo; texto: string }) {
 
   return (
     <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)} style={[StyleSheet.absoluteFill, { zIndex: 41 }]} pointerEvents="box-none">
-      {!passo.livre && <Svg width={W} height={H} style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Defs>
-          <Mask id="guia-furo">
-            <Rect x={0} y={0} width={W} height={H} fill="#FFFFFF" />
-            <Rect x={box.x} y={box.y} width={box.w} height={box.h} rx={box.r} ry={box.r} fill="#000000" />
-          </Mask>
-        </Defs>
-        <Rect x={0} y={0} width={W} height={H} fill={SCRIM} mask="url(#guia-furo)" />
-      </Svg>}
+      {!passo.livre && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Canvas style={StyleSheet.absoluteFill}>
+            <Fill color={SCRIM} />
+            <RoundedRect x={box.x} y={box.y} width={box.w} height={box.h} r={box.r} color="#000000" blendMode="clear" />
+          </Canvas>
+        </View>
+      )}
 
       {/* As 4 faixas em volta do recorte: tocar nelas fecha a dica. O recorte fica livre. */}
       {!passo.livre && (
@@ -164,6 +169,17 @@ function Recorte({ passo, texto }: { passo: Passo; texto: string }) {
               accessibilityRole="button"
             >
               <Text style={styles.atalho}>Escanear vários de uma vez</Text>
+            </TouchableOpacity>
+          )}
+          {passo.pular && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => { haptics.tap(); void pularDesafio(passo.pular!, router, pathname); }}
+              hitSlop={{ top: 8, bottom: 8 }}
+              style={{ alignSelf: 'flex-start' }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.pular}>Não tenho um produto agora</Text>
             </TouchableOpacity>
           )}
         </Animated.View>
@@ -201,6 +217,7 @@ const styles = StyleSheet.create({
   arrow: { position: 'absolute', width: 14, height: 14, backgroundColor: '#FFFFFF', borderRadius: 3, transform: [{ rotate: '45deg' }] },
   text: { fontSize: 17, fontWeight: '600', lineHeight: 23, letterSpacing: -0.35, color: INK },
   atalho: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: '#E8468F' },
+  pular: { fontSize: 14, fontWeight: '500', letterSpacing: -0.15, color: '#8A8387' },
   balao: {
     position: 'absolute', left: 20, right: 20, zIndex: 41,
     paddingVertical: 14, paddingHorizontal: 18, borderRadius: 20, backgroundColor: '#FFFFFF',

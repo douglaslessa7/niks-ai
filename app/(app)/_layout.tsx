@@ -36,7 +36,7 @@ import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { useGuia } from '../../lib/guia';
 import { comecarDesafios } from '../../lib/missoes';
-import TutorialOverlay from '../../components/coach/TutorialOverlay';
+import TutorialOverlay, { PreaquecerVeu } from '../../components/coach/TutorialOverlay';
 import {
   avancarTutorialGrupos, registrarParada, retomarTutorialGrupos, useEtapaTutorialGrupos,
 } from '../../lib/gruposTutorial';
@@ -484,6 +484,20 @@ export default function AppLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etapaGrupos?.chave, gruposLiberado]);
 
+  // Aquece o Skia antes do 1º tutorial/dica: conta nova logo na entrada (o tour vem em
+  // seguida); as demais, depois que a home assentou. Sai depois de desenhar.
+  const [aquecer, setAquecer] = useState(false);
+  const tourArmado = homeTutorialPending && !homeTutorialSeen;
+  const jaAqueceu = useRef(false);
+  useEffect(() => {
+    if (!ready || jaAqueceu.current) return;
+    jaAqueceu.current = true;
+    const liga = setTimeout(() => setAquecer(true), tourArmado ? 0 : 1200);
+    const desliga = setTimeout(() => setAquecer(false), (tourArmado ? 0 : 1200) + 800);
+    return () => { clearTimeout(liga); clearTimeout(desliga); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   if (!ready) return null;
 
   // Nome vazio → renderiza a captura no lugar do app (mesma fonte da etapa do
@@ -524,6 +538,7 @@ export default function AppLayout() {
         <Tabs.Screen name="produto-amiga" options={{ href: null }} />
       </Tabs>
       {tabBarVisible && <GlobalBottomBar />}
+      {aquecer && <PreaquecerVeu />}
       {tabBarVisible && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && !convidadaNoApp && <BalaoEspinha />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
           escurecer a tela inteira, navbar inclusive (designs 58/59). Dentro da

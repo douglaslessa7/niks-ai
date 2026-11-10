@@ -14,13 +14,17 @@
 // navbar (no design o overlay é z-index 40, a nav 32) e o zIndex do RN só vale
 // entre irmãos. O toque NÃO chega ao elemento destacado — o recorte é só desenho.
 //
-// As posições vêm de `lib/coachMarks.ts`, medidas a cada 300 ms como o
-// `setInterval(measure, 300)` do design (pega rolagem, carregamento tardio etc.).
+// As posições vêm de `lib/coachMarks.ts`. O véu, o recorte e os contornos são desenhados no
+// Skia, com shared values: o movimento roda no thread de UI, sem refazer layout nem máscara
+// a cada quadro. Medir é caro: só na troca de parada e, de leve, a cada 1 s (carga tardia).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Animated, BackHandler, Easing, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import Svg, { Defs, Mask, Path, Rect } from 'react-native-svg';
-import { useReducedMotion } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
+import Reanimated, {
+  Easing as REasing, useAnimatedStyle, useDerivedValue, useReducedMotion, useSharedValue, withTiming, type SharedValue,
+} from 'react-native-reanimated';
+import { Canvas, Fill, Group, RoundedRect, Skia } from '@shopify/react-native-skia';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '../../lib/haptics';
 import {
@@ -43,7 +47,8 @@ type Box = { x: number; y: number; w: number; h: number; r: number };
 const SCRIM = 'rgba(26,8,18,0.74)';
 const PINK = '#FF5EA8';
 const EASE = Easing.bezier(0.2, 0.8, 0.2, 1);
-const AnimatedRect = Animated.createAnimatedComponent(Rect);
+const REASE = REasing.bezier(0.2, 0.8, 0.2, 1);
+const HALO = 'rgba(255,94,168,0.22)';
 
 // ── SÓ ANDROID: medida real do próprio overlay ────────────────────────────────
 // No Android (edge-to-edge, 3 botões ou gestos) a origem do `measureInWindow` pode
@@ -87,33 +92,49 @@ export function boxOf(spec: TutSpec, targets: CoachTargets, W: number, off: Fram
 
 /** Valores animados de uma caixa (x, y, w, h, r) — transição de .45 s do design. */
 function useBoxAnim() {
-  return useRef({
-    x: new Animated.Value(0), y: new Animated.Value(0), w: new Animated.Value(0),
-    h: new Animated.Value(0), r: new Animated.Value(0),
-  }).current;
+  const x = useSharedValue(0), y = useSharedValue(0), w = useSharedValue(0), h = useSharedValue(0), r = useSharedValue(0);
+  return useMemo(() => ({ x, y, w, h, r }), [x, y, w, h, r]);
 }
 type BoxAnim = ReturnType<typeof useBoxAnim>;
 function moveBox(v: BoxAnim, to: Box, instant: boolean) {
-  const pairs: [Animated.Value, number][] = [[v.x, to.x], [v.y, to.y], [v.w, to.w], [v.h, to.h], [v.r, to.r]];
-  if (instant) { pairs.forEach(([a, n]) => a.setValue(n)); return; }
-  Animated.parallel(pairs.map(([a, n]) =>
-    Animated.timing(a, { toValue: n, duration: 450, easing: EASE, useNativeDriver: false }))).start();
+  const pairs: [SharedValue<number>, number][] = [[v.x, to.x], [v.y, to.y], [v.w, to.w], [v.h, to.h], [v.r, to.r]];
+  pairs.forEach(([a, n]) => a.set(instant ? n : withTiming(n, { duration: 450, easing: REASE })));
 }
 
-/** Contorno: `border:2px solid #FF5EA8` + `box-shadow:0 0 0 5px rgba(255,94,168,.22)`. */
-function Ring({ v, opacity }: { v: BoxAnim; opacity: Animated.Value | number }) {
+/** Caixa `v` com `d` pontos a mais de cada lado. */
+function useRRect(v: BoxAnim, d: number) {
+  return useDerivedValue(() => {
+    const raio = Math.max(0, v.r.get() + d);
+    return Skia.RRectXY(Skia.XYWHRect(v.x.get() - d, v.y.get() - d, Math.max(0, v.w.get() + 2 * d), Math.max(0, v.h.get() + 2 * d)), raio, raio);
+  });
+}
+
+/** Recorte (`clear`) + os dois traços do contorno: `border:2px #FF5EA8` + halo de 5 pt. */
+function Furo({ v, opacity }: { v: BoxAnim; opacity?: SharedValue<number> }) {
+  const furo = useRRect(v, 0);
+  const halo = useRRect(v, 2.5);
+  const traco = useRRect(v, -1);
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={{
-        position: 'absolute', opacity,
-        left: Animated.add(v.x, -5), top: Animated.add(v.y, -5),
-        width: Animated.add(v.w, 10), height: Animated.add(v.h, 10),
-        borderRadius: Animated.add(v.r, 5), borderWidth: 5, borderColor: 'rgba(255,94,168,0.22)',
-      }}
-    >
-      <Animated.View style={{ flex: 1, borderRadius: v.r, borderWidth: 2, borderColor: PINK }} />
-    </Animated.View>
+    <>
+      <RoundedRect rect={furo} r={0} color="#000000" blendMode="clear" />
+      <Group opacity={opacity ?? 1}>
+        <RoundedRect rect={halo} r={0} color={HALO} style="stroke" strokeWidth={5} />
+        <RoundedRect rect={traco} r={0} color={PINK} style="stroke" strokeWidth={2} />
+      </Group>
+    </>
+  );
+}
+
+/** O primeiro desenho do Skia custa caro: desenha o véu uma vez, invisível, antes de precisar. */
+export function PreaquecerVeu() {
+  return (
+    <View style={styles.aquecer} pointerEvents="none">
+      <Canvas style={StyleSheet.absoluteFill}>
+        <Fill color={SCRIM} />
+        <RoundedRect x={0} y={0} width={1} height={1} r={0.5} color="#000000" blendMode="clear" />
+        <RoundedRect x={0} y={0} width={1} height={1} r={0.5} color={HALO} style="stroke" strokeWidth={5} />
+      </Canvas>
+    </View>
   );
 }
 
@@ -139,19 +160,11 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
   const { frame: androidFrame, measureProps } = useAndroidOverlayFrame();
   if (Platform.OS === 'android' && androidFrame) { W = androidFrame.width; H = androidFrame.height; }
 
-  // Medição: `setInterval(measure, 300)` do design + rajadas durante as transições.
-  const burstRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const burst = useCallback((ms: number) => {
-    if (burstRef.current) clearInterval(burstRef.current);
-    const end = Date.now() + ms;
-    burstRef.current = setInterval(() => {
-      requestCoachMeasure();
-      if (Date.now() > end && burstRef.current) { clearInterval(burstRef.current); burstRef.current = null; }
-    }, 50);
-  }, []);
+  // Medição: leve e só do que está em destaque (carga tardia); a troca de parada mede na hora.
+  const alvosRef = useRef<CoachTargetKey[] | undefined>(undefined);
   useEffect(() => {
-    const iv = setInterval(requestCoachMeasure, 300);
-    return () => { clearInterval(iv); if (burstRef.current) clearInterval(burstRef.current); };
+    const iv = setInterval(() => requestCoachMeasure(alvosRef.current), 1000);
+    return () => clearInterval(iv);
   }, []);
 
   // Paradas: congeladas depois da 1ª medição (+ carência de 500 ms). Parada sem
@@ -160,10 +173,10 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
   const [graceOver, setGraceOver] = useState(false);
   useEffect(() => {
     requestCoachPrepare(rolagem(allStops[0]));
-    const t1 = setTimeout(() => { requestCoachMeasure(); burst(1000); }, 60);
+    const medir = [60, 180, 450, 650].map((ms) => setTimeout(() => requestCoachMeasure(), ms));
     const t2 = setTimeout(() => setStarted(true), 200);
     const t3 = setTimeout(() => setGraceOver(true), 700);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    return () => { medir.forEach(clearTimeout); clearTimeout(t2); clearTimeout(t3); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const stopsRef = useRef<TutStop[] | null>(null);
   if (started && !stopsRef.current) {
@@ -183,6 +196,7 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
   const at = (ms: number, fn: () => void) => { timers.current.push(setTimeout(fn, ms)); };
 
   const st = stops[s];
+  alvosRef.current = st ? [...st.a.u, ...(st.b?.u ?? [])] : undefined;
   // Nenhum alvo na tela depois da carência: o tutorial obrigatório segue, nunca trava.
   useEffect(() => {
     if (vazio && semPular) onFinish();
@@ -210,10 +224,11 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
   // ── Animações ──────────────────────────────────────────────────────────────
   const av = useBoxAnim();
   const bv = useBoxAnim();
-  const ovOp = useRef(new Animated.Value(0)).current;
-  const ringBOp = useRef(new Animated.Value(0)).current;
+  const ovOp = useSharedValue(0);
+  const ringBOp = useSharedValue(0);
   const tipOp = useRef(new Animated.Value(0)).current;
   const tipY = useRef(new Animated.Value(0)).current;
+  const rootSt = useAnimatedStyle(() => ({ opacity: ovOp.get() }));
   const firstRef = useRef(true);
   const aKey = A ? `${A.x},${A.y},${A.w},${A.h},${A.r}` : '';
   const bKey = B ? `${B.x},${B.y},${B.w},${B.h},${B.r}` : '';
@@ -223,10 +238,10 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
     firstRef.current = false;
     moveBox(av, A, first || reduzir);
     moveBox(bv, B ?? A, first || reduzir);
-    if (first) Animated.timing(ovOp, { toValue: 1, duration: 350, easing: Easing.ease, useNativeDriver: false }).start();
+    if (first) ovOp.set(withTiming(1, { duration: 350, easing: REasing.ease }));
   }, [aKey, bKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    Animated.timing(ringBOp, { toValue: B ? 1 : 0, duration: 300, easing: Easing.ease, useNativeDriver: false }).start();
+    ringBOp.set(withTiming(B ? 1 : 0, { duration: 300, easing: REasing.ease }));
   }, [!!B]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Balão: abaixo do recorte se couber (150 pt de balão + 62 do "Pular"), senão acima.
@@ -248,13 +263,23 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
 
   const go = (n: number) => {
     setTipOn(false);
-    at(180, () => { setS(n); requestCoachPrepare(rolagem(stops[n])); burst(1000); });
-    at(stops[n].scroll ? 820 : 520, () => setTipOn(true));
+    const chaves = [...stops[n].a.u, ...(stops[n].b?.u ?? [])];
+    // Com rolagem: o recorte espera a tela assentar, em vez de perseguir o alvo enquanto ela anda.
+    if (stops[n].scroll) {
+      requestCoachPrepare(rolagem(stops[n]));
+      at(480, () => requestCoachMeasure(chaves));
+      at(520, () => setS(n));
+      at(900, () => setTipOn(true));
+      return;
+    }
+    at(180, () => { requestCoachPrepare(rolagem(stops[n])); requestCoachMeasure(chaves); setS(n); });
+    at(330, () => requestCoachMeasure(chaves));
+    at(520, () => setTipOn(true));
   };
   const close = () => {
     if (closing) return;
     setClosing(true);
-    Animated.timing(ovOp, { toValue: 0, duration: 350, easing: Easing.ease, useNativeDriver: false }).start();
+    ovOp.set(withTiming(0, { duration: 350, easing: REasing.ease }));
     at(350, onFinish);
   };
   const next = () => {
@@ -295,25 +320,18 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
     </Animated.View>
   );
   const veu = (
-    <>
-      <Svg width={W} height={H} style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Defs>
-          <Mask id="tut-hole">
-            <Rect x={0} y={0} width={W} height={H} fill="#FFFFFF" />
-            <AnimatedRect x={av.x} y={av.y} width={av.w} height={av.h} rx={av.r} ry={av.r} fill="#000000" />
-            <AnimatedRect x={bv.x} y={bv.y} width={bv.w} height={bv.h} rx={bv.r} ry={bv.r} fill="#000000" />
-          </Mask>
-        </Defs>
-        <Rect x={0} y={0} width={W} height={H} fill={SCRIM} mask="url(#tut-hole)" />
-      </Svg>
-      <Ring v={av} opacity={1} />
-      <Ring v={bv} opacity={ringBOp} />
-    </>
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Canvas style={StyleSheet.absoluteFill}>
+        <Fill color={SCRIM} />
+        <Furo v={av} />
+        <Furo v={bv} opacity={ringBOp} />
+      </Canvas>
+    </View>
   );
 
   return (
-    <Animated.View
-      style={[StyleSheet.absoluteFill, { opacity: ovOp, zIndex: 40 }]}
+    <Reanimated.View
+      style={[StyleSheet.absoluteFill, { zIndex: 40 }, rootSt]}
       pointerEvents={closing ? 'none' : 'auto'}
       accessibilityViewIsModal
       {...measureProps}
@@ -331,11 +349,12 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
           </TouchableOpacity>
         </View>
       )}
-    </Animated.View>
+    </Reanimated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  aquecer: { position: 'absolute', left: 0, top: 0, width: 2, height: 2, opacity: 0.01 },
   tip: {
     position: 'absolute', left: 20, right: 20,
     paddingTop: 16, paddingHorizontal: 18, paddingBottom: 14, borderRadius: 20, backgroundColor: '#FFFFFF',

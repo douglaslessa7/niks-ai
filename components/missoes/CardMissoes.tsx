@@ -19,7 +19,7 @@ import Animated, {
   Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming,
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
-import { proximoDesafio, quantasFeitas, textoProgressoRotina, type DesafioId, type EstadoMissoes } from '../../lib/missoes';
+import { desafioBloqueado, proximoDesafio, quantasFeitas, textoProgressoRotina, usePulados, type DesafioId, type EstadoMissoes } from '../../lib/missoes';
 
 const INK = '#121212';
 const MUTE = '#8A8387';
@@ -80,7 +80,8 @@ export default function CardMissoes({ estado, onMissao }: { estado: EstadoMissoe
   useEffect(() => { prog.set(withTiming(feitas / 4, { duration: 300, easing: EO })); }, [feitas, prog]);
   const barraSt = useAnimatedStyle(() => ({ transform: [{ scaleX: prog.get() }] }));
 
-  const proximo = proximoDesafio(estado);
+  const pulados = usePulados();
+  const proximo = proximoDesafio(estado, pulados);
   const linhas: { id: MissaoId; feito: boolean; sub: string | null }[] = [
     { id: 'd1', feito: estado.d1, sub: null },
     { id: 'd2', feito: estado.d2, sub: null },
@@ -99,7 +100,10 @@ export default function CardMissoes({ estado, onMissao }: { estado: EstadoMissoe
           <Animated.View style={[styles.barra, barraSt]} />
         </View>
         {linhas.map((l, i) => {
-          const vez = l.id === proximo;
+          // Os pulados continuam pendentes e dá para fazê-los a qualquer momento.
+          const pulado = !l.feito && pulados.includes(l.id);
+          const vez = l.id === proximo || (pulado && !desafioBloqueado(estado, l.id));
+          const sub = l.sub ?? (pulado ? 'Para fazer depois' : null);
           return (
           <TouchableOpacity
             key={l.id}
@@ -114,7 +118,7 @@ export default function CardMissoes({ estado, onMissao }: { estado: EstadoMissoe
             <Check feito={l.feito} numero={i + 1} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.missao, !vez && styles.missaoFeita]} numberOfLines={2}>{TITULOS[l.id]}</Text>
-              {!!l.sub && <Text style={styles.sub}>{l.sub}</Text>}
+              {!!sub && <Text style={styles.sub}>{sub}</Text>}
             </View>
             {vez && (
               <Svg width={14} height={14} viewBox="0 0 24 24">

@@ -10,12 +10,13 @@
 // por conta, fora da regra de 1 carta por dia, que não vence até ser raspada.
 // Contas novas: depois do tour, o desafio 1 começa sozinho. Contas existentes: só o card.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useCallback } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCachedQuery, invalidateCache, peekCache, writeCache } from './cache';
 import { getUserId, useUserId } from './currentUser';
 import { chamarCartas, type CartaGanha } from './cartasServidor';
 import { supabase } from './supabase';
-import { iniciarGuia } from './guia';
+import { encerrarGuia, iniciarGuia, pedirProximoDesafio } from './guia';
 import { ganhouPontos } from './pontosAnimacao';
 
 export type PeriodoMissao = { passos: number; com_produto: number };
@@ -52,6 +53,7 @@ export async function estadoMissoes(body: Record<string, unknown> = {}, opts: Op
 export function useMissoes() {
   const uid = useUserId();
   const fetcher = useCallback(() => estadoMissoes(), []);
+  useEffect(() => { if (uid) void carregarPulados(uid); }, [uid]);
   return useCachedQuery<EstadoMissoes>(uid ? chaveMissoes(uid) : null, fetcher, { staleMs: 0, enabled: Boolean(uid) });
 }
 
@@ -95,8 +97,72 @@ export async function marcarGuiaVisto() {
 
 export const quantasFeitas = (e: EstadoMissoes) => DESAFIOS.filter((d) => e[d]).length;
 
-/** O próximo desafio a fazer (o card só guia este). */
-export const proximoDesafio = (e: EstadoMissoes): DesafioId | null => DESAFIOS.find((d) => !e[d]) ?? null;
+// ── Desafios pulados ("Não tenho um produto agora") ───────────────────────────
+// Pular só muda a ORDEM em que o app guia: nada vai ao servidor, que continua calculando cada
+// desafio pelos dados reais. O pulado segue pendente, sem pontos, e paga ao ser feito. Guardado
+// no aparelho, por conta. (O servidor não precisa saber: a carta rara exige os 4 feitos.)
+let pulados: DesafioId[] = [];
+let puladosDe: string | null = null;
+const ouvintesPulados = new Set<() => void>();
+const chavePulados = (uid: string) => `missoes_pulados_${uid}`;
+const definirPulados = (lista: DesafioId[]) => { pulados = lista; ouvintesPulados.forEach((f) => f()); };
+
+async function carregarPulados(uid: string) {
+  if (puladosDe === uid) return;
+  puladosDe = uid;
+  try {
+    const bruto = await AsyncStorage.getItem(chavePulados(uid));
+    definirPulados(bruto ? (JSON.parse(bruto) as DesafioId[]) : []);
+  } catch {
+    definirPulados([]);
+  }
+}
+
+export function usePulados(): DesafioId[] {
+  return useSyncExternalStore(
+    (f) => { ouvintesPulados.add(f); return () => { ouvintesPulados.delete(f); }; },
+    () => pulados,
+    () => pulados,
+  );
+}
+
+/** Desafio que não dá para guiar agora: a estante precisa de um produto escaneado e a rotina, de passos. */
+export const desafioBloqueado = (e: EstadoMissoes, d: DesafioId) =>
+  (d === 'd2' && !e.d1) || (d === 'd3' && !periodoDaRotina(e));
+
+const aFazer = (e: EstadoMissoes) => DESAFIOS.filter((d) => !e[d] && !desafioBloqueado(e, d));
+
+/** O próximo desafio a fazer (o card guia este e os pulados): primeiro os não pulados. */
+export const proximoDesafio = (e: EstadoMissoes, lista: DesafioId[] = pulados): DesafioId | null => {
+  const faltam = aFazer(e);
+  return faltam.find((d) => !lista.includes(d)) ?? faltam[0] ?? null;
+};
+
+/** Depois de pular: o próximo NÃO pulado (null = não sobrou nenhum; os pulados ficam no card). */
+export const proximoNaoPulado = (e: EstadoMissoes, lista: DesafioId[] = pulados): DesafioId | null =>
+  aFazer(e).find((d) => !lista.includes(d)) ?? null;
+
+/**
+ * "Não tenho um produto agora": encerra a dica, marca como pulado, volta à home e segue para o
+ * próximo desafio. Da câmera (fora do grupo das abas), fecha a pilha antes.
+ */
+export async function pularDesafio(
+  d: DesafioId,
+  router: { canDismiss: () => boolean; dismissAll: () => void; navigate: (href: any) => void },
+  pathname: string,
+) {
+  encerrarGuia();
+  if (!pulados.includes(d)) definirPulados([...pulados, d]);
+  const uid = await getUserId();
+  if (uid) {
+    puladosDe = uid;
+    try { await AsyncStorage.setItem(chavePulados(uid), JSON.stringify(pulados)); } catch {}
+  }
+  if (pathname === '/home') { pedirProximoDesafio(); return; }
+  if (pathname === '/product-camera' && router.canDismiss()) router.dismissAll();
+  router.navigate('/home');
+  setTimeout(pedirProximoDesafio, 450); // a home assenta antes da dica nova medir o alvo
+}
 
 /** O card aparece enquanto falta desafio, ou enquanto a rara não foi raspada. */
 export const cardVisivel = (e: EstadoMissoes) => !e.concluidas_em || (!!e.carta && !e.carta.raspada_em);

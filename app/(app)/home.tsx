@@ -27,8 +27,8 @@ import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
 import BolhaMissoes from '../../components/missoes/BolhaMissoes';
 import type { MissaoId } from '../../components/missoes/CardMissoes';
-import { cardVisivel, periodoDaRotina, useMissoes } from '../../lib/missoes';
-import { iniciarGuia, irParaGuia, useGuia } from '../../lib/guia';
+import { cardVisivel, periodoDaRotina, proximoNaoPulado, useMissoes } from '../../lib/missoes';
+import { iniciarGuia, irParaGuia, onProximoDesafio, useGuia } from '../../lib/guia';
 import { useMeusGrupos } from '../../lib/gruposServidor';
 import Avatar from '../../components/grupos/Avatar';
 import Medalha from '../../components/medalhas/Medalha';
@@ -556,6 +556,13 @@ export default function Home() {
       iniciarGuia({ passo: 'd4-iniciar' });
     }
   };
+  // "Não tenho um produto agora": segue para o próximo desafio não pulado.
+  const proximoRef = useRef(() => {});
+  proximoRef.current = () => {
+    const m = missoes ? proximoNaoPulado(missoes) : null;
+    if (m) comecarMissao(m);
+  };
+  useEffect(() => onProximoDesafio(() => proximoRef.current()), []);
   // A rara das missões abre sozinha (depois da carta do dia, que tem a vez): uma vez por
   // sessão do app, fora do tutorial e da celebração de nível.
   const raraMissoes = missoes?.carta && !missoes.carta.raspada_em ? missoes.carta.id : null;
