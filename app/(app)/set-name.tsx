@@ -15,7 +15,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 const INK = '#121212';
 const INK_MUTE = '#8A8A93';
@@ -106,8 +106,8 @@ export default function SetName() {
       invalidateCache(`home:${user.id}`);
       invalidateCache(`chat:${user.id}`);
       haptics.success();
-      // Aba oculta do <Tabs>: `router.back()` cai na Home (1ª aba). Volta para o Perfil, de onde abre.
-      router.navigate('/perfil' as any);
+      // Volta para a tela de trás (o Perfil, de onde abre); sem ela, o Perfil.
+      voltarOu('/perfil');
     } catch (e) {
       console.error('Erro ao salvar nome:', e);
       haptics.error();
@@ -119,7 +119,7 @@ export default function SetName() {
   const theme = homeTheme(isNightTheme(), 'rgba(255,226,236,0.40)');
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate('/perfil' as any)}>
+    <View style={{ flex: 1 }}>
     <View style={{ flex: 1, backgroundColor: theme.base }}>
       <StatusBar style="dark" />
       <LinearGradient colors={theme.bg} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -129,7 +129,7 @@ export default function SetName() {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
           {/* Cabeçalho: voltar · "Seu nome" */}
           <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-            <TouchableOpacity onPress={() => { haptics.tap(); router.navigate('/perfil' as any); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel="Voltar">
+            <TouchableOpacity onPress={() => { haptics.tap(); voltarOu('/perfil'); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel="Voltar">
               <Svg width={18} height={18} viewBox="0 0 24 24">
                 <Path d="M15 5l-7 7 7 7" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
@@ -163,7 +163,7 @@ export default function SetName() {
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

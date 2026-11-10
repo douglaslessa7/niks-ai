@@ -23,7 +23,7 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import HorariosRotina, { fmtHorario as fmt } from '../../components/rotina/HorariosRotina';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -102,7 +102,7 @@ export default function Alarme() {
   const theme = homeTheme(isNightTheme(), 'rgba(255,226,236,0.40)');
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate('/home' as any)}>
+    <View style={{ flex: 1 }}>
     <View style={{ flex: 1, backgroundColor: theme.base }}>
       <StatusBar style="dark" />
       <LinearGradient colors={theme.bg} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -173,7 +173,7 @@ export default function Alarme() {
             borderBottomWidth: 1, borderBottomColor: 'rgba(192,32,106,0.10)',
           }]}
         />
-        <TouchableOpacity onPress={() => { haptics.tap(); router.navigate('/home' as any); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel="Voltar">
+        <TouchableOpacity onPress={() => { haptics.tap(); voltarOu('/home'); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel="Voltar">
           <Svg width={18} height={18} viewBox="0 0 24 24">
             <Path d="M15 5l-7 7 7 7" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
@@ -212,7 +212,7 @@ export default function Alarme() {
         </LinearGradient>
       </Modal>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

@@ -1,5 +1,6 @@
 // Revisão de denúncias (Parte B, Fase 2). Tela escondida, aberta pelo push: quem não está em
 // `moderadores` recebe "sem_permissão" do servidor e volta para a home. A trava é do servidor.
+import { voltar as voltarOu } from '../../lib/navegar';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -24,7 +25,7 @@ export default function RevisaoDenuncias() {
     setErro(false);
     try {
       const r = await denunciasAbertas();
-      if (!r.ok) { router.replace('/(app)/home' as any); return; }
+      if (!r.ok) { voltarOu('/home'); return; }
       setLista(r.denuncias);
     } catch {
       setErro(true);

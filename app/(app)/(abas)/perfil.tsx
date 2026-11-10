@@ -13,15 +13,15 @@
 //   • Sair da conta (pílula) + "Apagar minha conta" (link) + versão.
 // Vermelho #D4183D continua como cor SEMÂNTICA de ação destrutiva.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEhConvidada } from '../../lib/acesso';
-import { useUserId } from '../../lib/currentUser';
-import { useEstadoCartas } from '../../lib/cartasServidor';
-import { sessionDate } from '../../lib/routineProgress';
-import { mesKey } from '../../components/grupos/CalendarioCheckins';
-import { abrirPaywallConvidada } from '../../lib/trava';
-import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
-import Medalha from '../../components/medalhas/Medalha';
-import { chavePerfilGrupos, perfilGrupos, useMeusGrupos, type PerfilGrupos } from '../../lib/gruposServidor';
+import { useEhConvidada } from '../../../lib/acesso';
+import { useUserId } from '../../../lib/currentUser';
+import { useEstadoCartas } from '../../../lib/cartasServidor';
+import { sessionDate } from '../../../lib/routineProgress';
+import { mesKey } from '../../../components/grupos/CalendarioCheckins';
+import { abrirPaywallConvidada } from '../../../lib/trava';
+import FotoComMoldura from '../../../components/medalhas/FotoComMoldura';
+import Medalha from '../../../components/medalhas/Medalha';
+import { chavePerfilGrupos, perfilGrupos, useMeusGrupos, type PerfilGrupos } from '../../../lib/gruposServidor';
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Linking, Alert, Image, StyleSheet, ActionSheetIOS, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,19 +42,19 @@ import {
   Sparkles,
 } from 'lucide-react-native';
 import * as Notifications from 'expo-notifications';
-import { requestAppReview, manageSubscriptionsUrl } from '../../lib/storeReview';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../hooks/useAuth';
-import { useAppStore } from '../../store/onboarding';
-import { requestPushPermission, savePushToken } from '../../lib/notifications';
-import { useCachedQuery } from '../../lib/cache';
-import { haptics } from '../../lib/haptics';
-import { usePickProfilePhoto } from '../../lib/profilePhoto';
-import { clearHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
-import { reverTutorialGrupos } from '../../lib/gruposTutorial';
-import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
-import HorariosRotina from '../../components/rotina/HorariosRotina';
-import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
+import { requestAppReview, manageSubscriptionsUrl } from '../../../lib/storeReview';
+import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../hooks/useAuth';
+import { useAppStore } from '../../../store/onboarding';
+import { requestPushPermission, savePushToken } from '../../../lib/notifications';
+import { useCachedQuery } from '../../../lib/cache';
+import { haptics } from '../../../lib/haptics';
+import { usePickProfilePhoto } from '../../../lib/profilePhoto';
+import { clearHomeTutorialSeenOnServer } from '../../../lib/homeTutorial';
+import { reverTutorialGrupos } from '../../../lib/gruposTutorial';
+import { BG_STOPS, homeTheme, isNightTheme } from '../../../lib/homeTheme';
+import HorariosRotina from '../../../components/rotina/HorariosRotina';
+import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
 
 const INK = '#121212';
 const INK_MUTE = '#8A8A93';

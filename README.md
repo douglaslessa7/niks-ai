@@ -2513,11 +2513,11 @@ niks-ai/
 │   │   ├── nome.tsx               ✅ "Como você quer ser chamada?" → salva users.nome → navega para notifications
 │   │   ├── horario-rotina.tsx / aviso-lembretes.tsx / permitir-notificacoes.tsx ✅ telas 13/13a/13b (ver tabela do fluxo)
 │   │   └── prazer.tsx / compromisso.tsx ✅ transição após o nome e compromisso antes do paywall
-│   ├── (app)/
+│   ├── (app)/                     ⚠️ 10/nov/2026: PILHA nativa — `(abas)/` (home, recomendacao-produtos, protocolo, niks-chat, perfil, grupos) embaixo; as demais telas desta pasta são telas da pilha. Ver "Navegação do app: abas + pilha nativa"
 │   │   ├── _layout.tsx            ✅ Navbar do Figma (GlobalBottomBar): sparkles/lupa/logo-NIKS/chat/perfil, 80px, ícones nas posições exatas — sem FAB. Também mede os 3 ícones para o tutorial de primeiro acesso e é onde o overlay `HomeCoachMarks` é montado (⚠️ desde 06/nov/2026 a barra é a "splitHouse" — casa + Rotina/Produtos/Grupos —, os alvos são `nav-rotina/produtos/grupos` no item inteiro, e o host das dicas `GuiaHost` também mora aqui; ver "Feature: Tutorial de primeiro acesso da home") (irmão da navbar, DEPOIS dela)
 │   │   ├── home.tsx               ✅ Home no design 51a (Claude Design): semana + sequência, herói da rotina com "Iniciar skincare" (disponível a qualquer hora desde 05/nov/2026), "Pra você · Hoje" (1º = scan de rosto travado por 7 dias), "Seus produtos". Ver "Tela Home"
 │   │   ├── skincare.tsx           🆕 05/nov/2026 — lista do "Iniciar skincare" da home (cards de "Seus passos" da Rotina, sem toque) + "Concluir skincare" (só no horário) → câmera do check-in → Novo check-in → carta(s) → mural. Ver "Iniciar skincare da home → check-in"
-│   │   ├── progresso.tsx          ✅ "Seu progresso" (design 43d; 43c com 2+ scans), aba oculta aberta pela home. Ver "Tela Seu progresso"
+│   │   ├── progresso.tsx          ✅ "Seu progresso" (design 43d; 43c com 2+ scans), tela da pilha aberta pela home/Rotina. Ver "Tela Seu progresso"
 │   │   ├── recomendacao-produtos.tsx ✅ "Minha estante" no topo (Shelf) + carrosséis Recomendados/Escaneados com "Ver todos"; modo escolha da Rotina; detalhe 47c. Ver "Tela Recomendação de Produtos"
 │   │   ├── skin-result.tsx        ✅ resultado da análise facial no app principal (métricas reais, parallax hero)
 │   │   ├── protocolo.tsx          ✅ Rotina (título exibido "Rotina de Skincare"; Nunito, temas Manhã/Noite: herói Manhã = logo tintada `#FF9D9D` / Noite = lua; cards expansíveis). **Dados reais** (rotina + dicas do `protocolos`/store) + Recomendações + **cerimônia re-portada da produção** (DM Serif, orb Skia). Ver seção 6
@@ -3627,6 +3627,33 @@ Chat com a NIKS AI (4ª aba "niks" do menu inferior). Redesenhada para o novo de
 
 ---
 
+### Navegação do app: abas + pilha nativa (10/nov/2026)
+
+**Por quê:** as telas secundárias eram ABAS escondidas de um `<Tabs>` — aba não tem o "deslizar para voltar" do iOS. O gesto feito à mão (`VoltarPelaBorda`) só disparava no fim, sem a tela acompanhar o dedo. Agora é o gesto NATIVO (como no Instagram/TikTok): a tela segue o dedo, a de trás aparece por baixo com o deslocamento do iOS e, ao soltar, termina ou volta com mola.
+
+**Estrutura** (os endereços NÃO mudaram — `(abas)` é só um grupo):
+- `app/(app)/_layout.tsx` = **pilha nativa** (`<Stack>`), com `unstable_settings.initialRouteName = '(abas)'` (link ou push que abre direto uma tela secundária já nasce com as abas embaixo). Navbar, tutoriais, avisos e toque nos pushes continuam por cima, como irmãos da pilha.
+- `app/(app)/(abas)/_layout.tsx` = as **6 abas** (home, recomendacao-produtos, protocolo, niks-chat, perfil, grupos), sem animação na troca.
+- **Telas da pilha** (`TELAS_DA_PILHA`): set-name, skin-result, calendario, conquistas, alarme, progresso, dica-do-dia, caminhada, seus-grupos, grupo, grupo-ranking, grupo-jornada, checkin, skincare, revisao-denuncias, produto-amiga, checkin-detalhe. Abrem deslizando da direita.
+
+**O gesto:**
+- **De qualquer ponto da tela** (`fullScreenGestureEnabled`), exceto onde há rolagem horizontal ou grade — **só da borda** (`SO_BORDA`): skin-result, calendario, conquistas, progresso, grupo-ranking, checkin-detalhe, alarme.
+- **Sem gesto** (`SEM_GESTO`): checkin e skincare — voltar no meio perde o que está sendo feito; só o botão.
+- **Folha/camada aberta desliga o gesto** (`hooks/useGestoVoltar.ts`): grupo (folha), seus-grupos (folha), checkin-detalhe (folha "…"), conquistas (carta/baralho/subtela — aí o `VoltarPelaBorda` fecha só a camada).
+- **Uma cópia por tela** na pilha (`dangerouslySingular`; o grupo e o detalhe do check-in, uma por id).
+
+**Regras de código (`lib/navegar.ts`):**
+- **Voltar:** `voltar(planoB)` = a tela de trás (igual ao gesto); o plano B (o destino fixo antigo) só sem tela de trás.
+- **Ir para uma ABA ou fechar um fluxo** (navbar, fim do check-in/skincare, carta com `depois`, tutorial): `irPara(destino)`. ⚠️ **Nunca `router.navigate('/home'|aba)` de uma tela da pilha:** empilha uma SEGUNDA cópia das abas por cima (testado). ⚠️ **Nunca `router.dismissTo` direto para tela secundária:** se ela não está na pilha, ele troca a tela do topo — com as abas no topo, as abas somem.
+- **Abrir de fora** (toque num push, tutorial dos grupos, convidada na abertura): `abrirComTrilha([aba, ...telas])` — monta a trilha de antes (ex.: Grupos › Seus grupos › grupo) reaproveitando o que já está na pilha, para o voltar seguir o caminho de antes.
+- Abrir uma tela secundária a partir de outra: `router.push` como sempre.
+- `pilha()` lê o estado VIVO (`store.navigationRef.current.getRootState()`); o `store.state` não acompanha cada navegação.
+
+**`VoltarPelaBorda`** ficou só onde o nativo não chega — a aba do Chat, as camadas internas de Produtos e de Conquistas e as telas de scan cujo voltar não é `router.back()` — e agora a tela SEGUE O DEDO (Reanimated): passou de 1/3 da largura ou soltou rápido → sai e chama o voltar; senão volta com mola. Por baixo aparece o fundo do app, não a tela de trás.
+
+**Testado no simulador (10/nov/2026):** voltar pelo botão das 17 telas a partir das origens reais; cadeias Grupos › Seus grupos › Grupo › Ranking/Jornada/Detalhe/Produto da amiga; navbar a partir da pilha; trilha dos pushes (grupo e denúncia) e do tutorial dos grupos (inclusive retomado de outra aba); link com o app aberto; carta depois do check-in pelo grupo, pela Rotina e no fim do skincare (o check-in sai da pilha e a carta não vira folha); opções do gesto por tela e com folha aberta. **Sem teste automático do arrasto** (o simulador não tem como gerar o toque daqui): a sensação do gesto foi conferida e aprovada no iPhone físico (10/nov/2026). Android: o voltar do sistema é o da pilha (não testado).
+- ⚠️ Comportamento ANTIGO, não mudou: telas da pilha RAIZ (scan, onboarding, carta) que fazem `router.replace/push('/(app)/…')` abrem uma segunda cópia do `(app)` na raiz (o `(app)` da raiz não tem gesto, então não aparece para a usuária).
+
 ### Tab Bar / Navbar (`app/(app)/_layout.tsx` — `GlobalBottomBar`)
 
 > ⚠️ **Nov/2026: em PRODUÇÃO o último ícone volta a ser o Perfil** (Grupos só em `__DEV__` — os grupos ainda são dados de exemplo; `NAV_ITEMS` em `app/(app)/_layout.tsx`). A aba `/grupos` redireciona para a home fora de `__DEV__`.
@@ -3867,7 +3894,7 @@ Réplica frame a frame do **NiksGrupoV2** (projeto "NIKS home redesign", rodada 
 | Jornada (nível individual de cada integrante na trilha da "Sua caminhada") | `app/(app)/grupo-jornada.tsx` | 80i |
 - **Migration `20261109120000_grupos_telas.sql`:** `checkins.titulo` (≤ 60) e `descricao` (≤ 280); `publicar_checkin` recebe os dois; `mural_grupo` devolve o título (sem título: "Rotina da manhã/noite"); `grupo_detalhe` ganha `checkins_semana` e `ultimo_checkin_outra` (ponto de novidade); `perfil_grupos` ganha `dias_seguidos` e `primeiro_mes`.
 - **Decisões fora do design** (o design não desenha estes passos): escolher a integrante para Denunciar/Bloquear/Remover = folha do sistema + confirmação; o sino da tela do grupo pedia a permissão de avisos (saiu na rodada 81; a permissão agora vem só do onboarding e do Perfil); escolher os grupos no Novo check-in = folha do sistema ("Todos os grupos" ou um); "Ver todos os check-ins" abre o calendário completo (`/calendario?de=grupos`; o X volta para a aba Grupos); o passeio da Jornada (subir até a líder e voltar) só na 1ª abertura de cada grupo, como na "Sua caminhada"; a carta da campeã continua de raspar (os NIKS Points são sorteados ao raspar).
-- **Voltar:** `router.back()` numa aba oculta do `<Tabs>` cai na 1ª aba (a home), então cada tela tem destino explícito: Seus grupos → aba Grupos; grupo → Seus grupos (ou a home, se abriu pelo card da home — `de=home`); Ranking e Jornada → o grupo; check-in → de onde abriu.
+- **Voltar (10/nov/2026, pilha nativa):** botão e gesto levam à tela de trás (`voltar(planoB)` de `lib/navegar.ts`). O destino fixo de antes (Seus grupos → aba Grupos; grupo → Seus grupos, ou a home com `de=home`; Ranking e Jornada → o grupo; check-in → de onde abriu) virou o plano B, usado só sem tela de trás. Push e tutorial abrem com essa trilha por trás (`abrirComTrilha`).
 - **Convite pelo link (Parte A):** `niks-ai://convite/<token>` é desviado no `app/+native-intent.tsx` (não é rota): o token fica em `lib/convitePendente.ts` e `components/grupos/ConvitePendente.tsx` (dentro do `(app)/_layout`, **depois do guard de assinatura** — o link nunca pula o paywall) confere no servidor, pergunta "Entrar em “Glow das Meninas”?" e abre o grupo.
 - **Home:** o card "Seu grupo" mostra o 1º grupo dela (integrantes com anel de quem fez hoje, "x de y hoje") e abre a tela do grupo; sem grupo, "Criar grupo" abre a folha de Seus grupos.
 - **Medição:** `grupo_criado`, `convite_enviado` {canal}, `convite_aceito` {tipo}, `checkin_feito` {rotina, grupos, com_titulo, carta}.
@@ -3880,7 +3907,7 @@ Réplica frame a frame do **NiksGrupoV2** (projeto "NIKS home redesign", rodada 
 Tela `app/(app)/checkin-detalhe.tsx` (aba oculta; `ids` separados por vírgula = manhã e noite do dia, deslizando de lado; volta para `grupo`/`volta`). Abre ao tocar num check-in do mural do grupo (meu ou de amiga) e num dia do calendário de check-ins (`CalendarioCheckins`: aba Grupos e Suas conquistas). Foto em card, quem fez (moldura da medalha), "9 de nov., 8:07 de manhã/à noite", título e descrição. Menu "…" só no check-in de outra pessoa: "Denunciar check-in", "Bloquear <nome>", "Cancelar" (mesmas ações e confirmações do grupo). Sem permissão ou removido: "Este check-in não está mais disponível.". Convidada abre igual. Animações no thread de UI.
 - **Servidor:** `checkin_detalhe(p_uid, p_checkin)` (só service role) devolve o check-in só para quem fez, ou para integrante de um grupo em comum com a autora ainda no grupo, sem bloqueio dela e sem `oculto_em`; removido não abre para ninguém. `perfil_grupos` ganhou `dias[].checkins = [{id, rotina}]`. Ação `checkin_detalhe` na função `grupos` (404 = não pode ver). Testes: PGlite (14 casos) + leitura real em produção (quem fez e integrante veem; conta de fora não).
 - **Fora por falta de dado:** mapa/local, reações, comentários, produtos/passos do check-in e a sequência da amiga.
-- ⚠️ A aba oculta continua montada entre aberturas: a tela recomeça por `key` (ids) e fecha a folha ao perder o foco.
+- Tela da pilha (10/nov/2026): monta a cada abertura e desmonta ao voltar; uma cópia por check-in (`dangerouslySingular`). Folha aberta desliga o gesto nativo (`useGestoVoltar`).
 
 ### Compartilhar com o grupo (fase 3 · 3.6, nov/2026 — migration `20261110120000_compartilhar_produto.sql`)
 Folha **80o** (com grupo: "Compartilhar com o grupo?", os grupos dela — o primeiro marcado, toque alterna —, Compartilhar e Agora não) / **80p** (sem grupo: "Faça skincare com suas amigas" + Criar grupo, **sempre**, enquanto ela não tiver grupo). `components/grupos/FolhaCompartilhar.tsx`. **Refeita na rodada 81 (81t/81u):** cada grupo é uma linha com o próprio botão de compartilhar (tocar compartilha naquele grupo; não há mais marcar/alternar nem botão "Compartilhar"), e "Agora não" virou pílula cinza. A API passou a `onCompartilhar(grupoId)` + `ocupado` (id do grupo em andamento). Sobe com mola ζ1 .5 s, 120 ms depois do véu (240 ms).
@@ -3977,7 +4004,7 @@ Réplica do design **"Fixed bottom bar"** (`navbar-design/Navbar.dc.html`). **Su
 
 > ⚠️ **`niks-logo.png` teve o fundo removido:** o asset vinha com fundo `#F9F9F9` opaco (some sobre branco, mas aparecia como um quadrado visível sobre o gradiente rosa — ex.: hero do `niks-chat`). O fundo foi tornado transparente reconstruindo o canal alpha (desfazendo a composição do bloom sobre `#F9F9F9`), sobrando só as esferas vermelhas com bordas suaves. A aparência sobre fundo branco é preservada; usado em `home`/`recomendacao-produtos`/`niks-chat` e, **tintado `#FF9D9D`**, no ícone central da navbar (nos dois modos).
   - Quem seta dark: **só** `protocolo.tsx` (período Noite) via `useFocusEffect` resetando para light no blur (`niks-chat.tsx` perdeu o modo noturno e chama sempre `light`). (o `isDark` do `ScanModal` era controlado aqui também, mas o modal saiu do fluxo.)
-- Visibilidade: `{tabBarVisible && <GlobalBottomBar />}`. Telas ocultas do `<Tabs>` (`href: null`): `set-name`, `skin-result`.
+- Visibilidade: `{tabBarVisible && <GlobalBottomBar />}`. Desde 10/nov/2026 as telas secundárias são telas da PILHA (não mais abas ocultas `href: null`) — ver "Navegação do app: abas + pilha nativa". Navbar escondida por rota: `TELA_CHEIA`.
 - **Alvos do tutorial de primeiro acesso:** os ícones de Rotina, Produtos e Chat registram a posição da **View do glifo** (~29×29) em `lib/coachMarks` — não a do `TouchableOpacity`, que é `flex: 1` (uma coluna inteira). ⚠️ Lembre da armadilha de nome: glyph `beauty` = tela **Rotina**, glyph `rotina` = tela **Produtos**. Ver "Feature: Tutorial de primeiro acesso da home".
 - **A altura da navbar NÃO é fixa:** `53 + insets.bottom` — o inset muda entre iPhone, Android com barra de 3 botões (~48) e Android com gestos. Nada pode assumir um número fixo — ver a seção abaixo.
 

@@ -18,6 +18,7 @@
 // outro / Usar mesmo assim"; o LEVE só fica gravado no passo (lib/avisoProduto).
 // Casca da folha = a do Alarme (Modal transparente + véu + translateY).
 // ─────────────────────────────────────────────────────────────────────────────
+import { irPara } from '../../lib/navegar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Modal, Animated, Easing, StyleSheet, ActivityIndicator, Alert,
@@ -285,7 +286,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
     haptics.tap();
     setEscolhaParaPasso({ passoId: atual.id, nome: nomeDoPasso(atual), periodo: atual.periodo, lista });
     onClose();
-    router.navigate('/recomendacao-produtos' as any);
+    irPara('/recomendacao-produtos');
   };
 
   // Cards de largura fixa (3 por tela) em fileira horizontal — funções que DEVOLVEM

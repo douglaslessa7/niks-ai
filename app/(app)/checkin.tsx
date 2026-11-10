@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { voltar as voltarOu } from '../../lib/navegar';
 import {
   View, Text, TouchableOpacity, ScrollView, Image, Animated, Easing, StyleSheet, AccessibilityInfo, TextInput,
   ActionSheetIOS, Alert, KeyboardAvoidingView, ActivityIndicator,
@@ -105,7 +106,8 @@ export default function Checkin() {
   // fluxo=skincare: fechar a câmera termina o fluxo — a carta de hoje abre sozinha e depois a home.
   // Para onde o check-in volta (fora do fluxo do skincare): o grupo de onde veio, a Rotina ou a aba Grupos.
   const destino = de === 'grupo' && grupo ? `/grupo?id=${grupo}` : de === 'rotina' ? '/protocolo' : '/grupos';
-  const sair = () => (skincare ? void terminar('/home') : router.navigate(destino as any));
+  // X: volta para a tela de trás (o grupo, a Rotina ou a aba Grupos); sem ela, o `destino`.
+  const sair = () => (skincare ? void terminar('/home') : voltarOu(destino as any));
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const { data: grupos } = useMeusGrupos();
   const y = (v: number) => insets.top + v - 54;

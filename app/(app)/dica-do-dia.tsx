@@ -22,7 +22,7 @@ import { haptics } from '../../lib/haptics';
 import { BG_DAY, BG_STOPS } from '../../lib/homeTheme';
 import { getDicaDoDia } from '../../lib/dicas/dicaDoDia';
 import { dicaParaTela, DicaTela } from '../../lib/dicas/apresentacao';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -64,12 +64,12 @@ export default function DicaDoDia() {
     Animated.timing(hdrAnim, { toValue: scrolled ? 1 : 0, duration: 200, useNativeDriver: true }).start();
   }, [scrolled, hdrAnim]);
 
-  const back = () => { haptics.tap(); router.navigate('/home' as any); };
+  const back = () => { haptics.tap(); voltarOu('/home'); };
   const headerH = insets.top + 8 + 36 + 10;
   const rec = !!dica?.receita;
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate('/home' as any)}>
+    <View style={{ flex: 1 }}>
     <View style={{ flex: 1, backgroundColor: BG_DAY[BG_DAY.length - 1] }}>
       <StatusBar style="dark" />
       <LinearGradient colors={BG_DAY} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -166,7 +166,7 @@ export default function DicaDoDia() {
         <View style={{ width: 36 }} />
       </View>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

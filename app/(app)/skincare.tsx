@@ -27,7 +27,7 @@ import StepIcon from '../../components/rotina/StepIcon';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { encerrarGuia, irParaGuia, useGuia } from '../../lib/guia';
 import { verificarDesafios } from '../../lib/missoes';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Skincare (05/nov/2026, pedido do produto) — o que abre o "Iniciar skincare" da HOME, no
@@ -213,7 +213,7 @@ export default function Skincare() {
     irParaGuia('d4-fora', { hora: `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}` });
   }, [guia?.passo, foraDoHorario, periodo, amTime, pmTime]);
 
-  const voltar = () => { haptics.tap(); router.navigate('/home' as any); };
+  const voltar = () => { haptics.tap(); voltarOu('/home'); };
   // Fim sem check-in: a carta de hoje abre sozinha (e os pontos segurados sobem junto,
   // depois de raspar); sem carta, vai direto ao destino e a barra sobe.
   const terminar = (destino: string) => {
@@ -256,7 +256,7 @@ export default function Skincare() {
 
   const titulo = periodo === 'am' ? 'Skincare matinal' : 'Skincare noturno';
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate('/home' as any)}>
+    <View style={{ flex: 1 }}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <LinearGradient colors={BG[periodo]} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -317,7 +317,7 @@ export default function Skincare() {
         onFechar={() => terminar('/home')}
       />
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

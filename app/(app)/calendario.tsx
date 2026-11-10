@@ -21,7 +21,7 @@ import { haptics } from '../../lib/haptics';
 import {
   getRoutineHistory, routineDayStreak, routinesDoneOn, sessionDate, dateKey, type RoutineHistory,
 } from '../../lib/routineProgress';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -104,7 +104,7 @@ export default function Calendario() {
   }
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate((de === 'conquistas' ? '/conquistas' : de === 'grupos' ? '/grupos' : '/home') as any)}>
+    <View style={{ flex: 1 }}>
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <StatusBar style="dark" />
 
@@ -116,7 +116,7 @@ export default function Calendario() {
       >
         <View style={styles.bar}>
           <TouchableOpacity
-            onPress={() => { haptics.tap(); router.navigate((de === 'conquistas' ? '/conquistas' : de === 'grupos' ? '/grupos' : '/home') as any); }}
+            onPress={() => { haptics.tap(); voltarOu(de === 'conquistas' ? '/conquistas' : de === 'grupos' ? '/grupos' : '/home'); }}
             activeOpacity={0.85}
             style={styles.close}
             accessibilityLabel="Fechar"
@@ -205,7 +205,7 @@ export default function Calendario() {
         <View style={{ height: 120 }} />
       </ScrollView>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

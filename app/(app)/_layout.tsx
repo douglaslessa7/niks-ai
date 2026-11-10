@@ -1,7 +1,8 @@
 import { AppState } from 'react-native';
 import BalaoEspinha from '../../components/espinha/BalaoEspinha';
 import { buscarConvite } from '../../lib/espinhaAcompanhamento';
-import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
+import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
+import { abrirComTrilha, irPara } from '../../lib/navegar';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,6 +63,16 @@ const TELA_CHEIA = new Set([
   '/checkin', '/skincare', '/checkin-detalhe', '/calendario', '/conquistas',
   '/dica-do-dia', '/grupo-jornada', '/grupo-ranking', '/niks-chat',
 ]);
+// Telas secundárias: pilha nativa por cima das abas (ver o render de AppLayout).
+const TELAS_DA_PILHA = [
+  'set-name', 'skin-result', 'calendario', 'conquistas', 'alarme', 'progresso', 'dica-do-dia',
+  'caminhada', 'seus-grupos', 'grupo', 'grupo-ranking', 'grupo-jornada', 'checkin', 'skincare',
+  'revisao-denuncias', 'produto-amiga', 'checkin-detalhe',
+];
+// Rolagem horizontal ou grade que se arrasta de lado: voltar só pela borda esquerda.
+const SO_BORDA = new Set(['skin-result', 'calendario', 'conquistas', 'progresso', 'grupo-ranking', 'checkin-detalhe', 'alarme']);
+// Voltar no meio perde o que está sendo feito: só o botão.
+const SEM_GESTO = new Set(['checkin', 'skincare']);
 const NAV_INACTIVE = '#7A7076';
 const NAV_ACTIVE = '#FF5EA8';
 // Modo noturno da tab bar (sincronizado com o tema da tela — ex.: protocolo à noite)
@@ -187,7 +198,7 @@ function GlobalBottomBar() {
           onPress={() => {
             haptics.tap();
             if (convidada && it.key !== 'grupos') { abrirTrava(it.key === 'rotina' ? 'rotina' : 'produtos'); return; }
-            router.push(it.route as any);
+            irPara(it.route);
           }}
           style={styles.item}
         >
@@ -214,7 +225,7 @@ function GlobalBottomBar() {
           <GlassView glassEffectStyle="regular" colorScheme={esquema} isInteractive style={styles.homeVidro}>
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => { haptics.tap(); router.push('/home' as any); }}
+              onPress={() => { haptics.tap(); irPara('/home'); }}
               style={styles.homeToque}
               accessibilityLabel="Início"
             >
@@ -254,7 +265,7 @@ function GlobalBottomBar() {
         {/* Casa (Home) */}
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => { haptics.tap(); router.push('/home' as any); }}
+          onPress={() => { haptics.tap(); irPara('/home'); }}
           style={[styles.homeBtn, { backgroundColor: surface }]}
           accessibilityLabel="Início"
         >
@@ -289,6 +300,10 @@ function versaoMenor(a: string, b: string): boolean {
   }
   return false;
 }
+
+// Embaixo da pilha, sempre as abas — inclusive quando um push ou link abre direto uma tela
+// secundária (ex.: /grupo?id=…): assim o voltar tem para onde ir.
+export const unstable_settings = { initialRouteName: '(abas)' };
 
 export default function AppLayout() {
   const router = useRouter();
@@ -366,7 +381,7 @@ export default function AppLayout() {
           const grupos = await comTetoRc(meusGrupos());
           void vincularAssinatura(session.user.id);
           setReady(true);
-          if (grupos?.[0]) router.replace({ pathname: '/grupo', params: { id: grupos[0].id } } as any);
+          if (grupos?.[0]) abrirComTrilha(['/grupos', { pathname: '/grupo', params: { id: grupos[0].id } }]);
           return;
         }
         router.replace(await convidadaLigada() ? '/(onboarding)/sem-grupo' as any : '/(onboarding)/paywall-soft');
@@ -534,8 +549,12 @@ export default function AppLayout() {
     if (!etapaGrupos) { etapaLevada.current = null; setTrocandoDeTela(false); return; }
     if (!gruposLiberado || etapaLevada.current === etapaGrupos.chave) return;
     etapaLevada.current = etapaGrupos.chave;
-    if (etapaGrupos.rota === '/grupo') router.navigate({ pathname: '/grupo', params: { id: etapaGrupos.grupoId ?? '' } } as any);
-    else if (pathname !== etapaGrupos.rota) router.navigate(etapaGrupos.rota as any);
+    // Com a trilha por trás (Grupos › Seus grupos › grupo), para o voltar seguir o caminho do
+    // tutorial mesmo quando ele é retomado de outra aba (lib/navegar).
+    const grupoDoTutorial = { pathname: '/grupo', params: { id: etapaGrupos.grupoId ?? '' } } as const;
+    if (etapaGrupos.rota === '/grupo') abrirComTrilha(['/grupos', '/seus-grupos', grupoDoTutorial]);
+    else if (etapaGrupos.rota === '/seus-grupos') abrirComTrilha(['/grupos', '/seus-grupos']);
+    else if (pathname !== etapaGrupos.rota) irPara(etapaGrupos.rota);
     // Barra toques entre uma tela e outra; sem rede, solta e o tutorial espera a tela carregar.
     setTrocandoDeTela(true);
     const t = setTimeout(() => setTrocandoDeTela(false), 8000);
@@ -567,36 +586,25 @@ export default function AppLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-        }}
-      >
-        <Tabs.Screen name="home" />
-        <Tabs.Screen name="recomendacao-produtos" />
-        <Tabs.Screen name="protocolo" />
-        <Tabs.Screen name="niks-chat" />
-        <Tabs.Screen name="perfil" />
-        <Tabs.Screen name="grupos" />
-        <Tabs.Screen name="set-name" options={{ href: null }} />
-        <Tabs.Screen name="skin-result" options={{ href: null }} />
-        <Tabs.Screen name="calendario" options={{ href: null }} />
-        <Tabs.Screen name="conquistas" options={{ href: null }} />
-        <Tabs.Screen name="alarme" options={{ href: null }} />
-        <Tabs.Screen name="progresso" options={{ href: null }} />
-        <Tabs.Screen name="dica-do-dia" options={{ href: null }} />
-        <Tabs.Screen name="caminhada" options={{ href: null }} />
-        <Tabs.Screen name="seus-grupos" options={{ href: null }} />
-        <Tabs.Screen name="grupo" options={{ href: null }} />
-        <Tabs.Screen name="grupo-ranking" options={{ href: null }} />
-        <Tabs.Screen name="grupo-jornada" options={{ href: null }} />
-        <Tabs.Screen name="checkin" options={{ href: null }} />
-        <Tabs.Screen name="skincare" options={{ href: null }} />
-        <Tabs.Screen name="revisao-denuncias" options={{ href: null }} />
-        <Tabs.Screen name="produto-amiga" options={{ href: null }} />
-        <Tabs.Screen name="checkin-detalhe" options={{ href: null }} />
-      </Tabs>
+      {/* Pilha nativa (10/nov/2026): embaixo as 6 abas (`(abas)/_layout.tsx`); por cima, as
+          telas secundárias, com o "deslizar para voltar" do iOS (a tela segue o dedo e a de trás
+          aparece por baixo). De qualquer ponto da tela, exceto onde há rolagem horizontal
+          (`SO_BORDA`: aí só da borda). Sem gesto nenhum no check-in e no skincare em andamento
+          (`SEM_GESTO`), onde voltar perderia o que está sendo feito — lá só o botão. */}
+      <Stack screenOptions={{ headerShown: false, fullScreenGestureEnabled: true }}>
+        <Stack.Screen name="(abas)" />
+        {TELAS_DA_PILHA.map((name) => (
+          <Stack.Screen
+            key={name}
+            name={name}
+            options={SEM_GESTO.has(name) ? { gestureEnabled: false } : SO_BORDA.has(name) ? { fullScreenGestureEnabled: false } : undefined}
+            // Uma cópia só de cada tela na pilha (abrir de novo tira a antiga); o grupo e o
+            // detalhe do check-in, uma por grupo/check-in.
+            dangerouslySingular={name === 'grupo' ? (_n, p) => `grupo:${p?.id ?? ''}`
+              : name === 'checkin-detalhe' ? (_n, p) => `cd:${p?.ids ?? ''}` : true}
+          />
+        ))}
+      </Stack>
       {navbarVisivel && <GlobalBottomBar />}
       {aquecer && <PreaquecerVeu />}
       {navbarVisivel && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && !convidadaNoApp && <BalaoEspinha />}

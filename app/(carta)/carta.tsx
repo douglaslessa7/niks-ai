@@ -1,4 +1,5 @@
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
+import { irPara } from '../../lib/navegar';
 import { paywallAposCarta } from '../../lib/trava';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, Alert, AppState, BackHandler, useWindowDimensions } from 'react-native';
@@ -339,7 +340,9 @@ export default function CartaScreen() {
   const fechar = () => {
     if (router.canGoBack()) router.back();
     else if (!depois) router.replace('/(app)/home' as any);
-    if (depois) router.navigate(depois as any);
+    // Desce até o destino se ele já está na pilha do app (ex.: o grupo de onde saiu o check-in),
+    // sem empilhar outra cópia; senão abre (lib/navegar).
+    if (depois) irPara(depois as any);
   };
   const reduced = useReducedMotion();
   const logoImg = useImage(LOGO);

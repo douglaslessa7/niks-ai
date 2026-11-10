@@ -1,26 +1,26 @@
-import { avisarSeSemAssinatura } from '../../lib/respostaIA';
+import { avisarSeSemAssinatura } from '../../../lib/respostaIA';
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput, Animated, Easing,
   KeyboardAvoidingView, Platform, Keyboard, Image, ActionSheetIOS, Alert, StyleSheet, AccessibilityInfo,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker'
-import { trackNativePresentation } from '../../lib/nativePresentation'
+import { trackNativePresentation } from '../../../lib/nativePresentation'
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { marcarConviteVisto, URL_SOS_ESPINHA, useBalaoEspinha } from '../../lib/espinhaAcompanhamento';
+import { marcarConviteVisto, URL_SOS_ESPINHA, useBalaoEspinha } from '../../../lib/espinhaAcompanhamento';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
-import { useAppStore } from '../../store/onboarding';
-import { useCachedQuery, invalidateCache } from '../../lib/cache';
-import { getUserId, useUserId } from '../../lib/currentUser';
-import { haptics } from '../../lib/haptics';
-import { loteDeHoje } from '../../lib/rotinaLotes';
-import { abrirMontarRotina } from '../../lib/abrirMontarRotina';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { supabase } from '../../../lib/supabase';
+import { useAppStore } from '../../../store/onboarding';
+import { useCachedQuery, invalidateCache } from '../../../lib/cache';
+import { getUserId, useUserId } from '../../../lib/currentUser';
+import { haptics } from '../../../lib/haptics';
+import { loteDeHoje } from '../../../lib/rotinaLotes';
+import { abrirMontarRotina } from '../../../lib/abrirMontarRotina';
+import VoltarPelaBorda from '../../../components/VoltarPelaBorda';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NIKS Chat — réplica dos designs 39a (início) e 39b (conversa em andamento) do
@@ -1333,7 +1333,7 @@ export default function NiksChat() {
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
             <View style={styles.logoCircle}>
-              <Image source={require('../../assets/home/score-logo-pink.png')} style={{ width: 27, height: 27 }} resizeMode="contain" />
+              <Image source={require('../../../assets/home/score-logo-pink.png')} style={{ width: 27, height: 27 }} resizeMode="contain" />
             </View>
             <Text style={styles.barTitle}>NIKS</Text>
           </View>

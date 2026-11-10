@@ -38,7 +38,7 @@ import { BG_STOPS } from '../../lib/homeTheme';
 import { getScoreTheme, getScoreScreenTheme } from '../../lib/scoreTheme';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import InicialAvatar from '../../components/InicialAvatar';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 const INK = '#121212';
@@ -198,7 +198,7 @@ export default function Progresso() {
   const puxar = usePuxarParaAtualizar([recarregarProgresso, recarregarEstado], headerH);
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.back()}>
+    <View style={{ flex: 1 }}>
     <View style={{ flex: 1, backgroundColor: theme.base }}>
       <StatusBar style="dark" />
       <LinearGradient colors={theme.bg} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -422,7 +422,7 @@ export default function Progresso() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.header }]} />
           </>
         )}
-        <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); router.back(); }} style={styles.hdrBtn}>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); voltarOu('/protocolo'); }} style={styles.hdrBtn} accessibilityLabel="Voltar">
           <Svg width={18} height={18} viewBox="0 0 24 24">
             <Path d={BACK_PATH} fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
@@ -440,7 +440,7 @@ export default function Progresso() {
         </TouchableOpacity>
       </View>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

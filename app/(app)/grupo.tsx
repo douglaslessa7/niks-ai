@@ -27,7 +27,8 @@ import { sessionDate, dateKey } from '../../lib/routineProgress';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
 import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
+import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,7 +158,7 @@ export default function Grupo() {
   const userId = useUserId();
   const { id, de } = useLocalSearchParams<{ id?: string; de?: string }>();
   // `router.back()` numa aba oculta cai na home (1ª aba): o destino é explícito.
-  const voltar = () => router.navigate((de === 'home' ? '/home' : '/seus-grupos') as any);
+  const voltar = () => voltarOu(de === 'home' ? '/home' : '/seus-grupos');
   const gid = typeof id === 'string' ? id : '';
   const setTabBarTheme = useAppStore((s) => s.setTabBarTheme);
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
@@ -194,6 +195,8 @@ export default function Grupo() {
   // ── Folhas (81g/81h) ─────────────────────────────────────────────────────
   const [folha, setFolha] = useState<null | { tipo: 'menu' } | { tipo: 'foto'; item: ItemMural }>(null);
   const [folhaH, setFolhaH] = useState(420);
+  // Folha aberta: o gesto nativo não tira a tela de baixo dela.
+  useGestoVoltar(folha == null);
   const veu = useSharedValue(0);
   const sobe = useSharedValue(0);
   const abrirFolha = (f: NonNullable<typeof folha>) => {
@@ -255,7 +258,7 @@ export default function Grupo() {
       } else if (k === 'exit') {
         Alert.alert('Sair do grupo?', g.seu_papel === 'criadora' && outras.length ? 'O grupo passa para a integrante mais antiga.' : undefined, [
           { text: 'Cancelar', style: 'cancel' },
-          { text: 'Sair', style: 'destructive', onPress: () => { sairDoGrupo(g.id).then(async () => { await invalidarGrupos(gid); if (await saiuSemGrupo()) { router.replace('/(onboarding)/sem-grupo' as any); return; } router.navigate('/seus-grupos' as any); }).catch(() => {}); } },
+          { text: 'Sair', style: 'destructive', onPress: () => { sairDoGrupo(g.id).then(async () => { await invalidarGrupos(gid); if (await saiuSemGrupo()) { router.replace('/(onboarding)/sem-grupo' as any); return; } voltarOu('/seus-grupos'); }).catch(() => {}); } },
         ]);
       }
     });
@@ -311,7 +314,7 @@ export default function Grupo() {
   let iIn = 3;
 
   return (
-    <VoltarPelaBorda onVoltar={voltar} ativo={folha == null}>
+    <View style={{ flex: 1 }}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} refreshControl={puxar} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
@@ -486,7 +489,7 @@ export default function Grupo() {
         </Animated.View>
       )}
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

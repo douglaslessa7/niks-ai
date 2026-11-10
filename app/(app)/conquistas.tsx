@@ -41,6 +41,8 @@ import DeckBox, { AMBIENT_MS, spr } from '../../components/conquistas/DeckBox';
 import Carta, { visualDe } from '../../components/cartas/Carta';
 import CalendarioCheckins from '../../components/grupos/CalendarioCheckins';
 import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
+import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 const INK = '#121212';
@@ -350,8 +352,12 @@ export default function Conquistas() {
   const cellW = (gridW - 30) / 4;
   const gridTop = insets.top + 58 + 18 + 16;
 
+  // Camada interna aberta (carta, baralho ou subtela): o gesto NATIVO desliga (tiraria a tela
+  // inteira) e o da borda fecha só a camada. No hub, o nativo volta para a tela de trás.
+  const camadaAberta = card != null || deck != null || scr !== 'hub';
+  useGestoVoltar(!camadaAberta);
   return (
-    <VoltarPelaBorda onVoltar={() => { if (card != null) closeCard(true); else if (deck != null) closeDeck(); else if (scr !== 'hub') pop(); else router.navigate('/home' as any); }}>
+    <VoltarPelaBorda ativo={camadaAberta} onVoltar={() => { if (card != null) closeCard(true); else if (deck != null) closeDeck(); else if (scr !== 'hub') pop(); }}>
     <View style={{ flex: 1, backgroundColor: '#F9F1F4' }}>
       <StatusBar style="dark" />
 
@@ -475,7 +481,7 @@ export default function Conquistas() {
             </View>
           </Enter>
         </ScrollView>
-        <TopBar top={top} title="Suas conquistas" onPress={() => { haptics.tap(); router.navigate('/home' as any); }} label="Fechar" />
+        <TopBar top={top} title="Suas conquistas" onPress={() => { haptics.tap(); voltarOu('/home'); }} label="Fechar" />
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: INK }, dimSt]} />
       </Animated.View>
 

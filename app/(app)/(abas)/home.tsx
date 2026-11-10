@@ -1,6 +1,6 @@
-import { useEhConvidada } from '../../lib/acesso';
-import { abrirTrava, type FRASES } from '../../lib/trava';
-import CadeadoSobre from '../../components/trava/CadeadoSobre';
+import { useEhConvidada } from '../../../lib/acesso';
+import { abrirTrava, type FRASES } from '../../../lib/trava';
+import CadeadoSobre from '../../../components/trava/CadeadoSobre';
 import { Lock } from 'lucide-react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
@@ -14,34 +14,34 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAppStore } from '../../store/onboarding';
-import { useFaceScan } from '../../hooks/useFaceScan';
-import { supabase } from '../../lib/supabase';
-import { haptics } from '../../lib/haptics';
-import { useCachedQuery } from '../../lib/cache';
-import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
-import { contarPassosMinhaRotina } from '../../lib/minhaRotina';
-import { SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
-import { getUserId, useUserId } from '../../lib/currentUser';
-import { scheduleRoutineReminders } from '../../lib/routineReminders';
-import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
-import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../lib/coachMarks';
-import BolhaMissoes from '../../components/missoes/BolhaMissoes';
-import type { MissaoId } from '../../components/missoes/CardMissoes';
-import { cardVisivel, periodoDaRotina, proximoNaoPulado, useMissoes } from '../../lib/missoes';
-import { iniciarGuia, irParaGuia, onProximoDesafio, useGuia } from '../../lib/guia';
-import { useMeusGrupos } from '../../lib/gruposServidor';
-import Avatar from '../../components/grupos/Avatar';
-import Medalha from '../../components/medalhas/Medalha';
-import Carta from '../../components/cartas/Carta';
-import { useEstadoCartas } from '../../lib/cartasServidor';
-import { cartaJaAberta, marcarCartaAberta } from '../../lib/cartaDoDia';
-import SeloProtegida, { EscudoChama } from '../../components/conquistas/SeloProtegida';
-import AvisoSequencia from '../../components/conquistas/AvisoSequencia';
+import { useAppStore } from '../../../store/onboarding';
+import { useFaceScan } from '../../../hooks/useFaceScan';
+import { supabase } from '../../../lib/supabase';
+import { haptics } from '../../../lib/haptics';
+import { useCachedQuery } from '../../../lib/cache';
+import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
+import { contarPassosMinhaRotina } from '../../../lib/minhaRotina';
+import { SKINCARE_SEMPRE_DISPONIVEL } from '../../../lib/concluirSkincare';
+import { getUserId, useUserId } from '../../../lib/currentUser';
+import { scheduleRoutineReminders } from '../../../lib/routineReminders';
+import { trackFora } from '../../../lib/mixpanel/MixpanelProvider';
+import { onCoachPrepare, setCoachStageReady, useCoachMark } from '../../../lib/coachMarks';
+import BolhaMissoes from '../../../components/missoes/BolhaMissoes';
+import type { MissaoId } from '../../../components/missoes/CardMissoes';
+import { cardVisivel, periodoDaRotina, proximoNaoPulado, useMissoes } from '../../../lib/missoes';
+import { iniciarGuia, irParaGuia, onProximoDesafio, useGuia } from '../../../lib/guia';
+import { useMeusGrupos } from '../../../lib/gruposServidor';
+import Avatar from '../../../components/grupos/Avatar';
+import Medalha from '../../../components/medalhas/Medalha';
+import Carta from '../../../components/cartas/Carta';
+import { useEstadoCartas } from '../../../lib/cartasServidor';
+import { cartaJaAberta, marcarCartaAberta } from '../../../lib/cartaDoDia';
+import SeloProtegida, { EscudoChama } from '../../../components/conquistas/SeloProtegida';
+import AvisoSequencia from '../../../components/conquistas/AvisoSequencia';
 import {
   getRoutineHistory, routineStreak, routineDayStreak, routinesDoneOn, sessionDate, dateKey,
   RoutineHistory, RoutinePeriod,
-} from '../../lib/routineProgress';
+} from '../../../lib/routineProgress';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Home — réplica das telas 74a, 74b e 74c do Claude Design (projeto "NIKS home

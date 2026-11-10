@@ -10,6 +10,7 @@
 // por conta, fora da regra de 1 carta por dia, que não vence até ser raspada.
 // Contas novas: depois do tour, o desafio 1 começa sozinho. Contas existentes: só o card.
 // ─────────────────────────────────────────────────────────────────────────────
+import { irPara } from './navegar';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCachedQuery, invalidateCache, peekCache, writeCache } from './cache';
@@ -160,7 +161,7 @@ export async function pularDesafio(
   }
   if (pathname === '/home') { pedirProximoDesafio(); return; }
   if (pathname === '/product-camera' && router.canDismiss()) router.dismissAll();
-  router.navigate('/home');
+  irPara('/home');
   setTimeout(pedirProximoDesafio, 450); // a home assenta antes da dica nova medir o alvo
 }
 

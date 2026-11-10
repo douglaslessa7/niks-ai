@@ -5,20 +5,20 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Path, Circle, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
 import { useReducedMotion } from 'react-native-reanimated';
-import { useAppStore } from '../../store/onboarding';
-import { haptics } from '../../lib/haptics';
-import { useCachedQuery } from '../../lib/cache';
-import { useUserId } from '../../lib/currentUser';
-import { useEstadoCartas } from '../../lib/cartasServidor';
-import { chavePerfilGrupos, perfilGrupos, type PerfilGrupos } from '../../lib/gruposServidor';
-import { sessionDate } from '../../lib/routineProgress';
-import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
-import { FOTO_NA_MOLDURA } from '../../lib/medalhas';
-import CalendarioCheckins, { Salta, mesKey } from '../../components/grupos/CalendarioCheckins';
-import AlvoGuia from '../../components/coach/AlvoGuia';
-import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
-import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
-import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
+import { useAppStore } from '../../../store/onboarding';
+import { haptics } from '../../../lib/haptics';
+import { useCachedQuery } from '../../../lib/cache';
+import { useUserId } from '../../../lib/currentUser';
+import { useEstadoCartas } from '../../../lib/cartasServidor';
+import { chavePerfilGrupos, perfilGrupos, type PerfilGrupos } from '../../../lib/gruposServidor';
+import { sessionDate } from '../../../lib/routineProgress';
+import FotoComMoldura from '../../../components/medalhas/FotoComMoldura';
+import { FOTO_NA_MOLDURA } from '../../../lib/medalhas';
+import CalendarioCheckins, { Salta, mesKey } from '../../../components/grupos/CalendarioCheckins';
+import AlvoGuia from '../../../components/coach/AlvoGuia';
+import { onCoachPrepare, useCoachStage } from '../../../lib/coachMarks';
+import { verificarTutorialGrupos } from '../../../lib/gruposTutorial';
+import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aba Grupos · Perfil — réplica de 81a/81b do Claude Design ("NIKS home redesign",

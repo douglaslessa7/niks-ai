@@ -32,7 +32,8 @@ import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { bloquear, checkinDetalhe, denunciar, type CheckinDetalhe } from '../../lib/gruposServidor';
 import { invalidateCachePrefixo } from '../../lib/cache';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
+import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 
 const BG = '#F9F2F5';
 const INK = '#121212';
@@ -142,16 +143,17 @@ function Tela({ params }: { params: Params }) {
     return () => setTabBarVisible(true);
   }, [setTabBarVisible]));
 
-  // Aba oculta do <Tabs>: `router.back()` cairia na home. Volta para quem abriu.
+  // Volta para quem abriu (a tela de trás); sem ela, o grupo ou a tela que pediu (`volta`).
   const voltar = () => {
     haptics.tap();
-    if (params.grupo) router.navigate({ pathname: '/grupo', params: { id: params.grupo } } as any);
-    else router.navigate((params.volta || '/grupos') as any);
+    voltarOu(params.grupo ? { pathname: '/grupo', params: { id: params.grupo } } : ((params.volta || '/grupos') as any));
   };
 
   // ── Folha "…" ────────────────────────────────────────────────────────────────
   const [folha, setFolha] = useState(false);
   const [folhaH, setFolhaH] = useState(220);
+  // Folha "…" aberta: o gesto nativo não tira a tela de baixo dela.
+  useGestoVoltar(!folha);
   const abre = useSharedValue(0);
   const abrirFolha = () => { haptics.tap(); setFolha(true); abre.set(withTiming(1, { duration: rm ? 180 : 380, easing: FOLHA })); };
   const fecharFolha = (depois?: () => void) => {
@@ -194,7 +196,7 @@ function Tela({ params }: { params: Params }) {
 
   const menu = !!atual && !atual.voce;
   return (
-    <VoltarPelaBorda onVoltar={() => { if (params.grupo) router.navigate({ pathname: '/grupo', params: { id: params.grupo } } as any); else router.navigate((params.volta || '/grupos') as any); }} ativo={!folha}>
+    <View style={{ flex: 1 }}>
     <View style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar style="dark" />
       <View style={[styles.topo, { paddingTop: insets.top + 6 }]}>
@@ -267,7 +269,7 @@ function Tela({ params }: { params: Params }) {
         </>
       )}
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

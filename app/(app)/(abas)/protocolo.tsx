@@ -31,52 +31,52 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Device from 'expo-device';
 import Svg, { Path, Line, Circle, Rect, Ellipse } from 'react-native-svg';
-import { useAppStore, type OnboardingData, type ScanResult, type ProtocolResult } from '../../store/onboarding';
-import { useFaceScan } from '../../hooks/useFaceScan';
-import { supabase } from '../../lib/supabase';
-import { generateAndSaveProtocol } from '../../lib/generateProtocol';
-import { buildOnboardingDataFromUserRow } from '../../lib/buildOnboardingDataFromUserRow';
+import { useAppStore, type OnboardingData, type ScanResult, type ProtocolResult } from '../../../store/onboarding';
+import { useFaceScan } from '../../../hooks/useFaceScan';
+import { supabase } from '../../../lib/supabase';
+import { generateAndSaveProtocol } from '../../../lib/generateProtocol';
+import { buildOnboardingDataFromUserRow } from '../../../lib/buildOnboardingDataFromUserRow';
 import {
   markStepCompleted, markRoutineDone, getCompletedSteps, getRoutineHistory, routineDayStreak,
   sessionDate, dateKey, type RoutineHistory, type StepKey,
   getRoutineFlow, saveRoutineFlow, clearRoutineFlow, type RoutineFlowState,
-} from '../../lib/routineProgress';
-import { reagendarLembretes } from '../../lib/routineReminders';
-import { requestAppReview } from '../../lib/storeReview';
+} from '../../../lib/routineProgress';
+import { reagendarLembretes } from '../../../lib/routineReminders';
+import { requestAppReview } from '../../../lib/storeReview';
 import {
   listarMinhaRotina, garantirMinhaRotina, temProdutosNoCelular, diaDaSemana, passoValeNoDia,
   reordenarPassos, removerPasso, nomeDoPasso, type MinhaRotina, type PassoRotina,
   prefixoStatusProduto,
-} from '../../lib/minhaRotina';
-import SeletorPeriodo from '../../components/rotina/SeletorPeriodo';
-import EscolherProdutoSheet from '../../components/rotina/EscolherProdutoSheet';
-import StepIcon from '../../components/rotina/StepIcon';
-import RotinaIdealSheet from '../../components/rotina/RotinaIdealSheet';
-import RotinaTutorial, { type EscolhaIntro } from '../../components/rotina/RotinaTutorial';
-import { tipoDoPasso, ROTULO_TIPO } from '../../lib/tipoPasso';
-import { diasDoPasso, seloFrequencia, fraseFrequencia } from '../../lib/frequencia';
-import { loteDeHoje } from '../../lib/rotinaLotes';
-import { abrirMontarRotina } from '../../lib/abrirMontarRotina';
-import { carregarRotinaIdeal, marcarIdealVista, calcularCobertura, type RotinaIdeal } from '../../lib/rotinaIdeal';
-import ListaEditavel, { type ItemEditavel } from '../../components/rotina/ListaEditavel';
-import PassoSheet, { type PassoSheetModo } from '../../components/rotina/PassoSheet';
-import { getFotoPerfilUrl } from '../../lib/facePhoto';
-import { saveRoutinePhoto } from '../../lib/routinePhotos';
-import { useCachedQuery, invalidateCache } from '../../lib/cache';
-import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
-import { getUserId, useUserId } from '../../lib/currentUser';
-import { haptics } from '../../lib/haptics';
-import { faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../lib/faixaPreco';
-import FaixaPreco from '../../components/product/FaixaPreco';
-import { useEstadoCartas, concluirRotina } from '../../lib/cartasServidor';
-import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
-import BalancedText from '../../components/BalancedText';
-import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
-import { SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
-import AlvoGuia from '../../components/coach/AlvoGuia';
-import { avancarGuiaDe, onAtalhoGuia, useGuia } from '../../lib/guia';
-import { verificarDesafios } from '../../lib/missoes';
-import InicialAvatar from '../../components/InicialAvatar';
+} from '../../../lib/minhaRotina';
+import SeletorPeriodo from '../../../components/rotina/SeletorPeriodo';
+import EscolherProdutoSheet from '../../../components/rotina/EscolherProdutoSheet';
+import StepIcon from '../../../components/rotina/StepIcon';
+import RotinaIdealSheet from '../../../components/rotina/RotinaIdealSheet';
+import RotinaTutorial, { type EscolhaIntro } from '../../../components/rotina/RotinaTutorial';
+import { tipoDoPasso, ROTULO_TIPO } from '../../../lib/tipoPasso';
+import { diasDoPasso, seloFrequencia, fraseFrequencia } from '../../../lib/frequencia';
+import { loteDeHoje } from '../../../lib/rotinaLotes';
+import { abrirMontarRotina } from '../../../lib/abrirMontarRotina';
+import { carregarRotinaIdeal, marcarIdealVista, calcularCobertura, type RotinaIdeal } from '../../../lib/rotinaIdeal';
+import ListaEditavel, { type ItemEditavel } from '../../../components/rotina/ListaEditavel';
+import PassoSheet, { type PassoSheetModo } from '../../../components/rotina/PassoSheet';
+import { getFotoPerfilUrl } from '../../../lib/facePhoto';
+import { saveRoutinePhoto } from '../../../lib/routinePhotos';
+import { useCachedQuery, invalidateCache } from '../../../lib/cache';
+import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
+import { getUserId, useUserId } from '../../../lib/currentUser';
+import { haptics } from '../../../lib/haptics';
+import { faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../../lib/faixaPreco';
+import FaixaPreco from '../../../components/product/FaixaPreco';
+import { useEstadoCartas, concluirRotina } from '../../../lib/cartasServidor';
+import FolhaCompartilhar from '../../../components/grupos/FolhaCompartilhar';
+import BalancedText from '../../../components/BalancedText';
+import { trackFora } from '../../../lib/mixpanel/MixpanelProvider';
+import { SKINCARE_SEMPRE_DISPONIVEL } from '../../../lib/concluirSkincare';
+import AlvoGuia from '../../../components/coach/AlvoGuia';
+import { avancarGuiaDe, onAtalhoGuia, useGuia } from '../../../lib/guia';
+import { verificarDesafios } from '../../../lib/missoes';
+import InicialAvatar from '../../../components/InicialAvatar';
 
 // LayoutAnimation no Android (iOS já vem ligado) — expandir "Como introduzir os ativos".
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -718,7 +718,7 @@ export default function Protocolo() {
   // escolher, o passo (sem nome e sem produto) é desfeito — o passo precisa de um dos dois.
   const passoNovoSemNome = useRef<string | null>(null);
   useFocusEffect(useCallback(() => () => { setEditando(false); setScrollOn(true); }, []));
-  const player = useAudioPlayer(require('../../assets/sounds/check.mp3'));
+  const player = useAudioPlayer(require('../../../assets/sounds/check.mp3'));
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
   }, []);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { irPara } from '../../lib/navegar';
 import {
   ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
@@ -381,7 +382,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
     : status === 'acabou'
       ? { rotulo: 'Comprei de novo', onPress: () => { void mudarStatus('tenho'); }, pronto: true }
       : naRotina
-        ? { rotulo: 'Ver na rotina', onPress: () => fechar(() => router.navigate('/protocolo' as any)), pronto: true }
+        ? { rotulo: 'Ver na rotina', onPress: () => fechar(() => irPara('/protocolo')), pronto: true }
         : { rotulo: 'Colocar na rotina', onPress: () => { void colocarNaRotina(); }, pronto: naRotina !== null };
 
   const remover = () => {

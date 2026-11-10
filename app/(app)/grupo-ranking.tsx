@@ -12,7 +12,7 @@ import { useCachedQuery } from '../../lib/cache';
 import { useUserId } from '../../lib/currentUser';
 import { grupoDetalhe, rankingGrupo, type LinhaRanking, type Periodo } from '../../lib/gruposServidor';
 import { sessionDate } from '../../lib/routineProgress';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ranking do grupo — réplica de 81l (Semana) e 81m (Geral) do Claude Design
@@ -151,13 +151,13 @@ export default function GrupoRanking() {
   const lista = data?.listas[tab] ?? [];
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate({ pathname: '/grupo', params: { id: gid } } as any)}>
+    <View style={{ flex: 1 }}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>Ranking</Text></View>
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => { haptics.tap(); router.navigate({ pathname: '/grupo', params: { id: gid } } as any); }}
+        onPress={() => { haptics.tap(); voltarOu({ pathname: '/grupo', params: { id: gid } }); }}
         style={[styles.back, { top: y(54) }]}
         accessibilityLabel="Voltar"
       >
@@ -189,7 +189,7 @@ export default function GrupoRanking() {
         {data && <Text style={styles.foot}>{rodape(tab, lista)}</Text>}
       </ScrollView>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

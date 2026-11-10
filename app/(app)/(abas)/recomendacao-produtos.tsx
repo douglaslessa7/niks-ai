@@ -9,35 +9,35 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { useAppStore } from '../../store/onboarding';
-import { concernLabel } from '../../lib/concernLabels';
-import { normStepKey, type SavedProduct } from '../../lib/savedProducts';
-import { definirProdutoDoPasso, avisoDoProduto, type RefProduto } from '../../lib/minhaRotina';
-import { invalidateCache } from '../../lib/cache';
-import ProductAnalysis from '../../components/product/ProductAnalysis';
-import { listColecao, removeFromColecao, requestMissingColecaoCutouts, type ColecaoItem } from '../../lib/colecao';
-import { getScanCutouts, requestMissingScanCutouts } from '../../lib/scanCutouts';
-import { useColecaoToggle } from '../../hooks/useColecaoToggle';
-import Shelf, { type ShelfHandle } from '../../components/product/Shelf';
-import ProdutoEstanteOverlay, { type RetanguloOrigem } from '../../components/product/ProdutoEstanteOverlay';
-import { ShelfAddButton, ShelfRemoveLink, confirmShelfRemove } from '../../components/product/ShelfStatus';
-import { getUserId, peekUserId } from '../../lib/currentUser';
-import { dadoPronto, fonteImagem, revalidar, sincronizar } from '../../lib/produtosTela';
-import { haptics } from '../../lib/haptics';
-import { CAT_ORDER, catOf } from '../../lib/productCategory';
-import { listarEscaneados, type ScanItem } from '../../lib/escaneados';
-import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
-import { dedupeByProduct, sameProduct } from '../../lib/productMatch';
-import { onCoachPrepare, setCoachStageReady, useCoachMark, type CoachTargetKey } from '../../lib/coachMarks';
-import AlvoGuia from '../../components/coach/AlvoGuia';
-import { avancarGuiaDe, irParaGuia, useGuia } from '../../lib/guia';
-import { verificarDesafios } from '../../lib/missoes';
-import { checkProdutosTutorial } from '../../lib/produtosTutorial';
-import InicialAvatar from '../../components/InicialAvatar';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
-import FaixaPreco from '../../components/product/FaixaPreco';
-import { descricaoFaixa, faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../lib/faixaPreco';
+import { supabase } from '../../../lib/supabase';
+import { useAppStore } from '../../../store/onboarding';
+import { concernLabel } from '../../../lib/concernLabels';
+import { normStepKey, type SavedProduct } from '../../../lib/savedProducts';
+import { definirProdutoDoPasso, avisoDoProduto, type RefProduto } from '../../../lib/minhaRotina';
+import { invalidateCache } from '../../../lib/cache';
+import ProductAnalysis from '../../../components/product/ProductAnalysis';
+import { listColecao, removeFromColecao, requestMissingColecaoCutouts, type ColecaoItem } from '../../../lib/colecao';
+import { getScanCutouts, requestMissingScanCutouts } from '../../../lib/scanCutouts';
+import { useColecaoToggle } from '../../../hooks/useColecaoToggle';
+import Shelf, { type ShelfHandle } from '../../../components/product/Shelf';
+import ProdutoEstanteOverlay, { type RetanguloOrigem } from '../../../components/product/ProdutoEstanteOverlay';
+import { ShelfAddButton, ShelfRemoveLink, confirmShelfRemove } from '../../../components/product/ShelfStatus';
+import { getUserId, peekUserId } from '../../../lib/currentUser';
+import { dadoPronto, fonteImagem, revalidar, sincronizar } from '../../../lib/produtosTela';
+import { haptics } from '../../../lib/haptics';
+import { CAT_ORDER, catOf } from '../../../lib/productCategory';
+import { listarEscaneados, type ScanItem } from '../../../lib/escaneados';
+import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
+import { dedupeByProduct, sameProduct } from '../../../lib/productMatch';
+import { onCoachPrepare, setCoachStageReady, useCoachMark, type CoachTargetKey } from '../../../lib/coachMarks';
+import AlvoGuia from '../../../components/coach/AlvoGuia';
+import { avancarGuiaDe, irParaGuia, useGuia } from '../../../lib/guia';
+import { verificarDesafios } from '../../../lib/missoes';
+import { checkProdutosTutorial } from '../../../lib/produtosTutorial';
+import InicialAvatar from '../../../components/InicialAvatar';
+import VoltarPelaBorda from '../../../components/VoltarPelaBorda';
+import FaixaPreco from '../../../components/product/FaixaPreco';
+import { descricaoFaixa, faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../../lib/faixaPreco';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
 // Reformada para a linguagem visual do app (home / protocolo / niks-chat): fundo
@@ -69,6 +69,7 @@ type Item = {
   pra?: string; praLong?: string; targets?: string[]; alts?: Alt[];
   empty?: boolean; note?: string; productId?: string; // id do produto principal (deep-link da home)
   categoria?: string | null; compat?: number | null;   // vão junto para a coleção ("Tenho em casa")
+  recomendado?: boolean; // aberto de um RECOMENDADO → o detalhe mostra a faixa de preço (estante não)
 };
 
 // ── Formato do JSON salvo em recomendacoes_produtos.recomendacao ──────────────
@@ -469,7 +470,7 @@ export default function RecomendacaoProdutos() {
   useEffect(() => {
     if (!productDetailTarget || state !== 'ready') return;
     const hit = [...am, ...pm].find((it) => !it.empty && it.productId === productDetailTarget);
-    if (hit) setDetail(hit);
+    if (hit) setDetail({ ...hit, recomendado: true });
     setProductDetailTarget(null);
   }, [productDetailTarget, state, am, pm, setProductDetailTarget]);
 
@@ -869,7 +870,7 @@ export default function RecomendacaoProdutos() {
     id: r.id, num: '', step: r.step, productId: r.id,
     brand: r.prod.marca, name: r.prod.nome, img: { uri: r.prod.imagem_url }, cutout: r.cutoutUrl ?? null,
     pra: r.copy, praLong: r.copy, targets: targetsOf(r.prod), alts: [],
-    categoria: r.prod.categoria ?? null, compat: r.match,
+    categoria: r.prod.categoria ?? null, compat: r.match, recomendado: true,
   });
   const recSub = (r: RecEntry) => (r.cat && ALT[r.cat] ? `Alternativa ${ALT[r.cat]}` : 'Alternativa pra sua rotina');
   // Selo "Na estante": o mesmo id (produto do catálogo / scan) OU o mesmo produto pela
@@ -1223,6 +1224,11 @@ export default function RecomendacaoProdutos() {
                     )}
                     {!!detail.brand && <Text style={pd.brand}>{detail.brand}</Text>}
                     <Text style={pd.name} lineBreakStrategyIOS="push-out">{detail.name}</Text>
+                    {/* Faixa de preço: só quando aberto de um recomendado (lib/faixaPreco) */}
+                    {(() => {
+                      const f = detail.recomendado && detail.productId ? faixas.get(detail.productId) : undefined;
+                      return f ? <FaixaPreco faixa={f} linha style={{ marginTop: 10 }} /> : null;
+                    })()}
                     {!!(detail.targets && detail.targets.length) && (
                       <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                         {detail.targets!.map((tg) => (

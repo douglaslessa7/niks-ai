@@ -18,7 +18,7 @@ import { nivelDe, NIVEL_MAXIMO } from '../../lib/niveis';
 import Medalha from '../../components/medalhas/Medalha';
 import { usePulsoMedalha } from '../../components/medalhas/usePulsoMedalha';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Jornada do grupo — réplica de 81o do Claude Design ("NIKS home redesign",
@@ -170,12 +170,12 @@ export default function GrupoJornada() {
   const barK = nivel ? (nivel.teto <= nivel.piso ? 1 : Math.min(1, Math.max(0, (pts - nivel.piso) / Math.max(1, nivel.teto - nivel.piso)))) : 0;
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate({ pathname: '/grupo', params: { id: gid } } as any)}>
+    <View style={{ flex: 1 }}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => { haptics.tap(); router.navigate({ pathname: '/grupo', params: { id: gid } } as any); }}
+        onPress={() => { haptics.tap(); voltarOu({ pathname: '/grupo', params: { id: gid } }); }}
         style={[styles.back, { top: y(54) }]}
         accessibilityLabel="Voltar"
       >
@@ -245,7 +245,7 @@ export default function GrupoJornada() {
         </View>
       </View>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

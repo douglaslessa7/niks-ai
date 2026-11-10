@@ -10,7 +10,7 @@ import { useEhConvidada } from '../../lib/acesso';
 import { abrirTrava } from '../../lib/trava';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 
 const PINK = '#E0447F';
 
@@ -32,7 +32,7 @@ export default function ProdutoAmiga() {
   const [dados, setDados] = useState<{ resultado: any; foto_url: string | null } | null>(null);
   const [analisando, setAnalisando] = useState(false);
   // Aba oculta do <Tabs>: `router.back()` cairia na Home (1ª aba). Volta para o grupo de onde abriu.
-  const voltar = () => router.navigate((grupo ? { pathname: '/grupo', params: { id: grupo } } : '/grupos') as any);
+  const voltar = () => voltarOu(grupo ? { pathname: '/grupo', params: { id: grupo } } : '/grupos');
 
   useEffect(() => {
     if (!grupo || !id) { voltar(); return; }
@@ -78,8 +78,8 @@ export default function ProdutoAmiga() {
   );
 
   return (
-    <VoltarPelaBorda onVoltar={voltar}>
+    <View style={{ flex: 1 }}>
       <ProductAnalysis result={dados.resultado} photoUri={dados.foto_url} onClose={voltar} blocoCompatibilidade={bloco} />
-    </VoltarPelaBorda>
+    </View>
   );
 }

@@ -29,7 +29,7 @@ import {
   CARD_LEFT, CONTENT_H, EIO, EO, GAVETA, INK, MUTE, NIVEIS_TRILHA, PAD_TOP, PINK, ROW,
   cardTop, dotY, fmt, railK, sCard, sMark, xpY, type Icone, type Limites,
 } from '../../components/caminhada/geometria';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -445,15 +445,13 @@ export default function Caminhada() {
   }, [uid]));
 
   // ── Ações ───────────────────────────────────────────────────────────────────
-  // `de=grupos`: aberta pela aba Grupos — volta para ela. Aba oculta do <Tabs>: `router.back()`
-  // cai na Home (1ª aba), o que só é certo para quem abriu pela Home (10/nov/2026).
+  // Volta para a tela de trás (pilha nativa, igual ao gesto). Sem tela de trás: a aba Grupos
+  // (`de=grupos`) ou a Home.
   const voltar = (comToque = true) => {
     if (busy.current) return;
     if (comToque) haptics.tap();
     pararRolagem();
-    if (de === 'grupos') router.navigate('/grupos' as any);
-    else if (router.canGoBack()) router.back();
-    else router.replace('/home' as any);
+    voltarOu(de === 'grupos' ? '/grupos' : '/home');
   };
 
   const tocarCarta = (n: number) => {
@@ -520,7 +518,7 @@ export default function Caminhada() {
   const shRot = Math.ceil(shFalta / mediaRotina);
 
   return (
-    <VoltarPelaBorda onVoltar={() => voltar(false)}>
+    <View style={{ flex: 1 }}>
     <Animated.View style={[styles.root, bgSt, rootSt]}>
       <StatusBar style="dark" />
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.glow, glowSt]} />
@@ -695,7 +693,7 @@ export default function Caminhada() {
         </Animated.View>
       )}
     </Animated.View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 

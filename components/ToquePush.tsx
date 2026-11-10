@@ -3,6 +3,7 @@
 // o estado do servidor entrega a Carta de volta ao abrir (idempotente: se a home já
 // pediu, só devolve a mesma) e a tela de raspar abre direto nela. Sem carta (o limite
 // bloqueou, ou ela já raspou), fica na home.
+import { abrirComTrilha } from '../lib/navegar';
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { registrarToque, useToquePush, type DadosPush } from '../lib/pushToque';
@@ -24,14 +25,16 @@ export default function ToquePush() {
   // Avisos do grupo ("Ana fez check-in 📸", "Falta só você hoje 👀"): abre o grupo.
   useEffect(() => {
     const abrirGrupo = (d: DadosPush) => {
-      if (typeof d.grupo_id === 'string') router.push({ pathname: '/(app)/grupo', params: { id: d.grupo_id } } as any);
+      // Com a trilha de antes por trás (Grupos › Seus grupos › grupo): o voltar e o gesto
+      // levam para onde o botão levava (lib/navegar).
+      if (typeof d.grupo_id === 'string') abrirComTrilha(['/grupos', '/seus-grupos', { pathname: '/grupo', params: { id: d.grupo_id } }]);
     };
     const a = registrarToque('grupo_checkin', abrirGrupo);
     const b = registrarToque('grupo_falta', abrirGrupo);
     return () => { a(); b(); };
   }, [router]);
   // Nova denúncia (só moderadoras recebem): abre a tela de revisão.
-  useEffect(() => registrarToque('denuncia', () => { router.push('/(app)/revisao-denuncias' as any); }), [router]);
+  useEffect(() => registrarToque('denuncia', () => { abrirComTrilha(['/home', '/revisao-denuncias']); }), [router]);
   // Retorno de 24 h da espinha: abre a conversa, com a pergunta da NIKS já lá.
   useEffect(() => registrarToque('espinha_retorno', (d) => {
     if (typeof d.conversation_id !== 'string') return;

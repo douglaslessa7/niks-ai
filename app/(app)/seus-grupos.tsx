@@ -24,7 +24,8 @@ import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { useCoachStage } from '../../lib/coachMarks';
 import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
-import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { voltar as voltarOu } from '../../lib/navegar';
+import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -148,6 +149,8 @@ export default function SeusGrupos() {
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState('');
   const [folhaH, setFolhaH] = useState(320);
+  // Folha aberta: o gesto nativo não tira a tela de baixo dela.
+  useGestoVoltar(!aberta);
   const veu = useSharedValue(0);
   const sobe = useSharedValue(0);
   const teclado = useSharedValue(0);
@@ -255,11 +258,11 @@ export default function SeusGrupos() {
     : { transform: [{ translateY: folhaH * (1 - sobe.get()) + teclado.get() }] }), [rm, folhaH]);
 
   return (
-    <VoltarPelaBorda onVoltar={() => router.navigate('/grupos' as any)} ativo={!aberta}>
+    <View style={{ flex: 1 }}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>Seus grupos</Text></View>
-      <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.navigate('/grupos' as any); }} style={[styles.back, { top: y(54) }]} accessibilityLabel="Voltar">
+      <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); voltarOu('/grupos'); }} style={[styles.back, { top: y(54) }]} accessibilityLabel="Voltar">
         <Icon d="m15 18-6-6 6-6" size={26} color={INK} sw={2} />
       </TouchableOpacity>
 
@@ -399,7 +402,7 @@ export default function SeusGrupos() {
         </TouchableOpacity>
       </Animated.View>
     </View>
-    </VoltarPelaBorda>
+    </View>
   );
 }
 
