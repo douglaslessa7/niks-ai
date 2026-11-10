@@ -677,7 +677,7 @@ Chamada via `supabase.rpc('delete_user')` no client. O `SECURITY DEFINER` permit
 - `coach_protocol_suggestions` — propostas de alteração de rotina feitas pela NIKS no chat (ver "Coach — alteração de protocolo (v3)")
 - `minha_rotina_passos` — a rotina que ela FAZ, um registro por passo (ver decisão **6b**)
 - `rotina_lotes` — um registro por "Montar minha rotina com meus produtos" (scan em lote): `status` processando/pronto/erro, `caminhos`/`tem_rotulo` (imagens no bucket `rotina-lotes`), `resultado` (JSON da IA + o `colecao_item_id` de cada produto), `notificado_em`/`visto_em`/`aplicado_em`. RLS: ela lê e marca visto; **só a função cria** (sem policy de insert). Migration `20261009180000` (ver **6b**)
-- `produtos` — **catálogo de produtos reais** lido pela Edge Function `recomendar-produtos`. ⚠️ **NÃO está em `supabase/migrations/`** (foi criada pelo dashboard) — para ver o schema ao vivo, consulte o banco, não os arquivos. **92 produtos** (ago/2026): 43 importados (Coreia 28, Canadá 7, França 4, EUA 3, Japão 1) + 49 brasileiros (Creamy 29, Principia 20). RLS ligada; escrita só via service role. `UNIQUE (nome, marca)`. **`faixa_preco`** (1–3, nov/2026) vem da marca pela tabela `marcas_faixa_preco` — ver "Feature: Faixa de preço dos produtos recomendados".
+- `produtos` — **catálogo de produtos reais** lido pela Edge Function `recomendar-produtos`. ⚠️ **NÃO está em `supabase/migrations/`** (foi criada pelo dashboard) — para ver o schema ao vivo, consulte o banco, não os arquivos. **92 produtos** (ago/2026): 43 importados (Coreia 28, Canadá 7, França 4, EUA 3, Japão 1) + 49 brasileiros (Creamy 29, Principia 20). RLS ligada; escrita só via service role. `UNIQUE (nome, marca)`. **`faixa_preco`** (1–3, obrigatória, nov/2026) vem da marca pela tabela `marcas_faixa_preco` — **marca nova entra lá ANTES dos produtos**, senão o banco recusa — ver "Feature: Faixa de preço dos produtos recomendados".
   - **Vocabulário controlado — 3 colunas têm CHECK constraint:**
     - `categoria` (11): `limpeza`, `limpeza_oleosa`, `tonico`, `serum`, `hidratante`, `oclusivo`, `protetor_solar` + as 4 adicionadas em ago/2026 para os lotes nacionais: `esfoliante`, `olhos`, `tratamento_local`, `tratamento_noturno`. ⚠️ **O `ALTER` que adicionou as 4 foi rodado direto no banco, sem migration** (a tabela não tem histórico versionado).
     - `disponibilidade`: **só `nacional` | `importacao`** — é ORIGEM, não facilidade de compra. ⚠️ Armadilha real: um lote inteiro foi escrito com `'facil'` e teria falhado por completo.
@@ -3226,7 +3226,7 @@ Réplica do Claude Design `NiksProductsTutorial.dc.html` (base `NiksProductsShel
 
 **Roteamento:** glyph `rotina` (frasco de produto) → `/recomendacao-produtos`; registrada como `<Tabs.Screen name="recomendacao-produtos" />`. (⚠️ Era a lupa/`busca`, que saiu da navbar.)
 
-### Feature: Faixa de preço dos produtos recomendados (10/nov/2026 — migration `20261202120000_faixa_preco.sql`, ✅ em produção)
+### Feature: Faixa de preço dos produtos recomendados (10/nov/2026 — migrations `20261202120000_faixa_preco.sql` e `20261203120000_faixa_preco_obrigatoria.sql`, ✅ em produção)
 
 Cada produto do **catálogo** (`produtos`) tem uma faixa de preço de 1 a 3, mostrada como **3 barrinhas** (as cheias no rosa `#FF5EA8`, as vazias em `#EADDE3`). **Não mostra preço** — só a faixa.
 
@@ -3235,6 +3235,8 @@ Cada produto do **catálogo** (`produtos`) tem uma faixa de preço de 1 a 3, mos
 | 1 | Custo-benefício | até R$ 150 | ▮▯▯ |
 | 2 | Médio | R$ 150 a R$ 250 | ▮▮▯ |
 | 3 | Premium | acima de R$ 250 | ▮▮▮ |
+
+> ⚠️ **REGRA: marca nova entra em `marcas_faixa_preco` ANTES dos produtos.** A faixa é obrigatória: produto de marca que não está na tabela é **RECUSADO** pelo banco (erro `marca sem faixa de preço: "…" (cadastre em marcas_faixa_preco antes do produto)`, código 23514) — no cadastro e na troca de marca. Num lote, uma marca sem faixa derruba o lote inteiro. Ordem certa: `insert into marcas_faixa_preco (marca, faixa) values ('nome em minúsculas', 1);` e só depois os produtos.
 
 **A faixa é POR MARCA**, não por produto. Marcas em 10/nov/2026 (as 24 do catálogo): **1** — Principia, Creamy, CeraVe, Bioderma, The Ordinary, La Roche-Posay, COSRX, Some By Mi, Biore · **2** — Beauty of Joseon, Celimax, Medicube, Dr.Althea, Mixsoon, Banila Co, Numbuzin, Torriden, SKIN1004, Anua, Isntree, Round Lab, Pyunkang Yul, Illiyoon · **3** — Laneige. Resultado: 180 produtos na faixa 1, 145 na 2 e 1 na 3 (326, nenhum sem faixa).
 
@@ -3248,10 +3250,13 @@ Cada produto do **catálogo** (`produtos`) tem uma faixa de preço de 1 a 3, mos
 
 **Servidor:**
 - **`marcas_faixa_preco`** (`marca text` PK — minúsculas e sem espaços nas pontas, `faixa smallint` 1–3, `atualizado_em`) é a FONTE. RLS ligada sem política: o app não lê (`anon`/`authenticated` sem permissão); só o banco e o service role.
-- **`produtos.faixa_preco smallint`** (aceita null, CHECK 1–3) é preenchida pelo banco: gatilho `produtos_faixa_da_marca_trg` (antes de INSERT ou UPDATE de `marca`, compara `lower(btrim(marca))`) e `marcas_faixa_aplicar_trg` (inserir/mudar/apagar/renomear uma marca atualiza os produtos dela). Marca fora da tabela = sem faixa (null). As funções são SECURITY DEFINER e sem EXECUTE para o app.
-- **Mudar a faixa de uma marca:** `update marcas_faixa_preco set faixa = 2 where marca = 'laneige';` (propaga sozinho). **Marca nova no catálogo:** `insert into marcas_faixa_preco (marca, faixa) values ('nome em minúsculas', 1);` — antes disso os produtos dela ficam sem faixa. Não grave `produtos.faixa_preco` à mão: a próxima mudança de marca sobrescreve.
-- **Compatível com a 1.0.60 e anteriores:** só acrescenta (coluna que aceita null + tabela nova); quem lê `select *` recebe um campo a mais e ignora.
-- **Aplicada SOZINHA** em 10/nov/2026 pela Management API + insert em `supabase_migrations.schema_migrations` (sem `db push`). Testada antes no PGlite (31 verificações: 2× idempotente, colunas antigas idênticas, insert sem a coluna, gatilhos, constraints, RLS, desfazer). Backup e desfazer em `~/Developer/niks-ai-backups/2026-11-10_faixa_preco/` (`produtos.json`, `estado-antes.json`, `DESFAZER.sql`).
+- **`produtos.faixa_preco smallint` NOT NULL** (CHECK 1–3) é preenchida SEMPRE pelo banco: o gatilho `produtos_faixa_da_marca_trg` (antes de INSERT ou UPDATE de `marca` ou `faixa_preco`; compara `lower(btrim(marca))`) copia a faixa da marca e **recusa** marca fora da tabela. Gravar outra faixa à mão em `produtos` não pega: volta para a da marca.
+- **`marcas_faixa_preco`:** mudar a `faixa` de uma marca propaga para os produtos dela (`marcas_faixa_aplicar_trg`). **Apagar ou renomear uma marca que tem produtos é recusado** (`marcas_faixa_protege_trg`, erro 23503); para isso, tire ou troque antes os produtos dela. Marca sem produtos pode ser apagada/renomeada.
+- As funções dos gatilhos são SECURITY DEFINER e sem EXECUTE para o app.
+- **Mudar a faixa de uma marca:** `update marcas_faixa_preco set faixa = 2 where marca = 'laneige';` (propaga sozinho).
+- **Compatível com a 1.0.60 e anteriores:** elas só LEEM `produtos` (quem lê `select *` recebe um campo a mais e ignora); nenhum app grava no catálogo, então a recusa não as atinge.
+- **Aplicadas SOZINHAS, uma por vez,** em 10/nov/2026 pela Management API + insert em `supabase_migrations.schema_migrations` (sem `db push`); a `obrigatoria` dentro de `begin … commit` (se sobrar produto sem faixa, o `set not null` falha e nada é aplicado). Testadas antes no PGlite: `faixa_preco` 31 verificações (2× idempotente, colunas antigas idênticas, insert sem a coluna, gatilhos, constraints, RLS, desfazer) e `faixa_preco_obrigatoria` 33 (recusa no cadastro, na troca de marca e no lote, faixa à mão, marca em uso protegida, updates da `recortar-catalogo` e das 3 migrations de agosto seguem ok, falha inteira com produto sem faixa, desfazer). Em produção, recusa e proteção conferidas dentro de transação desfeita (nada gravado). Backups e desfazer: `~/Developer/niks-ai-backups/2026-11-10_faixa_preco/` e `…/2026-11-10_faixa_preco_obrigatoria/` (cada um com `DESFAZER.sql`; desfazer na ordem inversa).
+- As 3 migrations de agosto ainda pendentes (`20260817120000`, `220000`, `230000`) **não trocam `marca`** (só `imagem_url` e `pais_origem`) — não esbarram na recusa.
 - Nenhum fluxo automático cria produtos (conferido em 10/nov/2026: só lotes manuais; a `recortar-catalogo` só mexe nas colunas de imagem).
 
 ### Feature: Escanear Produto (câmera → análise IA → resultado)
