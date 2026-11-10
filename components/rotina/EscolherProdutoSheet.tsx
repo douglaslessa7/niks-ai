@@ -109,7 +109,8 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
     const doPasso = passosRec.find((r) => !r?.sem_produto && nomes.has(normStepKey(r?.passo ?? ''))
       && String(r?.periodo ?? '').includes(passo.periodo))
       ?? passosRec.find((r) => !r?.sem_produto && nomes.has(normStepKey(r?.passo ?? '')));
-    primeiros = (doPasso?.produtos ?? []).map((x: any) => x?.produto_id).filter(Boolean);
+    // Sem repetidos: a recomendação pode trazer o mesmo produto 2× no passo (chave repetida na lista).
+    primeiros = [...new Set<string>((doPasso?.produtos ?? []).map((x: any) => x?.produto_id).filter(Boolean))];
   }
   const recIds = [...primeiros, ...todosIds.filter((id) => !primeiros.includes(id))];
   // Faixa de preço dos recomendados: leitura à parte, em paralelo, que nunca falha.
