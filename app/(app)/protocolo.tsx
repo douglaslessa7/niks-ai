@@ -66,6 +66,8 @@ import { useCachedQuery, invalidateCache } from '../../lib/cache';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
+import { faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../lib/faixaPreco';
+import FaixaPreco from '../../components/product/FaixaPreco';
 import { useEstadoCartas, concluirRotina } from '../../lib/cartasServidor';
 import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
 import BalancedText from '../../components/BalancedText';
@@ -758,6 +760,18 @@ export default function Protocolo() {
   const minhaList = minha ? (am ? minha.am : minha.pm) : [];
   const usandoMinha = minhaList.length > 0;
 
+  // Faixa de preço dos produtos do CATÁLOGO nos passos (lib/faixaPreco). Leitura à parte,
+  // que nunca falha: sem faixa (ou produto escaneado), o card fica sem a linha.
+  const [faixaPorCatalogo, setFaixaPorCatalogo] = useState<Map<string, FaixaPrecoValor>>(new Map());
+  const idsCatalogoPassos = [...(minha?.am ?? []), ...(minha?.pm ?? [])]
+    .map((p) => p.produto?.catalogoId).filter((x): x is string => !!x).sort().join(',');
+  useEffect(() => {
+    if (!idsCatalogoPassos) return;
+    let vivo = true;
+    void faixasDosProdutos(idsCatalogoPassos.split(',')).then((m) => { if (vivo) setFaixaPorCatalogo(m); });
+    return () => { vivo = false; };
+  }, [idsCatalogoPassos]);
+
   // ── Tutorial de primeiro acesso (réplica do Claude Design 54a/54b) ──────────
   // Mesma regra da intro antiga: uma vez por conta (`users.rotina_intro_status` null),
   // com a Minha rotina e a ideal carregadas. As 3 opções gravam pelo `escolherIntro`.
@@ -804,6 +818,8 @@ export default function Protocolo() {
       img: chosen ? (chosen.recorteUrl ?? chosen.imagemUrl ?? '') : '', cut: !!chosen?.recorteUrl, // recorte sem fundo quando pronto
       tint: chosen ? PRODUCT_BG : NO_PRODUCT_BG,
       pline: chosen ? prefixoStatusProduto(chosen) + [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Escolher produto',
+      // Faixa de preço: só produto do catálogo (escaneado não tem `catalogoId`).
+      faixa: chosen?.catalogoId ? faixaPorCatalogo.get(chosen.catalogoId) : undefined,
       // Ícone da categoria (sem produto) e o nome para mostrar onde cabe um só (nome
       // do passo; sem ele, o do produto) — o nome do passo é opcional (Fase 3).
       tipo: tipoDoPasso(name, ingredient),
@@ -1326,6 +1342,10 @@ export default function Protocolo() {
                             >
                               {s.hasProd ? s.pline : s.name}
                             </Text>
+                          )}
+                          {/* Faixa de preço (só produto do catálogo): "▮▯▯ Custo-benefício", no estilo do rótulo do passo */}
+                          {s.hasProd && !!s.faixa && (
+                            <FaixaPreco faixa={s.faixa} style={{ marginTop: 2 }} textoStyle={{ fontSize: 13, fontWeight: '500', color: MUTED }} />
                           )}
                           {!s.hasProd && !!s.name && (
                             <TouchableOpacity

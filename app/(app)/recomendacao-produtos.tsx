@@ -36,6 +36,8 @@ import { verificarDesafios } from '../../lib/missoes';
 import { checkProdutosTutorial } from '../../lib/produtosTutorial';
 import InicialAvatar from '../../components/InicialAvatar';
 import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import FaixaPreco from '../../components/product/FaixaPreco';
+import { descricaoFaixa, faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../lib/faixaPreco';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
 // Reformada para a linguagem visual do app (home / protocolo / niks-chat): fundo
@@ -246,6 +248,14 @@ export default function RecomendacaoProdutos() {
   const [am, setAm] = useState<Item[]>(inicio.rec?.am ?? []);
   const [pm, setPm] = useState<Item[]>(inicio.rec?.pm ?? []);
   const [recList, setRecList] = useState<RecEntry[]>(inicio.rec?.flat ?? []);
+  // Faixa de preço dos recomendados (lib/faixaPreco): leitura à parte que nunca falha —
+  // sem ela (ou sem a coluna no banco) os cards ficam como antes, só sem as barrinhas.
+  const [faixas, setFaixas] = useState<Map<string, FaixaPrecoValor>>(new Map());
+  useEffect(() => {
+    let vivo = true;
+    if (recList.length) faixasDosProdutos(recList.map((r) => r.id)).then((m) => { if (vivo) setFaixas(m); });
+    return () => { vivo = false; };
+  }, [recList]);
   const [catR, setCatR] = useState<string>('Todos'); // filtro dos recomendados
   // Produtos escolhidos na rotina (por passo) — os recomendados que estão aqui saem da aba.
   const [saved, setSaved] = useState<Record<string, SavedProduct>>(inicio.salvos ?? {});
@@ -689,8 +699,8 @@ export default function RecomendacaoProdutos() {
   // Card de produto do 47a (foto 108 em card branco 150, selo "% compatível", nome e
   // a linha de baixo) — o MESMO na grade das listas e nos carrosséis da estante.
   // `inShelf` = selo "Na estante" no canto da foto (o produto já está na estante dela).
-  const ProductCard = <G extends GridItem>(p: G, onPick: (p: G) => void, sub: string | null, style: object, inShelf = false) => (
-    <TouchableOpacity key={p.id} activeOpacity={0.85} onPress={() => { haptics.tap(); onPick(p); }} style={[{ gap: 8 }, style]}>
+  const ProductCard = <G extends GridItem>(p: G, onPick: (p: G) => void, sub: string | null, style: object, inShelf = false, faixa?: FaixaPrecoValor) => (
+    <TouchableOpacity key={p.id} activeOpacity={0.85} onPress={() => { haptics.tap(); onPick(p); }} style={[{ gap: 8 }, style]} accessibilityLabel={faixa ? `${p.name || 'Produto'}. ${descricaoFaixa(faixa)}` : undefined}>
       <View style={p47.imgCard}>
         {inShelf && (
           <View style={p47.shelfTag}>
@@ -703,6 +713,7 @@ export default function RecomendacaoProdutos() {
         {(p.cutoutUrl ?? p.photoUrl)
           ? <ExpoImage source={fonteImagem((p.cutoutUrl ?? p.photoUrl)!)} cachePolicy="memory-disk" style={{ width: 108, height: 108 }} contentFit="contain" accessibilityLabel={p.name ?? undefined} />
           : <IconHerb />}
+        {faixa && <FaixaPreco faixa={faixa} style={{ right: 10, bottom: 10 }} />}
       </View>
       <View style={{ gap: 2, paddingHorizontal: 2 }}>
         {(p.match != null || (p.verdict && VEREDITO_TAG[p.verdict])) && (
@@ -728,6 +739,7 @@ export default function RecomendacaoProdutos() {
     chips?: boolean;   // false = sem os filtros (resultados da busca na estante)
     searchOf?: (p: G) => string; // texto que a busca procura (nome + marca)
     shelfOf?: (p: G) => boolean; // já está na estante? (selo)
+    faixaOf?: (p: G) => FaixaPrecoValor | undefined; // faixa de preço (só recomendados)
   }) => {
     const chips = o.chips !== false;
     const tags = ['Todos', ...CAT_ORDER.filter((c) => o.allTags || o.items.some((p) => p.cat === c))];
@@ -765,7 +777,7 @@ export default function RecomendacaoProdutos() {
         <View style={{ marginTop: 12, paddingHorizontal: 18, gap: 18 }}>
           {rows.map((row, ri) => (
             <View key={ri} style={{ flexDirection: 'row', gap: 9 }}>
-              {row.map((p) => ProductCard(p, o.onPick, o.subOf(p), { flex: 1, minWidth: 0 }, !!o.shelfOf?.(p)))}
+              {row.map((p) => ProductCard(p, o.onPick, o.subOf(p), { flex: 1, minWidth: 0 }, !!o.shelfOf?.(p), o.faixaOf?.(p)))}
               {row.length === 1 && <View style={{ flex: 1 }} />}
             </View>
           ))}
@@ -778,6 +790,7 @@ export default function RecomendacaoProdutos() {
   const Carousel = <G extends GridItem>(o: {
     title: string; items: G[]; onPick: (p: G) => void; subOf: (p: G) => string | null; onAll: () => void;
     shelfOf?: (p: G) => boolean;
+    faixaOf?: (p: G) => FaixaPrecoValor | undefined;
     tut?: [object, object]; // alvos "recTitle"/"recRow" do tutorial (só nos Recomendados)
     alvoPrimeiro?: CoachTargetKey; // dica de desafio no 1º card
   }) => (
@@ -791,7 +804,7 @@ export default function RecomendacaoProdutos() {
       <View style={{ marginTop: 12 }} {...o.tut?.[1]}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 12 }}>
         {o.items.slice(0, CAROUSEL_MAX).map((p, i) => {
-          const card = ProductCard(p, o.onPick, o.subOf(p), { width: CARD_W }, !!o.shelfOf?.(p));
+          const card = ProductCard(p, o.onPick, o.subOf(p), { width: CARD_W }, !!o.shelfOf?.(p), o.faixaOf?.(p));
           return i === 0 && o.alvoPrimeiro ? <AlvoGuia key={p.id} chave={o.alvoPrimeiro}>{card}</AlvoGuia> : card;
         })}
       </ScrollView>
@@ -867,6 +880,7 @@ export default function RecomendacaoProdutos() {
   const shelfScanIds = new Set(colecao.map((c) => c.productScanId).filter(Boolean));
   const shelfByName = (marca: string | null | undefined, nome: string | null | undefined) =>
     colecao.some((c) => sameProduct({ marca: c.marca, nome: c.nome }, { marca, nome }));
+  const recFaixa = (r: RecEntry) => faixas.get(r.id);
   const recInShelf = (r: RecEntry) => shelfProdIds.has(r.prod.id) || shelfByName(r.prod.marca, r.prod.nome);
   const scanInShelf = (p: ScanItem) => shelfScanIds.has(p.id) || shelfByName(p.brand, p.name);
 
@@ -962,7 +976,7 @@ export default function RecomendacaoProdutos() {
             return (
               <>
                 {col.length > 0 && ProductGrid({ items: col, cat: 'Todos', setCat: () => {}, chips: false, onPick: (p) => { setNoPalco({ item: p.c, origem: null }); }, title: 'Na sua estante', subOf: (p) => p.c.marca })}
-                {rec.length > 0 && ProductGrid({ items: rec, cat: 'Todos', setCat: () => {}, chips: false, onPick: openRec, title: 'Recomendados pra você', subOf: recSub, shelfOf: recInShelf })}
+                {rec.length > 0 && ProductGrid({ items: rec, cat: 'Todos', setCat: () => {}, chips: false, onPick: openRec, title: 'Recomendados pra você', subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa })}
                 {sc.length > 0 && ProductGrid({ items: sc, cat: 'Todos', setCat: () => {}, chips: false, onPick: setScanDetail, title: 'Escaneados', subOf: (p) => fmtWhen(p.createdAt), shelfOf: scanInShelf })}
               </>
             );
@@ -1003,7 +1017,7 @@ export default function RecomendacaoProdutos() {
                 </>
               )}
               {recShown.length > 0 && Carousel<RecEntry>({
-                title: 'Recomendados pra você', items: recShown, onPick: openRec, subOf: recSub, shelfOf: recInShelf,
+                title: 'Recomendados pra você', items: recShown, onPick: openRec, subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa,
                 onAll: () => openList('recomendados'), tut: [tutRecTitle, tutRecRow],
               })}
 
@@ -1119,7 +1133,7 @@ export default function RecomendacaoProdutos() {
             note: escolha
               ? `Toque num produto para usar no passo “${escolha.nome}”.`
               : 'Alternativas que a IA indicou pra sua pele e que ficaram fora da rotina.',
-            subOf: recSub, shelfOf: recInShelf,
+            subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa,
           })}
         </ScrollView>
       )}

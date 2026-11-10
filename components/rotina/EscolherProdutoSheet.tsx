@@ -40,6 +40,8 @@ import { avaliarProduto, type PeleParaAviso, type ProdutoAvaliavel } from '../..
 import { definirProdutoDoPasso, nomeDoPasso, peleParaAviso, type PassoRotina, type RefProduto } from '../../lib/minhaRotina';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
+import { descricaoFaixa, faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../lib/faixaPreco';
+import FaixaPreco from '../product/FaixaPreco';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -60,6 +62,7 @@ type Candidato = {
   compat: number | null;
   avaliavel: ProdutoAvaliavel;
   texto: string | null;        // texto do detalhe (o que a análise/recomendação disse)
+  faixa?: FaixaPrecoValor;     // faixa de preço — só recomendados do catálogo (lib/faixaPreco)
 };
 
 type Dados = {
@@ -109,6 +112,8 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
     primeiros = (doPasso?.produtos ?? []).map((x: any) => x?.produto_id).filter(Boolean);
   }
   const recIds = [...primeiros, ...todosIds.filter((id) => !primeiros.includes(id))];
+  // Faixa de preço dos recomendados: leitura à parte, em paralelo, que nunca falha.
+  const faixasP = faixasDosProdutos(recIds);
 
   // Catálogo: os recomendados + os itens da estante que vieram do catálogo (para os avisos).
   const catIds = [...new Set([...recIds, ...colecao.map((c) => c.produtoId).filter((x): x is string => !!x)])];
@@ -161,6 +166,7 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
       avaliavel: avaliavelScan(s.result, s.name),
       texto: textoScan(s.result),
     }));
+  const faixas = await faixasP;
   const recomendados: Candidato[] = recIds.map((id) => prodPorId.get(id)).filter(Boolean).map((p: any) => {
     const recorte = p.imagem_recorte_status === 'ok' ? p.imagem_recorte_url : null;
     return {
@@ -170,6 +176,7 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
       cat: catOf(p.categoria), compat: null,
       avaliavel: avaliavelCatalogo(p),
       texto: copyPorId.get(p.id) || p.porque_e_especial || null,
+      faixa: faixas.get(p.id),
     };
   });
   // Seção do topo (20/out/2026, pedido do produto): ao abrir um passo de protetor solar,
@@ -312,7 +319,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
   const card = (c: Candidato) => {
     const on = c.key === atualKey;
     return (
-      <TouchableOpacity key={c.key} activeOpacity={0.85} onPress={() => escolher(c)} style={{ width: CARD, gap: 6 }} accessibilityLabel={`Usar ${c.nome ?? 'produto'} neste passo`}>
+      <TouchableOpacity key={c.key} activeOpacity={0.85} onPress={() => escolher(c)} style={{ width: CARD, gap: 6 }} accessibilityLabel={`Usar ${c.nome ?? 'produto'} neste passo${c.faixa ? `. ${descricaoFaixa(c.faixa)}` : ''}`}>
         <View style={[s.cardImg, { height: CARD }, on && s.cardOn]}>
           {c.img
             ? <ExpoImage source={{ uri: c.img }} style={{ width: CARD - 18, height: CARD - 18 }} contentFit={c.cut ? 'contain' : 'cover'} />
@@ -320,6 +327,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
           <TouchableOpacity onPress={() => { haptics.tap(); setDetalhe(c); }} hitSlop={8} style={s.info} accessibilityLabel={`Detalhes de ${c.nome ?? 'produto'}`}>
             <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={SOFT} strokeWidth={2.4} strokeLinecap="round"><Path d="M12 11v6M12 7.5v.01" /></Svg>
           </TouchableOpacity>
+          {c.faixa && <FaixaPreco faixa={c.faixa} />}
           {on && (
             <View style={s.check}>
               <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
@@ -373,6 +381,8 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
             </View>
             {!!detalhe.marca && <Text style={s.detMarca}>{detalhe.marca}</Text>}
             <Text style={s.detNome}>{detalhe.nome || 'Produto'}</Text>
+            {/* Faixa de preço: só recomendados do catálogo (escaneados e estante não têm `faixa`) */}
+            {!!detalhe.faixa && <FaixaPreco faixa={detalhe.faixa} linha style={{ marginTop: 10 }} />}
             {detalhe.compat != null && <Text style={[s.cardCompat, { marginTop: 8, fontSize: 14 }]}>{`${detalhe.compat}% compatível com sua pele`}</Text>}
             {!!aviso && aviso.nivel !== 'nenhum' && (
               <View style={[s.aviso, aviso.nivel === 'forte' ? s.avisoForte : s.avisoLeve]}>

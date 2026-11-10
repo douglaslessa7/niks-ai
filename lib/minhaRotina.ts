@@ -35,6 +35,9 @@ export type ProdutoDoPasso = {
   imagemUrl: string | null;   // foto original (catálogo: pública; estante/scan: URL assinada)
   recorteUrl: string | null;  // recorte sem fundo, quando pronto
   status: ColecaoStatus;      // da estante; escaneado fora dela vale "tenho"
+  // id em `produtos` quando o produto é do CATÁLOGO (direto ou pela estante); escaneado = null.
+  // Usado pela faixa de preço (lib/faixaPreco). Opcional: a rotina em cache de antes vem sem.
+  catalogoId?: string | null;
 };
 
 /** Texto que vem antes do produto no passo quando ela não o tem agora ("Acabou · "). */
@@ -92,6 +95,7 @@ function mapPasso(r: any): PassoRotina {
       imagemUrl: p.imagem_url ?? null,
       recorteUrl: p.imagem_recorte_status === 'ok' ? (p.imagem_recorte_url ?? null) : null,
       status: 'tenho',
+      catalogoId: p.id,
     } : null,
   };
 }
@@ -129,6 +133,7 @@ export async function listarMinhaRotina(userId: string): Promise<MinhaRotina> {
       passos[i].produto = {
         origem: 'estante', id: c.id, marca: c.marca, nome: c.nome,
         imagemUrl: c.photoUrl, recorteUrl: c.cutoutStatus === 'ok' ? c.cutoutUrl : null, status: c.status,
+        catalogoId: c.produtoId ?? null, // item da estante vindo do catálogo; de scan = null
       };
     }
     const sc = r.product_scan_id ? scanPorId.get(r.product_scan_id) : undefined;
@@ -136,6 +141,7 @@ export async function listarMinhaRotina(userId: string): Promise<MinhaRotina> {
       passos[i].produto = {
         origem: 'escaneado', id: sc.id, marca: sc.brand, nome: sc.name,
         imagemUrl: sc.photoUrl, recorteUrl: sc.cutoutUrl ?? null, status: 'tenho',
+        catalogoId: null,
       };
     }
   });
