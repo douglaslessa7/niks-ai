@@ -54,6 +54,7 @@ import { clearHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 import { reverTutorialGrupos } from '../../lib/gruposTutorial';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import HorariosRotina from '../../components/rotina/HorariosRotina';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 const INK = '#121212';
 const INK_MUTE = '#8A8A93';
@@ -116,9 +117,9 @@ export default function Perfil() {
   const userIdC = useUserId();
   const mk = mesKey(sessionDate());
   const perfilFn = useCallback(() => perfilGrupos(mk), [mk]);
-  const { data: pg } = useCachedQuery<PerfilGrupos>(convidada && userIdC ? chavePerfilGrupos(userIdC, mk) : null, perfilFn, { staleMs: 0 });
-  const { data: gruposC } = useMeusGrupos();
-  const { data: estadoC } = useEstadoCartas();
+  const { data: pg, refresh: recarregarPg } = useCachedQuery<PerfilGrupos>(convidada && userIdC ? chavePerfilGrupos(userIdC, mk) : null, perfilFn, { staleMs: 0 });
+  const { data: gruposC, refresh: recarregarGrupos } = useMeusGrupos();
+  const { data: estadoC, refresh: recarregarEstado } = useEstadoCartas();
   const pontosC = estadoC?.pontos;
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -152,7 +153,7 @@ export default function Perfil() {
     };
   }, []);
 
-  const { data: perfil } = useCachedQuery<PerfilData>(`perfil:${user?.id ?? 'anon'}`, fetchPerfil, {
+  const { data: perfil, refresh: recarregarPerfil } = useCachedQuery<PerfilData>(`perfil:${user?.id ?? 'anon'}`, fetchPerfil, {
     staleMs: 5 * 60_000, // nome/e-mail/foto quase nunca mudam
     enabled: Boolean(user?.id),
   });
@@ -294,6 +295,8 @@ export default function Perfil() {
   const initial = nome ? nome.trim()[0]?.toUpperCase() ?? '?' : '?';
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
   const headerH = insets.top + 15 + 36 + 10;
+  // Puxar para atualizar (10/nov/2026): perfil, grupos, cartas e (convidada) o perfil dos grupos.
+  const puxar = usePuxarParaAtualizar([recarregarPerfil, recarregarGrupos, recarregarEstado, recarregarPg], headerH);
 
   // Noturno a partir das 18h, como a home (38f).
   const theme = homeTheme(isNightTheme(), 'rgba(255,226,236,0.40)');
@@ -308,6 +311,7 @@ export default function Perfil() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
+        refreshControl={puxar}
         onScroll={(e) => { const v = e.nativeEvent.contentOffset.y > 8; if (v !== scrolled) setScrolled(v); }}
         contentContainerStyle={{ paddingTop: headerH, paddingBottom: 53 + insets.bottom + 32 }}
       >

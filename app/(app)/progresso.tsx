@@ -38,6 +38,8 @@ import { BG_STOPS } from '../../lib/homeTheme';
 import { getScoreTheme, getScoreScreenTheme } from '../../lib/scoreTheme';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import InicialAvatar from '../../components/InicialAvatar';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -98,7 +100,7 @@ function metricOf(scan: ScanRow | undefined, key: 'score' | MetricKey): number |
 }
 
 export default function Progresso() {
-  const { data: estadoCartas } = useEstadoCartas();
+  const { data: estadoCartas, refresh: recarregarEstado } = useEstadoCartas();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -127,7 +129,7 @@ export default function Progresso() {
   }, [uid]);
 
   // Revalida a cada foco (um scan novo tem de aparecer na volta), sem piscar.
-  const { data } = useCachedQuery(uid ? `progresso:${uid}` : null, fetchProgress, { enabled: Boolean(uid), staleMs: 0 });
+  const { data, refresh: recarregarProgresso } = useCachedQuery(uid ? `progresso:${uid}` : null, fetchProgress, { enabled: Boolean(uid), staleMs: 0 });
 
   const now = new Date();
   // Noturno a partir das 18h, como a home (38f).
@@ -192,8 +194,11 @@ export default function Progresso() {
   };
 
   const headerH = insets.top + 15 + 36 + 10;
+  // Puxar para atualizar (10/nov/2026).
+  const puxar = usePuxarParaAtualizar([recarregarProgresso, recarregarEstado], headerH);
 
   return (
+    <VoltarPelaBorda onVoltar={() => router.back()}>
     <View style={{ flex: 1, backgroundColor: theme.base }}>
       <StatusBar style="dark" />
       <LinearGradient colors={theme.bg} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -204,6 +209,7 @@ export default function Progresso() {
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={onScroll}
+        refreshControl={puxar}
         contentContainerStyle={{ paddingTop: headerH, paddingBottom: 112 }}
       >
         {/* Foto do último scan (Ø140, o tamanho de sempre) com o ARCO da tela 43g (Claude
@@ -434,6 +440,7 @@ export default function Progresso() {
         </TouchableOpacity>
       </View>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

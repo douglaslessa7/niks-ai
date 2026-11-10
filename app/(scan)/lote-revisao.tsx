@@ -21,6 +21,7 @@ import { haptics } from '../../lib/haptics';
 import { BUCKET_LOTES, MAX_PRODUTOS_LOTE, enviarLote, useLote } from '../../lib/loteProdutos';
 import { iniciarLote, TetoDoDiaError } from '../../lib/rotinaLotes';
 import { supabase } from '../../lib/supabase';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -90,6 +91,7 @@ export default function LoteRevisao() {
   };
 
   return (
+    <VoltarPelaBorda onVoltar={sair}>
     <View style={{ flex: 1 }}>
       <StatusBar style="dark" />
       <LinearGradient
@@ -169,6 +171,7 @@ export default function LoteRevisao() {
         {envio ? <ActivityIndicator color="#FFFFFF" /> : <Text style={st.montarTxt}>Montar minha rotina</Text>}
       </TouchableOpacity>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

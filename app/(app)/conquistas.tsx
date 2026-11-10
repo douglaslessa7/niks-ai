@@ -40,6 +40,8 @@ import SeloProtegida from '../../components/conquistas/SeloProtegida';
 import DeckBox, { AMBIENT_MS, spr } from '../../components/conquistas/DeckBox';
 import Carta, { visualDe } from '../../components/cartas/Carta';
 import CalendarioCheckins from '../../components/grupos/CalendarioCheckins';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -201,8 +203,11 @@ export default function Conquistas() {
   // ── Dados reais: sequência, recorde e proteção vêm do servidor (estado da função
   // `cartas`); sem ele ainda (1ª abertura offline), o histórico do celular. Cartas:
   // a coleção raspada (cartas_usuario), em decks por família.
-  const { data: estado } = useEstadoCartas();
-  const { data: itens } = useColecao();
+  const { data: estado, refresh: recarregarEstado } = useEstadoCartas();
+  const { data: itens, refresh: recarregarColecao } = useColecao();
+  // Puxar para atualizar (10/nov/2026): cartas, coleção e o calendário (consulta própria).
+  const [recargaCal, setRecargaCal] = useState(0);
+  const puxar = usePuxarParaAtualizar([recarregarEstado, recarregarColecao, () => setRecargaCal((n) => n + 1)], top + 100);
   const col = useMemo(() => montarColecao(itens, diaCurto), [itens]);
   const dias = estado?.sequencia.atual ?? routineDayStreak(hist, now);
   const recorde = Math.max(estado?.sequencia.recorde ?? recordeDias(hist, now), dias);
@@ -346,13 +351,14 @@ export default function Conquistas() {
   const gridTop = insets.top + 58 + 18 + 16;
 
   return (
+    <VoltarPelaBorda onVoltar={() => { if (card != null) closeCard(true); else if (deck != null) closeDeck(); else if (scr !== 'hub') pop(); else router.navigate('/home' as any); }}>
     <View style={{ flex: 1, backgroundColor: '#F9F1F4' }}>
       <StatusBar style="dark" />
 
       {/* ═══ Hub (77a/77b) ═══════════════════════════════════════════════ */}
       <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, hubSt]}>
         <Bg />
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: top + 112, paddingBottom: 56 }}>
+        <ScrollView showsVerticalScrollIndicator={false} refreshControl={puxar} contentContainerStyle={{ paddingTop: top + 112, paddingBottom: 56 }}>
           {/* w0 · sequência */}
           <Enter i={0} run={run} rm={rm}>
             <View style={styles.streakCard}>
@@ -452,7 +458,7 @@ export default function Conquistas() {
 
           {/* w3 · calendário de check-ins do mês — o MESMO da aba Grupos (81a) */}
           <Enter i={3} run={run} rm={rm}>
-            <CalendarioCheckins abertura={run} rm={rm} entrada={false} style={styles.calCard} />
+            <CalendarioCheckins abertura={run} rm={rm} entrada={false} style={styles.calCard} atualizar={recargaCal} />
           </Enter>
 
           {/* w4 · Ver todos os check-ins → calendário completo */}
@@ -600,6 +606,7 @@ export default function Conquistas() {
         )}
       </Animated.View>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

@@ -27,6 +27,7 @@ import StepIcon from '../../components/rotina/StepIcon';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { encerrarGuia, irParaGuia, useGuia } from '../../lib/guia';
 import { verificarDesafios } from '../../lib/missoes';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Skincare (05/nov/2026, pedido do produto) — o que abre o "Iniciar skincare" da HOME, no
@@ -255,6 +256,7 @@ export default function Skincare() {
 
   const titulo = periodo === 'am' ? 'Skincare matinal' : 'Skincare noturno';
   return (
+    <VoltarPelaBorda onVoltar={() => router.navigate('/home' as any)}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <LinearGradient colors={BG[periodo]} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -315,6 +317,7 @@ export default function Skincare() {
         onFechar={() => terminar('/home')}
       />
     </View>
+    </VoltarPelaBorda>
   );
 }
 

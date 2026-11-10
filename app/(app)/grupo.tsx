@@ -1,7 +1,7 @@
 import { saiuSemGrupo } from '../../lib/acesso';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Pressable, ActionSheetIOS, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Pressable, ActionSheetIOS, Alert, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -27,6 +27,8 @@ import { sessionDate, dateKey } from '../../lib/routineProgress';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
 import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tela do grupo — réplica de 81f (tela), 81g (folha "…" de quem criou) e 81h ("…" na foto
@@ -162,7 +164,9 @@ export default function Grupo() {
   const fetcher = useCallback(() => carregar(gid), [gid]);
   const { data, refresh } = useCachedQuery<DadosGrupo>(userId && gid ? chaveGrupo(userId, gid) : null, fetcher, { staleMs: 0, enabled: Boolean(userId && gid) });
   const g = data?.grupo;
-  const { data: estado } = useEstadoCartas();
+  const { data: estado, refresh: recarregarEstado } = useEstadoCartas();
+  // Puxar para atualizar (10/nov/2026): o grupo (mural, ranking da semana) e as cartas.
+  const puxar = usePuxarParaAtualizar([refresh, recarregarEstado], insets.top);
   const y = (v: number) => insets.top + v - 54;
   const bannerH = y(212);
 
@@ -307,9 +311,10 @@ export default function Grupo() {
   let iIn = 3;
 
   return (
+    <VoltarPelaBorda onVoltar={voltar} ativo={folha == null}>
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
+      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} refreshControl={puxar} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
         <View>
           <BannerTopo g={g} w={W} h={bannerH} />
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); voltar(); }} style={[styles.roundBtn, { top: y(58), left: 16 }]} accessibilityLabel="Voltar">
@@ -318,6 +323,11 @@ export default function Grupo() {
           <TouchableOpacity activeOpacity={0.7} onPress={() => abrirFolha({ tipo: 'menu' })} style={[styles.roundBtn, { top: y(58), right: 16 }]} accessibilityLabel="Mais opções">
             <AlvoGuia chave="grupo-menu"><Dots size={20} color={INK} r={1.8} /></AlvoGuia>
           </TouchableOpacity>
+          {/* Puxar para atualizar: o banner opaco cobre o indicador do sistema; este fica
+              entre o voltar e o "…" enquanto atualiza. */}
+          {puxar.props.refreshing && (
+            <ActivityIndicator color="#FF5EA8" pointerEvents="none" style={{ position: 'absolute', top: y(58) + 9, alignSelf: 'center' }} />
+          )}
         </View>
 
         <Entra i={0} run={run} rm={rm} style={styles.card}>
@@ -476,6 +486,7 @@ export default function Grupo() {
         </Animated.View>
       )}
     </View>
+    </VoltarPelaBorda>
   );
 }
 

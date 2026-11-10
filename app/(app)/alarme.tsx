@@ -23,6 +23,7 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import HorariosRotina, { fmtHorario as fmt } from '../../components/rotina/HorariosRotina';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -101,6 +102,7 @@ export default function Alarme() {
   const theme = homeTheme(isNightTheme(), 'rgba(255,226,236,0.40)');
 
   return (
+    <VoltarPelaBorda onVoltar={() => router.navigate('/home' as any)}>
     <View style={{ flex: 1, backgroundColor: theme.base }}>
       <StatusBar style="dark" />
       <LinearGradient colors={theme.bg} locations={BG_STOPS} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -210,6 +212,7 @@ export default function Alarme() {
         </LinearGradient>
       </Modal>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

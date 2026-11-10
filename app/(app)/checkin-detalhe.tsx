@@ -32,6 +32,7 @@ import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { bloquear, checkinDetalhe, denunciar, type CheckinDetalhe } from '../../lib/gruposServidor';
 import { invalidateCachePrefixo } from '../../lib/cache';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 const BG = '#F9F2F5';
 const INK = '#121212';
@@ -193,6 +194,7 @@ function Tela({ params }: { params: Params }) {
 
   const menu = !!atual && !atual.voce;
   return (
+    <VoltarPelaBorda onVoltar={() => { if (params.grupo) router.navigate({ pathname: '/grupo', params: { id: params.grupo } } as any); else router.navigate((params.volta || '/grupos') as any); }} ativo={!folha}>
     <View style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar style="dark" />
       <View style={[styles.topo, { paddingTop: insets.top + 6 }]}>
@@ -265,6 +267,7 @@ function Tela({ params }: { params: Params }) {
         </>
       )}
     </View>
+    </VoltarPelaBorda>
   );
 }
 

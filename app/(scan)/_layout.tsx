@@ -17,6 +17,20 @@ export default function ScanLayout() {
           não tem voltar; o scan entra SEM animação — a transição termina com o fundo dele. */}
       <Stack.Screen name="demo-transicao" options={{ animation: 'fade', animationDuration: 220, gestureEnabled: false }} />
       <Stack.Screen name="demo-scan" options={{ animation: 'none' }} />
+      {/* Gesto de voltar da borda (10/nov/2026). Loadings: voltar no meio da análise não é
+          caminho (lista também em `TELAS_SEM_GESTO`, no layout raiz). */}
+      <Stack.Screen name="product-loading" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="loading-dentro-app" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="loading" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="sos-loading" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="lote-montando" options={{ gestureEnabled: false }} />
+      {/* O botão leva a outro lugar que não a tela anterior: o gesto nativo voltaria para a
+          câmera/loading. Usam `VoltarPelaBorda` com a mesma função do botão. */}
+      <Stack.Screen name="product-result" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="lote-resultado" options={{ gestureEnabled: false }} />
+      <Stack.Screen name="lote-revisao" options={{ gestureEnabled: false }} />
+      {/* Sem botão de voltar/X (só "Concluir" e "Nova foto"): sem gesto. */}
+      <Stack.Screen name="sos-resultado" options={{ gestureEnabled: false }} />
     </Stack>
   );
 }

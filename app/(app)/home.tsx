@@ -19,6 +19,7 @@ import { useFaceScan } from '../../hooks/useFaceScan';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { useCachedQuery } from '../../lib/cache';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 import { contarPassosMinhaRotina } from '../../lib/minhaRotina';
 import { SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
 import { getUserId, useUserId } from '../../lib/currentUser';
@@ -395,7 +396,7 @@ export default function Home() {
     };
   }, []);
 
-  const { data: cached, state: homeState } = useCachedQuery<HomeData>(
+  const { data: cached, state: homeState, refresh: recarregarHome } = useCachedQuery<HomeData>(
     userId ? `home:${userId}` : null,
     fetchHome,
     { enabled: Boolean(userId) },
@@ -448,7 +449,7 @@ export default function Home() {
   const days = weekFor(now, hist);
   // Sequência = um número só (dias ativos seguidos), do SERVIDOR (estado da função
   // `cartas`); sem ele ainda, o histórico do celular. É o da chama e o do herói.
-  const { data: estado } = useEstadoCartas();
+  const { data: estado, refresh: recarregarEstado } = useEstadoCartas();
   const dayStreak = estado?.sequencia.atual ?? routineDayStreak(hist, now);
   const streak = dayStreak;
   const protegida = (estado?.poderes.protecao ?? 0) > 0;
@@ -522,7 +523,7 @@ export default function Home() {
     celebrou.current = true;
     // A subida pelos pontos retroativos (a de carta é medida ao raspar).
     if (pontos.retro) trackFora('nivel_subiu', { nivel: pontos.nivel, origem: 'retro' });
-    router.push('/caminhada?celebrar=1' as any);
+    router.push('/caminhada?celebrar=1&de=home' as any);
   }, [pontos?.celebrar, avisoResolvido, tutorialPendente, router]);
 
   // Sobrou uma carta de hoje sem raspar (ex.: o app fechou no meio do fluxo): ela abre
@@ -539,13 +540,15 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [cartaPendente, avisoResolvido, tutorialPendente, pontos?.celebrar, router]));
 
-  const { data: meusGrupos } = useMeusGrupos();
+  const { data: meusGrupos, refresh: recarregarGrupos } = useMeusGrupos();
   const grupo = meusGrupos?.[0] ?? null;
 
   // ── Missões (06/nov/2026, lib/missoes.ts) ───────────────────────────────────
   // Balãozinho ao lado do "Iniciar skincare", para contas novas e existentes, depois do tour (conta nova). Some quando
   // os 4 desafios foram feitos e a rara foi raspada.
-  const { data: missoes } = useMissoes();
+  const { data: missoes, refresh: recarregarMissoes } = useMissoes();
+  // Puxar para atualizar (10/nov/2026): as mesmas consultas da tela.
+  const puxar = usePuxarParaAtualizar([recarregarHome, recarregarEstado, recarregarGrupos, recarregarMissoes], insets.top);
   const guia = useGuia();
   const mostrarMissoes = !convidada && !!missoes && !tutorialPendente && !guia && cardVisivel(missoes);
   const comecarMissao = (m: MissaoId) => {
@@ -692,6 +695,7 @@ export default function Home() {
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
+        refreshControl={puxar}
         contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 150 }}
       >
         {/* ── Cabeçalho: foto + "Olá, Nome" + grupo · sequência ───────────── */}
@@ -713,7 +717,7 @@ export default function Home() {
                   a linha fica vazia com a mesma altura (a tela não pula). */}
               {pontos ? (
                 <View {...tutNivel} style={{ alignSelf: 'flex-start' }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => go('/caminhada')} style={styles.groupLine} accessibilityLabel={`Nível ${pontos.nivel}, ${pontos.titulo}. Abrir sua caminhada${dobroHoje ? ', pontos em dobro' : ''}`}>
+                  <TouchableOpacity activeOpacity={0.7} onPress={() => go('/caminhada?de=home')} style={styles.groupLine} accessibilityLabel={`Nível ${pontos.nivel}, ${pontos.titulo}. Abrir sua caminhada${dobroHoje ? ', pontos em dobro' : ''}`}>
                     {/* A medalha atual + o nome dela ("Prata 1"), desde 08/nov/2026. */}
                     <View style={{ width: 22, height: 22, marginVertical: -4, marginRight: -3 }}><Medalha nivel={pontos.nivel} tamanho={22} /></View>
                     <Text style={styles.groupLineText}>{pontos.titulo}</Text>

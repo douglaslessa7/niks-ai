@@ -20,6 +20,7 @@ import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 import { loteDeHoje } from '../../lib/rotinaLotes';
 import { abrirMontarRotina } from '../../lib/abrirMontarRotina';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NIKS Chat — réplica dos designs 39a (início) e 39b (conversa em andamento) do
@@ -1297,6 +1298,7 @@ export default function NiksChat() {
   )
 
   return (
+    <VoltarPelaBorda onVoltar={() => router.navigate('/home' as any)} ativo={!historyVisible}>
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <StatusBar style="dark" />
 
@@ -1544,6 +1546,7 @@ export default function NiksChat() {
         </ScrollView>
       </Animated.View>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

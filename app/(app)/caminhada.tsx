@@ -2,9 +2,9 @@ import { useAcesso } from '../../lib/acesso';
 import { paywallDaMedalha } from '../../lib/trava';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTelaFocada } from '../../hooks/useTelaFocada';
-import { View, Text, Image, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
@@ -29,6 +29,8 @@ import {
   CARD_LEFT, CONTENT_H, EIO, EO, GAVETA, INK, MUTE, NIVEIS_TRILHA, PAD_TOP, PINK, ROW,
   cardTop, dotY, fmt, railK, sCard, sMark, xpY, type Icone, type Limites,
 } from '../../components/caminhada/geometria';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Sua caminhada" — réplica do design 68a–68f do Claude Design (projeto "NIKS home
@@ -90,7 +92,7 @@ export default function Caminhada() {
   const rm = useReducedMotion();
   const uid = useUserId();
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
-  const { data: cached } = useEstadoCartas();
+  const { data: cached, refresh: recarregarEstado } = useEstadoCartas();
 
   // Geometria na tela.
   const y = useCallback((v: number) => insets.top + v - 54, [insets.top]);
@@ -127,6 +129,7 @@ export default function Caminhada() {
   const [chipTxt, setChipTxt] = useState('');
   const [chipW, setChipW] = useState(140);
   const busy = useRef(false);
+  const { de } = useLocalSearchParams<{ de?: string }>();
   const touring = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const afterCel = useRef<(() => void) | null>(null);
@@ -150,6 +153,11 @@ export default function Caminhada() {
   const scrimO = useSharedValue(0), sheetY = useSharedValue(1);
   const celO = useSharedValue(0), celIn = useSharedValue(0);
   const aref = useAnimatedRef<Animated.ScrollView>();
+  // Puxar para atualizar (10/nov/2026): o estado das cartas (pontos e nível).
+  // O cabeçalho fixo (card do nível) cobre o topo da lista: o vão do puxão abre atrás dele e o
+  // indicador do sistema não aparece. Um indicador próprio, logo abaixo do cabeçalho, mostra o
+  // "atualizando" (o do sistema continua, invisível, só para o gesto).
+  const puxar = usePuxarParaAtualizar([recarregarEstado]);
   const arrastou = useRef(false); // ela já mexeu na lista nesta visita
 
   const rolando = useSharedValue(false);
@@ -437,11 +445,14 @@ export default function Caminhada() {
   }, [uid]));
 
   // ── Ações ───────────────────────────────────────────────────────────────────
-  const voltar = () => {
+  // `de=grupos`: aberta pela aba Grupos — volta para ela. Aba oculta do <Tabs>: `router.back()`
+  // cai na Home (1ª aba), o que só é certo para quem abriu pela Home (10/nov/2026).
+  const voltar = (comToque = true) => {
     if (busy.current) return;
-    haptics.tap();
+    if (comToque) haptics.tap();
     pararRolagem();
-    if (router.canGoBack()) router.back();
+    if (de === 'grupos') router.navigate('/grupos' as any);
+    else if (router.canGoBack()) router.back();
     else router.replace('/home' as any);
   };
 
@@ -509,12 +520,13 @@ export default function Caminhada() {
   const shRot = Math.ceil(shFalta / mediaRotina);
 
   return (
+    <VoltarPelaBorda onVoltar={() => voltar(false)}>
     <Animated.View style={[styles.root, bgSt, rootSt]}>
       <StatusBar style="dark" />
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.glow, glowSt]} />
 
       {/* Voltar + título */}
-      <TouchableOpacity activeOpacity={0.7} onPress={voltar} style={[styles.back, { top: y(58) }]} accessibilityLabel="Voltar">
+      <TouchableOpacity activeOpacity={0.7} onPress={() => voltar()} style={[styles.back, { top: y(58) }]} accessibilityLabel="Voltar">
         <Svg width={18} height={18} viewBox="0 0 24 24"><Path d="m15 18-6-6 6-6" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
       </TouchableOpacity>
       <View pointerEvents="none" style={[styles.titleRow, { top: y(58) }]}><Text style={styles.title}>Sua caminhada</Text></View>
@@ -555,6 +567,7 @@ export default function Caminhada() {
           showsVerticalScrollIndicator={false}
           onScrollBeginDrag={() => { arrastou.current = true; pararRolagem(); }}
           onTouchStart={() => { if (touring.current) pararRolagem(); }}
+          refreshControl={puxar}
           contentContainerStyle={{ height: CONTENT_H }}
         >
           <View style={{ position: 'absolute', left: ox, top: 0, width: 393, height: CONTENT_H }}>
@@ -592,6 +605,9 @@ export default function Caminhada() {
             </Animated.View>
           </View>
         </Animated.ScrollView>
+        {puxar.props.refreshing && (
+          <ActivityIndicator color="#FF5EA8" pointerEvents="none" style={{ position: 'absolute', top: y(232), alignSelf: 'center' }} />
+        )}
       </View>
 
       {/* Rodapé: como ganhar */}
@@ -679,6 +695,7 @@ export default function Caminhada() {
         </Animated.View>
       )}
     </Animated.View>
+    </VoltarPelaBorda>
   );
 }
 

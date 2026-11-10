@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'expo-router';
 import { View, Text, TouchableOpacity, Image, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -64,9 +64,11 @@ type Props = {
   /** Sobe o card ao abrir. Desligue quando a tela já anima o widget por fora. */
   entrada?: boolean;
   style?: StyleProp<ViewStyle>;
+  /** Puxar para atualizar da tela (10/nov/2026): cada mudança relê o mês aberto. */
+  atualizar?: number;
 };
 
-export default function CalendarioCheckins({ abertura, rm, entrada = true, style }: Props) {
+export default function CalendarioCheckins({ abertura, rm, entrada = true, style, atualizar = 0 }: Props) {
   const userId = useUserId();
   const router = useRouter();
   const pathname = usePathname();
@@ -76,7 +78,13 @@ export default function CalendarioCheckins({ abertura, rm, entrada = true, style
   const mk = mesKey(mes);
   const fetcher = useCallback(() => perfilGrupos(mk), [mk]);
   // staleMs 0: o próprio useCachedQuery revalida a cada foco da tela.
-  const { data: p } = useCachedQuery<PerfilGrupos>(userId ? chavePerfilGrupos(userId, mk) : null, fetcher, { staleMs: 0, enabled: Boolean(userId) });
+  const { data: p, refresh } = useCachedQuery<PerfilGrupos>(userId ? chavePerfilGrupos(userId, mk) : null, fetcher, { staleMs: 0, enabled: Boolean(userId) });
+  const ultimaRecarga = useRef(atualizar);
+  useEffect(() => {
+    if (ultimaRecarga.current === atualizar) return;
+    ultimaRecarga.current = atualizar;
+    void refresh();
+  }, [atualizar, refresh]);
 
   const cardIn = useSharedValue(entrada ? 0 : 1);
   const [trocou, setTrocou] = useState(false);

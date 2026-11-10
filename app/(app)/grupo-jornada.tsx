@@ -18,6 +18,7 @@ import { nivelDe, NIVEL_MAXIMO } from '../../lib/niveis';
 import Medalha from '../../components/medalhas/Medalha';
 import { usePulsoMedalha } from '../../components/medalhas/usePulsoMedalha';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Jornada do grupo — réplica de 81o do Claude Design ("NIKS home redesign",
@@ -169,6 +170,7 @@ export default function GrupoJornada() {
   const barK = nivel ? (nivel.teto <= nivel.piso ? 1 : Math.min(1, Math.max(0, (pts - nivel.piso) / Math.max(1, nivel.teto - nivel.piso)))) : 0;
 
   return (
+    <VoltarPelaBorda onVoltar={() => router.navigate({ pathname: '/grupo', params: { id: gid } } as any)}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <TouchableOpacity
@@ -243,6 +245,7 @@ export default function GrupoJornada() {
         </View>
       </View>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

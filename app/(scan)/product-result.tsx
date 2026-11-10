@@ -22,6 +22,7 @@ import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { ganhouPontos } from '../../lib/pontosAnimacao';
 import { encerrarGuia, irParaGuia, useGuia } from '../../lib/guia';
 import { verificarDesafios } from '../../lib/missoes';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 // Tela de RESULTADO do scan de produto (fluxo da câmera → loading → aqui).
 // O layout inteiro vive em `components/product/ProductAnalysis` — o MESMO componente que o
@@ -244,6 +245,7 @@ export default function ProductResult() {
   };
 
   return (
+    <VoltarPelaBorda onVoltar={aoFechar}>
     <View style={{ flex: 1 }}>
     <ProductAnalysis
       result={productScanResult}
@@ -280,5 +282,6 @@ export default function ProductResult() {
       onFechar={() => { setFolhaGrupo(false); fechar(); }}
     />
     </View>
+    </VoltarPelaBorda>
   );
 }

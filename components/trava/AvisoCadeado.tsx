@@ -27,7 +27,7 @@ export default function AvisoCadeado() {
     if (!useTrava.getState().caminhadaDepois) return;
     useTrava.setState({ caminhadaDepois: false });
     pularProximoPaywallDaMedalha();
-    router.push('/(app)/caminhada' as any);
+    router.push('/(app)/caminhada?de=home' as any);
   };
 
   // Cobre a tela entre a carta fechar e o paywall aparecer, para o grupo não surgir no meio.

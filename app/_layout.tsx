@@ -35,6 +35,30 @@ import {
   requestDownsell,
 } from '../lib/paywallFlow';
 
+// Telas de (scan) e (onboarding) SEM o gesto de voltar da borda (10/nov/2026). Cada uma já
+// desliga o próprio gesto (no arquivo ou no `_layout` do grupo); esta lista cobre o caso de ela
+// ser a única tela da pilha do grupo — ver o `(scan)`/`(onboarding)` no <Stack> abaixo.
+// ⚠️ Tela nova sem gesto: desligue no grupo E ponha aqui.
+const TELAS_SEM_GESTO = new Set([
+  // (scan)
+  'camera', 'analisando-foto', 'resultado-scan', 'results', 'share-product-loading',
+  'solucao', 'seu-caminho', 'personalizar', 'demo-transicao',
+  'product-loading', 'loading-dentro-app', 'loading', 'sos-loading', 'lote-montando',
+  'product-result', 'lote-resultado', 'lote-revisao', 'sos-resultado',
+  'pergunta', // só a 1ª desliga o gesto; as outras nunca ficam sozinhas na pilha do grupo
+  // (onboarding)
+  'abertura', 'ola', 'seus-dados', 'compromisso', 'idade-pele', 'loading-rotina',
+  'permitir-notificacoes', 'rotina-pronta', 'rotina-pronta-v2', 'transicao-rotina',
+  'paywall-soft', 'signup',
+  'bv-entrou', 'bv-rotina', 'bv-foto', 'bv-projecao', 'bv-pacto', 'bv-recompensa', 'bv-sequencia', 'bv-nivel',
+]);
+/** Nome da tela aberta dentro de um grupo (a rota do grupo na pilha raiz). */
+function telaAberta(route: { state?: { index?: number; routes?: { name: string }[] }; params?: object }): string | undefined {
+  const st = route.state;
+  if (st?.routes && typeof st.index === 'number') return st.routes[st.index]?.name;
+  return (route.params as { screen?: string } | undefined)?.screen;
+}
+
 const PAYWALLO_CONFIG = {
   appKey: process.env.EXPO_PUBLIC_PAYWALLO_APP_KEY ?? '',
   appVersion: Application.nativeApplicationVersion ?? undefined,
@@ -342,6 +366,11 @@ export default function RootLayout() {
                 <AppShell>
                   <Stack screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="(app)" options={{ gestureEnabled: false }} />
+                    {/* Quando a tela aberta é a ÚNICA da pilha do grupo (ex.: o loading que substituiu
+                        a câmera), quem decide o gesto de voltar é ESTA pilha, não a do grupo: sem isto,
+                        arrastar a borda fecharia o scan inteiro no meio da análise (10/nov/2026). */}
+                    <Stack.Screen name="(scan)" options={({ route }) => ({ gestureEnabled: !TELAS_SEM_GESTO.has(telaAberta(route) ?? '') })} />
+                    <Stack.Screen name="(onboarding)" options={({ route }) => ({ gestureEnabled: !TELAS_SEM_GESTO.has(telaAberta(route) ?? '') })} />
                     {/* Carta de raspar: abre POR CIMA do app (o app desfocado fica atrás) */}
                     <Stack.Screen
                       name="(carta)"

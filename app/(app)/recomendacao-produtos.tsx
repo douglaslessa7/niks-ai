@@ -27,6 +27,7 @@ import { dadoPronto, fonteImagem, revalidar, sincronizar } from '../../lib/produ
 import { haptics } from '../../lib/haptics';
 import { CAT_ORDER, catOf } from '../../lib/productCategory';
 import { listarEscaneados, type ScanItem } from '../../lib/escaneados';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 import { dedupeByProduct, sameProduct } from '../../lib/productMatch';
 import { onCoachPrepare, setCoachStageReady, useCoachMark, type CoachTargetKey } from '../../lib/coachMarks';
 import AlvoGuia from '../../components/coach/AlvoGuia';
@@ -34,6 +35,7 @@ import { avancarGuiaDe, irParaGuia, useGuia } from '../../lib/guia';
 import { verificarDesafios } from '../../lib/missoes';
 import { checkProdutosTutorial } from '../../lib/produtosTutorial';
 import InicialAvatar from '../../components/InicialAvatar';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
 // Reformada para a linguagem visual do app (home / protocolo / niks-chat): fundo
@@ -543,6 +545,9 @@ export default function RecomendacaoProdutos() {
   // Recarrega sempre que a tela ganha foco: um "Tenho em casa" marcado no resultado do
   // scan ou em outra tela já aparece na estante na volta.
   useFocusEffect(useCallback(() => { loadColecao(); }, [loadColecao]));
+  // Puxar para atualizar (10/nov/2026): os mesmos carregadores do foco (o `sincronizar` sempre
+  // confere no servidor e aproveita a chamada em andamento).
+  const puxar = usePuxarParaAtualizar([load, loadScans, loadColecao, reloadSaved], insets.top);
   // Enquanto houver recorte em andamento, recarrega a cada 4s (no máximo 15 vezes) —
   // a miniatura da estante troca a foto pelo recorte quando ele fica pronto.
   const colPolls = useRef(0);
@@ -928,6 +933,7 @@ export default function RecomendacaoProdutos() {
   );
 
   return (
+    <VoltarPelaBorda onVoltar={backToMain} ativo={view !== 'main' && detail == null}>
     <View style={{ flex: 1, backgroundColor: '#F9F2F5' }}>
       {/* Fundo do 47a: linear 180° #FFE3EF → #FCEAF2 (30%) → #F9F2F5 (60%–100%). */}
       <LinearGradient colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']} locations={[0, 0.3, 0.6, 1]} style={StyleSheet.absoluteFill} />
@@ -938,7 +944,7 @@ export default function RecomendacaoProdutos() {
           Seção sem produto não aparece; Escaneados vazio vira convite. Com texto na
           busca, a estante dá lugar aos resultados das três origens. */}
       {view === 'main' && (
-        <ScrollView ref={mainScrollRef} style={{ flex: 1 }} scrollEnabled={scrollOn} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={mainScrollRef} style={{ flex: 1 }} scrollEnabled={scrollOn} refreshControl={puxar} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
           {PageTop()}
           {searching ? (() => {
             const q = fold(query.trim());
@@ -1038,7 +1044,7 @@ export default function RecomendacaoProdutos() {
 
       {/* ═══ LISTA COMPLETA: ESCANEADOS ("Ver todos") ═══ */}
       {view === 'escaneados' && (
-        <ScrollView style={{ flex: 1 }} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ flex: 1 }} refreshControl={puxar} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
           {PageTop()}
           {scanState === 'loading' && (
             <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
@@ -1065,7 +1071,7 @@ export default function RecomendacaoProdutos() {
           Só as prateleiras: tocar num produto põe no passo e volta para a Rotina. Arrastar
           desligado; sem carrosséis, "Editar", compartilhar e pílula. */}
       {view === 'estante' && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ flex: 1 }} refreshControl={puxar} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
           {PageTop()}
           {!!escolha && (
             <Text style={[p47.note, { marginTop: 14, marginBottom: 12 }]} lineBreakStrategyIOS="push-out">
@@ -1094,7 +1100,7 @@ export default function RecomendacaoProdutos() {
           produto por passo — o resto das recomendações fica aqui). Tocar abre o detalhe,
           com "Salvar na minha rotina". */}
       {view === 'recomendados' && (
-        <ScrollView style={{ flex: 1 }} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ flex: 1 }} refreshControl={puxar} onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: searchOpen ? 190 : 120 }} showsVerticalScrollIndicator={false}>
           {PageTop()}
           {(state === 'loading' || state === 'generating') && (
             <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 }}>
@@ -1257,6 +1263,7 @@ export default function RecomendacaoProdutos() {
         )}
       </Modal>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

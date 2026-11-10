@@ -1250,7 +1250,7 @@ export default function CartaScreen() {
       proximaCarta.current = null;
       const sair = () => {
         fechar();
-        if (subiuNivel.current) { subiuNivel.current = false; router.push('/(app)/caminhada' as any); }
+        if (subiuNivel.current) { subiuNivel.current = false; router.push('/(app)/caminhada?de=home' as any); }
       };
       consulta
         .then((e) => {

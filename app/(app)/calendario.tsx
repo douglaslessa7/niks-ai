@@ -21,6 +21,7 @@ import { haptics } from '../../lib/haptics';
 import {
   getRoutineHistory, routineDayStreak, routinesDoneOn, sessionDate, dateKey, type RoutineHistory,
 } from '../../lib/routineProgress';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -103,6 +104,7 @@ export default function Calendario() {
   }
 
   return (
+    <VoltarPelaBorda onVoltar={() => router.navigate((de === 'conquistas' ? '/conquistas' : de === 'grupos' ? '/grupos' : '/home') as any)}>
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <StatusBar style="dark" />
 
@@ -203,6 +205,7 @@ export default function Calendario() {
         <View style={{ height: 120 }} />
       </ScrollView>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

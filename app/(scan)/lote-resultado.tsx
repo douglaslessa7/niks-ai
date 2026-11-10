@@ -26,6 +26,7 @@ import { getUserId } from '../../lib/currentUser';
 import { diasDoPasso } from '../../lib/frequencia';
 import { ROTULO_TIPO, tipoPorTexto, type TipoPasso } from '../../lib/tipoPasso';
 import { buscarLote, fotosDoLote, marcarVisto, type Lote, type ProdutoResultado } from '../../lib/rotinaLotes';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -160,6 +161,7 @@ export default function LoteResultado() {
   const segOn = { backgroundColor: '#FFFFFF', shadowColor: '#783C48', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 5 };
 
   return (
+    <VoltarPelaBorda onVoltar={sair}>
     <View style={{ flex: 1 }}>
       <StatusBar style="dark" />
       <LinearGradient colors={BG.am as any} locations={BG_STOPS as any} style={st.fill} />
@@ -278,6 +280,7 @@ export default function LoteResultado() {
         <Text style={st.irTxt}>Ir para minha rotina</Text>
       </TouchableOpacity>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

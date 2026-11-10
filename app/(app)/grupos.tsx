@@ -18,6 +18,7 @@ import CalendarioCheckins, { Salta, mesKey } from '../../components/grupos/Calen
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
 import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aba Grupos · Perfil — réplica de 81a/81b do Claude Design ("NIKS home redesign",
@@ -65,8 +66,11 @@ export default function Grupos() {
   // O herói lê o perfil do mês atual (mesma chave do calendário quando ele está no mês atual).
   const mk = mesKey(sessionDate());
   const fetcher = useCallback(() => perfilGrupos(mk), [mk]);
-  const { data: p } = useCachedQuery<PerfilGrupos>(userId ? chavePerfilGrupos(userId, mk) : null, fetcher, { staleMs: 0, enabled: Boolean(userId) });
-  const { data: estado } = useEstadoCartas();
+  const { data: p, refresh: recarregarPerfil } = useCachedQuery<PerfilGrupos>(userId ? chavePerfilGrupos(userId, mk) : null, fetcher, { staleMs: 0, enabled: Boolean(userId) });
+  const { data: estado, refresh: recarregarEstado } = useEstadoCartas();
+  // Puxar para atualizar (10/nov/2026): perfil, cartas e o calendário (que tem consulta própria).
+  const [recargaCal, setRecargaCal] = useState(0);
+  const puxar = usePuxarParaAtualizar([recarregarPerfil, recarregarEstado, () => setRecargaCal((n) => n + 1)], insets.top);
   const pontos = estado?.pontos;
 
   // ── Entrada (a cada foco): foto, card do calendário e as fotos do mês ──────────
@@ -89,7 +93,7 @@ export default function Grupos() {
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
+      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} refreshControl={puxar} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
         <View style={{ height: hh }}>
           <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
             <Svg width={W} height={hh} style={StyleSheet.absoluteFill}>
@@ -116,7 +120,7 @@ export default function Grupos() {
             </AlvoGuia>
           </Salta>
           <Text style={[styles.nome, { top: y(216) }]} numberOfLines={1}>{p?.nome ?? ''}</Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/caminhada' as any); }} style={[styles.nivelBtn, { top: y(248) }]} accessibilityLabel="Sua caminhada">
+          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/caminhada?de=grupos' as any); }} style={[styles.nivelBtn, { top: y(248) }]} accessibilityLabel="Sua caminhada">
             <Text style={styles.nivel}>{pontos ? `Nível ${pontos.nivel} · ${pontos.titulo}` : p ? `Nível ${p.nivel} · ${p.titulo}` : ' '}</Text>
           </TouchableOpacity>
           <View style={[styles.stats, { top: y(282) }]}>
@@ -136,7 +140,7 @@ export default function Grupos() {
           </View>
         </View>
 
-        <CalendarioCheckins abertura={abertura} rm={rm} />
+        <CalendarioCheckins abertura={abertura} rm={rm} atualizar={recargaCal} />
 
         <View style={{ marginTop: 18, alignItems: 'center' }}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/calendario?de=grupos' as any); }} style={styles.verTodos}>

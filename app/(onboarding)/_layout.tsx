@@ -54,5 +54,18 @@ export default function OnboardingLayout() {
     registerSuperProperties({ onboarding_version: '2.0' });
   }, [isReady, isInOnboarding]);
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  // Sem o gesto de voltar da borda (10/nov/2026): o paywall, o cadastro e as boas-vindas
+  // pós-compra não voltam para a tela de trás (lista também em `TELAS_SEM_GESTO`, no layout raiz).
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      {SEM_GESTO_ONBOARDING.map((name) => (
+        <Stack.Screen key={name} name={name} options={{ gestureEnabled: false }} />
+      ))}
+    </Stack>
+  );
 }
+
+const SEM_GESTO_ONBOARDING = [
+  'paywall-soft', 'signup',
+  'bv-entrou', 'bv-rotina', 'bv-foto', 'bv-projecao', 'bv-pacto', 'bv-recompensa', 'bv-sequencia', 'bv-nivel',
+];

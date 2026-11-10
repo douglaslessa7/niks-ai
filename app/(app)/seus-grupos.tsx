@@ -24,6 +24,8 @@ import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { useCoachStage } from '../../lib/coachMarks';
 import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Seus grupos — réplica de 81c (com grupos), 81d (sem grupo) e 81e (folha "Novo grupo")
@@ -111,6 +113,8 @@ export default function SeusGrupos() {
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const setTabBarTheme = useAppStore((s) => s.setTabBarTheme);
   const { data: grupos, refresh } = useMeusGrupos();
+  // Puxar para atualizar (10/nov/2026).
+  const puxar = usePuxarParaAtualizar([refresh]);
   const list = grupos ?? [];
   const has = list.length > 0;
   const y = (v: number) => insets.top + v - 54;
@@ -251,6 +255,7 @@ export default function SeusGrupos() {
     : { transform: [{ translateY: folhaH * (1 - sobe.get()) + teclado.get() }] }), [rm, folhaH]);
 
   return (
+    <VoltarPelaBorda onVoltar={() => router.navigate('/grupos' as any)} ativo={!aberta}>
     <View style={styles.root}>
       <StatusBar style="dark" />
       <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>Seus grupos</Text></View>
@@ -263,6 +268,7 @@ export default function SeusGrupos() {
         <ScrollView
           style={{ position: 'absolute', top: y(98), left: 0, right: 0, bottom: 0 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={puxar}
           contentContainerStyle={{ paddingTop: 10, paddingHorizontal: 16, paddingBottom: 140, gap: 16 }}
         >
           {list.map((g, i) => {
@@ -393,6 +399,7 @@ export default function SeusGrupos() {
         </TouchableOpacity>
       </Animated.View>
     </View>
+    </VoltarPelaBorda>
   );
 }
 

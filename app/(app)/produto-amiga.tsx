@@ -10,6 +10,7 @@ import { useEhConvidada } from '../../lib/acesso';
 import { abrirTrava } from '../../lib/trava';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
+import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 
 const PINK = '#E0447F';
 
@@ -30,15 +31,17 @@ export default function ProdutoAmiga() {
   const setProductImage = useAppStore((s) => s.setProductImage);
   const [dados, setDados] = useState<{ resultado: any; foto_url: string | null } | null>(null);
   const [analisando, setAnalisando] = useState(false);
+  // Aba oculta do <Tabs>: `router.back()` cairia na Home (1ª aba). Volta para o grupo de onde abriu.
+  const voltar = () => router.navigate((grupo ? { pathname: '/grupo', params: { id: grupo } } : '/grupos') as any);
 
   useEffect(() => {
-    if (!grupo || !id) { router.back(); return; }
+    if (!grupo || !id) { voltar(); return; }
     produtoCompartilhado(grupo, id)
       .then((r) => {
         if (r.ok) setDados({ resultado: r.resultado, foto_url: r.foto_url });
-        else { Alert.alert('Esse produto não está mais disponível'); router.back(); }
+        else { Alert.alert('Esse produto não está mais disponível'); voltar(); }
       })
-      .catch(() => { Alert.alert('Não deu para abrir agora', 'Confira a internet e tente de novo.'); router.back(); });
+      .catch(() => { Alert.alert('Não deu para abrir agora', 'Confira a internet e tente de novo.'); voltar(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grupo, id]);
 
@@ -74,5 +77,9 @@ export default function ProdutoAmiga() {
     </View>
   );
 
-  return <ProductAnalysis result={dados.resultado} photoUri={dados.foto_url} onClose={() => router.back()} blocoCompatibilidade={bloco} />;
+  return (
+    <VoltarPelaBorda onVoltar={voltar}>
+      <ProductAnalysis result={dados.resultado} photoUri={dados.foto_url} onClose={voltar} blocoCompatibilidade={bloco} />
+    </VoltarPelaBorda>
+  );
 }

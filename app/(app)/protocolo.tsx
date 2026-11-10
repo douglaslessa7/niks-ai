@@ -63,6 +63,7 @@ import PassoSheet, { type PassoSheetModo } from '../../components/rotina/PassoSh
 import { getFotoPerfilUrl } from '../../lib/facePhoto';
 import { saveRoutinePhoto } from '../../lib/routinePhotos';
 import { useCachedQuery, invalidateCache } from '../../lib/cache';
+import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
 import { getUserId, useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 import { useEstadoCartas, concluirRotina } from '../../lib/cartasServidor';
@@ -573,7 +574,7 @@ export default function Protocolo() {
       pmTime: parseTime(userRes.data?.rotina_noite_horario, DEFAULT_PM),
     };
   }, []);
-  const { data: extras } = useCachedQuery(
+  const { data: extras, refresh: refreshExtras } = useCachedQuery(
     userId ? `rotina:${userId}` : null,
     fetchExtras,
     { enabled: Boolean(userId) },
@@ -630,7 +631,7 @@ export default function Protocolo() {
     const uid = await getUserId();
     return uid ? loteDeHoje(uid) : null;
   }, []);
-  const { data: loteHoje } = useCachedQuery(
+  const { data: loteHoje, refresh: refreshLote } = useCachedQuery(
     userId ? `lotehoje:${userId}` : null,
     fetchLoteHoje,
     { enabled: Boolean(userId), staleMs: 0 },
@@ -643,7 +644,7 @@ export default function Protocolo() {
     if (error) throw error;
     return { status: (data?.rotina_intro_status ?? null) as EscolhaIntro | null };
   }, []);
-  const { data: introDb } = useCachedQuery(
+  const { data: introDb, refresh: refreshIntro } = useCachedQuery(
     userId ? `rotinaintro:${userId}` : null,
     fetchIntro,
     { enabled: Boolean(userId), staleMs: 0 },
@@ -785,7 +786,9 @@ export default function Protocolo() {
   const finLabel = finAt ? `Feita às ${new Date(finAt).getHours()}:${String(new Date(finAt).getMinutes()).padStart(2, '0')}` : '';
   // Sequência = um número só (dias ativos seguidos), do SERVIDOR. Logo depois de concluir,
   // vale o número que o servidor devolveu (seqServidor); sem rede, o do celular.
-  const { data: estadoCartas } = useEstadoCartas();
+  const { data: estadoCartas, refresh: refreshEstado } = useEstadoCartas();
+  // Puxar para atualizar (10/nov/2026): as mesmas consultas da tela.
+  const puxar = usePuxarParaAtualizar([refreshProtocolo, refreshExtras, refreshMinha, refreshIdeal, refreshLote, refreshIntro, refreshEstado], insets.top);
   const [seqServidor, setSeqServidor] = useState<number | null>(null);
   const streak = seqServidor ?? estadoCartas?.sequencia.atual ?? routineDayStreak(hist, now);
 
@@ -1136,7 +1139,7 @@ export default function Protocolo() {
       <View style={styles.circleWhite} pointerEvents="none" />
       <View style={styles.circleBlob} pointerEvents="none" />
 
-      <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={scrollOn} contentContainerStyle={{ paddingBottom: 112 }}>
+      <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={scrollOn} refreshControl={puxar} contentContainerStyle={{ paddingBottom: 112 }}>
         <View style={{ height: insets.top + 15 }} />
 
         {/* ── Cabeçalho: foto + "Sua rotina" · sequência ─────────────────── */}
