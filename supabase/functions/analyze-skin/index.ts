@@ -2,7 +2,10 @@
 // analyze-skin — ANÁLISE DE PELE DO ONBOARDING (1 foto)
 //
 // Recebe 1 foto (`imageBase64`) e devolve o `ScanResult` completo. Chamada por
-// `lib/onboardingPrefetch.ts` (o scan do onboarding).
+// `lib/onboardingPrefetch.ts` (o scan do onboarding). Desde 10/nov/2026 aceita também as
+// fotos de LADO do giro (`imagesBase64: [frente, lado, outro lado]` + `scanLayout: 'turns_v1'`,
+// até 2 lados): a frente continua a referência e os lados complementam (`blocoLados`). Sem
+// elas (1.0.60 e anteriores), o pedido ao modelo é o mesmo de 1 foto.
 //
 // Desde 06/nov/2026 (app novo) roda só DEPOIS DA COMPRA: antes dela, o scan passa pela
 // `analise-rapida`, e a carta do onboarding mostra um dos problemas que ela marcou. O app
@@ -41,6 +44,39 @@ const PROBLEMA_ANCORA: Record<string, { texto: string; secao: (r: any) => unknow
 }
 const INTENSIDADE_TEXTO = ['', 'leve', 'moderada', 'intensa']
 
+// Bloco do prompt quando chegam fotos de LADO do giro (frente + 1 ou 2 lados). Ideia do
+// `turns_v1` da `analyze-skin-app`, resumida: a frente é a referência; os lados são de
+// propósito e só complementam. Sem fotos de lado, o prompt fica idêntico ao de 1 foto.
+function blocoLados(n: number): string {
+  const lista = n === 1
+    ? '1. FOTO FRONTAL — rosto de frente, em repouso. É a REFERÊNCIA.\n2. FOTO DE LADO — rosto virado para um dos lados (semi-perfil).'
+    : '1. FOTO FRONTAL — rosto de frente, em repouso. É a REFERÊNCIA.\n2. FOTO DE LADO — rosto virado para um dos lados (semi-perfil).\n3. FOTO DE LADO — rosto virado para o OUTRO lado (semi-perfil).'
+  return `
+---
+
+## AS FOTOS QUE VOCÊ RECEBEU
+
+Você recebeu ${n + 1} fotos da MESMA pessoa, tiradas em sequência, com a mesma luz, enquanto ela girava a cabeça devagar diante da câmera frontal (é o que o scan do app pede):
+
+${lista}
+
+As fotos de lado são DE PROPÓSITO: não são foto mal tirada. Não reduza qualidade_foto nem confianca_analise porque o rosto está virado nelas. As fotos NÃO estão espelhadas: identifique pela própria imagem qual lado do rosto cada uma mostra (o lado DIREITO do rosto dela aparece à ESQUERDA da imagem).
+
+Como usar as fotos:
+- A FOTO FRONTAL é a referência de todos os campos e das métricas. Onde as instruções abaixo falam em "a imagem" ou "a foto", é a frontal.
+- As fotos de lado COMPLEMENTAM a frontal: mostram o contorno da mandíbula, a região perto da orelha, a lateral do nariz e a bochecha sob luz rasante, onde poros dilatados, cicatrizes e textura irregular ficam mais evidentes. Achado DISTINTO que só uma foto de lado mostra entra na análise (e em region_insights de "bochechas" ou "queixo_mandibula"). A MESMA lesão vista em mais de uma foto conta UMA vez. Se a frontal e uma foto de lado mostram bem a mesma área e discordam, vale a frontal.
+- firmness_loss é mais legível de lado: use o contorno da mandíbula nas fotos de lado.
+- Foto de lado borrada, cortada ou quase de frente: desconsidere aquela foto e registre em qualidade_foto.notas.
+- A "análise anterior" citada na mensagem (se houver) foi feita só na foto frontal.
+`
+}
+// `pregnancy_status` do onboarding → linha "Gestação" do contexto ('none' e vazio: sem linha).
+const GESTACAO: Record<string, string> = {
+  pregnant: 'grávida',
+  breastfeeding: 'amamentando',
+  trying: 'tentando engravidar',
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -50,7 +86,15 @@ Deno.serve(async (req) => {
   if (bloqueio) return bloqueio
 
   try {
-    const { imageBase64, skinProfile, analiseRapida } = await req.json()
+    const { imageBase64: fotoUnica, imagesBase64, scanLayout, skinProfile, analiseRapida } = await req.json()
+    // Fotos de LADO do giro do scan (10/nov/2026, app novo, só depois da compra): `imagesBase64` =
+    // [frente, lado, outro lado] com `scanLayout: 'turns_v1'`. Até 2 lados; vazio = 1 foto, como
+    // sempre. O app manda a frente também em `imageBase64` (a 1.0.60 e anteriores só mandam ela).
+    const giro = scanLayout === 'turns_v1' && Array.isArray(imagesBase64)
+      ? imagesBase64.filter((b: unknown) => typeof b === 'string' && b.length > 0) as string[]
+      : []
+    const imageBase64: string | undefined = giro[0] ?? fotoUnica
+    const lados = giro.slice(1, 3)
     // Âncora da carta (só o app novo manda, depois da compra). Fora do formato → ignorada
     // (análise como antes).
     const ancora: Ancora | null = analiseRapida ? validarAncora(analiseRapida) : null
@@ -71,12 +115,19 @@ Deno.serve(async (req) => {
       skinProfile.hydration ? `Hidratação declarada: ${skinProfile.hydration}` : null,
       skinProfile.sleep ? `Qualidade do sono: ${skinProfile.sleep}` : null,
       skinProfile.sunscreen ? `Uso de protetor solar: ${skinProfile.sunscreen}` : null,
+      // Gestação e alergia (10/nov/2026): o app novo manda; a 1.0.60 e anteriores não — sem
+      // elas, o texto fica igual ao de antes. As regras de SEGURANÇA do prompt usam estas linhas.
+      GESTACAO[skinProfile.pregnancy_status] ? `Gestação: ${GESTACAO[skinProfile.pregnancy_status]}` : null,
+      skinProfile.allergy_type === 'sensitive' ? 'Sensibilidade: pele sensível (reage com facilidade a produtos)' : null,
+      skinProfile.allergy_type === 'reaction'
+        ? `Reação declarada a: ${String(skinProfile.allergy_description ?? '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'algum produto (não especificou qual)'}`
+        : null,
     ].filter(Boolean).join('\n') : ''
 
     const systemPrompt = `Você é um sistema especializado em análise visual de pele com conhecimento clínico equivalente a um dermatologista experiente. Sua função é analisar fotografias faciais e extrair uma ficha clínica estruturada com máxima precisão visual.
 
 PRINCÍPIO FUNDAMENTAL: Você analisa APENAS o que consegue ver na imagem. Nunca invente, nunca extrapole além do visível. Quando houver dúvida real, declare confiança baixa naquele campo específico — isso é mais útil do que uma resposta falsa e confiante.
-
+${lados.length ? blocoLados(lados.length) : ''}
 ---
 
 ## COMO USAR O CONTEXTO DECLARADO PELO USUÁRIO
@@ -87,6 +138,12 @@ O contexto declarado (tipo de pele, preocupações, idade, etc.) deve ser usado 
 - Se o contexto CONTRADIZ o que você vê na imagem → confie na imagem, não no contexto, e registre a discrepância no insight do campo relevante
 
 Exemplo crítico: usuária declara "pele seca" mas a foto mostra brilho difuso na zona T → registre skin_type_sebaceous como "mista" ou "oleosa" com nota: "Usuária declara pele seca, mas imagem mostra oleosidade na zona T — provável pele oleosa desidratada, condição onde a pessoa percebe ressecamento mas há produção sebácea ativa". Nunca priorize o declarado sobre o visível.
+
+### SEGURANÇA — regras absolutas (valem acima de qualquer achado da foto)
+
+- Linha "Gestação" com grávida, amamentando ou tentando engravidar → em action_recommendations e em qualquer outro texto, NUNCA sugira retinoides (retinol, retinal, tretinoína, adapaleno, isotretinoína), hidroquinona, nem ácidos em alta concentração (peelings, ácido glicólico ou salicílico em concentração alta). Prefira alternativas seguras (ex.: niacinamida, ácido azelaico, vitamina C, protetor solar).
+- Linha "Reação declarada a" → não sugira esse ativo, nem a família dele, nem produto que o contenha, em nenhum texto.
+- Linha "Sensibilidade" com pele sensível → prefira abordagens suaves e concentrações baixas; evite fragrância e álcool desnaturado nas sugestões.
 
 ---
 
@@ -388,7 +445,7 @@ Para cada região do rosto onde você identificou alguma condição relevante, g
    - "area_periocular" (contorno dos olhos, pálpebras)
 
 2. 'main_finding': o achado principal da região em 1 frase curta (máx 10 palavras). Objetivo: título do card.
-   Exemplos: "Comedões abertos e fechados concentrados", "Hiperpigmentação pós-inflamatória residual", "Oleosidade e poros dilatados"
+   Exemplos: "Cravos abertos e fechados concentrados", "Marcas escuras de espinhas antigas", "Oleosidade e poros dilatados"
 
 3. 'consequence': por que essa condição importa clinicamente — o que ela está causando ou pode causar se não tratada (1 frase, máx 18 palavras, linguagem acessível).
    Exemplos: "Folículos obstruídos se tornam lesões inflamatórias sem tratamento preventivo.", "Cada lesão ativa produz nova mancha escura nesta área."
@@ -403,7 +460,7 @@ Se a usuária declarou preocupações (campo 'concerns' no contexto — linha "P
 - 'alinhamento': "confirmado" se os achados do scan são consistentes com as preocupações declaradas; "parcial" se o scan confirma parte delas e revela condições adicionais que ela não mencionou; "divergente" se o scan sugere que a prioridade visível é diferente das preocupações declaradas
 - 'regioes_afetadas': array com as regiões onde os achados relacionados às preocupações estão presentes
 - 'mensagem': 2 frases conectando as preocupações da usuária com o que a análise encontrou. Primeira frase: valida/contextualiza as preocupações dela à luz dos achados (comece por algo como "Suas preocupações fazem sentido"). Segunda frase: o que o protocolo vai fazer a respeito. Tom: direto, clínico mas acessível, sem exagero motivacional.
-  Exemplo para concerns ["Acne/espinhas","Manchas"] com acne comedonal na testa e HPI nas bochechas: "Suas preocupações fazem sentido: a análise confirma acne ativa na testa e hiperpigmentação residual nas bochechas. O protocolo vai focar em desobstruir os folículos e clarear as manchas enquanto estabiliza a oleosidade."
+  Exemplo para concerns ["Acne/espinhas","Manchas"] com acne comedonal na testa e HPI nas bochechas: "Suas preocupações fazem sentido: a análise confirma espinhas ativas na testa e marcas escuras de espinhas antigas nas bochechas. O protocolo vai focar em desobstruir os folículos e clarear as manchas enquanto estabiliza a oleosidade."
 
 Se a usuária não declarou preocupações, omitir o campo concerns_alignment.
 
@@ -426,9 +483,15 @@ Cada rosto é único. Nunca dê o mesmo score para pessoas com perfis distintos.
 
 ## ETAPA 7 — CAMPOS DE UI
 
+### LINGUAGEM DOS TEXTOS QUE A USUÁRIA LÊ
+Valem para headline, region_insights (main_finding, consequence, benefit), pontos_fortes, pontos_fracos, skin_strengths e concerns_alignment.mensagem:
+- Linguagem leiga, de quem explica para uma amiga: nada de jargão clínico.
+- NUNCA dê nome de doença ou diagnóstico como certo (rosácea, melasma, dermatite, HPI/hiperpigmentação pós-inflamatória, queratose, milia…). Descreva o que se vê e use "sinais compatíveis com…" quando precisar citar a condição. Ex.: em vez de "melasma nas bochechas", "manchas simétricas nas bochechas, com sinais compatíveis com melasma"; em vez de "HPI", "marcas escuras onde já houve espinha".
+- Os campos TÉCNICOS (skin_phototype, skin_type_sebaceous, acne, cicatrizes, pigmentacao, rosacea, textura_poros, brilho_sebaceo, envelhecimento, area_periocular, condicoes_secundarias, prioridade_clinica, contraindicacoes, qualidade_foto, confianca_analise, metricas) continuam com os termos e valores definidos nas etapas anteriores.
+
 headline: frase curta e ESPECÍFICA descrevendo a pele DESTA pessoa.
-- CORRETO: "Pele oleosa com acne comedonal na zona T e manchas HPI nas bochechas"
-- CORRETO: "Pele mista com rosácea leve centrofacial e sinais iniciais de envelhecimento periocular"
+- CORRETO: "Pele oleosa com cravos e espinhas na zona T e marcas escuras nas bochechas"
+- CORRETO: "Pele mista com vermelhidão no centro do rosto e primeiras linhas ao redor dos olhos"
 - ERRADO: "Sua pele tem potencial incrível" (genérico, motivacional)
 - ERRADO: "Pele com algumas preocupações a serem tratadas" (vago)
 
@@ -470,21 +533,6 @@ MÉTRICAS NEGATIVAS (quanto MENOR, melhor — 0 = ausência total, 100 = severid
 - linhas_expressao: quantidade e profundidade de linhas de expressão (linhas finas e rugas dinâmicas — periocular, testa, glabela, perioral). 0 = nenhuma linha visível; 100 = linhas numerosas e profundas. Deve ser coerente com envelhecimento.lines_type.
 
 Avalie cada métrica estritamente pelo que vê na imagem, de forma independente das outras.
-
----
-
-## ETAPA 9 — PONTOS DO ROSTO NA FOTO (face_landmarks)
-
-O app desenha uma máscara de scan por cima do rosto na foto e precisa saber ONDE estão os traços. Dê a posição de 6 pontos em coordenadas NORMALIZADAS da imagem como ela foi enviada: x de 0 (borda esquerda da imagem) a 1 (borda direita); y de 0 (topo da imagem) a 1 (base). Use até 3 casas decimais e seja o mais preciso possível — meça na imagem, não estime pelo "rosto típico".
-
-- eye_left: centro da pupila do olho que aparece do lado ESQUERDO da imagem (não é o olho esquerdo da pessoa — é o da esquerda de quem olha a foto)
-- eye_right: centro da pupila do olho que aparece do lado DIREITO da imagem
-- nose_tip: ponta do nariz
-- mouth_center: centro da boca (meio da linha entre os lábios)
-- chin: ponta do queixo (borda inferior do rosto, no meio)
-- forehead: centro da testa, no meio entre a linha das sobrancelhas e a linha do cabelo
-
-Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria. Se não houver um rosto inteiro visível, retorne "face_landmarks": null.
 
 ---
 
@@ -594,20 +642,15 @@ Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria.
     "regioes_afetadas": <array de strings>,
     "mensagem": <string>
   },
-  "face_landmarks": {
-    "eye_left": { "x": <0-1>, "y": <0-1> },
-    "eye_right": { "x": <0-1>, "y": <0-1> },
-    "nose_tip": { "x": <0-1>, "y": <0-1> },
-    "mouth_center": { "x": <0-1>, "y": <0-1> },
-    "chin": { "x": <0-1>, "y": <0-1> },
-    "forehead": { "x": <0-1>, "y": <0-1> }
-  },
   "disclaimer": "Esta é uma análise estética por IA, não substitui consulta dermatológica."
 }`
 
-    const contextoBase = ctx
-      ? `Analise o rosto nesta foto seguindo todas as etapas do sistema.\n\nContexto declarado pelo usuário (use conforme as instruções — confirma ou contradiz o visível):\n${ctx}`
+    const abertura = lados.length
+      ? 'Analise o rosto nestas fotos (a 1ª de frente, as outras de lado) seguindo todas as etapas do sistema.'
       : 'Analise o rosto nesta foto seguindo todas as etapas do sistema.'
+    const contextoBase = ctx
+      ? `${abertura}\n\nContexto declarado pelo usuário (use conforme as instruções — confirma ou contradiz o visível):\n${ctx}`
+      : abertura
     // A carta que ela já viu saiu de uma análise anterior DESTA MESMA FOTO: o relatório não
     // pode contradizê-la. A idade também é forçada depois da resposta (abaixo).
     // ⚠️ 06/nov/2026: sem a última frase ("Todo o resto do relatório…"), a âncora puxava achados
@@ -633,10 +676,11 @@ Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria.
       : contextoBase
 
     const userContent = [
-      {
+      // A frente sempre primeiro; os lados (se vieram) logo depois, na ordem recebida.
+      ...[imageBase64, ...lados].map((b) => ({
         type: 'image_url',
-        image_url: { url: `data:image/jpeg;base64,${imageBase64}` },
-      },
+        image_url: { url: `data:image/jpeg;base64,${b}`, detail: 'high' },
+      })),
       { type: 'text', text: contextMessage },
     ]
 
@@ -660,11 +704,14 @@ Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria.
       'brilho_sebaceo', 'envelhecimento', 'pontos_fortes', 'pontos_fracos',
       'prioridade_clinica',
     ]
+    // `concerns_alignment` (10/nov/2026): obrigatório só quando ela declarou preocupações —
+    // em teste, a análise nova o deixou vazio em 1 de 5 chamadas com preocupações declaradas.
+    const exigidas = skinProfile?.concerns?.length ? [...REQUIRED_KEYS, 'concerns_alignment'] : REQUIRED_KEYS
     const missingKeys = (r: any): string[] =>
-      REQUIRED_KEYS.filter((k) => r?.[k] === undefined || r?.[k] === null)
+      exigidas.filter((k) => r?.[k] === undefined || r?.[k] === null)
 
     let result: any = null          // melhor resposta obtida até aqui
-    let bestMissing: string[] = REQUIRED_KEYS
+    let bestMissing: string[] = exigidas
     let lastError = ''
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -793,23 +840,6 @@ Esses pontos NÃO entram em nenhuma avaliação clínica — são só geometria.
       for (const k of ['qualidade_pele', 'atratividade', 'juventude', 'oleosidade', 'acne', 'linhas_expressao']) {
         result.metricas[k] = clampMetric(result.metricas[k])
       }
-    }
-
-    // Pontos do rosto (ETAPA 9) para a máscara do resultado do scan no app. Opcional:
-    // qualquer ponto ausente/fora de 0–1, ou olhos trocados de lado → o campo inteiro
-    // vira null e o app cai no enquadramento pelo oval da câmera. Não entra no
-    // REQUIRED_KEYS (não vale uma retentativa).
-    {
-      const lm = result.face_landmarks
-      const keys = ['eye_left', 'eye_right', 'nose_tip', 'mouth_center', 'chin', 'forehead']
-      const ok = lm && typeof lm === 'object' && keys.every((k) => {
-        const p = lm[k]
-        return p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))
-          && Number(p.x) >= 0 && Number(p.x) <= 1 && Number(p.y) >= 0 && Number(p.y) <= 1
-      }) && Number(lm.eye_left.x) < Number(lm.eye_right.x)
-      result.face_landmarks = ok
-        ? Object.fromEntries(keys.map((k) => [k, { x: Number(lm[k].x), y: Number(lm[k].y) }]))
-        : null
     }
 
     if (!result.disclaimer) {
