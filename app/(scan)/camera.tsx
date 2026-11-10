@@ -353,8 +353,11 @@ export default function Camera() {
               if (off <= LIGHT_CONE) litAt.current[i] = now + off * LIGHT_STAGGER_MS;
             });
           }
-          // (modo app) Foto de cada lado: sai sozinha com a cabeça virada e parada.
-          if (inApp) {
+          // Foto de cada lado: sai sozinha com a cabeça virada e parada. No modo app o círculo
+          // espera as duas; no ONBOARDING (10/nov/2026) é só aproveitada se sair durante o giro
+          // — sem travar, sem frase nova (`missing` abaixo fica null) — e vai só para a análise
+          // completa, depois da compra.
+          {
             const side: Side | null = raw && Math.abs(raw.dy) <= SIDE_MAX_DY
               ? raw.dx <= -SIDE_SHOT ? 'left' : raw.dx >= SIDE_SHOT ? 'right' : null
               : null;
@@ -505,7 +508,8 @@ export default function Camera() {
         return;
       }
       sidePhotos.current[side] = photo;
-      haptics.tap();
+      // No onboarding, sem toque: o anel já vibra, e ela não precisa saber que saiu foto.
+      if (inApp) haptics.tap();
     } catch {
       // tenta de novo no próximo giro para esse lado
     } finally {
@@ -572,8 +576,11 @@ export default function Camera() {
       return;
     }
     finishedRef.current = true;
-    track('onboarding_step_completed', obStep(OB_STEPS.camera, 'Scan - Câmera'));
+    // Fotos de lado que saíram durante o giro (0, 1 ou 2), na ordem da tela: esquerda, direita.
+    const lados = [sidePhotos.current.left, sidePhotos.current.right].filter((p): p is Photo => !!p).map((p) => p.base64);
+    track('onboarding_step_completed', { ...obStep(OB_STEPS.camera, 'Scan - Câmera'), fotos_lado: lados.length });
     setSkinImage(front.base64, front.uri);
+    useAppStore.getState().setSkinLados(lados);
     // Pontos do rosto na foto pelo próprio iPhone (para os pontinhos do relatório caírem na
     // região certa). Em segundo plano: o relatório leva segundos; se não vier, vale o da IA.
     faceLandmarksInImage(front.uri).then((lm) => {

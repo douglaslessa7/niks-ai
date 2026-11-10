@@ -417,6 +417,13 @@ type AppStore = {
   // foto (`camera.tsx`). Os pontinhos do relatório (`resultado-scan`) preferem estes aos
   // `face_landmarks` estimados pela IA. null = sem módulo/rosto (vale o da IA). Não persiste.
   skinFaceLandmarks: Record<'eye_left' | 'eye_right' | 'nose_tip' | 'mouth_center' | 'chin' | 'forehead', { x: number; y: number }> | null
+  // Fotos de LADO do giro do scan do ONBOARDING (10/nov/2026), em base64: as que saíram
+  // durante o círculo (0, 1 ou 2; o scan não espera por elas). Vão SÓ para a análise
+  // completa, depois da compra (`lib/onboardingPrefetch.ts`); a análise rápida usa só a
+  // frente. Só em memória — ⚠️ NUNCA persistir (fora do `partialize`). Na compra viram
+  // arquivos de compra pendente (`lib/compraPendente.ts`), apagados com o registro.
+  skinLadosBase64: string[]
+  setSkinLados: (lados: string[]) => void
   // Setter ATÔMICO do scan multi-foto. Existe para não haver um render intermediário
   // com a foto neutra nova ao lado das colagens do scan anterior.
   setSkinScanImages: (
@@ -544,6 +551,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   skinCollagesBase64: [],
   skinScanLayout: null,
   skinFaceLandmarks: null,
+  skinLadosBase64: [],
   skinScanId: null,
   protocolResult: null,
   protocolGenerating: false,
@@ -595,9 +603,10 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   // Caminho de 1 foto (onboarding e galeria em __DEV__). LIMPA as colagens de propósito:
   // sem isso, um scan de 1 foto feito depois de um scan multi reenviaria à IA as
   // colagens antigas junto com a foto nova.
-  setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null }),
+  setSkinImage: (base64, uri) => set({ skinImageBase64: base64, skinImageUri: uri, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null, skinLadosBase64: [] }),
+  setSkinLados: (lados) => set({ skinLadosBase64: lados }),
   setSkinScanImages: (neutral, collages, layout = 'expressions_v1') =>
-    set({ skinImageBase64: neutral.base64, skinImageUri: neutral.uri, skinCollagesBase64: collages, skinScanLayout: layout, skinFaceLandmarks: null }),
+    set({ skinImageBase64: neutral.base64, skinImageUri: neutral.uri, skinCollagesBase64: collages, skinScanLayout: layout, skinFaceLandmarks: null, skinLadosBase64: [] }),
 
   setProtocolResult: (result) => set({ protocolResult: result }),
   setProtocolGenerating: (v) => set({ protocolGenerating: v }),
@@ -719,7 +728,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
     }
   },
 
-  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null, skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null, rotinaPassoAlvo: null, escolhaParaPasso: null, regioesFoco: [], analiseRapida: null, cartaChegadaVista: false, etapaCartaOb: null }),
+  reset: () => set({ onboarding: initialOnboarding, scanResult: null, scanImageUri: null, foodImageBase64: null, foodImageMimeType: null, productImageBase64: null, productImageMimeType: null, productScanResult: null, pendingShare: null, productSourceUrl: null, productSourceTitle: null, collagePhotos: [], collageGrid: 'grid4', stickerSpec: null, stickerSheetSeen: false, homePhotoDraft: null, skinImageBase64: null, skinImageUri: null, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null, skinLadosBase64: [], skinScanId: null, protocolResult: null, prefetchedProtocol: null, skinPreviewUrl: null, selectedScan: null, selectedFoodResult: null, selectedFoodImageUrl: null, rotinaPassoAlvo: null, escolhaParaPasso: null, regioesFoco: [], analiseRapida: null, cartaChegadaVista: false, etapaCartaOb: null }),
 }), {
   // ── Persistência em disco (AsyncStorage) ──────────────────────────────────
   // O store era 100% em memória, então TODO cache dele morria ao fechar o app —

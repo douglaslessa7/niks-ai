@@ -76,6 +76,12 @@ function skinProfileOf(o: OnboardingData) {
     sun_exposure: o.sun_exposure,
     hydration: o.hydration,
     sleep: o.sleep,
+    // 10/nov/2026: gestação, alergia e protetor solar. A `analyze-skin` usa nas regras de
+    // segurança das recomendações; a versão antiga da função ignora os campos.
+    pregnancy_status: o.pregnancy_status ?? null,
+    allergy_type: o.allergy_type ?? null,
+    allergy_description: o.allergy_description ?? null,
+    sunscreen: o.sunscreen ?? null,
   };
 }
 
@@ -113,7 +119,10 @@ function ancoraDaCarta() {
 // ── Chamadas ─────────────────────────────────────────────────────────────────
 
 // Relatório: 1 chamada + 2 retentativas, 2 s entre elas (era o `runAnalysis` do loading).
-async function callAnalyzeSkin(base64: string, o: OnboardingData, ancora: ReturnType<typeof ancoraDaCarta>, retry = 0): Promise<ScanResult | null> {
+// `lados` (10/nov/2026): as fotos de lado do giro (0 a 2). Com elas, vão também em
+// `imagesBase64` + `scanLayout: 'turns_v1'`; a frente segue em `imageBase64`, então uma
+// `analyze-skin` antiga (sem suporte a lados) analisa só a frente, como antes.
+async function callAnalyzeSkin(base64: string, lados: string[], o: OnboardingData, ancora: ReturnType<typeof ancoraDaCarta>, retry = 0): Promise<ScanResult | null> {
   try {
     const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-skin`, {
       method: 'POST',
@@ -122,7 +131,12 @@ async function callAnalyzeSkin(base64: string, o: OnboardingData, ancora: Return
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         'apikey': SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ imageBase64: base64, skinProfile: skinProfileOf(o), ...(ancora ? { analiseRapida: ancora } : {}) }),
+      body: JSON.stringify({
+        imageBase64: base64,
+        ...(lados.length ? { imagesBase64: [base64, ...lados.slice(0, 2)], scanLayout: 'turns_v1' } : {}),
+        skinProfile: skinProfileOf(o),
+        ...(ancora ? { analiseRapida: ancora } : {}),
+      }),
     });
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}));
@@ -132,7 +146,7 @@ async function callAnalyzeSkin(base64: string, o: OnboardingData, ancora: Return
   } catch (err) {
     if (retry < 2) {
       await new Promise((r) => setTimeout(r, 2000));
-      return callAnalyzeSkin(base64, o, ancora, retry + 1);
+      return callAnalyzeSkin(base64, lados, o, ancora, retry + 1);
     }
     console.warn('[onboardingPrefetch] analyze-skin falhou:', err);
     lastReportError = (err as any)?.message ?? 'unknown';
@@ -156,7 +170,8 @@ function startRapida(key: string, photo: { uri: string; base64: string }, concer
 
 function startReport(key: string, base64: string, o: OnboardingData) {
   const job: Job<ScanResult> = { key, status: 'running', result: null, promise: null as any };
-  job.promise = callAnalyzeSkin(base64, o, ancoraDaCarta()).then((r) => {
+  // Só aqui (análise completa, depois da compra) as fotos de lado saem do aparelho.
+  job.promise = callAnalyzeSkin(base64, useAppStore.getState().skinLadosBase64, o, ancoraDaCarta()).then((r) => {
     job.status = r ? 'ok' : 'failed';
     job.result = r;
     if (r && reportJob === job) {

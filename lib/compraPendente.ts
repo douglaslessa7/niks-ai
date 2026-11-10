@@ -9,7 +9,8 @@ import type { AnaliseRapida } from './analiseRapida';
 // (`(onboarding)/loading-rotina`) o app pode fechar. Para ela não perder nada, no momento
 // em que a compra é CONFIRMADA o app guarda NO APARELHO:
 //   • a foto do scan — arquivo na pasta de cache do app (fora do backup do iCloud; o iOS
-//     protege os arquivos do app);
+//     protege os arquivos do app) — e as fotos de LADO do giro, se saíram (10/nov/2026),
+//     com o mesmo prefixo: a limpeza abaixo apaga todas juntas;
 //   • em AsyncStorage (`onboarding_compra_pendente`): as respostas, a análise rápida, as
 //     regiões do mapa do rosto e, quando chegarem, o relatório e a rotina (para não pagar
 //     as chamadas de novo).
@@ -29,6 +30,9 @@ export type CompraPendente = {
   criadaEm: string;
   /** A foto do scan (cache do app). null = não havia foto na memória. */
   fotoUri: string | null;
+  /** Fotos de lado do giro (cache do app, prefixo `scan-compra-`), na ordem da tela. Só para a
+   *  análise completa; nunca vão para o servidor do NIKS. Ausente = registro antigo ou sem lados. */
+  ladosUris?: string[];
   onboarding: OnboardingData;
   analiseRapida: AnaliseRapida | null;
   regioesFoco: string[];
@@ -81,8 +85,9 @@ export function registrarCompraPendente(): Promise<CompraPendente | null> {
     const antes = await ler();
     const mesmaFoto = !!antes?.fotoUri && antes.fotoUri === s.skinImageUri && new File(antes.fotoUri).exists;
     let fotoUri = mesmaFoto ? antes!.fotoUri : null;
+    let ladosUris: string[] = mesmaFoto && antes!.ladosUris?.every((u) => new File(u).exists) ? antes!.ladosUris : [];
     if (!fotoUri) {
-      apagarFotosDeCompra(); // foto de uma tentativa anterior
+      apagarFotosDeCompra(); // fotos de uma tentativa anterior (frente e lados)
       if (s.skinImageBase64) {
         try {
           const f = new File(Paths.cache, `${PREFIXO_FOTO}${Date.now()}.jpg`);
@@ -93,12 +98,26 @@ export function registrarCompraPendente(): Promise<CompraPendente | null> {
         }
       }
     }
+    // Fotos de lado: salvas junto com a frente (só se a frente foi salva), uma vez por foto.
+    if (fotoUri && !ladosUris.length && s.skinLadosBase64.length) {
+      const t = Date.now();
+      s.skinLadosBase64.slice(0, 2).forEach((b64, i) => {
+        try {
+          const f = new File(Paths.cache, `${PREFIXO_FOTO}${t}-lado${i + 1}.jpg`);
+          f.write(b64, { encoding: 'base64' });
+          ladosUris.push(f.uri);
+        } catch (e) {
+          console.warn('[compraPendente] não salvou uma foto de lado:', e);
+        }
+      });
+    }
     // O relatório e a rotina no store só valem se são desta foto.
     const relatorioDaFoto = s.scanResult && s.scanImageUri === s.skinImageUri ? s.scanResult : null;
     const reg: CompraPendente = {
       v: 1,
       criadaEm: mesmaFoto ? antes!.criadaEm : new Date().toISOString(),
       fotoUri,
+      ladosUris,
       onboarding: s.onboarding,
       analiseRapida: s.analiseRapida ?? (mesmaFoto ? antes!.analiseRapida : null),
       regioesFoco: s.regioesFoco,
@@ -173,13 +192,23 @@ export async function restaurarCompraPendente(reg: CompraPendente): Promise<void
       console.warn('[compraPendente] não leu a foto:', e);
     }
   }
+  // Fotos de lado: as que ainda existem (sem elas, a análise completa vai só com a frente).
+  const lados: string[] = [];
+  for (const u of base64 ? reg.ladosUris ?? [] : []) {
+    try {
+      const f = new File(u);
+      if (f.exists) lados.push(await f.base64());
+    } catch (e) {
+      console.warn('[compraPendente] não leu uma foto de lado:', e);
+    }
+  }
   useAppStore.setState({
     scanSource: 'onboarding',
     onboarding: reg.onboarding,
     analiseRapida: reg.analiseRapida,
     regioesFoco: reg.regioesFoco ?? [],
     cartaChegadaVista: true,
-    ...(base64 && reg.fotoUri ? { skinImageBase64: base64, skinImageUri: reg.fotoUri, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null } : {}),
+    ...(base64 && reg.fotoUri ? { skinImageBase64: base64, skinImageUri: reg.fotoUri, skinCollagesBase64: [], skinScanLayout: null, skinFaceLandmarks: null, skinLadosBase64: lados } : {}),
     ...(reg.relatorio ? { scanResult: reg.relatorio, scanImageUri: reg.fotoUri } : {}),
   });
 }
