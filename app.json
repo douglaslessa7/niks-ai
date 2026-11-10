@@ -13,7 +13,7 @@
       "backgroundColor": "#FFFFFF"
     },
     "ios": {
-      "buildNumber": "1",
+      "buildNumber": "2",
       "icon": "./assets/icon-niks-rosa.png",
       "supportsTablet": false,
       "bundleIdentifier": "br.com.niksai.app",
