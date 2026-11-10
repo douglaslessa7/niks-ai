@@ -1,5 +1,7 @@
 import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
 import { enviarComprovantes } from '../../lib/assinaturaServidor';
+import { aberturaDoCadastro, transferirNoCadastro, type OrigemCompra } from '../../lib/regraCompra';
+import { lerCompraNestaSessao, limparCompraNestaSessao } from '../../lib/sinalCompra';
 import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
@@ -53,32 +55,37 @@ export default function Signup() {
   // `lib/subscriptionGate.ts` e "Guard de assinatura" no README.
   // Com o atalho de dev (`lib/devPaywall.ts`) o paywall é pulado de propósito — a trava também.
   const [liberado, setLiberado] = useState(PULAR_PAYWALL);
-  // Chegou aqui pagando neste aparelho (não como convidada): a compra pode vir de outra conta.
-  const pagouNesteAparelho = useRef(false);
+  // Comprou ou restaurou NESTA sessão (sinal do paywall, `lib/sinalCompra.ts`). Só com ele a
+  // compra pode vir de outra conta. A abertura nunca conta "Superwall ACTIVE" como pagamento:
+  // qualquer assinatura do Apple ID do aparelho passaria (caso da convidada na 1.0.60 (2)).
+  const compraNestaSessao = useRef<OrigemCompra | null>(null);
   useEffect(() => {
     if (PULAR_PAYWALL) return;
     let ativo = true;
     (async () => {
       await ensureAnonymousRevenueCat('cadastro');
-      const ok = await confirmPremium({ label: 'cadastro:abertura' });
-      if (!ativo) return;
-      // Convidada: sem assinatura, só com o código ainda válido no servidor e a função ligada.
-      if (!ok) {
+      const sinal = await lerCompraNestaSessao();
+      // Convidada: sem compra nesta sessão, só com o código ainda válido no servidor e a função ligada.
+      let conviteValido = false;
+      if (!sinal) {
         const convite = await lerCodigoGrupo();
         const valido = convite && await convidadaLigada() ? await validarCodigo(convite.codigo) : null;
-        if (!ativo) return;
-        if (valido?.valido && !valido.cheio) { setLiberado(true); return; }
+        conviteValido = !!valido?.valido && !valido.cheio;
       }
-      if (ok) {
-        pagouNesteAparelho.current = true;
+      if (!ativo) return;
+      const abertura = aberturaDoCadastro(sinal, conviteValido);
+      pwlog(`cadastro:abertura → ${abertura} (sinal=${sinal ?? 'nenhum'})`); // TEMP-PWGUARD
+      if (abertura === 'convidada') { setLiberado(true); return; }
+      if (abertura === 'pagou') {
+        compraNestaSessao.current = sinal;
         await pwDecisao('Tela de cadastro abriu (trava da abertura)', 'CADASTRO liberado', 'cadastro',
-          'O RevenueCat confirmou o premium de novo ao abrir o cadastro.');
+          'Compra ou restauração confirmada pelo paywall nesta sessão.');
         if (!ativo) return;
         setLiberado(true);
       } else {
         pwlog('cadastro aberto sem premium → paywall'); // TEMP-PWGUARD
         await pwDecisao('Tela de cadastro abriu (trava da abertura)', 'PAYWALL — cadastro bloqueado', 'paywall',
-          'Chegou ao cadastro sem premium confirmado no RevenueCat. Voltou ao paywall.');
+          'Chegou ao cadastro sem compra nem restauração nesta sessão. Voltou ao paywall.');
         router.replace('/(onboarding)/paywall-soft');
       }
     })();
@@ -105,7 +112,7 @@ export default function Signup() {
       const ok = await confirmPremium({
         attempts: 2,
         label: 'cadastro:conta_criada',
-        transferir: pagouNesteAparelho.current ? 'cadastro' : undefined,
+        transferir: transferirNoCadastro(compraNestaSessao.current),
         onTransferenciaFalhou: () => { transferenciaFalhou = true; },
       });
       if (!ok && grupoDaConvidada.current) {
@@ -122,6 +129,7 @@ export default function Signup() {
         return;
       }
       await pwDecisao('Conta criada (confere na identidade nova)', 'HOME — conta com premium', 'home');
+      void limparCompraNestaSessao();
       setSubscriptionVerified(true);
     }
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
@@ -137,7 +145,7 @@ export default function Signup() {
   const salvarConta = async (userId: string) => {
     await saveToSupabase(userId, { scan: false });
     // Antes de gerar a rotina: quem acabou de pagar já fica reconhecida no servidor.
-    await enviarComprovantes(pagouNesteAparelho.current ? 'cadastro' : undefined);
+    await enviarComprovantes(transferirNoCadastro(compraNestaSessao.current));
     // Liga o cupom (se houver) ao user_id real. Não bloqueia: se falhar, a
     // usuária entra normalmente; o webhook ainda confirma a conversão.
     attributeCouponIfAny(userId);

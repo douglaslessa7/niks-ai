@@ -170,6 +170,23 @@ export type ConferenciaPortao = {
  * Parte B, Fase 0C, Etapa 1: Superwall → servidor. Quem chama (`confirmPremium`) usa o
  * RevenueCat só como reserva. Sem sessão, só o Superwall pode responder. Nunca lança.
  */
+/**
+ * Para a pergunta "usar a assinatura desta Apple ID nesta conta?" (`deveriaPerguntar`):
+ * o Superwall vê assinatura no Apple ID e, com sessão, se o servidor diz que é de outra conta.
+ * Só lê: não manda `transferir`. Na dúvida, sem assinatura (não pergunta).
+ */
+export async function assinaturaDoAppleId(): Promise<{ superwallAtivo: boolean; temSessao: boolean; outraConta: boolean }> {
+  try {
+    const superwallAtivo = (await statusSuperwall()) === 'ACTIVE';
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!superwallAtivo || !session) return { superwallAtivo, temSessao: !!session, outraConta: false };
+    const c = await conferirPortao();
+    return { superwallAtivo, temSessao: true, outraConta: c.outraConta };
+  } catch {
+    return { superwallAtivo: false, temSessao: false, outraConta: false };
+  }
+}
+
 export async function conferirPortao(transferir?: OrigemTransferencia): Promise<ConferenciaPortao> {
   const base: ConferenciaPortao = { confirmado: false, outraConta: false, transferenciaFalhou: false, superwall: null, servidor: null, token: null };
   try {

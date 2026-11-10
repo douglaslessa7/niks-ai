@@ -11,6 +11,7 @@ import { resetUserId } from '../lib/currentUser'
 import { cancelRoutineReminders } from '../lib/routineReminders'
 import { resetRevenueCatIdentity } from '../lib/subscriptionGate'
 import { useAppStore } from '../store/onboarding'
+import { limparCompraNestaSessao } from '../lib/sinalCompra'
 
 // Client ID iOS gerado no Google Cloud Console
 GoogleSignin.configure({
@@ -159,6 +160,7 @@ export function useAuth() {
     useAppStore.getState().setSubscriptionVerified(false)
     await resetRevenueCatIdentity()
     await limparIdentidadeSuperwall()
+    await limparCompraNestaSessao()
     definirAcesso(null)
     await clearAllCache()
     // Os lembretes da rotina são desta conta (horários dela) — a próxima agenda os seus.

@@ -1980,6 +1980,16 @@ As últimas 40 decisões ficam salvas no aparelho.
 - **Desligada:** com `grupos_config.convidada_ligada = false` (padrão), ninguém vira convidada e o comportamento atual não muda.
 - `criar_grupo` e `e_convidada` não mudaram: barrar por `assinante()` agora travaria quem paga e ainda não está ligada no servidor.
 
+#### A compra só muda de dona com compra ou "Restaurar" (09/nov/2026, 1.0.60 (3))
+> **Por quê:** na 1.0.60 (2) uma convidada que fechou o paywall no X tomou a assinatura de outra conta (a sandbox do Apple ID do aparelho): a abertura do cadastro sem sessão contava "Superwall ACTIVE" como "pagou" e o cadastro mandava `transferir: 'cadastro'` (transferência id 2 em `assinatura_transferencias`).
+
+**REGRA:** a compra só muda de dona quando a pessoa COMPRA ou toca em "Restaurar" nesta sessão. Nunca sozinha.
+- **Sinal explícito** (`lib/sinalCompra.ts`): só o `paywall-soft` (e o paywall da convidada, `AvisoCadeado`) grava "compra" / "restaurar", depois de `purchased` / `restored` com o premium confirmado. Vale 24 h no aparelho (sobrevive ao app fechar entre pagar e criar a conta); o cadastro concluído e o logout apagam.
+- **Cadastro:** abre como "pagou" só com o sinal, como convidada só com convite válido, senão paywall (`aberturaDoCadastro` em `lib/regraCompra.ts`, funções puras). Transfere só com o sinal (`transferirNoCadastro`). As boas-vindas (`bv-*`) sem sessão também exigem o sinal.
+- **Pergunta** (`components/assinatura/PerguntaAssinatura.tsx`, textos aprovados): no `paywall-soft`, Apple ID com assinatura que não é desta conta, sem compra nem restauração agora (`deveriaPerguntar`; sem sessão não dá para saber de quem é, então pergunta sempre que o Superwall vê assinatura) → "Você já tem uma assinatura do NIKS" / "Esta Apple ID já tem uma assinatura ativa do NIKS. Quer usar essa assinatura nesta conta? Se ela estiver em outra conta, aquela conta perde o acesso." / [Usar nesta conta] (= "Restaurar", origem `restaurar`) · Agora não (paywall normal). Convidada nunca é perguntada.
+- **Quem manda `transferir` hoje:** só o `paywall-soft` e o `AvisoCadeado` (com purchased/restored) e o `signup` (com o sinal). O servidor só troca a dona em `comprovar_compra` com `transferir` (o webhook mantém a dona; `vincular_rc` só liga compra sem dona).
+- Teste da regra (Deno, fora do projeto): cenários A–E (conta nova compra; Apple ID de outra conta sem comprar; convidada no X; reinstalar e restaurar; Apple ID nova) — 5/5. Compras reais: testar no iPhone com Sandbox Tester.
+
 #### Transferência de compra entre contas (09/nov/2026, 1.0.60 (2) — migration `20261130120000_transferir_compra.sql`)
 > ✅ **Servidor no ar:** migration aplicada e `comprovar-assinatura` publicada (o `index.ts` do ar é igual ao do repositório; conferido em 09/nov/2026). O `_shared/assinatura.ts` do ar continua diferente do repositório (as travas da Fase 8): ao publicar outra função, partir da versão no ar.
 

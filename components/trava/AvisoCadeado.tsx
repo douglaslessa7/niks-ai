@@ -7,7 +7,8 @@ import { usePlacement } from 'expo-superwall';
 import { haptics } from '../../lib/haptics';
 import { definirAbridorPaywall, fecharTrava, pularProximoPaywallDaMedalha, useTrava } from '../../lib/trava';
 import { definirAcesso, useAcesso } from '../../lib/acesso';
-import { confirmPremium } from '../../lib/subscriptionGate';
+import { avisarTransferenciaFalhou, confirmPremium } from '../../lib/subscriptionGate';
+import { marcarCompraNestaSessao } from '../../lib/sinalCompra';
 import { useAppStore } from '../../store/onboarding';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { getUserId } from '../../lib/currentUser';
@@ -43,7 +44,16 @@ export default function AvisoCadeado() {
         return;
       }
       useTrava.setState({ caminhadaDepois: false });
-      if (await confirmPremium({ source: 'sync', attempts: 3, label: `convidada:${result.type}` })) {
+      // Comprou ou restaurou agora (dentro do paywall): só aqui a compra pode vir de outra conta.
+      const origemCompra = result.type === 'restored' ? 'restaurar' as const : 'compra' as const;
+      let transferenciaFalhou = false;
+      const ok = await confirmPremium({
+        source: 'sync', attempts: 3, label: `convidada:${result.type}`,
+        transferir: origemCompra, onTransferenciaFalhou: () => { transferenciaFalhou = true; },
+      });
+      if (!ok && transferenciaFalhou) await avisarTransferenciaFalhou();
+      if (ok) {
+        await marcarCompraNestaSessao(origemCompra);
         const uid = await getUserId();
         definirAcesso('assinante', uid ?? undefined);
         setSubscriptionVerified(true);

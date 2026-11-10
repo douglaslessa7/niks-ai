@@ -27,6 +27,10 @@ import { OB, ObPillButton } from '../../components/onboarding/kit';
 import { iniciarAnaliseCompleta } from '../../lib/onboardingPrefetch';
 import { registrarCompraPendente } from '../../lib/compraPendente';
 import { lerCodigoGrupo } from '../../lib/convidada';
+import { assinaturaDoAppleId } from '../../lib/assinaturaServidor';
+import { deveriaPerguntar } from '../../lib/regraCompra';
+import { marcarCompraNestaSessao } from '../../lib/sinalCompra';
+import PerguntaAssinatura, { PERGUNTA_ASSINATURA_LIGADA } from '../../components/assinatura/PerguntaAssinatura';
 
 // Compra confirmada (06/nov/2026): a análise completa e a rotina só rodam a partir daqui.
 // Se há um scan do onboarding na memória, guarda a foto e o estado no aparelho (para o app
@@ -51,6 +55,8 @@ export default function PaywallSoft() {
   const setSubscriptionVerified = useAppStore((s) => s.setSubscriptionVerified);
   const falhasRef = useRef(0);
   const [semPaywall, setSemPaywall] = useState(false);
+  // Assinatura no Apple ID que não é desta conta: pergunta antes de usar (lib/regraCompra.ts).
+  const [pergunta, setPergunta] = useState(false);
   // Convite válido no onboarding, ainda sem conta: paywall da convidada, com X e sem downsell.
   const grupoConvite = useRef<string | null>(null);
   const placementBase = () => grupoConvite.current !== null ? 'paywall_convidada' : 'paywall_onboarding';
@@ -116,6 +122,8 @@ export default function PaywallSoft() {
       void present(placementBase(), `${tipo}_sem_premium`);
       return;
     }
+    // Sinal explícito para o cadastro e as boas-vindas: SÓ aqui (purchased/restored confirmado).
+    await marcarCompraNestaSessao(tipo === 'restored' ? 'restaurar' : 'compra');
     const comOnboarding = await liberarAnaliseCompleta();
     const { data: { session } } = await supabase.auth.getSession();
     await pwDecisao(`onDismiss(${tipo})`, session?.user ? 'HOME (já tinha conta)' : 'CADASTRO', session?.user ? 'home' : 'cadastro',
@@ -289,11 +297,32 @@ export default function PaywallSoft() {
       const convite = session ? null : await lerCodigoGrupo();
       if (cancelled) return;
       grupoConvite.current = convite?.grupo ?? null;
+      // Assinatura ativa no Apple ID que não é desta conta, sem compra nem restauração agora:
+      // pergunta antes. A convidada nunca é perguntada (entra como convidada).
+      if (PERGUNTA_ASSINATURA_LIGADA && grupoConvite.current === null) {
+        const a = await assinaturaDoAppleId();
+        if (cancelled) return;
+        if (deveriaPerguntar({ convite: false, sinal: null, ...a })) {
+          pwlog(`assinatura no Apple ID (sessão=${a.temSessao}, outraConta=${a.outraConta}) → pergunta`); // TEMP-PWGUARD
+          setPergunta(true);
+          return;
+        }
+      }
       void present(placementBase(), 'inicial', () => cancelled);
     });
 
     return () => { cancelled = true; task.cancel(); };
   }, []);
+
+  // "Usar nesta conta" = o mesmo que tocar em "Restaurar compra" (origem `restaurar`).
+  const usarAssinatura = async () => {
+    setPergunta(false);
+    await confirmarESeguir('restored');
+  };
+  const recusarAssinatura = () => {
+    setPergunta(false);
+    void present(placementBase(), 'recusou_usar_assinatura');
+  };
 
   const tentarDeNovo = () => {
     haptics.action();
@@ -304,7 +333,9 @@ export default function PaywallSoft() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-      {semPaywall ? (
+      {pergunta ? (
+        <PerguntaAssinatura onUsar={() => { void usarAssinatura(); }} onAgoraNao={recusarAssinatura} />
+      ) : semPaywall ? (
         <>
           <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '700', color: OB.ink, textAlign: 'center' }}>
             Não conseguimos carregar agora

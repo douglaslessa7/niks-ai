@@ -18,6 +18,8 @@ import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { confirmPremium, pwlog } from '../../lib/subscriptionGate';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
+import { lerCompraNestaSessao } from '../../lib/sinalCompra';
+import { supabase } from '../../lib/supabase';
 import { escolherProblema, NOME_PROBLEMA, type ProblemaId } from '../../lib/analiseRapida';
 
 export const BV = {
@@ -64,7 +66,14 @@ function useTravaPagamento() {
   useEffect(() => {
     if (PULAR_PAYWALL || premiumConfirmadoBv) return;
     let vivo = true;
-    confirmPremium({ attempts: 2, label: 'boas_vindas:abertura' }).then((ok) => {
+    // Sem sessão, "Superwall ACTIVE" não vale como pagamento (qualquer assinatura do Apple ID do
+    // aparelho passaria): vale o sinal do paywall (`lib/sinalCompra.ts`). Com sessão (convidada
+    // que assinou dentro do app), o premium da conta.
+    (async () => {
+      if (await lerCompraNestaSessao()) return true;
+      const { data: { session } } = await supabase.auth.getSession();
+      return session ? confirmPremium({ attempts: 2, label: 'boas_vindas:abertura' }) : false;
+    })().then((ok) => {
       if (!vivo) return;
       if (ok) { premiumConfirmadoBv = true; return; }
       pwlog('boas-vindas aberta sem premium → paywall'); // TEMP-PWGUARD
