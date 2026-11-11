@@ -6,7 +6,7 @@
 // fundo escurece 32% em 420 ms; "Entendi" desce a folha (360 ms) e o fundo some (300 ms).
 // Reduzir movimento: fades de 260/200 ms.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -35,7 +35,11 @@ export default function AvisoSequencia({ antes, agora, rm, onFechar }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fecha pelo "Entendi" ou tocando no fundo escuro (11/nov/2026); só uma vez.
+  const fechando = useRef(false);
   const entendi = () => {
+    if (fechando.current) return;
+    fechando.current = true;
     haptics.action();
     dim.set(withTiming(0, { duration: rm ? 200 : 300, easing: EASE }));
     p.set(withTiming(0, { duration: rm ? 200 : 360, easing: rm ? EASE : EDR }, (ok) => { if (ok) scheduleOnRN(onFechar); }));
@@ -48,7 +52,9 @@ export default function AvisoSequencia({ antes, agora, rm, onFechar }: Props) {
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimSt]} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={entendi} accessibilityLabel="Fechar aviso">
+        <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimSt]} />
+      </Pressable>
       <Animated.View style={[styles.sheet, { paddingBottom: 44 + insets.bottom - 34 }, sheetSt]}>
         <View style={styles.grabber} />
         <View style={styles.icon}>
@@ -72,7 +78,9 @@ export default function AvisoSequencia({ antes, agora, rm, onFechar }: Props) {
           </View>
           <Text style={styles.before}>antes contava rotinas</Text>
         </View>
-        <Pressable onPress={entendi} style={({ pressed }) => [styles.btn, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+        {/* Estilo fixo: o NativeWind (cssInterop no Pressable) descarta `style` em forma de
+            função — o botão ficava sem fundo e sem altura, invisível (bug de 11/nov/2026). */}
+        <Pressable onPress={entendi} style={styles.btn} accessibilityRole="button">
           <Text style={styles.btnText}>Entendi</Text>
         </Pressable>
       </Animated.View>
