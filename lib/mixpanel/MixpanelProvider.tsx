@@ -37,9 +37,17 @@ import { getOnboardingAttempt } from '../onboardingAttempt';
  *   depois de cada passo e quando o app fica `inactive`/`background`
  *   (`enviarFilaPaywallo`). Nada sai em dobro: o SDK tira os eventos da fila antes de
  *   enviar. Os envios podem correr em paralelo, mas cada evento leva a ordem do passo.
+ * - Versão do funil: na Abertura (step 1), antes do step, sai `onboardingManager.branch(
+ *   'versao_onboarding', '2.0')` (`PAYWALLO_BRANCH_VERSAO`), uma vez por abertura do app.
  * - Fire-and-forget: nada aqui é aguardado pela tela e nenhum erro sai daqui.
  */
 const PAYWALLO_READY_TIMEOUT_MS = 10_000;
+// Versão do funil (11/nov/2026, SDK 2.10.2): o painel do Paywallo (Dropout › "Quebrar por
+// pergunta") separa o funil novo do antigo por este branch — as versões até a 1.0.59 numeravam
+// telas diferentes com os mesmos números. Sai uma vez, na Abertura, ANTES do step 1, pela mesma
+// fila e com as mesmas regras dos steps (só na 1ª tentativa). Mudou o funil de novo → mude o valor.
+const PAYWALLO_BRANCH_VERSAO = { chave: 'versao_onboarding', valor: '2.0' } as const;
+let paywalloBranchEnviado = false;
 const PAYWALLO_COMPLETED_KEY = 'paywallo_onboarding_completed';
 let paywalloQueue: Promise<void> = Promise.resolve();
 
@@ -82,6 +90,13 @@ function forwardOnboardingStepToPaywallo(event: string, properties?: Record<stri
   if (event === 'onboarding_step_viewed') {
     const name = properties.step_name;
     if (typeof name !== 'string') return;
+    if (step === 1 && !paywalloBranchEnviado) {
+      paywalloBranchEnviado = true;
+      paywalloQueue = paywalloQueue
+        .then(paywalloReadyOrTimeout)
+        .then(() => onboardingManager.branch(PAYWALLO_BRANCH_VERSAO.chave, PAYWALLO_BRANCH_VERSAO.valor))
+        .catch(() => {});
+    }
     paywalloQueue = paywalloQueue
       .then(paywalloReadyOrTimeout)
       .then(() => PaywalloClient.onboardingStep(step, name))
