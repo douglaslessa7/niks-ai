@@ -37,12 +37,14 @@ const mola = (z: number, r: number) => ({ stiffness: (2 * Math.PI / r) ** 2, dam
 export const mesKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 
 /** Salta ao montar (o `pop` do design): opacidade ×1,6 e escala `de` → 1. */
-export function Salta({ delay, de, rm, children, style }: { delay: number; de: number; rm: boolean; children: React.ReactNode; style?: object }) {
+// `vez`: muda → refaz a entrada SEM remontar os filhos (no lugar de trocar a `key`, que
+// recriaria uma foto e a faria carregar de novo).
+export function Salta({ delay, de, rm, vez, children, style }: { delay: number; de: number; rm: boolean; vez?: number; children: React.ReactNode; style?: object }) {
   const p = useSharedValue(0);
   useEffect(() => {
     p.set(0);
     p.set(rm ? withDelay(delay, withTiming(1, { duration: 200 })) : withDelay(delay, withSpring(1, mola(0.72, 0.5))));
-  }, [p, delay, rm]);
+  }, [p, delay, rm, vez]);
   const st = useAnimatedStyle(() => (rm
     ? { opacity: p.get() }
     : { opacity: Math.min(1, p.get() * 1.6), transform: [{ scale: de + (1 - de) * p.get() }] }), [rm, de]);

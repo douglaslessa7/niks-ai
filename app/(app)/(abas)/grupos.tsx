@@ -114,7 +114,7 @@ export default function Grupos() {
           </TouchableOpacity>
           {/* Foto com a moldura do material da medalha atual (08/nov/2026; NiksMolduras 2a).
               O quadrado da moldura é maior que a foto e fica em volta dela. */}
-          <Salta key={`foto${abertura}`} delay={60} de={0.86} rm={rm} style={{ position: 'absolute', top: y(116) + FOTO / 2 - MOLDURA / 2, left: W / 2 - MOLDURA / 2 }}>
+          <Salta vez={abertura} delay={60} de={0.86} rm={rm} style={{ position: 'absolute', top: y(116) + FOTO / 2 - MOLDURA / 2, left: W / 2 - MOLDURA / 2 }}>
             <AlvoGuia chave="perfil-foto">
               <FotoComMoldura nivel={pontos?.nivel ?? p?.nivel ?? 1} foto={p?.foto} nome={p?.nome} tamanho={MOLDURA} pequena={false} vazio="#FCE3EE" />
             </AlvoGuia>

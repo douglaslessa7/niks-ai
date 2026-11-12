@@ -23,7 +23,8 @@ import FotoComMoldura from '../../../components/medalhas/FotoComMoldura';
 import Medalha from '../../../components/medalhas/Medalha';
 import { chavePerfilGrupos, perfilGrupos, useMeusGrupos, type PerfilGrupos } from '../../../lib/gruposServidor';
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Linking, Alert, Image, StyleSheet, ActionSheetIOS, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Linking, Alert, StyleSheet, ActionSheetIOS, Platform } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -322,7 +323,7 @@ export default function Perfil() {
           ) : (
           <View style={styles.avatarShadow}>
             {fotoUrl ? (
-              <Image source={{ uri: fotoUrl }} style={styles.avatar} />
+              <ExpoImage source={{ uri: fotoUrl }} cachePolicy="memory-disk" contentFit="cover" style={styles.avatar} />
             ) : (
               <LinearGradient colors={['#FF8DBD', PINK]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.avatar, styles.avatarCenter]}>
                 <Text style={styles.avatarInitial}>{initial}</Text>

@@ -7,7 +7,8 @@
 // `tamanho` é o da MOLDURA inteira; a foto ocupa ~57% do lado, no centro.
 // ─────────────────────────────────────────────────────────────────────────────
 import { memo, useMemo } from 'react';
-import { Text, Image, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image } from 'expo-image';
 import { SvgXml } from 'react-native-svg';
 import { FOTO_NA_MOLDURA, molduraSvg } from '../../lib/medalhas';
 import { medalhaDoNivel } from '../../lib/niveis';
@@ -40,7 +41,10 @@ function FotoComMoldura({ nivel, foto, nome, tamanho, pequena, vazio = '#F4F4F4'
         borderRadius: lado / 2, overflow: 'hidden', backgroundColor: vazio,
         opacity: apagada ? 0.5 : 1, isolation: 'isolate',
       }}>
-        {foto ? <Image source={{ uri: foto }} style={{ width: '100%', height: '100%', transform: [{ scale: 1.14 }] }} resizeMode="cover" /> : !!inicial && (
+        {/* expo-image com cache em memória e disco (12/nov/2026): o `Image` do RN baixava a
+            foto de novo a cada montagem (o Supabase não manda Cache-Control). A URL da foto
+            de perfil é fixa (`users.foto_home_url`, assinada uma vez), então ela é a chave. */}
+        {foto ? <Image source={{ uri: foto }} cachePolicy="memory-disk" contentFit="cover" style={{ width: '100%', height: '100%', transform: [{ scale: 1.14 }] }} /> : !!inicial && (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <Text allowFontScaling={false} style={{ fontSize: lado * 0.46, fontWeight: '700', color: '#E0447F' }}>{inicial}</Text>
           </View>
