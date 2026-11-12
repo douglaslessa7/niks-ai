@@ -57,21 +57,27 @@ export async function concluirSkincare(periodo: RoutinePeriod, chaves: StepKey[]
   return r ? { carta: r.carta ?? null, pontos: r.pontos ?? null } : null;
 }
 
+/** A 1ª carta a raspar agora (estado fresco do servidor), ou null. Nunca falha. */
+export async function cartaARasparAgora(): Promise<string | null> {
+  try {
+    await invalidarCartas();
+    const e = await estadoCartas();
+    return e.a_raspar[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fim do caminho (check-in publicado, "Agora não", câmera fechada): a carta de hoje abre
  * SOZINHA para raspar e, quando ela acabar, o `destino`. Sem carta — ou sem conseguir ler o
  * estado —, vai direto ao destino e a barra mostra os pontos segurados (com carta, eles
  * sobem junto depois de raspar).
  */
-export async function abrirCartasEDepois(router: Router, destino: string): Promise<void> {
-  let primeira: string | null = null;
-  try {
-    await invalidarCartas();
-    const e = await estadoCartas();
-    primeira = e.a_raspar[0]?.id ?? null;
-  } catch {
-    primeira = null;
-  }
+export async function abrirCartasEDepois(router: Router, destino: string, pronto?: Promise<string | null>): Promise<void> {
+  // `pronto` (12/nov/2026): a carta a raspar já buscada antes (`cartaARasparAgora`), para a
+  // saída não esperar a rede com a tela parada.
+  const primeira = await (pronto ?? cartaARasparAgora());
   if (primeira) {
     marcarCartaAberta(primeira);
     router.push({ pathname: '/(carta)/carta', params: { id: primeira, depois: destino } } as any);

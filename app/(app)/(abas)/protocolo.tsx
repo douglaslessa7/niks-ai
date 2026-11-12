@@ -1171,14 +1171,8 @@ export default function Protocolo() {
             </View>
             <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>Sua rotina</Text>
           </View>
-          <View style={styles.streakBtn}>
-            <Svg width={20} height={20} viewBox="0 0 24 24">
-              <Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" fill="none" stroke={INK} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
-            </Svg>
-            <View style={styles.streakBadge}>
-              <Text style={styles.streakBadgeText}>{streak}</Text>
-            </View>
-          </View>
+          {/* O foguinho da sequência saiu da Rotina (12/nov/2026, pedido do produto). Na home ele
+              fica — lá abre as conquistas. */}
         </View>
 
         {/* ── Manhã / Noite ─────────────────────────────────────────────── */}

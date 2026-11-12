@@ -18,22 +18,22 @@ import {
 import { getRoutineHistory, sessionDate, dateKey, type RoutinePeriod } from '../../lib/routineProgress';
 import { tipoDoPasso } from '../../lib/tipoPasso';
 import { diasDoPasso, seloFrequencia } from '../../lib/frequencia';
-import { abrirCartasEDepois, concluirSkincare, janelaDoSkincare, SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
-import { estadoCartas } from '../../lib/cartasServidor';
-import { ganhouPontos } from '../../lib/pontosAnimacao';
-import { useMeusGrupos } from '../../lib/gruposServidor';
-import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
+import { janelaDoSkincare, SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
+import { comecarSessao } from '../../lib/sessaoSkincare';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import StepIcon from '../../components/rotina/StepIcon';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { encerrarGuia, irParaGuia, useGuia } from '../../lib/guia';
-import { verificarDesafios } from '../../lib/missoes';
 import { voltar as voltarOu } from '../../lib/navegar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Skincare (05/nov/2026, pedido do produto) — o que abre o "Iniciar skincare" da HOME, no
 // lugar do guia passo a passo: só a lista dos produtos do período (manhã ou noite), os
 // mesmos passos que a aba Rotina mostra hoje (Minha rotina, respeitando os dias de cada
-// passo), sem toque nos itens, e "Concluir skincare" embaixo. Concluir grava a rotina
+// passo), sem toque nos itens, e "Iniciar skincare" embaixo (12/nov/2026, build 1.62: era
+// "Concluir skincare"). Ele abre a SESSÃO com o cronômetro (`(app)/skincare-sessao`), e é lá
+// que "Terminei" → "Concluir" grava a rotina e segue o fim descrito abaixo, que mudou de
+// tela mas não de regra. Até a 1.61, concluir aqui gravava a rotina
 // pelo mesmo caminho da aba Rotina (`lib/concluirSkincare`) e — o check-in é OPCIONAL
 // (05/nov/2026, pedido do produto) — sobe a folha que já existe, "Compartilhar com o grupo?"
 // (81t, pop-up no meio da tela com ativar/desativar por grupo): "Compartilhar" abre a câmera
@@ -175,20 +175,9 @@ export default function Skincare() {
   const [agora, setAgora] = useState(() => new Date());
   const [feitaHoje, setFeitaHoje] = useState(false);
   const indo = useRef(false);
-  const [concluindo, setConcluindo] = useState(false);
-  // Depois de concluir: a folha "Compartilhar com o grupo?" (ou o convite, sem grupo). Só abre
-  // com a lista de grupos já carregada — antes disso a folha mostraria o convite por engano.
-  const { data: grupos, state: estadoGrupos } = useMeusGrupos();
-  const [folha, setFolha] = useState<'fechada' | 'esperando' | 'aberta'>('fechada');
-  const [vez, setVez] = useState(0);   // remonta a folha a cada abertura da tela
-  const saindo = useRef(false);
   useFocusEffect(useCallback(() => {
-    setFolha('fechada');
-    saindo.current = false;
-    setVez((v) => v + 1);
     setTabBarVisible(false);
     indo.current = false;
-    setConcluindo(false);
     setAgora(new Date());
     getRoutineHistory().then((h) => setFeitaHoje(Boolean(h[dateKey(sessionDate())]?.[periodo])));
     const id = setInterval(() => setAgora(new Date()), 30_000);
@@ -214,44 +203,37 @@ export default function Skincare() {
   }, [guia?.passo, foraDoHorario, periodo, amTime, pmTime]);
 
   const voltar = () => { haptics.tap(); voltarOu('/home'); };
-  // Fim sem check-in: a carta de hoje abre sozinha (e os pontos segurados sobem junto,
-  // depois de raspar); sem carta, vai direto ao destino e a barra sobe.
-  const terminar = (destino: string) => {
-    if (saindo.current) return;
-    saindo.current = true;
-    void abrirCartasEDepois(router, destino);
-  };
-  const concluir = async () => {
+  // "Iniciar skincare" (12/nov/2026, build 1.62): não conclui mais aqui — abre a sessão com o
+  // cronômetro (`(app)/skincare-sessao`), que conclui e segue o fim de sempre. Os passos e a
+  // hora de início vão por `lib/sessaoSkincare`.
+  const iniciar = () => {
     if (!pode || !passos || indo.current) return;
     indo.current = true;
-    haptics.success();
-    setConcluindo(true);
+    haptics.action();
     encerrarGuia(); // a dica do desafio 4 cumpriu o papel
-    try {
-      const r = await concluirSkincare(periodo, passos.map((p) => p.id));
-      // Pontos sem carta (2º skincare do dia) e do desafio 4: se a carta de hoje ainda está
-      // para raspar, eles esperam por ela e a barra sobe uma vez só.
-      const e = await estadoCartas().catch(() => null);
-      const segurar = (e?.a_raspar.length ?? 0) > 0;
-      if (r?.pontos) ganhouPontos(r.pontos, { segurar });
-      await verificarDesafios({ segurar });
-    } finally {
-      setFolha('esperando');
-    }
-  };
-  useEffect(() => {
-    if (folha !== 'esperando') return;
-    if (grupos != null) setFolha('aberta');
-    // Sem conseguir ler os grupos (sem rede): o check-in também não sairia — segue sem ele.
-    else if (estadoGrupos === 'error') terminar('/home');
-  }, [folha, grupos, estadoGrupos]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Tocou num grupo: a câmera do check-in (sem moldura, sem galeria) com esse grupo marcado.
-  // `navigate`, não `replace`: as telas escondidas da barra de abas trocam pela própria aba.
-  // "Compartilhar" no pop-up: a câmera do check-in com os grupos ATIVADOS já marcados.
-  const fazerCheckin = (grupoIds: string[]) => {
-    if (saindo.current || !grupoIds.length) return;
-    saindo.current = true;
-    router.navigate({ pathname: '/checkin', params: { fluxo: 'skincare', rotina: periodo, grupos: grupoIds.join(',') } } as any);
+    // A sessão mostra os passos (88a1: número, foto do produto, passo e "Marca · Produto") e
+    // monta a descrição do check-in com eles.
+    const passosSessao = passos.map((p) => {
+      const nome = (p.nome ?? '').trim();
+      const prod = p.produto && (p.produto.marca || p.produto.nome) ? p.produto : null;
+      return {
+        id: p.id,
+        nome: nome || null,
+        marca: prod?.marca?.trim() || null,
+        produto: prod?.nome?.trim() || null,
+        img: prod ? prod.recorteUrl ?? prod.imagemUrl ?? null : null,
+        tipo: tipoDoPasso(nome, p.ingrediente ?? ''),
+        // O mesmo texto que a aba Rotina mostra ao abrir o passo (`howOf` em protocolo.tsx).
+        instrucao: (p.instrucao ?? '').trim() || (Array.isArray(p.comoUsar) ? p.comoUsar.join(' ').trim() : '') || null,
+        dias: p.dias?.length ? p.dias : null,
+        aviso: p.aviso && p.aviso.nivel !== 'nenhum' && p.aviso.texto ? { nivel: p.aviso.nivel, texto: p.aviso.texto } : null,
+        ref: prod?.id ? { origem: prod.origem, id: prod.id } : null,
+      };
+    });
+    void comecarSessao(periodo, passosSessao).then(() => {
+      trackFora('skincare_iniciado', { periodo, passos: passosSessao.length });
+      router.push('/skincare-sessao' as any);
+    });
   };
 
   const titulo = periodo === 'am' ? 'Skincare matinal' : 'Skincare noturno';
@@ -295,27 +277,19 @@ export default function Skincare() {
       />
       <View style={[styles.cta, { bottom: Math.max(insets.bottom, 16) + 14 }]} pointerEvents="box-none">
         {/* Alvo da dica do desafio 4 ("Concluir skincare"). */}
+        {/* Alvo da dica do desafio 4 (a chave ficou `sk-concluir`; hoje é o "Iniciar skincare"). */}
         <AlvoGuia chave="sk-concluir">
           <TouchableOpacity
             activeOpacity={0.85}
-            disabled={!pode || concluindo}
-            onPress={concluir}
-            accessibilityState={{ disabled: !pode || concluindo }}
+            disabled={!pode}
+            onPress={iniciar}
+            accessibilityState={{ disabled: !pode }}
             style={[styles.heroBtn, !pode && { opacity: 0.4 }]}
           >
-            {concluindo
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.heroBtnText}>Concluir skincare</Text>}
+            <Text style={styles.heroBtnText}>Iniciar skincare</Text>
           </TouchableOpacity>
         </AlvoGuia>
       </View>
-      <FolhaCompartilhar
-        key={vez}
-        aberta={folha === 'aberta'}
-        onCompartilhar={fazerCheckin}
-        onCriarGrupo={() => terminar('/seus-grupos?criar=1')}
-        onFechar={() => terminar('/home')}
-      />
     </View>
     </View>
   );
