@@ -2,49 +2,50 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { voltar as voltarOu } from '../../lib/navegar';
 import {
   View, Text, TouchableOpacity, ScrollView, Image, Animated, Easing, StyleSheet, AccessibilityInfo, TextInput,
-  ActionSheetIOS, Alert, KeyboardAvoidingView, ActivityIndicator,
+  Alert, ActivityIndicator, Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
-import { clearRoutineFlow, getRoutinePeriodForNow, markRoutineDone, sessionDate } from '../../lib/routineProgress';
+import { clearRoutineFlow, getRoutinePeriodForNow, markRoutineDone } from '../../lib/routineProgress';
 import { invalidarCartas } from '../../lib/cartasServidor';
 import { reagendarLembretes } from '../../lib/routineReminders';
-import { invalidarGrupos, publicarCheckin, subirFoto, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
+import { invalidarGrupos, publicarCheckin, subirFoto, useMeusGrupos, type EstatisticasCheckin } from '../../lib/gruposServidor';
 import { invalidarMissoes } from '../../lib/missoes';
-import RodaHora from '../../components/grupos/RodaHora';
-import FolhaCompartilhar from '../../components/grupos/FolhaCompartilhar';
+import { LinhasPassos } from '../../components/grupos/EstatisticasCheckin';
+import { duracaoPorExtenso, marcarVoltaDoCheckin, ultimoSkincare } from '../../lib/sessaoSkincare';
+import FolhaCompartilhar, { MiniBanner } from '../../components/grupos/FolhaCompartilhar';
 import { getUserId } from '../../lib/currentUser';
 import { saveRoutinePhoto, temFotoDoDia } from '../../lib/routinePhotos';
 import { abrirCartasEDepois } from '../../lib/concluirSkincare';
 import { ganhouPontos } from '../../lib/pontosAnimacao';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Check-in do grupo — réplica de 81i (câmera) e 81j (Novo check-in) do Claude Design
-// (NiksGrupoFlo.dc.html, rodada 81; antes 80d/80w). A foto é obrigatória e vem só da câmera, na hora: sem galeria
-// e sem "só marcar" (no simulador de dev, a galeria faz o papel da câmera, como na
-// "Foto do dia"). Câmera: visor de 520 pt, flash à esquerda, disparador, inverter à
-// direita (o visor gira 90° em 150 ms, troca e volta em 180 ms). Novo check-in: a foto
-// entra com mola (0,9 → 1), título (60) e descrição (280), Grupos (padrão: todos),
-// Hora do check-in (só o horário EXIBIDO; roda de horas e minutos, nunca no futuro nem
-// antes da virada das 04:00) e Rotina, Matinal ou Noturna (a que ela já postou hoje fica apagada: é 1
-// por rotina por dia). Publicar sobe a foto (bucket privado, URL assinada), publica e
-// abre a carta para raspar (80e); sem carta nova (já ganhou a de hoje), volta ao grupo.
+// Check-in do grupo — câmera 81i do Claude Design (NiksGrupoFlo.dc.html, rodada 81) e, depois
+// da foto, a PRÉVIA (12/nov/2026, build 1.62; no lugar do "Novo check-in" 81j): a foto e, no
+// fluxo do skincare, as estatísticas daquele skincare (tempo, passos e produtos, sem NIKS
+// Points — `components/grupos/EstatisticasCheckin`), com "Publicar" e "Tirar outra". A foto é
+// obrigatória e vem só da câmera, na hora (no simulador de dev, a galeria faz o papel dela).
+// Câmera: visor de 520 pt, flash à esquerda, disparador, inverter à direita (o visor gira 90°
+// em 150 ms, troca e volta em 180 ms). A rotina é a do skincare (fora dele, a do horário; a
+// já postada hoje cede a vez à outra) e a hora exibida é a de publicar. Publicar sobe a foto
+// (bucket privado, URL assinada), publica e abre a carta para raspar; sem carta, volta.
+// O botão "Fazer check-in" do grupo agora é SÓ da convidada (prévia só com a foto).
 //
 // `fluxo=skincare` (05/nov/2026) — o fim do "Iniciar skincare" da home, depois de a rotina já
 // estar concluída (`(app)/skincare`). A foto também vale como Foto do dia (manhã e noite; a
 // PRIMEIRA do dia vale: com uma já salva hoje, esta vai só para o check-in; refazer aqui
-// troca a que este caminho salvou). Fechar a câmera volta para a home. Chega aqui só quem
-// escolheu um grupo na folha "Compartilhar com o grupo?" da lista (`grupos` = esse grupo): o
-// Novo check-in de sempre, com a rotina do período marcada; publicou → carta(s) → mural do 1º
+// troca a que este caminho salvou). Fechar a câmera volta para a comemoração do timer (90a). Chega aqui só quem
+// escolheu um grupo na folha "Compartilhar com o grupo?" (`grupos` = esse grupo): a prévia
+// com as estatísticas (`ultimoSkincare`, guardado ao concluir a sessão); publicou → carta(s) → mural do 1º
 // grupo publicado. Sem grupo, o convite já aparece na lista, sem câmera; o convite daqui
 // (por cima da foto) fica só de reserva, se a lista de grupos chegar vazia depois da foto.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,8 +54,8 @@ const INK = '#121212';
 const PINK = '#FF5EA8';
 const MUTE = '#818181';
 const EO = Easing.bezier(0.23, 1, 0.32, 1);
-const EIO = Easing.bezier(0.77, 0, 0.175, 1);
 const EIN = Easing.bezier(0.55, 0, 1, 0.45);
+const EFOLHA = Easing.bezier(0.32, 0.72, 0, 1);
 
 type Foto = { uri: string; base64: string };
 
@@ -82,32 +83,32 @@ function useReduceMotion(): boolean {
   return rm;
 }
 
-const hm = (d: Date) => `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-
-function BolinhaGrupo({ g }: { g: GrupoResumo }) {
-  const rosa = g.banner === 'niks-2';
-  return (
-    <View style={[styles.gDot, { experimental_backgroundImage: rosa ? 'linear-gradient(120deg, #FF5EA8 0%, #FF8CC0 55%, #FFC2DB 100%)' : 'linear-gradient(150deg, #FFE1EE 0%, #FBCDE5 38%, #EBD6FB 66%, #FFD9EA 100%)' }]}>
-      {g.banner === 'foto' && g.banner_url ? <Image source={{ uri: g.banner_url }} style={StyleSheet.absoluteFill} /> : null}
-    </View>
-  );
-}
-
 export default function Checkin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const rm = useReduceMotion();
   // Do fim da rotina (3.6, "Compartilhar com o grupo?"): `rotina`, `grupos` (ids) e,
   // na manhã, `foto` (a Foto do dia que ela acabou de tirar) → abre direto no Novo check-in.
-  const { feitas, de, grupo, rotina: rotinaParam, grupos: gruposParam, foto: fotoParam, fluxo } = useLocalSearchParams<{
-    feitas?: string; de?: string; grupo?: string; rotina?: string; grupos?: string; foto?: string; fluxo?: string;
+  // `descricao` (12/nov/2026): a descrição automática da sessão de skincare (tempo + rotina,
+  // `lib/sessaoSkincare`), já no campo e editável.
+  const { feitas, de, grupo, rotina: rotinaParam, grupos: gruposParam, foto: fotoParam, fluxo, descricao: descricaoParam } = useLocalSearchParams<{
+    feitas?: string; de?: string; grupo?: string; rotina?: string; grupos?: string; foto?: string; fluxo?: string; descricao?: string;
   }>();
   const skincare = fluxo === 'skincare';
   // fluxo=skincare: fechar a câmera termina o fluxo — a carta de hoje abre sozinha e depois a home.
   // Para onde o check-in volta (fora do fluxo do skincare): o grupo de onde veio, a Rotina ou a aba Grupos.
   const destino = de === 'grupo' && grupo ? `/grupo?id=${grupo}` : de === 'rotina' ? '/protocolo' : '/grupos';
   // X: volta para a tela de trás (o grupo, a Rotina ou a aba Grupos); sem ela, o `destino`.
-  const sair = () => (skincare ? void terminar('/home') : voltarOu(destino as any));
+  // fluxo=skincare (12/nov/2026): o X volta para a comemoração do timer (90a), que está logo
+  // atrás; de lá ela pode compartilhar de novo ou seguir. Sem a sessão atrás, a home.
+  const navegacao = useNavigation();
+  const sair = () => {
+    if (!skincare) { voltarOu(destino as any); return; }
+    const st: any = navegacao.getState();
+    const atras = st?.routes?.[(st?.index ?? 0) - 1]?.name;
+    if (atras === 'skincare-sessao') { marcarVoltaDoCheckin(); router.back(); return; }
+    void terminar('/home');
+  };
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const { data: grupos } = useMeusGrupos();
   const y = (v: number) => insets.top + v - 54;
@@ -231,28 +232,25 @@ export default function Checkin() {
     }
   };
 
-  // ── 80w · Novo check-in ───────────────────────────────────────────────────
+  // ── Novo check-in (12/nov/2026, build 1.62; referência do produto: print de outro app) ───
+  // Topo: voltar (câmera), "Novo check-in" e "Publicar". A foto no meio com o lápis (tirar
+  // outra); à esquerda os grupos ("Em N grupos" — toque abre a folha para desmarcar; todos
+  // começam marcados) e à direita "Válido". Embaixo: Título (sem descrição) e, no fluxo do
+  // skincare, as estatísticas (duração, passos, produtos e a lista dos passos). Sem NIKS
+  // Points. A rotina é a do skincare (fora dele, a do horário) e a hora é a de publicar.
   const jaFeitas = (typeof feitas === 'string' ? feitas.split(',') : []) as ('am' | 'pm')[];
-  const [titulo, setTitulo] = useState('');
-  const [descricao, setDescricao] = useState('');
   const [sel, setSel] = useState<string[] | null>(null);   // null = todos
   const [rotina, setRotina] = useState<'am' | 'pm'>('am');
-  const [hora, setHora] = useState(() => new Date());
-  const [abrirHora, setAbrirHora] = useState(false);
   const [publicando, setPublicando] = useState(false);
+  const [titulo, setTitulo] = useState('');
+  const [folhaGrupos, setFolhaGrupos] = useState(false);
+  const folhaV = useRef(new Animated.Value(0)).current;
   const fotoSubida = useRef<{ uri: string; path: string } | null>(null);
   const fotoIn = useRef(new Animated.Value(0)).current;
-  const pick = useRef(new Animated.Value(0)).current;
-  const chev = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (etapa !== 'compor') return;
-    const agora = new Date();
-    agora.setSeconds(0, 0);
-    setHora(agora);
-    setAbrirHora(false);
-    pick.setValue(0); chev.setValue(0);
-    const pref = rotinaParam === 'am' || rotinaParam === 'pm' ? rotinaParam : getRoutinePeriodForNow(agora);
+    const pref = rotinaParam === 'am' || rotinaParam === 'pm' ? rotinaParam : getRoutinePeriodForNow(new Date());
     const r = jaFeitas.includes(pref) && !jaFeitas.includes(pref === 'am' ? 'pm' : 'am') ? (pref === 'am' ? 'pm' : 'am') : pref;
     setRotina(r);
     fotoIn.setValue(rm ? 1 : 0);
@@ -267,39 +265,27 @@ export default function Checkin() {
 
   const meus = grupos ?? [];
   const escolhidos = sel ? meus.filter((g) => sel.includes(g.id)) : meus;
-  const gruposLabel = escolhidos.length === 0 ? 'Nenhum grupo' : escolhidos.length === 1 ? escolhidos[0].nome : `${escolhidos.length} grupos`;
-  const escolherGrupos = () => {
-    haptics.tap();
-    if (meus.length < 2) return;
-    const opts = ['Todos os grupos', ...meus.map((g) => g.nome), 'Cancelar'];
-    ActionSheetIOS.showActionSheetWithOptions(
-      { title: 'Em quais grupos vai aparecer?', options: opts, cancelButtonIndex: opts.length - 1 },
-      (i) => { if (i === 0) setSel(null); else if (i < opts.length - 1) setSel([meus[i - 1].id]); },
-    );
-  };
-
-  const formRef = useRef<ScrollView>(null);
-  // Limites da roda: do início do dia de sessão (04:00) até agora (fixado ao abrir).
-  const [limites, setLimites] = useState(() => {
-    const ini = sessionDate(); ini.setHours(4, 0, 0, 0);
-    return { min: ini, max: new Date() };
-  });
-  const tocarHora = () => {
-    haptics.tap();
-    const v = !abrirHora;
-    if (v) { const ini = sessionDate(); ini.setHours(4, 0, 0, 0); setLimites({ min: ini, max: new Date() }); }
-    setAbrirHora(v);
-    // A roda abre embaixo do formulário: rola para ela ficar à vista, acima do Publicar.
-    if (v) setTimeout(() => formRef.current?.scrollToEnd({ animated: !rm }), rm ? 0 : 320);
-    Animated.timing(pick, { toValue: v ? 1 : 0, duration: rm ? 0 : 300, easing: EIO, useNativeDriver: false }).start();
-    Animated.timing(chev, { toValue: v ? 1 : 0, duration: rm ? 0 : 300, easing: EIO, useNativeDriver: true }).start();
-  };
-
-  const escolherRotina = (r: 'am' | 'pm') => {
-    if (r === rotina || jaFeitas.includes(r)) return;
+  const gruposLabel = escolhidos.length === 0 ? 'Nenhum grupo' : escolhidos.length === 1 ? escolhidos[0].nome : `Em ${escolhidos.length} grupos`;
+  const alternarGrupo = (id: string) => {
     haptics.select();
-    setRotina(r);
+    const atuais = escolhidos.map((g) => g.id);
+    setSel(atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id]);
   };
+  const abrirGrupos = (v: boolean) => {
+    if (v) { haptics.tap(); setFolhaGrupos(true); }
+    Animated.timing(folhaV, { toValue: v ? 1 : 0, duration: rm ? 160 : v ? 340 : 220, easing: v ? EFOLHA : EO, useNativeDriver: true })
+      .start(({ finished }) => { if (finished && !v) setFolhaGrupos(false); });
+  };
+
+  // O skincare que acabou de ser concluído (só no fluxo do skincare e do mesmo período).
+  const feito = skincare && (rotinaParam === 'am' || rotinaParam === 'pm') ? ultimoSkincare(rotinaParam) : null;
+  const estLocal: EstatisticasCheckin | null = feito ? {
+    periodo: feito.periodo,
+    duracao_s: feito.duracao_s,
+    n_passos: feito.passos.length,
+    n_produtos: feito.passos.filter((p) => p.marca || p.produto).length,
+    passos: feito.passos.map((p) => ({ nome: p.nome ?? undefined, marca: p.marca ?? undefined, produto: p.produto ?? undefined, img: p.img ? { url: p.img } : undefined })),
+  } : null;
 
   const publicar = async () => {
     if (!foto || publicando) return;
@@ -313,8 +299,14 @@ export default function Checkin() {
       const path = fotoSubida.current?.uri === foto.uri ? fotoSubida.current.path : await subirFoto('checkin', foto.base64);
       fotoSubida.current = { uri: foto.uri, path };
       const r = await publicarCheckin({
-        foto_path: path, rotina, grupos: escolhidos.map((g) => g.id), hora_exibida: hora.toISOString(),
-        titulo: titulo.trim() || undefined, descricao: descricao.trim() || undefined,
+        foto_path: path, rotina, grupos: escolhidos.map((g) => g.id), hora_exibida: new Date().toISOString(),
+        titulo: titulo.trim() || undefined,
+        // Com estatísticas, o servidor escreve a descrição (para quem ainda está na 1.61).
+        descricao: !feito && skincare && typeof descricaoParam === 'string' && descricaoParam ? descricaoParam.slice(0, 280) : undefined,
+        estatisticas: feito ? {
+          duracao_s: feito.duracao_s,
+          passos: feito.passos.slice(0, 20).map((p) => ({ nome: p.nome, marca: p.marca, produto: p.produto, ref: p.ref ?? null })),
+        } : undefined,
       });
       if (!r.ok) {
         console.warn('[check-in] recusado pelo servidor:', r.motivo);
@@ -336,7 +328,7 @@ export default function Checkin() {
         }
         return;
       }
-      trackFora('checkin_feito', { rotina, grupos: r.grupos.length, com_titulo: Boolean(titulo.trim()), carta: Boolean(r.carta_id) });
+      trackFora('checkin_feito', { rotina, grupos: r.grupos.length, com_estatisticas: Boolean(feito), com_titulo: Boolean(titulo.trim()), carta: Boolean(r.carta_id) });
       void invalidarMissoes(); // desafio 4: o check-in também registra o skincare
       // O check-in conta como o skincare do período (o servidor já registrou). A home, a
       // semana e a aba Rotina leem o histórico do CELULAR: sem gravar aqui, quem fazia o
@@ -433,90 +425,119 @@ export default function Checkin() {
     );
   }
 
-  const fundoPub = 38 + Math.max(0, insets.bottom - 34);
+  const passosLista = estLocal?.passos ?? [];
+  const minutos = estLocal?.duracao_s != null ? duracaoPorExtenso(estLocal.duracao_s * 1000) : null;
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={[styles.back, { top: y(54) }]} accessibilityLabel="Voltar para a câmera">
-        <Icon size={26} color={INK} sw={2} d={['m15 18-6-6 6-6']} />
-      </TouchableOpacity>
-      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.titleT}>Novo check-in</Text></View>
-      <KeyboardAvoidingView behavior="padding" style={{ position: 'absolute', top: y(98), left: 0, right: 0, bottom: fundoPub + 62 }}>
-        <ScrollView ref={formRef} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{ paddingTop: 8, paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
-          <View style={styles.shotWrap}>
-            <Animated.View style={[styles.shot, { opacity: fotoIn.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] }), transform: [{ scale: fotoIn.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }] }]}>
+      <View style={[styles.topo, { top: y(54) }]}>
+        <TouchableOpacity activeOpacity={0.7} disabled={publicando} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.topoLado} accessibilityLabel="Voltar para a câmera">
+          <Icon size={26} color={INK} sw={2} d={['m15 18-6-6 6-6']} />
+        </TouchableOpacity>
+        <Text style={styles.titleT}>Novo check-in</Text>
+        <TouchableOpacity activeOpacity={0.6} disabled={publicando} onPress={publicar} style={[styles.topoLado, { alignItems: 'flex-end' }]} accessibilityLabel="Publicar">
+          {publicando ? <ActivityIndicator color={PINK} /> : <Text style={styles.publicarT}>Publicar</Text>}
+        </TouchableOpacity>
+      </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        style={{ position: 'absolute', top: y(98), left: 0, right: 0, bottom: 0 }}
+        contentContainerStyle={{ paddingTop: 14, paddingHorizontal: 16, paddingBottom: insets.bottom + 32, gap: 16 }}
+      >
+        {/* Grupos · foto (lápis = tirar outra) · Válido */}
+        <View style={styles.heroi}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => abrirGrupos(true)} style={styles.heroiLado} accessibilityLabel={`Grupos: ${gruposLabel}. Toque para escolher`}>
+            <View style={styles.bolinhas}>
+              {escolhidos.slice(0, 3).map((g, i) => <MiniBanner key={g.id} g={g} tamanho={36} redondo style={[styles.bolinha, i > 0 && { marginLeft: -10 }]} />)}
+              {escolhidos.length === 0 && <View style={[styles.bolinha, styles.bolinhaVazia]}><Icon size={16} color={MUTE} sw={2.2} d={['M12 5v14M5 12h14']} /></View>}
+            </View>
+            <Text style={styles.heroiT} numberOfLines={2}>{gruposLabel}</Text>
+          </TouchableOpacity>
+          <View>
+            <Animated.View style={[styles.shot, { opacity: fotoIn.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] }), transform: [{ scale: fotoIn.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }]}>
               {foto && <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%' }} />}
             </Animated.View>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.retake} accessibilityLabel="Tirar outra foto">
-              <Icon size={17} color={INK} sw={2} d={['M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z']} />
+            <TouchableOpacity activeOpacity={0.7} disabled={publicando} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.lapis} accessibilityLabel="Tirar outra foto">
+              <Icon size={18} color={INK} sw={2} d={['M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z']} />
             </TouchableOpacity>
           </View>
-
-          <View style={styles.cardBranco}>
-            <TextInput value={titulo} onChangeText={setTitulo} placeholder="Título" placeholderTextColor={MUTE} maxLength={60} style={styles.titleIn} returnKeyType="next" selectionColor={PINK} />
-            <View style={styles.sep} />
-            <TextInput value={descricao} onChangeText={setDescricao} placeholder="Descrição (opcional)" placeholderTextColor={MUTE} maxLength={280} multiline style={styles.descIn} textAlignVertical="top" selectionColor={PINK} />
+          <View style={styles.heroiLado}>
+            <View style={styles.valido}><Icon size={14} color="#fff" sw={3.4} d={['M20 6 9 17l-5-5']} /></View>
+            <Text style={styles.heroiT}>Válido</Text>
           </View>
+        </View>
 
-          <View style={[styles.cardBranco, { padding: 16 }]}>
-            <Text style={styles.cardT}>Rotina</Text>
-            <View style={styles.chips}>
-              {(['am', 'pm'] as const).map((r) => {
-                const sel = rotina === r;
-                const feita = jaFeitas.includes(r);
+        <View style={[styles.cardBranco, { marginTop: 8 }]}>
+          <TextInput value={titulo} onChangeText={setTitulo} placeholder="Título" placeholderTextColor={MUTE} maxLength={60} style={styles.titleIn} returnKeyType="done" selectionColor={PINK} />
+        </View>
+
+        {estLocal && (
+          <View style={styles.cardBranco}>
+            {minutos && <LinhaInfo icone={ICO_TEMPO} rotulo="Duração" valor={minutos} />}
+            <LinhaInfo icone={ICO_PASSOS} rotulo="Passos" valor={String(estLocal.n_passos ?? passosLista.length)} borda={!!minutos} />
+            <LinhaInfo icone={ICO_PRODUTO} rotulo="Produtos" valor={String(estLocal.n_produtos ?? 0)} borda />
+          </View>
+        )}
+
+        {passosLista.length > 0 && (
+          <View style={[styles.cardBranco, { paddingHorizontal: 16, paddingVertical: 4 }]}>
+            <LinhasPassos passos={passosLista} />
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Folha dos grupos: todos começam marcados; ela desmarca os que não quer. */}
+      {folhaGrupos && (
+        <>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.veu, { opacity: folhaV }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => abrirGrupos(false)} accessibilityLabel="Fechar" />
+          </Animated.View>
+          <Animated.View style={[styles.folha, { paddingBottom: insets.bottom + 16, transform: [{ translateY: folhaV.interpolate({ inputRange: [0, 1], outputRange: [rm ? 0 : 520, 0] }) }], opacity: rm ? folhaV : 1 }]}>
+            <View style={styles.alca} />
+            <Text style={styles.folhaTitulo}>Em quais grupos vai aparecer?</Text>
+            <ScrollView style={styles.folhaLista} bounces={false}>
+              {meus.map((g, i) => {
+                const on = escolhidos.some((x) => x.id === g.id);
                 return (
-                  <TouchableOpacity
-                    key={r}
-                    activeOpacity={0.7}
-                    disabled={feita}
-                    onPress={() => escolherRotina(r)}
-                    style={[styles.chip, { borderColor: sel ? PINK : 'rgba(255,94,168,0)' }, feita && { opacity: 0.45 }]}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: sel, disabled: feita }}
-                  >
-                    <View style={styles.chipIcon}>
-                      {r === 'am'
-                        ? <Icon size={16} color={PINK} sw={2.2} d={['M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41']}><Circle cx={12} cy={12} r={4} fill="none" stroke={PINK} strokeWidth={2.2} /></Icon>
-                        : <Icon size={16} color={PINK} sw={2.2} d={['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z']} />}
+                  <TouchableOpacity key={g.id} activeOpacity={0.7} onPress={() => alternarGrupo(g.id)} style={styles.folhaLinha} accessibilityRole="checkbox" accessibilityState={{ checked: on }}>
+                    <MiniBanner g={g} tamanho={44} />
+                    <View style={[styles.folhaLinhaTexto, i < meus.length - 1 && styles.folhaFio]}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.folhaNome} numberOfLines={1}>{g.nome}</Text>
+                        <Text style={styles.folhaSub}>{g.total <= 1 ? 'Só você' : `${g.total} integrantes`}</Text>
+                      </View>
+                      <View style={[styles.marca, on && styles.marcaOn]}>
+                        {on && <Icon size={13} color="#fff" sw={3.4} d={['M20 6 9 17l-5-5']} />}
+                      </View>
                     </View>
-                    <Text style={styles.chipT}>{r === 'am' ? 'Matinal' : 'Noturna'}</Text>
-                    {sel && (
-                      <View style={styles.chipCheck}><Icon size={10} color="#fff" sw={4} d={['M20 6 9 17l-5-5']} /></View>
-                    )}
                   </TouchableOpacity>
                 );
               })}
-            </View>
-          </View>
+            </ScrollView>
+            <TouchableOpacity activeOpacity={0.85} disabled={!escolhidos.length} onPress={() => { haptics.tap(); abrirGrupos(false); }} style={[styles.pronto, !escolhidos.length && { opacity: 0.4 }]}>
+              <Text style={styles.prontoT}>{escolhidos.length ? 'Pronto' : 'Escolha um grupo'}</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </>
+      )}
+    </View>
+  );
+}
 
-          <View style={styles.cardBranco}>
-            <TouchableOpacity activeOpacity={meus.length > 1 ? 0.7 : 1} onPress={escolherGrupos} style={styles.linha}>
-              <Text style={styles.linhaT}>Grupos</Text>
-              <View style={{ flexDirection: 'row', paddingLeft: 8 }}>
-                {escolhidos.slice(0, 3).map((g) => <BolinhaGrupo key={g.id} g={g} />)}
-              </View>
-              <Text style={styles.linhaV} numberOfLines={1}>{gruposLabel}</Text>
-              <Icon size={16} color="#B5B5B5" sw={2.4} d={['m9 18 6-6-6-6']} />
-            </TouchableOpacity>
-            <View style={styles.sep} />
-            <TouchableOpacity activeOpacity={0.7} onPress={tocarHora} style={styles.linha} accessibilityLabel="Hora do check-in">
-              <Text style={styles.linhaT}>Hora do check-in</Text>
-              <Text style={[styles.linhaV, { color: abrirHora ? PINK : MUTE, fontVariant: ['tabular-nums'] }]}>{`Hoje, ${hm(hora)}`}</Text>
-              <Animated.View style={{ transform: [{ rotate: chev.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '90deg'] }) }] }}>
-                <Icon size={16} color="#B5B5B5" sw={2.4} d={['m9 18 6-6-6-6']} />
-              </Animated.View>
-            </TouchableOpacity>
-            <Animated.View style={{ height: pick.interpolate({ inputRange: [0, 1], outputRange: [0, 144] }), overflow: 'hidden' }}>
-              <View style={styles.picker}>
-                {abrirHora && <RodaHora valor={hora} min={limites.min} max={limites.max} onChange={setHora} />}
-              </View>
-            </Animated.View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-      <TouchableOpacity activeOpacity={0.85} onPress={publicar} disabled={publicando} style={[styles.publicar, { bottom: fundoPub }]} accessibilityLabel="Publicar">
-        {publicando ? <ActivityIndicator color="#fff" /> : <Text style={styles.publicarT}>Publicar</Text>}
-      </TouchableOpacity>
+const ICO_TEMPO = ['M12 6v6l4 2', 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0'];
+const ICO_PASSOS = ['M13 5h8', 'M13 12h8', 'M13 19h8', 'm3 17 2 2 4-4', 'm3 7 2 2 4-4'];
+const ICO_PRODUTO = ['M10 2h4', 'M12 2v3', 'M8 8a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2z', 'M8 13h8'];
+
+function LinhaInfo({ icone, rotulo, valor, borda }: { icone: string[]; rotulo: string; valor: string; borda?: boolean }) {
+  return (
+    <View style={styles.info}>
+      <Icon size={22} color={PINK} sw={1.9} d={icone} />
+      <View style={[styles.infoTexto, borda && styles.infoBorda]}>
+        <Text style={styles.infoRotulo}>{rotulo}</Text>
+        <Text style={styles.infoValor}>{valor}</Text>
+      </View>
     </View>
   );
 }
@@ -534,40 +555,48 @@ const styles = StyleSheet.create({
   shutter: { width: 78, height: 78, borderRadius: 39, borderWidth: 4, borderColor: '#fff', padding: 5 },
   shutterIn: { flex: 1, borderRadius: 39, backgroundColor: '#fff' },
 
-  // 81j
-  back: { position: 'absolute', left: 6, width: 44, height: 44, alignItems: 'center', justifyContent: 'center', zIndex: 4 },
-  titleRow: { position: 'absolute', left: 0, right: 0, height: 44, alignItems: 'center', justifyContent: 'center' },
+  // Novo check-in
+  topo: { position: 'absolute', left: 8, right: 16, height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 4 },
+  topoLado: { width: 92, height: 44, justifyContent: 'center' },
   titleT: { fontSize: 17, fontWeight: '600', letterSpacing: -0.4, color: INK },
-  shotWrap: { alignSelf: 'center', width: 148, height: 196, marginBottom: 8 },
+  publicarT: { color: PINK, fontSize: 17, fontWeight: '700', letterSpacing: -0.4 },
+  heroi: { flexDirection: 'row', alignItems: 'center' },
+  heroiLado: { flex: 1, alignItems: 'center', gap: 8, paddingHorizontal: 4 },
+  heroiT: { fontSize: 15, lineHeight: 19, letterSpacing: -0.25, color: INK, textAlign: 'center' },
+  bolinhas: { flexDirection: 'row', height: 40, alignItems: 'center' },
+  bolinha: { borderWidth: 2, borderColor: '#F6F1F4' },
+  bolinhaVazia: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  valido: { width: 26, height: 26, borderRadius: 13, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
   shot: {
-    width: 148, height: 196, borderRadius: 16, borderWidth: 3, borderColor: '#fff', overflow: 'hidden', backgroundColor: '#FCE3EE',
-    boxShadow: '0px 10px 24px rgba(200,60,120,0.18)',
+    width: 128, height: 170, borderRadius: 16, borderWidth: 3, borderColor: '#fff', overflow: 'hidden', backgroundColor: '#FCE3EE',
+    boxShadow: '0px 10px 24px rgba(200,60,120,0.16)',
   },
-  retake: {
-    position: 'absolute', right: -12, bottom: -10, width: 38, height: 38, borderRadius: 19, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0px 4px 12px rgba(18,18,18,0.12)',
+  lapis: {
+    position: 'absolute', alignSelf: 'center', bottom: -18, width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', boxShadow: '0px 4px 12px rgba(18,18,18,0.12)',
   },
   cardBranco: { borderRadius: 16, backgroundColor: '#fff', overflow: 'hidden', boxShadow: '0px 1px 2px rgba(18,18,18,0.04)' },
-  titleIn: { height: 52, paddingHorizontal: 16, fontSize: 17, fontWeight: '600', color: INK, letterSpacing: -0.4 },
-  sep: { height: 1, marginHorizontal: 16, backgroundColor: 'rgba(18,18,18,0.07)' },
-  descIn: { height: 92, paddingTop: 12, paddingBottom: 12, paddingHorizontal: 16, fontSize: 16, lineHeight: 21, color: INK, letterSpacing: -0.2 },
-  cardT: { fontSize: 17, lineHeight: 22, fontWeight: '700', letterSpacing: -0.4, color: INK },
-  chips: { marginTop: 12, flexDirection: 'row', gap: 10 },
-  chip: {
-    height: 42, paddingLeft: 6, paddingRight: 16, borderRadius: 100, borderWidth: 2, backgroundColor: '#FFEAF3',
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+  titleIn: { height: 54, paddingHorizontal: 16, fontSize: 17, fontWeight: '600', color: INK, letterSpacing: -0.4 },
+  info: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingLeft: 16 },
+  infoTexto: { flex: 1, height: 54, paddingRight: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  infoBorda: { borderTopWidth: 1, borderTopColor: 'rgba(18,18,18,0.07)' },
+  infoRotulo: { fontSize: 17, letterSpacing: -0.35, color: INK },
+  infoValor: { fontSize: 17, letterSpacing: -0.35, color: MUTE, fontVariant: ['tabular-nums'] },
+  veu: { backgroundColor: 'rgba(18,18,18,0.34)', zIndex: 40 },
+  folha: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 41, paddingTop: 8, paddingHorizontal: 16,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: '#F6F1F4',
   },
-  chipIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFD1E5', alignItems: 'center', justifyContent: 'center' },
-  chipT: { fontSize: 16, letterSpacing: -0.3, color: INK },
-  chipCheck: {
-    position: 'absolute', right: -5, bottom: -5, width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#fff', backgroundColor: PINK,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  linha: { height: 56, paddingLeft: 16, paddingRight: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  linhaT: { flex: 1, fontSize: 16, letterSpacing: -0.3, color: INK },
-  linhaV: { maxWidth: 150, fontSize: 15, color: MUTE },
-  gDot: { width: 26, height: 26, marginLeft: -8, borderRadius: 13, borderWidth: 2, borderColor: '#fff', overflow: 'hidden' },
-  picker: { marginHorizontal: 16, marginBottom: 12, height: 132 },
-  publicar: { position: 'absolute', left: 16, right: 16, height: 50, borderRadius: 100, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
-  publicarT: { color: '#fff', fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
+  alca: { width: 36, height: 5, borderRadius: 100, backgroundColor: '#DCD3D8', alignSelf: 'center' },
+  folhaTitulo: { marginTop: 16, textAlign: 'center', fontSize: 17, fontWeight: '600', letterSpacing: -0.4, color: INK },
+  folhaLista: { marginTop: 14, maxHeight: 340, flexGrow: 0, borderRadius: 16, backgroundColor: '#fff' },
+  folhaLinha: { height: 68, paddingLeft: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  folhaLinhaTexto: { flex: 1, minWidth: 0, height: 68, paddingRight: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  folhaFio: { borderBottomWidth: 1, borderBottomColor: 'rgba(18,18,18,0.07)' },
+  folhaNome: { fontSize: 17, lineHeight: 22, fontWeight: '600', letterSpacing: -0.4, color: INK },
+  folhaSub: { fontSize: 13, lineHeight: 17, color: MUTE },
+  marca: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#D9CFD5', alignItems: 'center', justifyContent: 'center' },
+  marcaOn: { backgroundColor: PINK, borderColor: PINK },
+  pronto: { marginTop: 14, height: 50, borderRadius: 100, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
+  prontoT: { color: '#fff', fontSize: 17, fontWeight: '600', letterSpacing: -0.4 },
 });

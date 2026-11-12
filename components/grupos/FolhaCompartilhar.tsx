@@ -16,6 +16,8 @@ import { BANNERS_GRUPO } from '../../app/(app)/seus-grupos';
 // três fotos, "Faça skincare com suas amigas", Criar grupo e Agora não.
 // Entrada: o véu esmaece (200 ms) e o card cresce de 96% com fade (240 ms, ease-out forte);
 // saída em 160 ms. "Reduzir movimento": só esmaece.
+// `semEscolha` (12/nov/2026, fim do skincare): sem a lista; os banners dos grupos e
+// "Compartilhar com o grupo" — os grupos são escolhidos na tela do check-in.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INK = '#121212';
@@ -34,20 +36,24 @@ type Props = {
   onCompartilhar: (grupoIds: string[]) => void;
   onCriarGrupo: () => void;
   onFechar: () => void;
+  /** Sem a lista de grupos (fim do skincare, 12/nov/2026): "Compartilhar com o grupo" manda
+   *  TODOS, e ela escolhe os grupos na tela do check-in. */
+  semEscolha?: boolean;
 };
 
-// Banner do grupo em 44 × 44 (o degradê do grupo ou a foto, com a flor no meio).
-function MiniBanner({ g }: { g: GrupoResumo }) {
-  if (g.banner === 'foto' && g.banner_url) return <Image source={{ uri: g.banner_url }} style={styles.banner} />;
+// Banner do grupo (o degradê do grupo ou a foto, com a flor no meio). 44 × 44 por padrão.
+export function MiniBanner({ g, tamanho = 44, redondo = false, style }: { g: GrupoResumo; tamanho?: number; redondo?: boolean; style?: object }) {
+  const caixa = [styles.banner, { width: tamanho, height: tamanho, borderRadius: redondo ? tamanho / 2 : tamanho * 0.27 }, style];
+  if (g.banner === 'foto' && g.banner_url) return <Image source={{ uri: g.banner_url }} style={caixa} />;
   const b = g.banner === 'niks-2' ? BANNERS_GRUPO[1] : BANNERS_GRUPO[0];
   return (
-    <View style={[styles.banner, { experimental_backgroundImage: b.bg, alignItems: 'center', justifyContent: 'center' }]}>
-      <Image source={LOGO} style={{ width: 22, height: 22 }} />
+    <View style={[caixa, { experimental_backgroundImage: b.bg, alignItems: 'center', justifyContent: 'center' }]}>
+      <Image source={LOGO} style={{ width: tamanho / 2, height: tamanho / 2 }} />
     </View>
   );
 }
 
-export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onCriarGrupo, onFechar }: Props) {
+export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onCriarGrupo, onFechar, semEscolha = false }: Props) {
   const rm = useReducedMotion();
   const { width: W, height: H } = useWindowDimensions();
   const { data: grupos } = useMeusGrupos();
@@ -96,6 +102,11 @@ export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onC
           {tem ? (
             <>
               <Text style={styles.titulo}>Compartilhar com o grupo?</Text>
+              {semEscolha ? (
+                <View style={styles.bannersSem}>
+                  {lista.slice(0, 4).map((g, i) => <MiniBanner key={g.id} g={g} tamanho={52} redondo style={[styles.bannerSem, i > 0 && { marginLeft: -14 }]} />)}
+                </View>
+              ) : (
               <ScrollView style={styles.lista} bounces={false} showsVerticalScrollIndicator={false}>
                 {lista.map((g, i) => {
                   const ligado = !desligados.includes(g.id);
@@ -124,14 +135,15 @@ export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onC
                   );
                 })}
               </ScrollView>
+              )}
               <TouchableOpacity
                 activeOpacity={0.85}
                 disabled={!pode}
-                onPress={() => { haptics.action(); onCompartilhar(ativos); }}
+                onPress={() => { haptics.action(); onCompartilhar(semEscolha ? lista.map((g) => g.id) : ativos); }}
                 style={[styles.criar, !pode && !ocupadoAgora && { opacity: 0.4 }]}
                 accessibilityState={{ disabled: !pode }}
               >
-                {ocupadoAgora ? <ActivityIndicator color="#fff" /> : <Text style={styles.criarT}>Compartilhar</Text>}
+                {ocupadoAgora ? <ActivityIndicator color="#fff" /> : <Text style={styles.criarT}>{semEscolha ? 'Compartilhar com o grupo' : 'Compartilhar'}</Text>}
               </TouchableOpacity>
             </>
           ) : (
@@ -169,6 +181,8 @@ const styles = StyleSheet.create({
   gNome: { fontSize: 17, lineHeight: 22, fontWeight: '600', letterSpacing: -0.4, color: INK },
   gHoje: { fontSize: 13, lineHeight: 17, color: MUTE },
   chave: { width: 51, height: 31, alignItems: 'center', justifyContent: 'center' },
+  bannersSem: { marginTop: 18, flexDirection: 'row', justifyContent: 'center' },
+  bannerSem: { borderWidth: 3, borderColor: '#fff', boxShadow: '0px 4px 12px rgba(200,60,120,0.14)' },
   fotos: { marginTop: 6, flexDirection: 'row', justifyContent: 'center', paddingLeft: 14 },
   foto: { width: 60, height: 60, marginLeft: -14, borderRadius: 30, borderWidth: 3, borderColor: '#fff', boxShadow: '0px 4px 12px rgba(200,60,120,0.14)' },
   criar: { marginTop: 18, height: 50, borderRadius: 100, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },

@@ -11,6 +11,7 @@ import { supabase } from './supabase';
 import { useCachedQuery, invalidateCache } from './cache';
 import { getUserId, useUserId } from './currentUser';
 import type { PontosGanhos } from './cartasServidor';
+import type { RefProduto } from './minhaRotina';
 import { ajustarMedalhas } from './niveis';
 
 const FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/grupos`;
@@ -49,6 +50,17 @@ export type GrupoResumo = {
   ultimo_checkin_outra: string | null;
 };
 
+/** Estatísticas do skincare do check-in (migration 20261205120000): tempo, passos e produtos.
+ *  `img` já vem como link (catálogo: público; estante/escaneado: assinado pela função). */
+export type EstatisticasCheckin = {
+  v?: number;
+  periodo?: 'am' | 'pm';
+  duracao_s?: number;
+  n_passos?: number;
+  n_produtos?: number;
+  passos?: { nome?: string; marca?: string; produto?: string; img?: { url: string } }[];
+};
+
 export type ItemMural = {
   /** Check-in (conta no ranking) ou produto compartilhado do scan (3.6, só no mural). */
   tipo: 'checkin' | 'produto';
@@ -65,6 +77,8 @@ export type ItemMural = {
   foto_url: string | null;
   voce: boolean;
   autora: Perfil;
+  /** Check-in do fluxo do skincare (1.62); null/ausente nos antigos. */
+  estatisticas?: EstatisticasCheckin | null;
 };
 
 export type Periodo = 'semana' | 'mes' | 'ano' | 'geral';
@@ -100,6 +114,7 @@ export type CheckinDetalhe = {
   /** Um grupo em comum (a denúncia precisa dele); null no próprio check-in sem grupo. */
   grupo_id: string | null;
   autora: Perfil;
+  estatisticas?: EstatisticasCheckin | null;
 };
 
 export type ConviteInfo = {
@@ -216,7 +231,9 @@ export async function subirFoto(tipo: 'checkin' | 'banner', base64: string): Pro
 // Regras novas das cartas (05/nov/2026): o check-in registra o skincare do período (a
 // carta do dia, se for o 1º skincare de hoje → `carta_id`) e dá os pontos sem carta
 // (`pontos`: o do skincare sem carta e o do check-in, 1/dia).
-export const publicarCheckin = (p: { foto_path: string; rotina: 'am' | 'pm'; grupos: string[]; hora_exibida?: string; titulo?: string; descricao?: string }) =>
+export const publicarCheckin = (p: { foto_path: string; rotina: 'am' | 'pm'; grupos: string[]; hora_exibida?: string; titulo?: string; descricao?: string;
+  /** Do fluxo do skincare: tempo e passos, com a REFERÊNCIA de cada produto (o banco resolve a foto). */
+  estatisticas?: { duracao_s: number; passos: { nome: string | null; marca: string | null; produto: string | null; ref: RefProduto | null }[] } }) =>
   chamar<{ ok: true; checkin_id: string; dia: string; grupos: string[]; carta_id: string | null; pontos?: PontosGanhos[] } | Recusa>({ acao: 'checkin', ...p });
 
 /** Produto do scan no mural dos grupos escolhidos (80o). `carta_id`: a do produto_grupo, 1 por dia. */

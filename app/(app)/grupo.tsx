@@ -25,6 +25,7 @@ import { enviarConvite, type Canal } from '../../lib/convite';
 import { BANNERS_GRUPO } from './seus-grupos';
 import { sessionDate, dateKey } from '../../lib/routineProgress';
 import AlvoGuia from '../../components/coach/AlvoGuia';
+import { MiniaturasProdutos, resumoEstatisticas, tituloEstatisticas } from '../../components/grupos/EstatisticasCheckin';
 import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
 import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
 import { voltar as voltarOu } from '../../lib/navegar';
@@ -372,6 +373,9 @@ export default function Grupo() {
               );
             })}
           </AlvoGuia>
+          {/* Check-in pelo grupo: só a convidada (12/nov/2026, build 1.62). A assinante faz pelo
+              "Iniciar skincare", que leva as estatísticas do skincare. */}
+          {g?.seu_tipo === 'convidada' && (
           <AlvoGuia chave="grupo-checkin" style={{ marginTop: 18 }}>
           <TouchableOpacity
             activeOpacity={0.85}
@@ -384,6 +388,7 @@ export default function Grupo() {
             <Text style={styles.checkinT}>{feito ? 'Check-ins de hoje feitos' : 'Fazer check-in'}</Text>
           </TouchableOpacity>
           </AlvoGuia>
+          )}
         </Entra>
 
         <Entra i={1} run={run} rm={rm} style={styles.atalhos}>
@@ -414,7 +419,10 @@ export default function Grupo() {
           <View key={d.dia}>
             <Entra i={iIn++} run={run} rm={rm}><Text style={styles.diaLabel}>{rotuloDia(d.dia, hoje)}</Text></Entra>
             <View style={styles.diaList}>
-              {d.itens.map((it) => (
+              {d.itens.map((it) => {
+                // Check-in do fluxo do skincare (1.62): o resumo e as miniaturas dos produtos.
+                const est = it.tipo === 'checkin' && it.estatisticas?.passos ? it.estatisticas : null;
+                return (
                 <Entra key={it.id} i={iIn++} run={run} rm={rm}>
                   <AlvoItem primeiro={it.id === dias[0]?.itens[0]?.id}>
                   <Pressable
@@ -427,18 +435,24 @@ export default function Grupo() {
                     }}
                     style={styles.item}
                   >
-                    <View style={styles.itemFoto}>
+                    <View style={[styles.itemFoto, est && styles.itemFotoEst]}>
                       {it.foto_url ? <Image source={{ uri: it.foto_url }} style={{ width: '100%', height: '100%' }} /> : null}
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.itemT} numberOfLines={it.tipo === 'produto' ? 2 : 1}>{it.tipo === 'produto' ? `Escaneou ${it.titulo}` : it.titulo}</Text>
+                        <Text style={styles.itemT} numberOfLines={it.tipo === 'produto' ? 2 : 1}>{it.tipo === 'produto' ? `Escaneou ${it.titulo}` : est ? tituloEstatisticas(est, it.rotina, it.titulo) : it.titulo}</Text>
                         {!it.voce && (
                           <TouchableOpacity activeOpacity={0.6} onPress={() => abrirFolha({ tipo: 'foto', item: it })} style={styles.itemDots} hitSlop={8} accessibilityLabel="Opções da foto">
                             <Dots size={17} color={MUTE} r={1.9} />
                           </TouchableOpacity>
                         )}
                       </View>
+                      {est && (
+                        <>
+                          <Text style={styles.itemResumo} numberOfLines={1}>{resumoEstatisticas(est)}</Text>
+                          <View style={{ marginTop: 8 }}><MiniaturasProdutos est={est} /></View>
+                        </>
+                      )}
                       <View style={styles.itemRow}>
                         <FotoComMoldura nivel={it.autora.nivel} foto={it.autora.foto} nome={it.autora.nome} tamanho={34} pequena vazio="#F6D3E1" style={styles.itemAv} />
                         <Text style={styles.itemWho} numberOfLines={1}>{it.voce ? 'Você' : it.autora.nome}</Text>
@@ -448,7 +462,8 @@ export default function Grupo() {
                   </Pressable>
                   </AlvoItem>
                 </Entra>
-              ))}
+                );
+              })}
             </View>
           </View>
         ))}
@@ -541,6 +556,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.78)',
   },
   itemFoto: { width: 72, height: 72, borderRadius: 14, overflow: 'hidden', backgroundColor: '#F4F4F4' },
+  itemFotoEst: { width: 84, height: 112 },
+  itemResumo: { marginTop: 3, fontSize: 14, lineHeight: 18, letterSpacing: -0.15, color: MUTE },
   itemT: { flex: 1, minWidth: 0, fontSize: 17, fontWeight: '600', lineHeight: 21, letterSpacing: -0.4, color: INK },
   itemDots: { width: 28, height: 28, marginVertical: -4, marginRight: -6, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   itemRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },

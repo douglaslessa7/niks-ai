@@ -3,7 +3,8 @@
 // ou o de uma amiga) e num dia do calendário de check-ins (aba Grupos e Suas conquistas).
 // Referência: tela de detalhes de outro app (foto grande, quem fez, quando, título), adaptada
 // ao NIKS — fundo rosado, foto em card branco, moldura da medalha. O que a referência tem e o
-// NIKS não guarda (mapa/local, reações, comentários, produtos do check-in) fica de fora.
+// NIKS não guarda (mapa/local, reações, comentários) fica de fora. Check-in do fluxo do skincare
+// (1.62, `estatisticas`): no lugar do título/descrição, o tempo, os passos e os produtos.
 //
 // Dados: função `grupos`, ação `checkin_detalhe` (migration 20261201120000). O servidor só
 // devolve para quem fez ou para integrante de um grupo em comum; escondido pela denúncia não
@@ -28,6 +29,7 @@ import Animated, {
   Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming,
 } from 'react-native-reanimated';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
+import { BlocoEstatisticas, tituloEstatisticas } from '../../components/grupos/EstatisticasCheckin';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { bloquear, checkinDetalhe, denunciar, type CheckinDetalhe } from '../../lib/gruposServidor';
@@ -111,8 +113,18 @@ function Pagina({ id, largura, rm, onCarregou }: { id: string; largura: number; 
           <Text style={styles.quando} numberOfLines={1}>{quando(c)}</Text>
         </View>
       </View>
-      <Text style={styles.titulo}>{c.titulo}</Text>
-      {!!c.descricao && <Text style={styles.descricao}>{c.descricao}</Text>}
+      {c.estatisticas?.passos ? (
+        // Check-in do fluxo do skincare (1.62): tempo, passos e a lista dos passos com os produtos.
+        <>
+          <Text style={styles.titulo}>{tituloEstatisticas(c.estatisticas, c.rotina, c.titulo)}</Text>
+          <View style={{ marginTop: 14, marginHorizontal: 16 }}><BlocoEstatisticas est={c.estatisticas} /></View>
+        </>
+      ) : (
+        <>
+          <Text style={styles.titulo}>{c.titulo}</Text>
+          {!!c.descricao && <Text style={styles.descricao}>{c.descricao}</Text>}
+        </>
+      )}
     </Animated.View>
   );
 }
