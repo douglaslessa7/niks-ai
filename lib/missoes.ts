@@ -33,8 +33,10 @@ export type EstadoMissoes = {
   periodos: Partial<Record<'am' | 'pm', PeriodoMissao>>;
   /** Pontos pagos NESTA chamada (a animação sobe uma vez só). */
   ganhos: GanhoDesafio[];
-  /** A rara das missões (null enquanto não saiu — ou sem catálogo ativo). */
+  /** A rara das missões (null enquanto não saiu — ou sem catálogo ativo). No modo pontos
+   *  (20261204) não há carta: a rara vira NIKS Points ×3 direto (`premio`, e entra em `ganhos`). */
   carta: CartaGanha | null;
+  premio?: { pontos: number; em: string } | null;
 };
 
 export const DESAFIOS = ['d1', 'd2', 'd3', 'd4'] as const;

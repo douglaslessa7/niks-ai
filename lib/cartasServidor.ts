@@ -110,6 +110,11 @@ export type EstadoCartas = {
   carta_hoje?: CartaHoje;
   /** Regras novas: o sistema está ligado para ela (catálogo com carta para ela). */
   ativo?: boolean;
+  /** Pontos diretos (20261204): a conta está no modo pontos — NIKS Points na hora, cartas só de poder. */
+  modo_pontos?: boolean;
+  /** Pontos diretos: NIKS Points ganhos hoje (todas as ações) e os do 1º skincare de hoje. */
+  pontos_hoje?: number;
+  skincare_hoje?: number | null;
   /** Regras antigas (o servidor não manda mais nas regras novas). */
   cartas_hoje?: { cota: number; dadas: number };
   /** `tipo` ('familia:subtipo[:rara]') e `motivo` do motor: só para medição. */

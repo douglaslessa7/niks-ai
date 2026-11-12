@@ -7,7 +7,9 @@
 // (`users.home_tutorial_seen_at`). Depois dele, o tutorial guiado (`lib/missoes.ts`).
 // Ver "Feature: Tutorial de primeiro acesso da home" no README.
 // ─────────────────────────────────────────────────────────────────────────────
+import { useMemo } from 'react';
 import TutorialOverlay, { type TutStop } from './TutorialOverlay';
+import { useEstadoCartas } from '../../lib/cartasServidor';
 
 const STOPS: TutStop[] = [
   { t: 'Cada skincare, check-in e carta vira NIKS Points, e eles sobem o seu nível.', a: { u: ['home-nivel'], pad: 6, r: 14 } },
@@ -20,6 +22,17 @@ const STOPS: TutStop[] = [
   { t: 'Escaneie um produto e veja se ele combina com a sua pele.', a: { u: ['nav-produtos'], pad: 2, r: 'pill' } },
 ];
 
+// Pontos diretos (20261204): no modo pontos não há carta do dia — os textos falam de NIKS Points.
+const TEXTOS_MODO_PONTOS: Record<number, string> = {
+  0: 'Cada skincare e check-in vira NIKS Points, e eles sobem o seu nível.',
+  2: 'O primeiro skincare do dia vale até 50 NIKS Points.',
+};
+
 export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {
-  return <TutorialOverlay stops={STOPS} onFinish={onFinish} />;
+  const { data: estado } = useEstadoCartas();
+  const stops = useMemo(
+    () => (estado?.modo_pontos ? STOPS.map((s, i) => (TEXTOS_MODO_PONTOS[i] ? { ...s, t: TEXTOS_MODO_PONTOS[i] } : s)) : STOPS),
+    [estado?.modo_pontos],
+  );
+  return <TutorialOverlay stops={stops} onFinish={onFinish} />;
 }

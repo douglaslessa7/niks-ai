@@ -1,5 +1,5 @@
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
-import { irPara } from '../../lib/navegar';
+import { irPara, sairPorCimaDoApp } from '../../lib/navegar';
 import { paywallAposCarta } from '../../lib/trava';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, Alert, AppState, BackHandler, useWindowDimensions } from 'react-native';
@@ -26,7 +26,7 @@ import {
 } from '../../lib/cartasServidor';
 import Carta, { CONTA_MS, VERMELHO_ALERTA, sombraCarta, visualDe, type VisualCarta } from '../../components/cartas/Carta';
 import PacotePontos from '../../components/cartas/PacotePontos';
-import { inicioDoPacote } from '../../lib/pontosAnimacao';
+import { inicioDoPacote, soltarPontos } from '../../lib/pontosAnimacao';
 import { marcarCartaAberta } from '../../lib/cartaDoDia';
 import { dateKey, sessionDate } from '../../lib/routineProgress';
 import { useAppStore } from '../../store/onboarding';
@@ -337,12 +337,16 @@ export default function CartaScreen() {
   // quando as cartas acabarem ou ela fechar (o mural do grupo, a home ou criar grupo). Sem
   // ele, como sempre: volta para onde estava.
   const depois = typeof params.depois === 'string' && params.depois ? params.depois : null;
-  const fechar = () => {
+  // `entao`: o que fazer DEPOIS de a carta sair e o destino estar na tela (ex.: abrir a
+  // Caminhada ao subir de nível). ⚠️ Nunca `router.back()` + navegar no mesmo instante: o back
+  // não sai da pilha na hora, e a navegação de dentro da carta (um modal da raiz) empilhava
+  // uma 2ª cópia do app como FOLHA — a tela "descia" com um vão em cima (12/nov/2026,
+  // lib/navegar). Com destino, o `irPara` fecha a carta e só então navega.
+  const fechar = (entao?: () => void) => {
+    if (depois) { irPara(depois as any, entao); return; }
+    if (entao) { sairPorCimaDoApp(entao); return; }   // volta para onde ela estava, e então…
     if (router.canGoBack()) router.back();
-    else if (!depois) router.replace('/(app)/home' as any);
-    // Desce até o destino se ele já está na pilha do app (ex.: o grupo de onde saiu o check-in),
-    // sem empilhar outra cópia; senão abre (lib/navegar).
-    if (depois) irPara(depois as any);
+    else router.replace('/(app)/home' as any);
   };
   const reduced = useReducedMotion();
   const logoImg = useImage(LOGO);
@@ -940,17 +944,27 @@ export default function CartaScreen() {
           // Regras novas: a carta de outro dia venceu às 04:00 — fecha (o card da home já mostra).
           if (r.vencida) { fechar(); return; }
           if (r.pontos) {
-            setPontos(r.pontos.ganhos);
+            // Pontos diretos (20261204): a carta de PODER não dá pontos próprios (`ganhos` 0) —
+            // sem selo "+0". O Pontos em dobro dobra os pontos já ganhos hoje: o selo e o pacote
+            // mostram esse bônus.
+            const extra = r.pontos.ganhos > 0 ? r.pontos.ganhos : (r.pontos.bonus_dobro ?? 0);
+            setPontos(extra > 0 ? extra : null);
             if (r.pontos.nivel > r.pontos.nivel_antes) subiuNivel.current = true;
             // As mini cartas saem do selo depois que ele aparece (~600 ms da revelação).
             const p = r.pontos;
-            if (p.ganhos > 0 && tabela.current?.niveis?.length && tabela.current.icone) {
+            if (p.total > p.total_antes && tabela.current?.niveis?.length && tabela.current.icone) {
               later(Math.max(0, 600 - (Date.now() - reveladaEm.current)), () => {
                 head.set(withTiming(0, { duration: 180, easing: EO }));
                 // Os pontos sem carta do mesmo fluxo (check-in…) sobem junto: a barra sobe uma vez só.
                 setPacote({ de: inicioDoPacote(p.total_antes), para: p.total });
               });
+            } else {
+              // Carta de poder sem pontos (pontos diretos): sem pacote, os pontos guardados do
+              // fluxo (ex.: o check-in) sobem pela barra do topo — senão ficariam presos.
+              soltarPontos();
             }
+          } else {
+            soltarPontos();
           }
           if (!r.poder) return;
           const hoje = dateKey(sessionDate(new Date()));
@@ -1252,8 +1266,13 @@ export default function CartaScreen() {
       const consulta = proximaCarta.current ?? estadoCartas();
       proximaCarta.current = null;
       const sair = () => {
+        // Subiu de nível: a Caminhada abre DEPOIS de a carta sair (de dentro dela, abria em folha).
+        if (subiuNivel.current) {
+          subiuNivel.current = false;
+          fechar(() => router.push('/(app)/caminhada?de=home' as any));
+          return;
+        }
         fechar();
-        if (subiuNivel.current) { subiuNivel.current = false; router.push('/(app)/caminhada?de=home' as any); }
       };
       consulta
         .then((e) => {

@@ -112,6 +112,8 @@ export default function Caminhada() {
   const ic: Icone = useMemo(() => base?.icone ?? { passo: 945, incremento: 45 }, [base?.icone]);
   const rot = base?.faixas?.rotina ?? { min: 15, max: 30 };
   const scan = base?.faixas?.scan_rosto ?? { min: 40, max: 60 };
+  // Pontos diretos (20261204): no modo pontos o 1º skincare do dia vale a faixa da Comum.
+  const prim = base?.modo_pontos ? (base?.faixas?.skincare_dia ?? { min: 10, max: 50 }) : null;
   const mediaRotina = (rot.min + rot.max) / 2;
   // As animações rodam em timers: leem a tabela daqui (sempre a última), não do fechamento
   // do render em que foram agendadas (que podia ser de antes de o estado chegar).
@@ -614,7 +616,13 @@ export default function Caminhada() {
         <View style={{ marginTop: 10, gap: 6 }}>
           <View style={styles.footRow}>
             <View style={styles.footIcon}><Svg width={15} height={15} viewBox="0 0 24 24"><Path d="M12 5v14M5 12h14" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" /></Svg></View>
-            <Text style={styles.footText}><Text style={{ fontWeight: '600' }}>{`+${rot.min} a ${rot.max} NIKS Points`}</Text> por rotina concluída</Text>
+            {prim ? (
+              <Text style={styles.footText}>
+                <Text style={{ fontWeight: '600' }}>{`+${prim.min} a ${prim.max}`}</Text> no 1º skincare do dia, <Text style={{ fontWeight: '600' }}>{`+${rot.min} a ${rot.max}`}</Text> no 2º
+              </Text>
+            ) : (
+              <Text style={styles.footText}><Text style={{ fontWeight: '600' }}>{`+${rot.min} a ${rot.max} NIKS Points`}</Text> por rotina concluída</Text>
+            )}
           </View>
           <View style={styles.footRow}>
             <View style={styles.footIcon}><Svg width={15} height={15} viewBox="0 0 24 24"><Path d={PODER_INFO.scan_antecipado.icone} fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg></View>

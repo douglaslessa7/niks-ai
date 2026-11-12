@@ -3,7 +3,7 @@
 // o estado do servidor entrega a Carta de volta ao abrir (idempotente: se a home já
 // pediu, só devolve a mesma) e a tela de raspar abre direto nela. Sem carta (o limite
 // bloqueou, ou ela já raspou), fica na home.
-import { abrirComTrilha } from '../lib/navegar';
+import { abrirComTrilha, irPara } from '../lib/navegar';
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { registrarToque, useToquePush, type DadosPush } from '../lib/pushToque';
@@ -40,7 +40,9 @@ export default function ToquePush() {
     if (typeof d.conversation_id !== 'string') return;
     marcarConviteVisto(d.conversation_id);
     useBalaoEspinha.getState().fechar();
-    router.push(rotaConversaEspinha(d.conversation_id));
+    // `irPara` (não `router.push`): se a carta estiver aberta, ela sai antes — de dentro dela,
+    // o push empilhava o app de novo como folha (lib/navegar, 12/nov/2026).
+    irPara(rotaConversaEspinha(d.conversation_id));
   }), [router]);
   return null;
 }

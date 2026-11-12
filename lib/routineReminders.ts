@@ -25,11 +25,10 @@ import { peekUserId } from './currentUser';
 //     O da manhã saiu. Agendado dia a dia (próximos DAYS_AHEAD); o número só vai em hoje
 //     e amanhã (`sequenciaEmRisco`): para chegar a depois de amanhã sem abrir o app ela
 //     já perdeu a sequência.
-//   • "carta misteriosa" — 2 dias seguidos sem rotina: às 12:30 do dia em que a Carta de
-//     volta sai ("Uma carta misteriosa está esperando por você ✨"). A data e se a carta
-//     vai mesmo sair vêm do servidor (`estado.proxima_volta`); a carta é criada quando
-//     ela abre o app, e o toque abre a carta (lib/pushToque.ts). Um id por ausência
-//     (`niks-volta-<último dia com rotina>`): não repete.
+//   • ~~"carta misteriosa"~~ — REMOVIDA em 12/nov/2026 (build 1.62): a Carta de volta é
+//     surpresa, sem aviso. Só a faxina sobrou: cancela a que uma versão anterior deixou
+//     agendada (`niks-volta-…`); um toque numa que já tenha disparado ainda abre a carta
+//     (lib/pushToque.ts → components/ToquePush.tsx).
 // O dia é a "sessão-do-dia" de lib/routineProgress (a noite que passa da meia-noite
 // conta para o dia em que começou) — a mesma chave do histórico.
 //
@@ -53,7 +52,6 @@ const VOLTA_PREFIX = 'niks-volta-';
 const PERIOD_ID: Record<RoutinePeriod, string> = { am: 'manha', pm: 'noite' };
 const LATE_OFFSET_MIN = 60;
 const DAYS_AHEAD = 7;
-const MISTERIOSA_MIN = 12 * 60 + 30;
 const HORARIOS_KEY = 'lembretes:horarios';
 
 const dailyId = (period: RoutinePeriod) => `${ID_PREFIX}${PERIOD_ID[period]}`;
@@ -76,7 +74,6 @@ export function routineReminderContent(period: RoutinePeriod, kind: Kind = 'hora
 
 const LEMBRETE_CONVIDADA = { title: 'Hora do skincare!', body: 'Faça seu check-in no grupo.' };
 
-export const CARTA_MISTERIOSA = { title: 'Uma carta misteriosa está esperando por você ✨' };
 
 type Slot = { minutes: number };
 type Scheduled = Awaited<ReturnType<typeof Notifications.getAllScheduledNotificationsAsync>>;
@@ -177,22 +174,10 @@ export async function scheduleRoutineReminders(slots: Record<RoutinePeriod, Slot
       );
     }
 
-    // Carta misteriosa: 12:30 do dia em que a Carta de volta sai, se ela vai sair e se
-    // não houve rotina depois do último dia que o servidor conhece.
-    const pv = estado?.proxima_volta;
-    const ultimoLocal = Object.keys(hist).filter((d) => fezNoDia(hist, d)).sort().pop() ?? null;
-    if (!convidada && pv?.ok && !(ultimoLocal && ultimoLocal > pv.ultimo_dia)) {
-      const [y, m, d] = pv.dia.split('-').map(Number);
-      const fire = new Date(y, m - 1, d, 0, MISTERIOSA_MIN);
-      if (fire.getTime() > now.getTime() + 30_000) {
-        const id = `${VOLTA_PREFIX}${pv.ultimo_dia}`;
-        wanted.add(id);
-        await upsert(
-          scheduled, id, CARTA_MISTERIOSA, { type: 'carta_misteriosa', ultimo_dia: pv.ultimo_dia, dia: pv.dia },
-          { type: Notifications.SchedulableTriggerInputTypes.DATE, date: fire, channelId: ANDROID_CHANNEL_ID },
-        );
-      }
-    }
+    // Carta misteriosa (12:30 do dia da Carta de volta): REMOVIDA em 12/nov/2026 (build 1.62,
+    // pedido do produto) — a Carta de volta é surpresa: aparece sozinha ao voltar para a home
+    // ou no fim do fluxo do skincare, sem aviso. Nada é agendado; a faxina abaixo cancela a
+    // que uma versão anterior tenha deixado agendada (prefixo `niks-volta-`, fora de `wanted`).
 
     // Tudo nosso que não é mais esperado: "ainda dá tempo" de um horário antigo, de um
     // dia já feito ou da manhã (saiu), a carta misteriosa de outra ausência, e qualquer

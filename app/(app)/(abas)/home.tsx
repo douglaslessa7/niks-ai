@@ -4,7 +4,7 @@ import CadeadoSobre from '../../../components/trava/CadeadoSobre';
 import { Lock } from 'lucide-react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, Image, Animated, Easing, StyleSheet,
+  View, Text, TouchableOpacity, ScrollView, Animated, Easing, StyleSheet,
   AccessibilityInfo, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +22,9 @@ import { useCachedQuery } from '../../../lib/cache';
 import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
 import { contarPassosMinhaRotina } from '../../../lib/minhaRotina';
 import { SKINCARE_SEMPRE_DISPONIVEL } from '../../../lib/concluirSkincare';
+import { BG_STOPS, homeTheme, isNightTheme } from '../../../lib/homeTheme';
+
+const NOITE = homeTheme(true);
 import { getUserId, useUserId } from '../../../lib/currentUser';
 import { scheduleRoutineReminders } from '../../../lib/routineReminders';
 import { trackFora } from '../../../lib/mixpanel/MixpanelProvider';
@@ -446,6 +449,8 @@ export default function Home() {
   // ⚠️ Modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`, temporário): o herói ignora as rotinas feitas
   // hoje, para o "Iniciar skincare" ficar sempre à mostra. Com `false`, o herói de sempre.
   const hero = heroFor(now, d, SKINCARE_SEMPRE_DISPONIVEL ? {} : hist);
+  // Modo noturno: a mesma régua da rotina (18:00 → 03:59), acompanha o relógio de 30 s.
+  const noite = isNightTheme(now);
   const days = weekFor(now, hist);
   // Sequência = um número só (dias ativos seguidos), do SERVIDOR (estado da função
   // `cartas`); sem ele ainda, o histórico do celular. É o da chama e o do herói.
@@ -475,12 +480,20 @@ export default function Home() {
   // histórico do celular.
   const aRaspar = estado?.a_raspar ?? [];
   const estadoCarta = estado?.carta_hoje?.estado;
-  const cartaLiberada = estadoCarta === 'pronta';
-  const card: CardState = estadoCarta
-    ? (estadoCarta === 'feita' ? 'claimed' : 'locked')
-    : estado
-      ? (!aRaspar.length && estado.rotina_hoje ? 'claimed' : 'locked')
-      : (fezHoje ? 'claimed' : 'locked');
+  // Pontos diretos (20261204, build 1.62): no modo pontos o card vira "NIKS Points do dia" —
+  // "Complete o skincare do dia · até 50 NIKS Points" antes, "+N NIKS Points hoje" depois; à
+  // direita, o mesmo verso de carta de sempre. A carta de poder (quando vier) abre sozinha
+  // como antes; o card não fala dela. Fora do modo (app/contas antigas), "Sua carta do dia".
+  const modoPontos = !!estado?.modo_pontos && !convidada;
+  const cartaLiberada = !modoPontos && estadoCarta === 'pronta';
+  const card: CardState = modoPontos
+    ? (estado?.rotina_hoje || fezHoje ? 'claimed' : 'locked')
+    : estadoCarta
+      ? (estadoCarta === 'feita' ? 'claimed' : 'locked')
+      : estado
+        ? (!aRaspar.length && estado.rotina_hoje ? 'claimed' : 'locked')
+        : (fezHoje ? 'claimed' : 'locked');
+  const maxSkincare = estado?.faixas?.skincare_dia?.max ?? 50;
   // Pontos em dobro valendo hoje (indicador ao lado da barra).
   const dobroHoje = (estado?.poderes.pontos_dobro_dias ?? []).includes(estado?.hoje ?? dateKey(sessionDate(now)));
 
@@ -681,15 +694,17 @@ export default function Home() {
   const miniShadow = '0px 6px 14px rgba(200,60,120,0.22)';
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, noite && { backgroundColor: NOITE.base }]}>
       <StatusBar style="dark" />
+      {/* Modo noturno (12/nov/2026): das 18:00 às 03:59 o degradê lilás de `homeTheme(true)`, o
+          mesmo do Perfil e da sessão de skincare; de dia, o degradê rosa de sempre. */}
       <LinearGradient
-        colors={['#FCE3EE', '#FDD5E6', '#FCDFEA', '#F9F1F4']}
-        locations={[0, 0.45, 0.72, 1]}
+        colors={noite ? NOITE.bg : ['#FCE3EE', '#FDD5E6', '#FCDFEA', '#F9F1F4']}
+        locations={noite ? BG_STOPS : [0, 0.45, 0.72, 1]}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      <View style={styles.circleBlob} pointerEvents="none" />
+      <View style={[styles.circleBlob, noite && styles.circleBlobNoite]} pointerEvents="none" />
       <View style={styles.circleWhite} pointerEvents="none" />
 
       <ScrollView
@@ -703,7 +718,7 @@ export default function Home() {
           <View style={styles.hdrLeft}>
             <TouchableOpacity activeOpacity={0.7} onPress={() => go('/perfil')} style={styles.avatarWrap} accessibilityLabel="Abrir perfil">
               {d.fotoUrl ? (
-                <Image source={{ uri: d.fotoUrl }} style={styles.avatar} />
+                <ExpoImage source={{ uri: d.fotoUrl }} cachePolicy="memory-disk" contentFit="cover" style={styles.avatar} />
               ) : (
                 <View style={[styles.avatar, { backgroundColor: '#F6D3E1', alignItems: 'center', justifyContent: 'center' }]}>
                   <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: '700', color: '#E0447F' }}>{d.firstName ? Array.from(d.firstName.trim())[0]?.toLocaleUpperCase('pt-BR') : ''}</Text>
@@ -829,15 +844,19 @@ export default function Home() {
           <View style={styles.cartaText}>
             {/* O desafio (sem botão e sem toque): completar o skincare libera a carta. */}
             <Animated.View style={[StyleSheet.absoluteFill, lk.style]} pointerEvents="none">
-              <Text style={styles.cartaTitle}>Sua carta do dia</Text>
+              <Text style={styles.cartaTitle}>{modoPontos ? 'NIKS Points do dia' : 'Sua carta do dia'}</Text>
               <Text style={styles.cartaSub} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
                 {cartaLiberada ? 'Raspe sua carta' : convidada ? 'Faça o check-in do dia' : 'Complete o skincare do dia'}
               </Text>
-              <Text style={styles.cartaProgresso}>{cartaLiberada ? '1/1' : '0/1'}</Text>
+              <Text style={styles.cartaProgresso}>{modoPontos ? `até ${maxSkincare} NIKS Points` : cartaLiberada ? '1/1' : '0/1'}</Text>
             </Animated.View>
             <Animated.View style={[StyleSheet.absoluteFill, cl.style]} pointerEvents="none">
-              <Text style={styles.cartaTitle}>Sua carta do dia</Text>
-              <Text style={styles.cartaSub}>Resgatada</Text>
+              <Text style={styles.cartaTitle}>{modoPontos ? 'NIKS Points do dia' : 'Sua carta do dia'}</Text>
+              {modoPontos ? (
+                <Text style={styles.cartaProgresso}>{`+${estado?.pontos_hoje ?? 0} NIKS Points hoje`}</Text>
+              ) : (
+                <Text style={styles.cartaSub}>Resgatada</Text>
+              )}
             </Animated.View>
           </View>
 
@@ -846,6 +865,8 @@ export default function Home() {
             <View style={[styles.miniCard, { boxShadow: miniShadow }]}>
               {/* O verso da carta da rodada 84a; o brilho que passa e o véu (trancada) por cima. */}
               <View style={styles.miniClip}>
+                {/* O verso da carta, também no modo pontos (pedido do produto em 12/nov/2026: a
+                    medalha no lugar não ficou; voltou a estampa de antes). */}
                 <Carta v={VERSO} w={78} h={106} semSombra />
                 <Animated.View
                   pointerEvents="none"
@@ -1056,6 +1077,7 @@ const styles = StyleSheet.create({
     position: 'absolute', width: 560, height: 560, borderRadius: 280, left: 190, top: -90,
     experimental_backgroundImage: 'radial-gradient(circle at 30% 75%, rgba(255,170,205,0.34), rgba(255,255,255,0.2))',
   },
+  circleBlobNoite: { experimental_backgroundImage: 'radial-gradient(circle at 30% 75%, rgba(214,190,240,0.42), rgba(255,255,255,0.2))' },
   circleWhite: {
     position: 'absolute', width: 620, height: 620, borderRadius: 310,
     left: -330, top: 250, backgroundColor: 'rgba(255,255,255,0.42)',
