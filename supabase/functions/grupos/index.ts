@@ -28,7 +28,8 @@ import { moderarImagem } from '../_shared/moderacao.ts'
 //   { acao: 'produto_compartilhado', grupo_id, compartilhamento_id } → produto sem a nota de quem escaneou
 //   { acao: 'moderar_perfil', base64 }               → filtro da foto de perfil, antes de subir
 //   { acao: 'denuncias' } / { acao: 'revisar_denuncia', denuncia_id, decisao } → só moderadoras
-//   { acao: 'checkin', foto_path, rotina: 'am'|'pm', grupos: [ids], hora_exibida?, titulo?, descricao? }
+//   { acao: 'checkin', foto_path, rotina: 'am'|'pm', grupos: [ids], hora_exibida?, titulo?, descricao?,
+//     estatisticas? }  (20261205: { duracao_s, passos: [{ nome, marca, produto, ref: { origem, id } }] })
 //   { acao: 'compartilhar', product_scan_id, grupos: [ids] }  → produto no mural (80o)
 // Saída: 200 JSON ({ok:false, motivo} quando a regra recusa) · 400 entrada · 401 JWT · 404 não é do grupo.
 
@@ -60,6 +61,27 @@ async function assinar(supabase: Supa, paths: (string | null | undefined)[], buc
   const { data } = await supabase.storage.from(bucket).createSignedUrls(unicos, 3600)
   for (const d of data ?? []) if (d.signedUrl && d.path) mapa.set(d.path, d.signedUrl)
   return mapa
+}
+
+// Estatísticas do check-in (20261205): as fotos de produto privadas (estante: bucket `colecao`;
+// escaneado: `product-scans`) vêm do banco como { bucket, path } — viram link assinado aqui,
+// como a foto do check-in. Foto do catálogo já vem como { url } pública. Muda os objetos no lugar.
+// deno-lint-ignore no-explicit-any
+async function assinarEstatisticas(supabase: Supa, lista: any[]) {
+  // deno-lint-ignore no-explicit-any
+  const imgs: any[] = lista.flatMap((e) => (Array.isArray(e?.passos) ? e.passos : []).map((p: any) => p?.img).filter((i: any) => i?.path && i?.bucket))
+  const buckets = [...new Set(imgs.map((i) => String(i.bucket)))].filter((b) => b === 'colecao' || b === 'product-scans')
+  const porBucket = new Map<string, Map<string, string>>()
+  await Promise.all(buckets.map(async (b) => porBucket.set(b, await assinar(supabase, imgs.filter((i) => i.bucket === b).map((i) => i.path), b))))
+  for (const e of lista) {
+    if (!Array.isArray(e?.passos)) continue
+    for (const p of e.passos) {
+      if (!p?.img?.path) continue
+      const url = porBucket.get(String(p.img.bucket))?.get(p.img.path)
+      if (url) p.img = { url }
+      else delete p.img
+    }
+  }
 }
 
 // deno-lint-ignore no-explicit-any
@@ -211,7 +233,11 @@ serve(async (req) => {
         // Check-in: bucket `grupos`; produto compartilhado: a foto do scan (`product-scans`).
         // deno-lint-ignore no-explicit-any
         const doBucket = (b: string) => itens.filter((i: any) => i.foto_bucket === b).map((i: any) => i.foto_path)
-        const [urlsG, urlsP] = await Promise.all([assinar(supabase, doBucket(BUCKET)), assinar(supabase, doBucket('product-scans'), 'product-scans')])
+        const [urlsG, urlsP] = await Promise.all([
+          assinar(supabase, doBucket(BUCKET)), assinar(supabase, doBucket('product-scans'), 'product-scans'),
+          // deno-lint-ignore no-explicit-any
+          assinarEstatisticas(supabase, itens.map((i: any) => i.estatisticas).filter(Boolean)),
+        ])
         return json({
           // deno-lint-ignore no-explicit-any
           itens: itens.map(({ foto_path, foto_bucket, ...i }: any) => ({
@@ -250,7 +276,7 @@ serve(async (req) => {
         const c = await rpc(supabase, 'checkin_detalhe', { p_uid: uid, p_checkin: body.checkin_id })
         if (!c) return json({ error: 'Check-in não encontrado' }, 404)
         const { foto_path, ...resto } = c
-        const urls = await assinar(supabase, [foto_path])
+        const [urls] = await Promise.all([assinar(supabase, [foto_path]), assinarEstatisticas(supabase, resto.estatisticas ? [resto.estatisticas] : [])])
         return json({ checkin: { ...resto, foto_url: urls.get(foto_path) ?? null } })
       }
 
@@ -348,6 +374,9 @@ serve(async (req) => {
           p_uid: uid, p_foto_path: path, p_rotina: body?.rotina === 'pm' ? 'pm' : 'am', p_grupos: grupos, p_hora_exibida: hora,
           p_titulo: typeof body?.titulo === 'string' ? body.titulo.slice(0, 60) : null,
           p_descricao: typeof body?.descricao === 'string' ? body.descricao.slice(0, 280) : null,
+          // Estatísticas do skincare (20261205): o banco limpa e resolve as fotos; aqui só o tamanho.
+          p_estatisticas: body?.estatisticas && typeof body.estatisticas === 'object' && !Array.isArray(body.estatisticas)
+            && JSON.stringify(body.estatisticas).length <= 8000 ? body.estatisticas : null,
         })
         // "Ana fez check-in 📸" para as outras — depois da resposta, sem atrasá-la.
         if (r?.ok && r.checkin_id) emSegundoPlano(avisarCheckin(supabase, r.checkin_id))
