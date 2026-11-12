@@ -21,18 +21,6 @@ import type { CustomerInfo } from 'react-native-purchases';
 import { isSubscribed } from './revenuecat';
 import { conferirPortao, registrarDiscordanciaRc, type OrigemTransferencia } from './assinaturaServidor';
 import { supabase } from './supabase';
-import { registrarPasso } from './paywallDebug'; // TEMP-PWGUARD
-
-// TEMP-PWGUARD: log temporário para conferir o guard no iPhone (Console do Mac,
-// filtro "[PWGUARD]"). Remover junto com todas as linhas marcadas TEMP-PWGUARD.
-// Cada linha também entra no "caminho" do diagnóstico do paywall (lib/paywallDebug.ts,
-// só com ele ligado). Ao remover os TEMP-PWGUARD, o diagnóstico continua funcionando,
-// só sem esses passos intermediários.
-export const pwlog = (...args: unknown[]) => { // TEMP-PWGUARD
-  const texto = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '); // TEMP-PWGUARD
-  console.log('[PWGUARD]', texto); // TEMP-PWGUARD
-  registrarPasso(texto); // TEMP-PWGUARD
-}; // TEMP-PWGUARD
 
 /** Teto de espera de uma consulta ao RevenueCat. Estourou = sem premium. */
 export const RC_TIMEOUT_MS = 8000;
@@ -89,7 +77,6 @@ export async function confirmPremium({
 }): Promise<boolean> {
   for (let i = 1; i <= attempts; i++) {
     const c = await conferirPortao(transferir);
-    pwlog(`${label}: tentativa ${i}/${attempts} (${source}) → superwall=${c.superwall} servidor=${c.servidor} outraConta=${c.outraConta}`); // TEMP-PWGUARD
     if (c.transferenciaFalhou) onTransferenciaFalhou?.();
     if (c.outraConta) return false;
     if (c.confirmado) {
@@ -101,7 +88,6 @@ export async function confirmPremium({
     }
     const info = await readCustomerInfo(source);
     const rcOk = info != null && isSubscribed(info);
-    pwlog(`${label}: reserva RevenueCat (${source}) →`, info == null ? 'sem resposta' : rcOk ? 'premium' : 'sem premium'); // TEMP-PWGUARD
     if (rcOk) {
       void registrarDiscordanciaRc(c, true);
       return true;
@@ -140,7 +126,6 @@ export async function ensureAnonymousRevenueCat(label: string): Promise<void> {
     if (anonymous === true) return;
     // `false` ou sem resposta: desloga mesmo assim (se já for anônimo, o logOut
     // só falha, e o withTimeout engole).
-    pwlog(`${label}: RevenueCat com identidade sem sessão (anônimo=${anonymous}) → logOut`); // TEMP-PWGUARD
     await withTimeout(Purchases.logOut(), 5000);
   } catch {
     // nada — quem decide é o confirmPremium, que falha fechado
@@ -152,5 +137,4 @@ export async function resetRevenueCatIdentity(): Promise<void> {
   const anonymous = await withTimeout(Purchases.isAnonymous(), 3000);
   if (anonymous === true) return;
   await withTimeout(Purchases.logOut(), 5000);
-  pwlog('logout: RevenueCat deslogado'); // TEMP-PWGUARD
 }

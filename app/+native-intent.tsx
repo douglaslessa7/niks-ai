@@ -44,7 +44,6 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
     return initial ? '/' : null;
   }
   if (CADASTRO.test(pathSemScheme(path))) {
-    console.log('[PWGUARD] link direto para o cadastro bloqueado:', path); // TEMP-PWGUARD
     return initial ? '/' : null;
   }
   return path;

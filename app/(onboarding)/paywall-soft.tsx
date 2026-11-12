@@ -18,7 +18,7 @@ import {
   requestDownsell,
   subscribeDownsellRequest,
 } from '../../lib/paywallFlow';
-import { avisarTransferenciaFalhou, confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { avisarTransferenciaFalhou, confirmPremium, ensureAnonymousRevenueCat } from '../../lib/subscriptionGate';
 import { pwDecisao } from '../../lib/paywallDebug';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
@@ -69,12 +69,10 @@ export default function PaywallSoft() {
   const present = async (placement: string, motivo: string, isCancelled?: () => boolean) => {
     await syncSuperwallAttributes({ timeoutMs: 1500 });
     if (isCancelled?.()) return;
-    pwlog(`registerPlacement ${placement} (${motivo})`); // TEMP-PWGUARD
     try {
       if (placement === 'paywall_convidada') track('convidada_paywall_aberto', { origem: 'onboarding' });
       await registerPlacement({ placement });
     } catch (e) {
-      pwlog(`registerPlacement ${placement} lançou`, String(e)); // TEMP-PWGUARD
       void paywallNaoApareceu(placementBase(), `registerPlacement(${placement}) lançou`);
     }
   };
@@ -85,7 +83,6 @@ export default function PaywallSoft() {
   const paywallNaoApareceu = async (placement: string, motivo: string) => {
     falhasRef.current += 1;
     if (falhasRef.current > MAX_FALHAS_SEGUIDAS) {
-      pwlog(`paywall não apareceu ${falhasRef.current - 1}x seguidas (${motivo}) → "Tentar de novo"`); // TEMP-PWGUARD
       await pwDecisao(motivo, 'PARADO em "Não conseguimos carregar agora"', 'parado',
         `O paywall não apareceu ${MAX_FALHAS_SEGUIDAS}x seguidas. Nunca libera o cadastro.`);
       setSemPaywall(true);
@@ -115,7 +112,6 @@ export default function PaywallSoft() {
       ok = await confirmPremium({ source: 'restore', label: 'paywall:restored', ...transferencia });
     }
     if (!ok) {
-      pwlog(`paywall:${tipo} sem premium confirmado → paywall`); // TEMP-PWGUARD
       await pwDecisao(`onDismiss(${tipo})`, 'PAYWALL de novo (paywall_onboarding)', 'paywall',
         'O Superwall disse que houve compra/restauração, mas o RevenueCat não confirmou o premium.');
       if (transferenciaFalhou) await avisarTransferenciaFalhou();
@@ -136,7 +132,6 @@ export default function PaywallSoft() {
       // a confirmação vale para ela. Não passa pelo signup → atribui o cupom aqui.
       setSubscriptionVerified(true);
       attributeCouponIfAny(session.user.id);
-      pwlog('premium confirmado, com sessão → home'); // TEMP-PWGUARD
       // Refez o onboarding já logada: a tela de espera salva o scan e a rotina nesta conta.
       router.replace(comOnboarding ? '/(onboarding)/loading-rotina' as any : '/(app)/home');
     } else {
@@ -144,7 +139,6 @@ export default function PaywallSoft() {
       // muda no cadastro (Purchases.logIn), e é o signup que confere de novo e marca.
       // 07/nov/2026: antes do cadastro, as boas-vindas pós-pagamento (`bv-*`, telas 1–8 do
       // design NiksBoasVindas); a última leva ao cadastro (que confere o premium de novo).
-      pwlog('premium confirmado, sem sessão → boas-vindas → cadastro'); // TEMP-PWGUARD
       router.replace('/(onboarding)/bv-entrou' as any);
     }
   };
@@ -158,10 +152,8 @@ export default function PaywallSoft() {
       // Fechamento causado pelo botão "TENHO CUPOM" ou pelo cancelamento da folha da
       // Apple (que pede o downsell): pula ESTA reapresentação (uso único).
       if (consumeSuppressReapresentar()) {
-        pwlog(`onDismiss (${result?.type ?? '?'}) suprimido`); // TEMP-PWGUARD
         return;
       }
-      pwlog(`onDismiss → ${result?.type ?? 'sem resultado'}`); // TEMP-PWGUARD
       if (result?.type === 'purchased' || result?.type === 'restored') {
         await confirmarESeguir(result.type);
         return;
@@ -187,11 +179,9 @@ export default function PaywallSoft() {
       // Superwall não apresentou (holdout, sem público — ex.: o downsell para quem o
       // Superwall vê com assinatura no Apple ID). Antes liberava se o RevenueCat
       // dissesse premium; agora é sempre paywall (restaurar é pelo botão).
-      pwlog('onSkip', reason); // TEMP-PWGUARD
       void paywallNaoApareceu(grupoConvite.current !== null ? placementBase() : nextPaywallPlacement(), `onSkip(${reason?.type ?? '?'})`);
     },
     onError: (error) => {
-      pwlog('onError', String(error)); // TEMP-PWGUARD
       void paywallNaoApareceu(placementBase(), `onError(${String(error)})`);
     },
   });
@@ -226,10 +216,8 @@ export default function PaywallSoft() {
       if (eventInfo?.event?.event !== 'transactionAbandon') return;
       if (grupoConvite.current !== null) return;
       if (!canShowDownsell()) {
-        pwlog('transactionAbandon: downsell já mostrado nesta sessão'); // TEMP-PWGUARD
         return;
       }
-      pwlog('transactionAbandon → downsell'); // TEMP-PWGUARD
       markDownsellShown();
       armSuppressReapresentar();
       try { await Superwall.shared.dismiss(); } catch {}
@@ -303,7 +291,6 @@ export default function PaywallSoft() {
         const a = await assinaturaDoAppleId();
         if (cancelled) return;
         if (deveriaPerguntar({ convite: false, sinal: null, ...a })) {
-          pwlog(`assinatura no Apple ID (sessão=${a.temSessao}, outraConta=${a.outraConta}) → pergunta`); // TEMP-PWGUARD
           setPergunta(true);
           track('assinatura_pergunta_vista', { com_sessao: a.temSessao, outra_conta: a.outraConta });
           return;

@@ -109,7 +109,7 @@ export function ligarDiagnostico(ligar: boolean): void {
   (ligar ? AsyncStorage.setItem(FLAG_KEY, '1') : AsyncStorage.removeItem(FLAG_KEY)).catch(() => {});
 }
 
-/** Um passo do caminho até a próxima decisão (os `[PWGUARD]` passam por aqui). */
+/** Um passo do caminho até a próxima decisão. */
 export function registrarPasso(texto: string): void {
   if (!estado.ligado) return;
   passos = [...passos, `${hora(new Date())}  ${texto}`].slice(-MAX_PASSOS);

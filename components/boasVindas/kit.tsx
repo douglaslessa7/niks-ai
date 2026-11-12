@@ -17,7 +17,7 @@ import Svg, { Defs, RadialGradient, Stop, Circle, Path } from 'react-native-svg'
 import { useObFrame } from '../onboarding/kit';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
-import { confirmPremium, pwlog } from '../../lib/subscriptionGate';
+import { confirmPremium } from '../../lib/subscriptionGate';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { lerCompraNestaSessao } from '../../lib/sinalCompra';
 import { supabase } from '../../lib/supabase';
@@ -77,7 +77,6 @@ function useTravaPagamento() {
     })().then((ok) => {
       if (!vivo) return;
       if (ok) { premiumConfirmadoBv = true; return; }
-      pwlog('boas-vindas aberta sem premium → paywall'); // TEMP-PWGUARD
       router.replace('/(onboarding)/paywall-soft' as any);
     });
     return () => { vivo = false; };

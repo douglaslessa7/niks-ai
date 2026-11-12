@@ -18,7 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { atualizarCompraPendente } from '../../lib/compraPendente';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
-import { avisarTransferenciaFalhou, comTetoRc, confirmPremium, ensureAnonymousRevenueCat, pwlog } from '../../lib/subscriptionGate';
+import { avisarTransferenciaFalhou, comTetoRc, confirmPremium, ensureAnonymousRevenueCat } from '../../lib/subscriptionGate';
 import { entrarNoGrupoGuardado, lerCodigoGrupo } from '../../lib/convidada';
 import { convidadaLigada, validarCodigo } from '../../lib/gruposServidor';
 import { mensagemDoCodigo } from '../../lib/codigoConvite';
@@ -74,7 +74,6 @@ export default function Signup() {
       }
       if (!ativo) return;
       const abertura = aberturaDoCadastro(sinal, conviteValido);
-      pwlog(`cadastro:abertura → ${abertura} (sinal=${sinal ?? 'nenhum'})`); // TEMP-PWGUARD
       if (abertura === 'convidada') { setLiberado(true); return; }
       if (abertura === 'pagou') {
         compraNestaSessao.current = sinal;
@@ -83,7 +82,6 @@ export default function Signup() {
         if (!ativo) return;
         setLiberado(true);
       } else {
-        pwlog('cadastro aberto sem premium → paywall'); // TEMP-PWGUARD
         await pwDecisao('Tela de cadastro abriu (trava da abertura)', 'PAYWALL — cadastro bloqueado', 'paywall',
           'Chegou ao cadastro sem compra nem restauração nesta sessão. Voltou ao paywall.');
         router.replace('/(onboarding)/paywall-soft');
@@ -121,7 +119,6 @@ export default function Signup() {
         return;
       }
       if (!ok) {
-        pwlog('conta criada sem premium na identidade nova → paywall'); // TEMP-PWGUARD
         await pwDecisao('Conta criada (confere na identidade nova)', 'PAYWALL — conta criada sem premium', 'paywall',
           'Depois do Purchases.logIn a conta nova não tinha o premium.');
         if (transferenciaFalhou) await avisarTransferenciaFalhou();
