@@ -5,6 +5,7 @@ import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import { abrirComTrilha, irPara } from '../../lib/navegar';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import { GlassView } from 'expo-glass-effect';
@@ -67,12 +68,14 @@ const TELA_CHEIA = new Set([
 const TELAS_DA_PILHA = [
   'set-name', 'skin-result', 'calendario', 'conquistas', 'alarme', 'progresso', 'dica-do-dia',
   'caminhada', 'seus-grupos', 'grupo', 'grupo-ranking', 'grupo-jornada', 'checkin', 'skincare',
-  'revisao-denuncias', 'produto-amiga', 'checkin-detalhe',
+  'skincare-sessao', 'revisao-denuncias', 'produto-amiga', 'checkin-detalhe',
 ];
 // Rolagem horizontal ou grade que se arrasta de lado: voltar só pela borda esquerda.
 const SO_BORDA = new Set(['skin-result', 'calendario', 'conquistas', 'progresso', 'grupo-ranking', 'checkin-detalhe', 'alarme']);
 // Voltar no meio perde o que está sendo feito: só o botão.
-const SEM_GESTO = new Set(['checkin', 'skincare']);
+const SEM_GESTO = new Set(['checkin', 'skincare', 'skincare-sessao']);
+// Entra e sai com o esmaecimento nativo (suave, sem deslizar); o conteúdo da tela chega por cima.
+const SEM_ANIMACAO = new Set(['skincare-sessao']);
 const NAV_INACTIVE = '#7A7076';
 const NAV_ACTIVE = '#FF5EA8';
 // Modo noturno da tab bar (sincronizado com o tema da tela — ex.: protocolo à noite)
@@ -597,7 +600,8 @@ export default function AppLayout() {
           <Stack.Screen
             key={name}
             name={name}
-            options={SEM_GESTO.has(name) ? { gestureEnabled: false } : SO_BORDA.has(name) ? { fullScreenGestureEnabled: false } : undefined}
+            options={SEM_ANIMACAO.has(name) ? { gestureEnabled: false, animation: 'fade', animationDuration: 380 }
+              : SEM_GESTO.has(name) ? { gestureEnabled: false } : SO_BORDA.has(name) ? { fullScreenGestureEnabled: false } : undefined}
             // Uma cópia só de cada tela na pilha (abrir de novo tira a antiga); o grupo e o
             // detalhe do check-in, uma por grupo/check-in.
             dangerouslySingular={name === 'grupo' ? (_n, p) => `grupo:${p?.id ?? ''}`
@@ -605,7 +609,13 @@ export default function AppLayout() {
           />
         ))}
       </Stack>
-      {navbarVisivel && <GlobalBottomBar />}
+      {/* A navbar volta com um esmaecimento curto (12/nov/2026): ao sair de uma tela cheia (a
+          comemoração do skincare, a câmera…) ela não "pisca" por cima da tela que ainda está saindo. */}
+      {navbarVisivel && (
+        <Animated.View entering={FadeIn.duration(320)} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          <GlobalBottomBar />
+        </Animated.View>
+      )}
       {aquecer && <PreaquecerVeu />}
       {navbarVisivel && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && !convidadaNoApp && <BalaoEspinha />}
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa

@@ -13,6 +13,53 @@
 // troca a tela do topo — e, com as abas no topo, as abas somem da pilha (testado 10/nov/2026).
 import { router, type Href } from 'expo-router';
 import { store } from 'expo-router/build/global-state/router-store';
+import { StackActions } from '@react-navigation/native';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠️ "A TELA DESCE E FICA UM VÃO EM CIMA" (investigado em 12/nov/2026, reproduzido no 17 Pro).
+// A pilha RAIZ é `[(app), (carta) …]`: a carta de raspar é um `transparentModal` POR CIMA do
+// app (e `(scan)`/`(onboarding)` também ficam na raiz, fora do app). Navegar para uma tela do
+// app enquanto algo está por cima dele (ex.: `router.back()` + `router.push('/caminhada')` no
+// mesmo instante — o back não sai da pilha na hora) empilha uma SEGUNDA cópia do app inteiro:
+// `[(app), (carta), (app) > [caminhada]]`. Por cima de um modal, o iOS a apresenta como FOLHA
+// (pageSheet): cantos arredondados, o resto escurecido atrás e o vão no topo.
+// Remédio: `irPara`/`abrirComTrilha` primeiro FECHAM o que está acima do app na pilha raiz e só
+// navegam no quadro seguinte, com o app no topo. Dentro do app (nada por cima), nada muda.
+// E `vigiarPilha()` (montado no layout raiz) conserta na hora se, por qualquer outro caminho,
+// uma 2ª cópia do app aparecer — e registra no Mixpanel (`nav_folha_reparada`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A pilha raiz (dentro do `__root` do expo-router). */
+function pilhaRaiz(): any {
+  const r: any = store.navigationRef.current?.getRootState();
+  return r?.routes?.find((x: any) => x.name === '__root')?.state ?? r;
+}
+
+/** Quantas telas da pilha raiz estão ACIMA do app (a carta, um scan…). */
+export function acimaDoApp(): number {
+  const s = pilhaRaiz();
+  const i = s?.routes?.findIndex((r: any) => r.name === '(app)') ?? -1;
+  return i < 0 ? 0 : s.routes.length - 1 - i;
+}
+
+/**
+ * Fecha o que está acima do app (a carta…) e, já com o app no topo, roda `entao` (ex.: abrir a
+ * Caminhada). Sem nada por cima, roda na hora. Para sair de um modal SEM destino fixo — volta
+ * para a tela onde ela estava.
+ */
+export function sairPorCimaDoApp(entao?: () => void) {
+  if (fecharAcimaDoApp()) requestAnimationFrame(() => entao?.());
+  else entao?.();
+}
+
+/** Fecha o que está acima do app na pilha raiz. Devolve se fechou algo. */
+function fecharAcimaDoApp(): boolean {
+  const s = pilhaRaiz();
+  const n = acimaDoApp();
+  if (!n || !s?.key) return false;
+  store.navigationRef.current?.dispatch({ ...StackActions.pop(n), target: s.key } as any);
+  return true;
+}
 
 export const ABAS = new Set(['/home', '/recomendacao-produtos', '/protocolo', '/niks-chat', '/perfil', '/grupos']);
 
@@ -55,7 +102,18 @@ function naPilha(d: Destino): boolean {
   return pilha().some((r) => r.name === nome && (d.params.id == null || String(r.params?.id ?? '') === d.params.id));
 }
 
-export function irPara(destino: Href) {
+export function irPara(destino: Href, entao?: () => void) {
+  // Algo por cima do app (a carta…): fecha primeiro e navega no quadro seguinte, com o app no
+  // topo — navegar com o modal ainda em cima empilharia outra cópia do app como folha.
+  if (fecharAcimaDoApp()) {
+    requestAnimationFrame(() => { irPara(destino); entao?.(); });
+    return;
+  }
+  irParaNoApp(destino);
+  entao?.();
+}
+
+function irParaNoApp(destino: Href) {
   const d = ler(destino);
   if (ABAS.has(d.caminho)) {
     // Com telas por cima, desce até as abas e troca de aba; só as abas: troca de aba.
@@ -75,6 +133,11 @@ export function irPara(destino: Href) {
  * empilha só o resto. Ex.: `abrirComTrilha(['/grupos', '/seus-grupos', { pathname: '/grupo', params: { id } }])`.
  */
 export function abrirComTrilha(trilha: Href[]) {
+  // Algo por cima do app (a carta…): fecha antes de montar a trilha (ver o aviso no topo).
+  if (fecharAcimaDoApp()) {
+    requestAnimationFrame(() => abrirComTrilha(trilha));
+    return;
+  }
   let i = trilha.length - 1;
   while (i > 0 && !naPilha(ler(trilha[i]))) i--;
   irPara(trilha[i]);
@@ -84,4 +147,48 @@ export function abrirComTrilha(trilha: Href[]) {
 export function voltar(planoB: Href) {
   if (pilha().length > 1 && router.canGoBack()) router.back();
   else irPara(planoB);
+}
+
+/**
+ * Rede de segurança (12/nov/2026): vigia a pilha raiz e, se uma 2ª cópia do app aparecer POR
+ * CIMA da carta (o caso da "folha com vão em cima"), conserta na hora: tira a carta e a cópia,
+ * e passa as telas da cópia (ex.: a Caminhada) para o app de verdade, no topo. Só age nesse
+ * caso; telas do app abertas de dentro de um scan (pilha normal, sem folha) ficam como estão.
+ * `aoReparar` recebe as telas movidas (para medir no Mixpanel). Devolve o "parar de vigiar".
+ */
+export function vigiarPilha(aoReparar?: (telas: string[]) => void): () => void {
+  const ref: any = store.navigationRef.current;
+  if (!ref?.addListener) return () => {};
+  let consertando = false;
+  return ref.addListener('state', () => {
+    if (consertando) return;
+    const s = pilhaRaiz();
+    const rotas: any[] = s?.routes ?? [];
+    const iApp = rotas.findIndex((r) => r.name === '(app)');
+    const iModal = rotas.findIndex((r, i) => i > iApp && r.name === '(carta)');
+    if (iApp < 0 || iModal < 0) return;
+    const copias = rotas.filter((r, i) => i > iModal && r.name === '(app)');
+    if (!copias.length) return;
+    // As telas das cópias (sem as abas, que o app de verdade já tem), sem `key`: o navegador
+    // cria as próprias ao reidratar o estado (`stale`).
+    // A cópia pode ainda não ter montado a própria pilha: aí o destino está só nos params
+    // (`{ screen: 'caminhada', params }`).
+    const extras = copias.flatMap((c) => (c.state?.routes
+      ? c.state.routes.filter((r: any) => r.name !== '(abas)')
+      : c.params?.screen && c.params.screen !== '(abas)' ? [{ name: c.params.screen, params: c.params.params }] : []))
+      .map(({ key: _k, ...r }: any) => r);
+    const app = rotas[iApp];
+    const doApp = (app.state?.routes ?? []).map(({ key: _k, ...r }: any) => r);
+    const novas = [...doApp, ...extras];
+    const novoApp = { name: '(app)', params: app.params, state: { stale: true, index: novas.length - 1, routes: novas } };
+    consertando = true;
+    try {
+      ref.dispatch({ type: 'RESET', payload: { stale: true, index: iApp, routes: [...rotas.slice(0, iApp).map(({ key: _k, ...r }: any) => r), novoApp] }, target: s.key });
+      aoReparar?.(extras.map((r: any) => r.name));
+    } catch (e) {
+      console.warn('[navegar] não deu para consertar a pilha:', e);
+    } finally {
+      requestAnimationFrame(() => { consertando = false; });
+    }
+  });
 }

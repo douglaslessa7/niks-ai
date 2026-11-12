@@ -2,6 +2,8 @@ import '../global.css';
 import { useEffect, useState } from 'react';
 import { AppState, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
+import { store } from 'expo-router/build/global-state/router-store';
+import { vigiarPilha } from '../lib/navegar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaywalloProvider } from '@virex-tech/paywallo-sdk';
 import * as Application from 'expo-application';
@@ -211,6 +213,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     track('app_opened');
+  }, []);
+
+  // Rede de segurança da "folha com vão em cima" (lib/navegar, 12/nov/2026): se uma 2ª cópia do
+  // app for empilhada por cima da carta, conserta na hora e mede quantas vezes isso acontece.
+  useEffect(() => {
+    let parar = () => {};
+    let tentativas = 0;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const ligar = () => {
+      if (!store.navigationRef.current) {
+        if (tentativas++ < 40) t = setTimeout(ligar, 250);   // a navegação ainda não montou
+        return;
+      }
+      parar = vigiarPilha((telas) => trackFora('nav_folha_reparada', { telas: telas.join(',') }));
+    };
+    ligar();
+    return () => { if (t) clearTimeout(t); parar(); };
   }, []);
 
   return (
