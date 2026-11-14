@@ -8,6 +8,9 @@ import { registrarBarraPontos, type GanhoBarra } from '../../lib/pontosAnimacao'
 import { chaveEstado, estadoCartas, type EstadoCartas, type NivelTabela } from '../../lib/cartasServidor';
 import { peekCache } from '../../lib/cache';
 import { peekUserId } from '../../lib/currentUser';
+import { router } from 'expo-router';
+import { nivelDe } from '../../lib/niveis';
+import { acimaDoApp } from '../../lib/navegar';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A barra de nível animada no topo da tela para os NIKS Points ganhos SEM carta (regras
@@ -53,7 +56,16 @@ export default function BarraPontosHost() {
 
   const acabou = () => {
     ocupado.current = false;
+    // Subiu de nível neste ganho (sem carta — ex.: check-in no grupo): a celebração da "Sua
+    // caminhada" abre AGORA, como depois de raspar uma carta (12/nov/2026). Antes ela ficava
+    // pendente e a home abria a caminhada sozinha na próxima entrada no app. Só com o app no
+    // topo (nada por cima, como um scan): senão fica para quando ela abrir a caminhada.
+    const g = atual;
+    const subiu = g ? nivelDe(g.para, g.niveis, g.icone).nivel > nivelDe(g.de, g.niveis, g.icone).nivel : false;
     setAtual(null);
+    if (subiu && acimaDoApp() === 0 && !fila.current.length) {
+      router.push('/(app)/caminhada?celebrar=1&de=home' as any);
+    }
     void proximo();
   };
   const fim = () => {

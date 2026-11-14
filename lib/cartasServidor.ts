@@ -17,6 +17,7 @@
 // pontos sem carta, Proteção e Pontos em dobro). `marcarRegrasCartas()` marca a conta
 // logo no cadastro, antes de salvar o scan do cadastro; se falhar, o próximo estado marca.
 // ─────────────────────────────────────────────────────────────────────────────
+import { definirContaTeste } from './contaTeste';
 import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
@@ -112,6 +113,8 @@ export type EstadoCartas = {
   ativo?: boolean;
   /** Pontos diretos (20261204): a conta está no modo pontos — NIKS Points na hora, cartas só de poder. */
   modo_pontos?: boolean;
+  /** Conta da lista `contas_teste` (20261207): o app libera as travas de tempo e quantidade. */
+  conta_teste?: boolean;
   /** Pontos diretos: NIKS Points ganhos hoje (todas as ações) e os do 1º skincare de hoje. */
   pontos_hoje?: number;
   skincare_hoje?: number | null;
@@ -198,7 +201,9 @@ async function chamar<T>(body: Record<string, unknown>): Promise<T> {
     method: 'POST',
     headers: { Authorization: `Bearer ${t}`, apikey: ANON_KEY, 'Content-Type': 'application/json' },
     // `regras: 2` em toda chamada: a conta fica nas regras novas (mesmo que a marca do cadastro tenha falhado).
-    body: JSON.stringify({ ...body, regras: 2 }),
+    // `regras: 3` (1.62 (2), migration 20261208120000): além disso, este app entende o MODO
+    // PONTOS (NIKS Points na comemoração, carta só de poder) — a conta entra nele sozinha.
+    body: JSON.stringify({ ...body, regras: 3 }),
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.error ?? `HTTP ${resp.status}`);
@@ -252,6 +257,8 @@ async function buscarEstado(): Promise<EstadoCartas> {
   if (!enviado) await AsyncStorage.setItem(HIST_KEY, new Date().toISOString()).catch(() => {});
   if (fila.length) await AsyncStorage.removeItem(FILA_KEY).catch(() => {});
   void medirRecebidas(estado.a_raspar);
+  // Conta de teste (20261207): libera as travas do app para essa conta.
+  definirContaTeste(await getUserId(), estado.conta_teste ?? false);
   return estado;
 }
 

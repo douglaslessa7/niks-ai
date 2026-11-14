@@ -452,7 +452,7 @@ export default function DemoScan() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#ECE6E9' }}>
-      <Stack.Screen options={{ gestureEnabled: fase === 'pronto' }} />
+      <Stack.Screen options={{ gestureEnabled: false }} />{/* onboarding: só a setinha volta (12/nov/2026) */}
       <StatusBar style="dark" />
 
       {/* O fundo neutro fica sempre por baixo (é nele que a transição rosa termina); a foto

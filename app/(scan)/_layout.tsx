@@ -2,7 +2,8 @@ import { Stack } from 'expo-router';
 
 export default function ScanLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    // Por cima do onboarding, nenhuma tela do scan volta pelo gesto (12/nov/2026): só a setinha.
+    <Stack screenOptions={({ navigation }) => ({ headerShown: false, gestureEnabled: !noOnboarding(navigation) })}>
       {/* "Seu caminho" (depois da carta do onboarding) entra esmaecendo, como a tela do
           Tapfit em que ela se baseia, e não tem voltar (a carta também não tem). */}
       {/* "Calma, <nome>." (entre a carta e o "Seu caminho"): entra SEM animação — a carta já
@@ -33,4 +34,13 @@ export default function ScanLayout() {
       <Stack.Screen name="sos-resultado" options={{ gestureEnabled: false }} />
     </Stack>
   );
+}
+
+/** A pilha raiz tem o `(onboarding)` embaixo deste `(scan)`? */
+function noOnboarding(navigation: { getParent?: () => { getState?: () => { routes?: { name: string }[] } | undefined } | undefined }): boolean {
+  try {
+    return Boolean(navigation.getParent?.()?.getState?.()?.routes?.some((r) => r.name === '(onboarding)'));
+  } catch {
+    return false;
+  }
 }

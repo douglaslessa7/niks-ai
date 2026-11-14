@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { lembrarFotoLocal } from '../../lib/fotosRapidas';
+import { preaquecerGrupo } from './grupo';
 import { voltar as voltarOu } from '../../lib/navegar';
 import {
   View, Text, TouchableOpacity, ScrollView, Image, Animated, Easing, StyleSheet, AccessibilityInfo, TextInput,
@@ -21,12 +23,13 @@ import { reagendarLembretes } from '../../lib/routineReminders';
 import { invalidarGrupos, publicarCheckin, subirFoto, useMeusGrupos, type EstatisticasCheckin } from '../../lib/gruposServidor';
 import { invalidarMissoes } from '../../lib/missoes';
 import { LinhasPassos } from '../../components/grupos/EstatisticasCheckin';
-import { duracaoPorExtenso, marcarVoltaDoCheckin, ultimoSkincare } from '../../lib/sessaoSkincare';
+import { duracaoPorExtenso, limparUltimoSkincare, marcarVoltaDoCheckin, ultimoSkincare } from '../../lib/sessaoSkincare';
 import FolhaCompartilhar, { MiniBanner } from '../../components/grupos/FolhaCompartilhar';
 import { getUserId } from '../../lib/currentUser';
 import { saveRoutinePhoto, temFotoDoDia } from '../../lib/routinePhotos';
 import { abrirCartasEDepois } from '../../lib/concluirSkincare';
 import { ganhouPontos } from '../../lib/pontosAnimacao';
+import { ehContaTeste } from '../../lib/contaTeste';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Check-in do grupo — câmera 81i do Claude Design (NiksGrupoFlo.dc.html, rodada 81) e, depois
@@ -107,6 +110,8 @@ export default function Checkin() {
     const st: any = navegacao.getState();
     const atras = st?.routes?.[(st?.index ?? 0) - 1]?.name;
     if (atras === 'skincare-sessao') { marcarVoltaDoCheckin(); router.back(); return; }
+    // Aberta pelo grupo recém-criado (o skincare foi feito sem grupo): o X volta para ele.
+    if (de === 'grupo') { voltarOu(destino as any); return; }
     void terminar('/home');
   };
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
@@ -238,7 +243,8 @@ export default function Checkin() {
   // começam marcados) e à direita "Válido". Embaixo: Título (sem descrição) e, no fluxo do
   // skincare, as estatísticas (duração, passos, produtos e a lista dos passos). Sem NIKS
   // Points. A rotina é a do skincare (fora dele, a do horário) e a hora é a de publicar.
-  const jaFeitas = (typeof feitas === 'string' ? feitas.split(',') : []) as ('am' | 'pm')[];
+  // Conta de teste (20261207, `lib/contaTeste`): check-ins repetidos — nada conta como "já feito".
+  const jaFeitas = (ehContaTeste() ? [] : typeof feitas === 'string' ? feitas.split(',') : []) as ('am' | 'pm')[];
   const [sel, setSel] = useState<string[] | null>(null);   // null = todos
   const [rotina, setRotina] = useState<'am' | 'pm'>('am');
   const [publicando, setPublicando] = useState(false);
@@ -328,6 +334,8 @@ export default function Checkin() {
         }
         return;
       }
+      limparUltimoSkincare(); // virou check-in: não é oferecido de novo ao criar/entrar num grupo
+      lembrarFotoLocal(r.checkin_id, foto.uri); // o mural e o detalhe mostram já o arquivo local
       trackFora('checkin_feito', { rotina, grupos: r.grupos.length, com_estatisticas: Boolean(feito), com_titulo: Boolean(titulo.trim()), carta: Boolean(r.carta_id) });
       void invalidarMissoes(); // desafio 4: o check-in também registra o skincare
       // O check-in conta como o skincare do período (o servidor já registrou). A home, a
@@ -344,9 +352,16 @@ export default function Checkin() {
         // Pontos do check-in (e do skincare que ele registrou): com a carta de hoje para raspar,
         // sobem junto com ela; sem carta, a barra sobe no mural.
         ganhouPontos(r.pontos, { segurar: true });
-        await terminar(gid ? `/grupo?id=${gid}&de=home` : '/home');
+        // Grupo só dela (o caso de quem criou o grupo para compartilhar este skincare): o grupo
+        // abre com o convite para chamar as amigas (`ConvidarAposCheckin`, 12/nov/2026).
+        const sozinha = (meus.find((x) => x.id === gid)?.total ?? 2) <= 1;
+        // O grupo abre PRONTO: mural (com este check-in), ranking e fotos já no cache (até 1,5 s,
+        // com o "Publicar" ainda girando).
+        if (gid) await preaquecerGrupo(gid);
+        await terminar(gid ? `/grupo?id=${gid}&de=home${sozinha ? '&convidar=1' : ''}` : '/home');
         return;
       }
+      if (de === 'grupo' && grupo) await preaquecerGrupo(grupo); // o grupo de onde veio, pronto
       if (r.carta_id) {
         ganhouPontos(r.pontos, { segurar: true });   // sobem junto com a carta, depois de raspar
         // A carta abre POR CIMA (`push`), e o `depois` diz para onde ir quando ela fechar.
@@ -417,7 +432,7 @@ export default function Checkin() {
             key={vez}
             aberta={convite}
             onCompartilhar={() => {}}
-            onCriarGrupo={() => { void terminar('/seus-grupos?criar=1'); }}
+            onCriarGrupo={() => { void terminar(`/seus-grupos?criar=1&depois=checkin&rotina=${rotinaParam === 'am' ? 'am' : 'pm'}`); }}
             onFechar={() => { void terminar('/home'); }}
           />
         )}

@@ -38,15 +38,25 @@ export async function checkProdutosTutorial(): Promise<void> {
 
 export async function finishProdutosTutorial(): Promise<void> {
   setPending(false);
+  await marcarProdutosTutorialVisto();
+}
+
+/** Grava "já viu" no servidor sem tirar o tour da tela. Chamado quando ele APARECE (13/nov/2026,
+ *  "cada tutorial só uma vez"): se ela fechar o app no meio, ele não recomeça na volta. Nesta
+ *  sessão o `pending` em memória segue valendo até o fim (o servidor só é lido uma vez por conta). */
+let gravouVisto: string | null = null;
+export async function marcarProdutosTutorialVisto(): Promise<void> {
   try {
     const userId = await getUserId();
-    if (!userId) return;
+    if (!userId || gravouVisto === userId) return;
+    gravouVisto = userId;
     const { error } = await supabase
       .from('users')
       .update({ produtos_tutorial_seen_at: new Date().toISOString() })
       .eq('id', userId);
     if (error) throw error;
   } catch (err) {
+    gravouVisto = null; // tenta de novo no fim do tour
     console.warn('[produtosTutorial] não consegui marcar como visto no servidor:', err);
   }
 }

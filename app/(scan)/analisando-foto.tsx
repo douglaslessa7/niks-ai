@@ -5,6 +5,7 @@ import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
 import { OB_STEPS, obStep, useOnMount } from '../../components/onboarding/kit';
 import { ScanLoadingView, useDemandNotice } from '../../components/scan/ScanLoadingView';
+import PreaquecerCarta from '../../components/cartas/PreaquecerCarta';
 import { aguardarAnaliseRapida } from '../../lib/onboardingPrefetch';
 import { escolherProblema } from '../../lib/analiseRapida';
 
@@ -125,6 +126,8 @@ export default function AnalisandoFoto() {
         showError={failed}
         onRetry={() => router.replace('/(scan)/camera?retake=1' as any)}
       />
+      {/* Skia e faces da carta já prontos quando a carta abrir (evita o tranco na entrada). */}
+      {!failed && <PreaquecerCarta />}
       {/* O mesmo degradê do fundo da carta e da "Calma, <nome>." — se esta tela aparecer por
           um instante na troca entre as duas, não se vê diferença. */}
       {sobCarta && <View pointerEvents="none" style={{

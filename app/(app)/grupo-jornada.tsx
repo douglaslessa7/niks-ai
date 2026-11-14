@@ -1,3 +1,4 @@
+import { useDepoisDaTransicao } from '../../hooks/useDepoisDaTransicao';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,7 +86,7 @@ function Integrante({ m, ordem, y, rm, run }: { m: LinhaJornada; ordem: number; 
   const p = useSharedValue(0);
   useEffect(() => {
     p.set(0);
-    p.set(rm ? withTiming(1, { duration: 200 }) : withDelay(420 + ordem * 70, withSpring(1, mola(0.72, 0.5))));
+    p.set(rm ? withTiming(1, { duration: 200 }) : withDelay(120 + ordem * 70, withSpring(1, mola(0.72, 0.5))));
   }, [p, ordem, rm, run]);
   const st = useAnimatedStyle(() => (rm ? { opacity: p.get() } : { opacity: Math.min(1, p.get() * 1.6), transform: [{ scale: 0.6 + 0.4 * p.get() }] }), [rm]);
   return (
@@ -110,9 +111,9 @@ export default function GrupoJornada() {
   const userId = useUserId();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const gid = typeof id === 'string' ? id : '';
-  const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const { data: estado } = useEstadoCartas();
   const fetcher = useCallback(() => jornadaGrupo(gid), [gid]);
+  const depois = useDepoisDaTransicao();
   const { data, refresh } = useCachedQuery(userId && gid ? `grupos:jornada:${userId}:${gid}` : null, fetcher, { staleMs: 0, enabled: Boolean(userId && gid) });
 
   const y = (v: number) => insets.top + v - 54;
@@ -137,13 +138,14 @@ export default function GrupoJornada() {
 
   // ── A linha enche até você (mola ζ1 .8 s, 150 ms depois) ──────────────────
   const [run, setRun] = useState(0);
+  const focou = useRef(false);
   const linha = useSharedValue(0);
   const rolar = useSharedValue(-1);
   const aref = useAnimatedRef<Animated.ScrollView>();
   useAnimatedReaction(() => rolar.get(), (v) => { if (v >= 0) scrollTo(aref, 0, v, false); });
   const abriu = useRef('');
   useEffect(() => {
-    if (!pronto) return;
+    if (!pronto || !depois) return;
     const chave = `${gid}:${run}`;
     if (abriu.current === chave) return;
     abriu.current = chave;
@@ -154,15 +156,25 @@ export default function GrupoJornada() {
     rolar.set(casa);
     rolar.set(-1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pronto, run, gid, pts, lim, rm]);
+  }, [pronto, depois, run, gid, pts, lim, rm]);
   const linhaSt = useAnimatedStyle(() => ({ transform: [{ scaleY: linha.get() }] }));
+
+  // Montagem em duas etapas (12/nov/2026): as medalhas perto de você entram já; as outras só
+  // depois da transição — as 13 de uma vez travavam os primeiros quadros da tela.
+  const [todas, setTodas] = useState(false);
+  useEffect(() => {
+    if (!pronto || !depois || todas) return;
+    const t = setTimeout(() => setTodas(true), 450);
+    return () => clearTimeout(t);
+  }, [pronto, depois, todas]);
 
   useFocusEffect(
     useCallback(() => {
-      setTabBarVisible(false);
-      setRun((n) => n + 1);
+      // Navbar: some pela rota (TELA_CHEIA), sem escrita no store. `run` só ao voltar para a
+      // tela já aberta — na 1ª abertura seria um 2º render logo após o 1º (12/nov/2026).
+      if (focou.current) setRun((n) => n + 1);
+      focou.current = true;
       void refresh?.();
-      return () => setTabBarVisible(true);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gid])
   );
@@ -203,7 +215,8 @@ export default function GrupoJornada() {
 
       {/* Trilha */}
       <View style={{ position: 'absolute', left: 0, right: 0, top: vpTop, height: vph }}>
-        {pronto && (
+        {/* A trilha monta depois do deslize de entrada (ver `useDepoisDaTransicao`). */}
+        {pronto && depois && (
           <Animated.ScrollView ref={aref} contentOffset={{ x: 0, y: casa }} showsVerticalScrollIndicator={false} contentContainerStyle={{ height: CONTENT_H }}>
             <View style={{ position: 'absolute', left: ox, top: 0, width: 393, height: CONTENT_H }}>
               <Image source={LOGO} style={{ position: 'absolute', left: 23, top: 12, width: 22, height: 22 }} />
@@ -216,9 +229,11 @@ export default function GrupoJornada() {
                   <View key={lv.n} pointerEvents="none" style={StyleSheet.absoluteFill}>
                     <View style={[styles.ponto, { top: dotY(lv.n) - 5.5, backgroundColor: passou ? PINK : '#fff', borderColor: passou ? '#fff' : 'rgba(255,94,168,0.45)' }]} />
                     <Text style={[styles.pontoT, { top: dotY(lv.n) - 7, color: passou ? INK : MUTE }]}>{`${fmt(lv.pontos)} NIKS Points`}</Text>
-                    <View style={{ position: 'absolute', left: 214, top: rowTop(lv.n) + 14 }}>
-                      <MedalhaNivel n={lv.n} reached={reached} atual={lv.n === Math.min(L, N)} />
-                    </View>
+                    {(todas || Math.abs(lv.n - Math.min(L, N)) <= 2) && (
+                      <View style={{ position: 'absolute', left: 214, top: rowTop(lv.n) + 14 }}>
+                        <MedalhaNivel n={lv.n} reached={reached} atual={lv.n === Math.min(L, N)} />
+                      </View>
+                    )}
                     <View style={[styles.nomeBloco, { top: rowTop(lv.n) + 206 }]}>
                       <Text style={[styles.nomeNivel, { color: reached ? INK : MUTE }]}>{lv.titulo}</Text>
                       <Text style={styles.nomeSub}>{`Nível ${lv.n}`}</Text>

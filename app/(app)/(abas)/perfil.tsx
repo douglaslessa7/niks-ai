@@ -323,7 +323,7 @@ export default function Perfil() {
           ) : (
           <View style={styles.avatarShadow}>
             {fotoUrl ? (
-              <ExpoImage source={{ uri: fotoUrl }} cachePolicy="memory-disk" contentFit="cover" style={styles.avatar} />
+              <ExpoImage source={{ uri: fotoUrl }} cachePolicy="memory-disk" allowDownscaling={false} contentFit="cover" style={styles.avatar} />
             ) : (
               <LinearGradient colors={['#FF8DBD', PINK]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.avatar, styles.avatarCenter]}>
                 <Text style={styles.avatarInitial}>{initial}</Text>

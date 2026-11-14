@@ -16,7 +16,7 @@ export function mensagemConvite(nome: string, codigo: string) {
 }
 
 // expo-clipboard é nativo: até o app ser recompilado com ele, cai na folha do sistema.
-async function copiar(texto: string): Promise<boolean> {
+export async function copiarTexto(texto: string): Promise<boolean> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Clipboard = require('expo-clipboard');
@@ -39,7 +39,7 @@ export async function enviarConvite(canal: Canal, grupoId: string, nomeGrupo: st
     await Share.share({ message: msg });
     return { copiado: false };
   }
-  if (canal === 'copiar' && (await copiar(msg))) return { copiado: true };
+  if (canal === 'copiar' && (await copiarTexto(msg))) return { copiado: true };
   await Share.share({ message: msg });
   return { copiado: false };
 }

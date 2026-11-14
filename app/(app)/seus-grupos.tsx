@@ -1,10 +1,12 @@
 import { useEhConvidada } from '../../lib/acesso';
+import { limparUltimoSkincare, skincareSemCheckin } from '../../lib/sessaoSkincare';
 import { abrirTrava } from '../../lib/trava';
 import { Lock } from 'lucide-react-native';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { fonteEstavel } from '../../lib/fotosRapidas';
 import {
-  View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, TextInput, Keyboard, Pressable, ActivityIndicator,
+  View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, TextInput, Keyboard, Pressable, ActivityIndicator, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image as ExpoImage } from 'expo-image';
@@ -17,7 +19,10 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
-import { criarGrupo, entrarComCodigo, invalidarGrupos, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
+import { chaveGrupo, criarGrupo, entrarComCodigo, invalidarGrupos, useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
+import { peekCache } from '../../lib/cache';
+import { peekUserId } from '../../lib/currentUser';
+import { preaquecerGrupo } from './grupo';
 import { mensagemDoCodigo } from '../../lib/codigoConvite';
 import BotaoColarCodigo from '../../components/grupos/BotaoColarCodigo';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
@@ -89,7 +94,7 @@ export function FaixaGrupo({ g, h }: { g: Pick<GrupoResumo, 'banner' | 'banner_u
   const rosa = g.banner === 'niks-2';
   return (
     <View style={{ height: h, experimental_backgroundImage: rosa ? BANNERS_GRUPO[1].bg : BANNERS_GRUPO[0].bg }}>
-      {g.banner === 'foto' && g.banner_url ? <ExpoImage source={{ uri: g.banner_url }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+      {g.banner === 'foto' && g.banner_url ? <ExpoImage source={fonteEstavel(g.banner_url)} cachePolicy="memory-disk" transition={0} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
       <View style={styles.faixaLogo}><Image source={LOGO} style={{ width: 26, height: 26 }} /></View>
     </View>
   );
@@ -109,7 +114,11 @@ function Entra({ i, run, rm, children }: { i: number; run: number; rm: boolean; 
 export default function SeusGrupos() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ criar?: string }>();
+  const params = useLocalSearchParams<{ criar?: string; depois?: string; rotina?: string }>();
+  // Veio do fim do skincare ("Criar grupo" no pop-up de compartilhar, 12/nov/2026): ela cria o
+  // grupo PARA compartilhar aquele skincare — criou, abre o grupo e a câmera do check-in já com
+  // ele marcado (as estatísticas vêm da sessão). Guardado aqui porque os params são limpos.
+  const checkinDepois = useRef<'am' | 'pm' | null>(null);
   const rm = useReducedMotion();
   const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const setTabBarTheme = useAppStore((s) => s.setTabBarTheme);
@@ -120,11 +129,12 @@ export default function SeusGrupos() {
   const has = list.length > 0;
   const y = (v: number) => insets.top + v - 54;
 
-  const [run, setRun] = useState(0);
+  // A entrada dos cartões toca só na primeira abertura: ao voltar do grupo a lista já está lá
+  // (antes ela apagava e subia de novo a cada foco, e parecia travada). Pedido do produto, 12/nov/2026.
+  const run = 0;
   useFocusEffect(
     useCallback(() => {
       setTabBarTheme('light');
-      setRun((n) => n + 1);
       void refresh?.();
       verificarTutorialGrupos('/seus-grupos');
       return () => fecharFolha(true);
@@ -132,6 +142,26 @@ export default function SeusGrupos() {
     }, [])
   );
   useCoachStage('seusGrupos', grupos != null);
+
+  // Cada grupo já PRONTO antes do toque (13/nov/2026, "o 2º grupo demorou e entrou travando"):
+  // com a lista na tela, os grupos que ainda não estão no cache são lidos por baixo, um de cada
+  // vez, depois da entrada desta tela. Aberto pela 1ª vez, o grupo entra com tudo e sem trocar
+  // o banner nem o cartão no meio da animação.
+  const idsGrupos = (grupos ?? []).map((g) => g.id).join(',');
+  useEffect(() => {
+    if (!idsGrupos) return;
+    let vivo = true;
+    const t = setTimeout(async () => {
+      const uid = peekUserId();
+      if (!uid) return;
+      for (const gid of idsGrupos.split(',').slice(0, 6)) {
+        if (!vivo) return;
+        if (peekCache(chaveGrupo(uid, gid))?.data) continue;
+        await preaquecerGrupo(gid, 4000);
+      }
+    }, 700);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [idsGrupos]);
 
   // ── Brilho da carta do estado vazio (a cada 5 s) ──────────────────────────
   const brilho = useSharedValue(0);
@@ -184,7 +214,8 @@ export default function SeusGrupos() {
   // Abrir direto (home/compartilhar sem grupo → "Criar grupo").
   useEffect(() => {
     if (params.criar !== '1') return;
-    router.setParams({ criar: undefined });
+    if (params.depois === 'checkin' && (params.rotina === 'am' || params.rotina === 'pm')) checkinDepois.current = params.rotina;
+    router.setParams({ criar: undefined, depois: undefined, rotina: undefined });
     const t = setTimeout(abrirFolha, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,6 +230,30 @@ export default function SeusGrupos() {
     });
     return () => { sh.remove(); hi.remove(); };
   }, [teclado, insets.bottom]);
+
+  // Ela fez o skincare SEM grupo (no fim, só o convite) e criou/entrou num grupo logo depois
+  // (12/nov/2026): oferece publicar o check-in daquele skincare, com as estatísticas, no grupo novo.
+  const oferecerCheckinPendente = (grupoId: string) => {
+    // Criou o grupo a partir do fim do skincare: direto para a câmera, sem perguntar.
+    const rotina = checkinDepois.current;
+    if (rotina) {
+      checkinDepois.current = null;
+      setTimeout(() => router.push({ pathname: '/checkin', params: { fluxo: 'skincare', rotina, grupos: grupoId, de: 'grupo', grupo: grupoId } } as any), 700);
+      return;
+    }
+    const pend = skincareSemCheckin();
+    if (!pend) return;
+    const qual = pend.periodo === 'am' ? 'matinal' : 'noturno';
+    setTimeout(() => {
+      Alert.alert(`Publicar o check-in do seu skincare ${qual}?`, 'Tire a foto e mostre para o grupo o skincare que você acabou de fazer.', [
+        { text: 'Agora não', style: 'cancel', onPress: () => limparUltimoSkincare() },
+        {
+          text: 'Tirar foto',
+          onPress: () => router.push({ pathname: '/checkin', params: { fluxo: 'skincare', rotina: pend.periodo, grupos: grupoId, de: 'grupo', grupo: grupoId } } as any),
+        },
+      ]);
+    }, 700);
+  };
 
   const criar = async () => {
     if (!ok || ocupado) { if (!ok) haptics.error(); return; }
@@ -218,6 +273,7 @@ export default function SeusGrupos() {
       fecharFolha();
       setNome('');
       setTimeout(() => router.push({ pathname: '/grupo', params: { id: r.grupo_id } } as any), 260);
+      oferecerCheckinPendente(r.grupo_id);
     } catch {
       setErro('Sem conexão. Tente de novo.');
       haptics.error();
@@ -244,6 +300,7 @@ export default function SeusGrupos() {
       fecharFolha();
       setNome('');
       setTimeout(() => router.push({ pathname: '/grupo', params: { id: r.grupo_id } } as any), 260);
+      oferecerCheckinPendente(r.grupo_id);
     } catch {
       setErro(mensagemDoCodigo('rede'));
       haptics.error();

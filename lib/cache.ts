@@ -17,6 +17,7 @@
 // `lib/produtosTela.ts`, que controla a idade delas) nem nada com base64 de imagem (estoura o
 // AsyncStorage). Cache é para dados pequenos e relativamente estáveis.
 // ─────────────────────────────────────────────────────────────────────────────
+import { seMudou } from './seMudou';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
@@ -121,6 +122,8 @@ type Result<T> = {
   refreshing: boolean;
   /** Força ida à rede agora, ignorando o frescor. */
   refresh: () => Promise<void>;
+  /** Muda o dado na tela e no cache, sem rede (otimista). */
+  mutate: (muda: (atual: T | null) => T | null) => void;
 };
 
 /**
@@ -144,6 +147,11 @@ export function useCachedQuery<T>(
   const [state, setState] = useState<QueryState>(initial ? 'ready' : 'loading');
   const [refreshing, setRefreshing] = useState(false);
 
+  // Re-renders só quando algo mudou (12/nov/2026): cada aba revalida ao ganhar foco, e antes
+  // isso dava até 4 renders da tela inteira por consulta (dado do cache, "atualizando" liga,
+  // dado novo IGUAL ao anterior, "atualizando" desliga). Agora o dado só muda se mudou
+  // (`seMudou`) e o `refreshing` só é ligado/desligado para quem o lê.
+  const usaRefreshing = useRef(false);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
@@ -160,7 +168,7 @@ export function useCachedQuery<T>(
 
       const cached = await readCache<T>(key);
       if (cached && mounted.current) {
-        setData(cached.data);
+        setData(seMudou<T | null>(cached.data));
         setState('ready');
       }
 
@@ -168,7 +176,7 @@ export function useCachedQuery<T>(
       if (fresh && !force) return; // caminho feliz: zero rede
 
       const hasData = Boolean(cached);
-      if (mounted.current && hasData) setRefreshing(true);
+      if (mounted.current && hasData && usaRefreshing.current) setRefreshing(true);
 
       try {
         // Dedupe: se a mesma chave já está em voo, aproveita a promise existente.
@@ -186,7 +194,7 @@ export function useCachedQuery<T>(
 
         await writeCache(key, result);
         if (mounted.current) {
-          setData(result);
+          setData(seMudou<T | null>(result as T));
           setState('ready');
         }
       } catch (e) {
@@ -195,7 +203,7 @@ export function useCachedQuery<T>(
         // ele continua vendo a última versão boa. Sem dado, é erro de verdade.
         if (mounted.current && !hasData) setState('error');
       } finally {
-        if (mounted.current) setRefreshing(false);
+        if (mounted.current && usaRefreshing.current) setRefreshing(false);
       }
     },
     [key, enabled, staleMs],
@@ -205,5 +213,17 @@ export function useCachedQuery<T>(
 
   const refresh = useCallback(() => run(true), [run]);
 
-  return { data, state, refreshing, refresh };
+  /** Muda o dado NA TELA e no cache, sem rede (atualização otimista; 12/nov/2026). */
+  const mutate = useCallback((muda: (atual: T | null) => T | null) => {
+    setData((atual) => {
+      const novo = muda(atual);
+      if (key && novo != null) void writeCache(key, novo);
+      return novo;
+    });
+  }, [key]);
+
+  return {
+    data, state, refresh, mutate,
+    get refreshing() { usaRefreshing.current = true; return refreshing; },
+  };
 }

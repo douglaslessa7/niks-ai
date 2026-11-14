@@ -67,8 +67,10 @@ Deno.serve(async (req) => {
 
     const supabase = createSupabaseClient()
     const agora = new Date()
+    // Conta de teste (20261207, tabela `contas_teste`): sem o limite de análises do dia.
     if (await analisesDeHoje(supabase, userId, inicioDoDiaBrasilia(agora)) >= LIMITE_POR_DIA) {
-      return json({ error: 'limite' }, 429)
+      const { data: teste } = await supabase.rpc('eh_conta_teste', { p_uid: userId })
+      if (teste !== true) return json({ error: 'limite' }, 429)
     }
 
     const ctx = await montarContexto(supabase, userId)

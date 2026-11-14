@@ -48,7 +48,7 @@ export default function PerguntaPersonalizacao() {
   const atual = onboarding[p.campo];
   return (
     <>
-      <Stack.Screen options={{ gestureEnabled: !primeira }} />
+      <Stack.Screen options={{ gestureEnabled: false }} />{/* onboarding: só a setinha volta (12/nov/2026) */}
       <ObChoiceScreen<string>
         title={p.titulo}
         options={p.opcoes}

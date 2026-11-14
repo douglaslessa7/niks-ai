@@ -57,11 +57,9 @@ export default function OnboardingLayout() {
   // Sem o gesto de voltar da borda (10/nov/2026): o paywall, o cadastro e as boas-vindas
   // pós-compra não voltam para a tela de trás (lista também em `TELAS_SEM_GESTO`, no layout raiz).
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      {SEM_GESTO_ONBOARDING.map((name) => (
-        <Stack.Screen key={name} name={name} options={{ gestureEnabled: false }} />
-      ))}
-    </Stack>
+    // 12/nov/2026 (pedido do produto): NENHUMA tela do onboarding volta pelo gesto da borda —
+    // só pela setinha, uma tela por vez. (`SEM_GESTO_ONBOARDING` fica como registro.)
+    <Stack screenOptions={{ headerShown: false, gestureEnabled: false }} />
   );
 }
 

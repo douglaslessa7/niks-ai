@@ -4,6 +4,7 @@
 // As telas caem em cima do mesmo cache; ao focar, cada uma confere o servidor em silêncio.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Image as ExpoImage } from 'expo-image';
+import { preaquecerFotos } from './fotosRapidas';
 import { writeCache } from './cache';
 import { getUserId } from './currentUser';
 import { preaquecerProdutos } from './produtosTela';
@@ -25,6 +26,9 @@ export async function preaquecerApp(): Promise<void> {
     // na 1ª entrada da aba Grupos ela sai do disco, sem esperar a rede (12/nov/2026).
     perfilGrupos(mes).then((d) => {
       if (d?.foto) void ExpoImage.prefetch(d.foto, 'memory-disk').catch(() => false);
+      // E as fotos do calendário do mês (aba Grupos), pela chave estável (lib/fotosRapidas):
+      // na entrada na aba elas já saem do cache (12/nov/2026).
+      void preaquecerFotos((d?.dias ?? []).map((x) => x.foto_url), 8000);
       return writeCache(chavePerfilGrupos(uid, mes), d);
     }),
   ]);

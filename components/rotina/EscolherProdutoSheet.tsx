@@ -31,7 +31,7 @@ import { useGuia } from '../../lib/guia';
 import { Image as ExpoImage } from 'expo-image';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { supabase } from '../../lib/supabase';
-import { getUserId } from '../../lib/currentUser';
+import { getUserId, peekUserId } from '../../lib/currentUser';
 import { listColecao } from '../../lib/colecao';
 import { listarEscaneados } from '../../lib/escaneados';
 import { dedupeByProduct, sameProduct } from '../../lib/productMatch';
@@ -81,9 +81,59 @@ const TITULO_DO_PASSO: Record<string, string> = {
   'Protetor solar': 'Protetores solares pra você',
 };
 
-async function carregar(passo: PassoRotina): Promise<Dados> {
-  const uid = await getUserId();
-  if (!uid) throw new Error('sem sessão');
+// Abrir a folha na hora (12/nov/2026, pedido do produto: "demora e não é agradável"): a parte
+// pesada — pele, estante, escaneados, recomendação, catálogo e faixas de preço — não depende do
+// passo. Ela fica guardada (`base`, 2 min) e é PRÉ-CARREGADA quando a Rotina ganha foco
+// (`preaquecerEscolherProduto`); ao abrir, só a ordem do passo é montada (`montar`, síncrono)
+// e a folha já sobe com os produtos. Uma releitura em silêncio atualiza o que mudou.
+type Base = {
+  pele: PeleParaAviso;
+  colecao: Awaited<ReturnType<typeof listColecao>>;
+  scans: Awaited<ReturnType<typeof listarEscaneados>>;
+  passosRec: any[];
+  copyPorId: Map<string, string>;
+  todosIds: string[];
+  prodPorId: Map<string, any>;
+  faixas: Awaited<ReturnType<typeof faixasDosProdutos>>;
+};
+const BASE_VALE_MS = 2 * 60 * 1000;
+let base: { uid: string; at: number; p: Promise<Base>; v: Base | null } | null = null;
+
+function carregarBase(uid: string, forcar = false): Promise<Base> {
+  if (!forcar && base && base.uid === uid && Date.now() - base.at < BASE_VALE_MS) return base.p;
+  const reg: { uid: string; at: number; p: Promise<Base>; v: Base | null } = { uid, at: Date.now(), p: null as any, v: base?.uid === uid ? base.v : null };
+  reg.p = buscarBase(uid).then((v) => { reg.v = v; return v; });
+  reg.p.catch(() => { if (base === reg) base = null; });
+  base = reg;
+  return reg.p;
+}
+
+/** A base já carregada (para abrir a folha sem esperar), ou null. */
+function baseNaMao(uid: string | null): Base | null {
+  return uid && base?.uid === uid ? base.v : null;
+}
+
+/** Chamado quando a Rotina ganha foco: a folha "Escolher produto" já abre com os produtos. */
+export function preaquecerEscolherProduto() {
+  void getUserId().then((uid) => {
+    if (!uid) return;
+    void carregarBase(uid).then((b) => {
+      // As fotos também: a folha abre com os produtos JÁ desenhados (antes a 1ª fileira chegava depois).
+      const urls = [
+        ...b.colecao.filter((c) => c.status === 'tenho').map((c) => (c.cutoutStatus === 'ok' ? c.cutoutUrl : null) ?? c.photoUrl),
+        ...b.todosIds.map((id) => { const p = b.prodPorId.get(id); return p ? (p.imagem_recorte_status === 'ok' ? p.imagem_recorte_url : null) ?? p.imagem_url : null; }),
+      ].filter((u): u is string => !!u).slice(0, 30);
+      if (urls.length) void ExpoImage.prefetch(urls, 'memory-disk').catch(() => false);
+    }).catch(() => {});
+  });
+}
+
+/** Algo mudou na estante/escaneados (ex.: um produto entrou num passo): a próxima abertura relê. */
+export function invalidarEscolherProduto() {
+  if (base) base.at = 0;
+}
+
+async function buscarBase(uid: string): Promise<Base> {
   const [pele, colecao, scans, recRes] = await Promise.all([
     peleParaAviso(uid),
     listColecao(uid).catch(() => []),
@@ -104,16 +154,7 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
       todosIds.push(x.produto_id);
     }
   }
-  let primeiros: string[] = [];
-  if (passo.origem === 'ideal') {
-    const nomes = new Set([passo.nome ? normStepKey(passo.nome) : '', passo.passoIdealNome ? normStepKey(passo.passoIdealNome) : ''].filter(Boolean));
-    const doPasso = passosRec.find((r) => !r?.sem_produto && nomes.has(normStepKey(r?.passo ?? ''))
-      && String(r?.periodo ?? '').includes(passo.periodo))
-      ?? passosRec.find((r) => !r?.sem_produto && nomes.has(normStepKey(r?.passo ?? '')));
-    // Sem repetidos: a recomendação pode trazer o mesmo produto 2× no passo (chave repetida na lista).
-    primeiros = [...new Set<string>((doPasso?.produtos ?? []).map((x: any) => x?.produto_id).filter(Boolean))];
-  }
-  const recIds = [...primeiros, ...todosIds.filter((id) => !primeiros.includes(id))];
+  const recIds = todosIds;
   // Faixa de preço dos recomendados: leitura à parte, em paralelo, que nunca falha.
   const faixasP = faixasDosProdutos(recIds);
 
@@ -125,7 +166,23 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
       .in('id', catIds)
     : { data: [] as any[] };
   const prodPorId = new Map((prods ?? []).map((p: any) => [p.id as string, p]));
+
+  return { pele, colecao, scans, passosRec, copyPorId, todosIds, prodPorId, faixas: await faixasP };
+}
+
+function montar(b: Base, passo: PassoRotina): Dados {
+  const { pele, colecao, scans, passosRec, copyPorId, todosIds, prodPorId, faixas } = b;
   const scanPorId = new Map(scans.map((s) => [s.id, s]));
+  let primeiros: string[] = [];
+  if (passo.origem === 'ideal') {
+    const nomes = new Set([passo.nome ? normStepKey(passo.nome) : '', passo.passoIdealNome ? normStepKey(passo.passoIdealNome) : ''].filter(Boolean));
+    const doPasso = passosRec.find((r) => !r?.sem_produto && nomes.has(normStepKey(r?.passo ?? ''))
+      && String(r?.periodo ?? '').includes(passo.periodo))
+      ?? passosRec.find((r) => !r?.sem_produto && nomes.has(normStepKey(r?.passo ?? '')));
+    // Sem repetidos: a recomendação pode trazer o mesmo produto 2× no passo (chave repetida na lista).
+    primeiros = [...new Set<string>((doPasso?.produtos ?? []).map((x: any) => x?.produto_id).filter(Boolean))];
+  }
+  const recIds = [...primeiros, ...todosIds.filter((id) => !primeiros.includes(id))];
 
   const avaliavelCatalogo = (p: any): ProdutoAvaliavel => ({
     nome: p?.nome ?? null, categoria: p?.categoria ?? null,
@@ -168,7 +225,6 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
       avaliavel: avaliavelScan(s.result, s.name),
       texto: textoScan(s.result),
     }));
-  const faixas = await faixasP;
   const recomendados: Candidato[] = recIds.map((id) => prodPorId.get(id)).filter(Boolean).map((p: any) => {
     const recorte = p.imagem_recorte_status === 'ok' ? p.imagem_recorte_url : null;
     return {
@@ -193,10 +249,23 @@ async function carregar(passo: PassoRotina): Promise<Dados> {
   return { pele, estante, escaneados, recomendados, catPasso, doPasso };
 }
 
-export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
+
+async function carregar(passo: PassoRotina, forcar = false): Promise<Dados> {
+  const uid = await getUserId();
+  if (!uid) throw new Error('sem sessão');
+  return montar(await carregarBase(uid, forcar), passo);
+}
+
+export type ProdutoEscolhido = { ref: RefProduto; nome: string | null; marca: string | null; img: string | null; cut: boolean };
+
+export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEscolhendo, onFalhou }: {
   passo: PassoRotina | null;          // null = folha fechada
   onClose: () => void;
   onEscolhido: () => void;            // gravou: a Rotina recarrega
+  /** Tocou num produto: a Rotina fecha a folha e mostra o produto no passo NA HORA (otimista). */
+  onEscolhendo?: (passo: PassoRotina, produto: ProdutoEscolhido) => void;
+  /** A gravação falhou depois do `onEscolhendo`: a Rotina desfaz. */
+  onFalhou?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   // Dica do desafio 3 (lib/guia.ts): a folha é um Modal (fica por cima do host
@@ -230,6 +299,15 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
 
   const recarregar = useCallback(() => {
     if (!passo) return;
+    // Pré-carregada (a Rotina aquece ao ganhar foco): abre JÁ com os produtos e relê em
+    // silêncio; sem ela, o carregando de sempre.
+    const pronta = baseNaMao(peekUserId());
+    if (pronta) {
+      setDados(montar(pronta, passo));
+      setEstado('pronto');
+      carregar(passo, true).then(setDados).catch(() => {});
+      return;
+    }
     setEstado('carregando');
     carregar(passo).then((d) => { setDados(d); setEstado('pronto'); }).catch(() => setEstado('erro'));
   }, [passo]);
@@ -245,9 +323,28 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
     if (!atual || !dados || salvando) return;
     const aviso = avaliarProduto(c.avaliavel, dados.pele);
     const salvar = async () => {
+      // Na hora (12/nov/2026, pedido do produto): a folha fecha e o passo já mostra o produto
+      // (`onEscolhendo`, a Rotina atualiza o passo na tela); a gravação segue por trás. Antes a
+      // folha ficava parada ~2,5 s sem resposta ao toque até o servidor gravar.
+      if (onEscolhendo) {
+        haptics.success();
+        onEscolhendo(atual, c);
+        try {
+          await definirProdutoDoPasso(atual.id, c.ref, aviso);
+          invalidarEscolherProduto();
+          onEscolhido();
+        } catch (e) {
+          console.warn('[escolher produto] falhou:', e);
+          haptics.error();
+          onFalhou?.();
+          Alert.alert('Não deu pra salvar no passo', 'Tente de novo em instantes.');
+        }
+        return;
+      }
       setSalvando(true);
       try {
         await definirProdutoDoPasso(atual.id, c.ref, aviso);
+        invalidarEscolherProduto();
         haptics.success();
         onEscolhido();
         onClose();
@@ -324,7 +421,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido }: {
       <TouchableOpacity key={c.key} activeOpacity={0.85} onPress={() => escolher(c)} style={{ width: CARD, gap: 6 }} accessibilityLabel={`Usar ${c.nome ?? 'produto'} neste passo${c.faixa ? `. ${descricaoFaixa(c.faixa)}` : ''}`}>
         <View style={[s.cardImg, { height: CARD }, on && s.cardOn]}>
           {c.img
-            ? <ExpoImage source={{ uri: c.img }} style={{ width: CARD - 18, height: CARD - 18 }} contentFit={c.cut ? 'contain' : 'cover'} />
+            ? <ExpoImage source={{ uri: c.img }} cachePolicy="memory-disk" style={{ width: CARD - 18, height: CARD - 18 }} contentFit={c.cut ? 'contain' : 'cover'} />
             : <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#F3ECEF' }} />}
           <TouchableOpacity onPress={() => { haptics.tap(); setDetalhe(c); }} hitSlop={8} style={s.info} accessibilityLabel={`Detalhes de ${c.nome ?? 'produto'}`}>
             <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={SOFT} strokeWidth={2.4} strokeLinecap="round"><Path d="M12 11v6M12 7.5v.01" /></Svg>

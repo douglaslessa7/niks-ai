@@ -14,6 +14,7 @@
 // Fonte = SF Pro (sistema), rosa #FF5EA8. Medidas do frame 393×852 (barra de status
 // de 54 pt → `insets.top − 54`).
 // ─────────────────────────────────────────────────────────────────────────────
+import { ehContaTeste } from '../../lib/contaTeste';
 import { useCallback, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensions,
@@ -153,7 +154,7 @@ export default function Progresso() {
 
   // ── Próximo scan (de 7 em 7 dias a partir do último) ──
   // Poder "Scan antecipado" armado: o próximo scan já está liberado.
-  const daysLeft = estadoCartas?.poderes.scan_antecipado || !last ? 0 : Math.max(0, SCAN_INTERVAL_DAYS - daysBetween(new Date(last.created_at), now));
+  const daysLeft = estadoCartas?.poderes.scan_antecipado || ehContaTeste() || !last ? 0 : Math.max(0, SCAN_INTERVAL_DAYS - daysBetween(new Date(last.created_at), now));
   const nextT = daysLeft === 0 ? 'liberado' : daysLeft === 1 ? 'amanhã' : `em ${daysLeft} dias`;
   const lockedT = daysLeft === 0
     ? 'Seu gráfico começa no segundo scan.'

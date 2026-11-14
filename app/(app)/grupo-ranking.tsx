@@ -1,5 +1,6 @@
+import { useDepoisDaTransicao } from '../../hooks/useDepoisDaTransicao';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
-import { useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -38,7 +39,7 @@ const TROFEU = ['M6 9H4.5a2.5 2.5 0 0 1 0-5H6', 'M18 9h1.5a2.5 2.5 0 0 0 0-5H18'
 
 type Dados = { listas: Record<Periodo, LinhaRanking[]>; criado_em: string | null };
 
-async function carregar(gid: string): Promise<Dados> {
+export async function carregar(gid: string): Promise<Dados> {
   const [semana, mes, ano, geral, g] = await Promise.all([
     rankingGrupo(gid, 'semana'), rankingGrupo(gid, 'mes'), rankingGrupo(gid, 'ano'), rankingGrupo(gid, 'geral'), grupoDetalhe(gid),
   ]);
@@ -126,24 +127,27 @@ export default function GrupoRanking() {
   const { id, periodo } = useLocalSearchParams<{ id?: string; periodo?: Periodo }>();
   const gid = typeof id === 'string' ? id : '';
   const setTabBarTheme = useAppStore((s) => s.setTabBarTheme);
-  const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const fetcher = useCallback(() => carregar(gid), [gid]);
+  const depois = useDepoisDaTransicao();
   const { data, refresh } = useCachedQuery<Dados>(userId && gid ? `grupos:ranking:${userId}:${gid}` : null, fetcher, { staleMs: 0, enabled: Boolean(userId && gid) });
   const y = (v: number) => insets.top + v - 54;
 
   const inicial: Periodo = periodo && TABS.some(([k]) => k === periodo) ? periodo : 'semana';
   const [tab, setTab] = useState<Periodo>(inicial);
   const [run, setRun] = useState(0);
+  const focou = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
       // Sem navbar; cada abertura começa na aba pedida (Semana por padrão).
+      // A navbar some pela rota (TELA_CHEIA no layout): sem escrever no store aqui — cada escrita
+      // re-renderizava o layout inteiro no meio da entrada (12/nov/2026).
       setTabBarTheme('light');
-      setTabBarVisible(false);
       setTab(inicial);
-      setRun((n) => n + 1);
+      // Só ao VOLTAR para a tela já aberta (na 1ª abertura seria um 2º render logo após o 1º).
+      if (focou.current) setRun((n) => n + 1);
+      focou.current = true;
       void refresh?.();
-      return () => setTabBarVisible(true);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gid, inicial])
   );
@@ -185,7 +189,8 @@ export default function GrupoRanking() {
 
       <ScrollView style={{ position: 'absolute', top: y(155), left: 0, right: 0, bottom: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 + insets.bottom }}>
         <Text style={styles.secao}>{data ? secao(tab, data.criado_em) : ' '}</Text>
-        {lista.map((r, i) => <Linha key={`${tab}:${run}:${r.user_id}`} r={r} i={i} ultima={i === lista.length - 1} rm={rm} />)}
+        {/* As linhas montam depois do deslize de entrada (ver `useDepoisDaTransicao`). */}
+        {depois && lista.map((r, i) => <Linha key={`${tab}:${run}:${r.user_id}`} r={r} i={i} ultima={i === lista.length - 1} rm={rm} />)}
         {data && <Text style={styles.foot}>{rodape(tab, lista)}</Text>}
       </ScrollView>
     </View>

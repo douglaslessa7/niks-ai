@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Image as ExpoImage } from 'expo-image';
+import { fonteEstavel } from '../../lib/fotosRapidas';
 import { View, Text, TouchableOpacity, StyleSheet, Pressable, ActivityIndicator, Image, Switch, ScrollView, useWindowDimensions } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -44,7 +46,7 @@ type Props = {
 // Banner do grupo (o degradê do grupo ou a foto, com a flor no meio). 44 × 44 por padrão.
 export function MiniBanner({ g, tamanho = 44, redondo = false, style }: { g: GrupoResumo; tamanho?: number; redondo?: boolean; style?: object }) {
   const caixa = [styles.banner, { width: tamanho, height: tamanho, borderRadius: redondo ? tamanho / 2 : tamanho * 0.27 }, style];
-  if (g.banner === 'foto' && g.banner_url) return <Image source={{ uri: g.banner_url }} style={caixa} />;
+  if (g.banner === 'foto' && g.banner_url) return <ExpoImage source={fonteEstavel(g.banner_url)} cachePolicy="memory-disk" transition={0} style={caixa as any} />;
   const b = g.banner === 'niks-2' ? BANNERS_GRUPO[1] : BANNERS_GRUPO[0];
   return (
     <View style={[caixa, { experimental_backgroundImage: b.bg, alignItems: 'center', justifyContent: 'center' }]}>

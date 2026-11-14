@@ -31,6 +31,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Device from 'expo-device';
 import Svg, { Path, Line, Circle, Rect, Ellipse } from 'react-native-svg';
+import { agoraSeMudou, seMudou } from '../../../lib/seMudou';
 import { useAppStore, type OnboardingData, type ScanResult, type ProtocolResult } from '../../../store/onboarding';
 import { useFaceScan } from '../../../hooks/useFaceScan';
 import { supabase } from '../../../lib/supabase';
@@ -46,10 +47,10 @@ import { requestAppReview } from '../../../lib/storeReview';
 import {
   listarMinhaRotina, garantirMinhaRotina, temProdutosNoCelular, diaDaSemana, passoValeNoDia,
   reordenarPassos, removerPasso, nomeDoPasso, type MinhaRotina, type PassoRotina,
-  prefixoStatusProduto,
+  prefixoStatusProduto, type ProdutoDoPasso,
 } from '../../../lib/minhaRotina';
 import SeletorPeriodo from '../../../components/rotina/SeletorPeriodo';
-import EscolherProdutoSheet from '../../../components/rotina/EscolherProdutoSheet';
+import EscolherProdutoSheet, { preaquecerEscolherProduto } from '../../../components/rotina/EscolherProdutoSheet';
 import StepIcon from '../../../components/rotina/StepIcon';
 import RotinaIdealSheet from '../../../components/rotina/RotinaIdealSheet';
 import RotinaTutorial, { type EscolhaIntro } from '../../../components/rotina/RotinaTutorial';
@@ -66,13 +67,12 @@ import { useCachedQuery, invalidateCache } from '../../../lib/cache';
 import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
 import { getUserId, useUserId } from '../../../lib/currentUser';
 import { haptics } from '../../../lib/haptics';
-import { faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../../lib/faixaPreco';
-import FaixaPreco from '../../../components/product/FaixaPreco';
 import { useEstadoCartas, concluirRotina } from '../../../lib/cartasServidor';
 import FolhaCompartilhar from '../../../components/grupos/FolhaCompartilhar';
 import BalancedText from '../../../components/BalancedText';
 import { trackFora } from '../../../lib/mixpanel/MixpanelProvider';
 import { SKINCARE_SEMPRE_DISPONIVEL } from '../../../lib/concluirSkincare';
+import { useContaTeste } from '../../../lib/contaTeste';
 import AlvoGuia from '../../../components/coach/AlvoGuia';
 import { avancarGuiaDe, onAtalhoGuia, useGuia } from '../../../lib/guia';
 import { verificarDesafios } from '../../../lib/missoes';
@@ -596,7 +596,7 @@ export default function Protocolo() {
     }
     return r;
   }, []);
-  const { data: minha, refresh: refreshMinha } = useCachedQuery(
+  const { data: minha, refresh: refreshMinha, mutate: mudarMinha } = useCachedQuery(
     userId ? `minharotina:${userId}` : null,
     fetchMinhaRotina,
     { enabled: Boolean(userId), staleMs: 0 },
@@ -681,16 +681,19 @@ export default function Protocolo() {
   const [hist, setHist] = useState<RoutineHistory>({});
   const [now, setNow] = useState(() => new Date());
   const reloadLocal = useCallback(() => {
-    Promise.all([getCompletedSteps('am'), getCompletedSteps('pm')]).then(([a, p]) => setDoneSteps({ am: a, pm: p }));
-    getRoutineHistory().then(setHist);
-    setNow(new Date());
+    // Só muda o estado se o valor mudou (lib/seMudou): trocar de aba não re-renderiza a Rotina à toa.
+    Promise.all([getCompletedSteps('am'), getCompletedSteps('pm')]).then(([a, p]) => setDoneSteps(seMudou({ am: a, pm: p })));
+    getRoutineHistory().then((h) => setHist(seMudou(h)));
+    setNow(agoraSeMudou());
   }, []);
   useFocusEffect(useCallback(() => {
     reloadLocal();
+    // A folha "Escolher produto" já abre com os produtos (12/nov/2026).
+    preaquecerEscolherProduto();
     // Voltou para a Rotina: um "Escanear produto" pedido pela folha e não concluído não
     // pode ficar pendurado — o próximo scan avulso cairia num passo.
     useAppStore.getState().setRotinaPassoAlvo(null);
-    const id = setInterval(() => setNow(new Date()), 30_000);
+    const id = setInterval(() => setNow(agoraSeMudou()), 30_000);
     return () => clearInterval(id);
   }, [reloadLocal]));
 
@@ -760,17 +763,8 @@ export default function Protocolo() {
   const minhaList = minha ? (am ? minha.am : minha.pm) : [];
   const usandoMinha = minhaList.length > 0;
 
-  // Faixa de preço dos produtos do CATÁLOGO nos passos (lib/faixaPreco). Leitura à parte,
-  // que nunca falha: sem faixa (ou produto escaneado), o card fica sem a linha.
-  const [faixaPorCatalogo, setFaixaPorCatalogo] = useState<Map<string, FaixaPrecoValor>>(new Map());
-  const idsCatalogoPassos = [...(minha?.am ?? []), ...(minha?.pm ?? [])]
-    .map((p) => p.produto?.catalogoId).filter((x): x is string => !!x).sort().join(',');
-  useEffect(() => {
-    if (!idsCatalogoPassos) return;
-    let vivo = true;
-    void faixasDosProdutos(idsCatalogoPassos.split(',')).then((m) => { if (vivo) setFaixaPorCatalogo(m); });
-    return () => { vivo = false; };
-  }, [idsCatalogoPassos]);
+  // (12/nov/2026, pedido do produto: os cards dos passos não mostram mais a faixa de preço —
+  // "Custo-benefício", "Médio"…; ela continua no detalhe do produto e na folha "Escolher produto".)
 
   // ── Tutorial de primeiro acesso (réplica do Claude Design 54a/54b) ──────────
   // Mesma regra da intro antiga: uma vez por conta (`users.rotina_intro_status` null),
@@ -795,7 +789,9 @@ export default function Protocolo() {
   // checklist/guia/contagem e aparece apagado na lista (decisão 4).
   const hojeDia = diaDaSemana(sessionDate(now));
   const finAt = hist[dateKey(sessionDate(now))]?.[period];
-  const finToday = !!finAt;
+  // Conta de teste (20261207, `lib/contaTeste`): a rotina nunca fica "feita" e abre a qualquer hora.
+  const contaTeste = useContaTeste();
+  const finToday = !!finAt && !contaTeste;
   // "Feita às 7:18" (design 41f) — horário real em que a cerimônia gravou a rotina.
   const finLabel = finAt ? `Feita às ${new Date(finAt).getHours()}:${String(new Date(finAt).getMinutes()).padStart(2, '0')}` : '';
   // Sequência = um número só (dias ativos seguidos), do SERVIDOR. Logo depois de concluir,
@@ -819,7 +815,6 @@ export default function Protocolo() {
       tint: chosen ? PRODUCT_BG : NO_PRODUCT_BG,
       pline: chosen ? prefixoStatusProduto(chosen) + [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Escolher produto',
       // Faixa de preço: só produto do catálogo (escaneado não tem `catalogoId`).
-      faixa: chosen?.catalogoId ? faixaPorCatalogo.get(chosen.catalogoId) : undefined,
       // Ícone da categoria (sem produto) e o nome para mostrar onde cabe um só (nome
       // do passo; sem ele, o do produto) — o nome do passo é opcional (Fase 3).
       tipo: tipoDoPasso(name, ingredient),
@@ -933,7 +928,7 @@ export default function Protocolo() {
   const windowOpen = (p: 'am' | 'pm') => (p === 'am' ? (t >= amTime && t < pmTime) : (t >= pmTime || t < 4 * 60));
   const inWindow = windowOpen(period);
   // Modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`, temporário): o botão funciona fora da janela.
-  const canStart = (SKINCARE_SEMPRE_DISPONIVEL || inWindow) && !finToday;
+  const canStart = (SKINCARE_SEMPRE_DISPONIVEL || contaTeste || inWindow) && !finToday;
 
   // Reabre o fluxo que estava ABERTO quando a tela foi recriada / o app morreu — uma
   // vez, quando a rotina já carregou. Checklist/guia só se a rotina daquele período
@@ -1211,7 +1206,7 @@ export default function Protocolo() {
                   disabled={!canStart}
                   onPress={startRun}
                   accessibilityState={{ disabled: !canStart }}
-                  style={[styles.heroBtn, !inWindow && !SKINCARE_SEMPRE_DISPONIVEL && styles.heroBtnLocked]}
+                  style={[styles.heroBtn, !inWindow && !SKINCARE_SEMPRE_DISPONIVEL && !contaTeste && styles.heroBtnLocked]}
                 >
                   <Svg width={13} height={14} viewBox="0 0 13 14">
                     <Path d="M1 1.6v10.8c0 .8.9 1.3 1.6.9l9-5.4c.6-.4.6-1.3 0-1.7l-9-5.4C1.9.4 1 .8 1 1.6z" fill="#fff" />
@@ -1336,10 +1331,6 @@ export default function Protocolo() {
                             >
                               {s.hasProd ? s.pline : s.name}
                             </Text>
-                          )}
-                          {/* Faixa de preço (só produto do catálogo): "▮▯▯ Custo-benefício", no estilo do rótulo do passo */}
-                          {s.hasProd && !!s.faixa && (
-                            <FaixaPreco faixa={s.faixa} style={{ marginTop: 2 }} textoStyle={{ fontSize: 13, fontWeight: '500', color: MUTED }} />
                           )}
                           {!s.hasProd && !!s.name && (
                             <TouchableOpacity
@@ -1766,6 +1757,22 @@ export default function Protocolo() {
           const seguiu = st.rotinaPassoAlvo?.passoId === semNome || st.escolhaParaPasso?.passoId === semNome;
           if (semNome && !seguiu) void removerPasso(semNome).catch(() => {}).finally(() => { void refreshMinha(); });
         }}
+        onEscolhendo={(p, prod) => {
+          // Na hora (12/nov/2026): fecha a folha e o passo já mostra o produto; a gravação
+          // segue por trás (sem o onClose, que apagaria o passo novo sem nome).
+          passoNovoSemNome.current = null;
+          setEscolherPasso(null);
+          const produto: ProdutoDoPasso = {
+            origem: prod.ref.origem, id: prod.ref.id, marca: prod.marca, nome: prod.nome,
+            imagemUrl: prod.img, recorteUrl: prod.cut ? prod.img : null, status: 'tenho',
+            catalogoId: prod.ref.origem === 'catalogo' ? prod.ref.id : null,
+          };
+          mudarMinha((m) => m && {
+            am: m.am.map((x) => (x.id === p.id ? { ...x, produto } : x)),
+            pm: m.pm.map((x) => (x.id === p.id ? { ...x, produto } : x)),
+          });
+        }}
+        onFalhou={() => { void refreshMinha(); }}
         onEscolhido={() => {
           passoNovoSemNome.current = null;
           void refreshMinha();

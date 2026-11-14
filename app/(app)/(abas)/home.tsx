@@ -22,6 +22,7 @@ import { useCachedQuery } from '../../../lib/cache';
 import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
 import { contarPassosMinhaRotina } from '../../../lib/minhaRotina';
 import { SKINCARE_SEMPRE_DISPONIVEL } from '../../../lib/concluirSkincare';
+import { useContaTeste } from '../../../lib/contaTeste';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../../lib/homeTheme';
 
 const NOITE = homeTheme(true);
@@ -34,6 +35,7 @@ import type { MissaoId } from '../../../components/missoes/CardMissoes';
 import { cardVisivel, periodoDaRotina, proximoNaoPulado, useMissoes } from '../../../lib/missoes';
 import { iniciarGuia, irParaGuia, onProximoDesafio, useGuia } from '../../../lib/guia';
 import { useMeusGrupos } from '../../../lib/gruposServidor';
+import { MiniBanner } from '../../../components/grupos/FolhaCompartilhar';
 import Avatar from '../../../components/grupos/Avatar';
 import Medalha from '../../../components/medalhas/Medalha';
 import Carta from '../../../components/cartas/Carta';
@@ -41,6 +43,9 @@ import { useEstadoCartas } from '../../../lib/cartasServidor';
 import { cartaJaAberta, marcarCartaAberta } from '../../../lib/cartaDoDia';
 import SeloProtegida, { EscudoChama } from '../../../components/conquistas/SeloProtegida';
 import AvisoSequencia from '../../../components/conquistas/AvisoSequencia';
+import { agoraSeMudou, seMudou } from '../../../lib/seMudou';
+import DetalheProduto, { type DetalheItem } from '../../../components/product/DetalheProduto';
+import { concernLabel } from '../../../lib/concernLabels';
 import {
   getRoutineHistory, routineStreak, routineDayStreak, routinesDoneOn, sessionDate, dateKey,
   RoutineHistory, RoutinePeriod,
@@ -80,7 +85,8 @@ const MIN_PER_STEP = 3; // mesma conta da Rotina (~3 min por passo)
 // Aviso "Sua sequência agora conta dias" (79l): visto uma vez só.
 const AVISO_SEQ_KEY = 'aviso_sequencia_dias:visto';
 
-type HomeProduct = { id: string; name: string; img: string; step: string };
+// `det`: o que o detalhe do produto mostra (abre direto na home — ver DetalheProduto).
+type HomeProduct = { id: string; name: string; img: string; step: string; det?: DetalheItem };
 
 type HomeData = {
   fotoUrl: string | null;
@@ -285,7 +291,7 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const { startFaceScan } = useFaceScan();
   const setStoreSkinScore = useAppStore((s) => s.setSkinScore);
-  const setProductDetailTarget = useAppStore((s) => s.setProductDetailTarget);
+  const [detalhe, setDetalhe] = useState<DetalheItem | null>(null);
   const userId = useUserId();
   const rm = useReduceMotion();
 
@@ -298,9 +304,10 @@ export default function Home() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      setNow(new Date());
-      getRoutineHistory().then((h) => { if (active) { setHist(h); setHistPronto(true); } });
-      const id = setInterval(() => setNow(new Date()), 30_000);
+      // Só muda o estado se mudou (lib/seMudou): voltar para a home não re-renderiza tudo à toa.
+      setNow(agoraSeMudou());
+      getRoutineHistory().then((h) => { if (active) { setHist(seMudou(h)); setHistPronto(true); } });
+      const id = setInterval(() => setNow(agoraSeMudou()), 30_000);
       return () => { active = false; clearInterval(id); };
     }, [])
   );
@@ -352,7 +359,7 @@ export default function Home() {
     // "Seus produtos": o produto principal de cada passo, separado por período e
     // numerado na ordem dos passos daquele período ("Passo 2 · Hidratação").
     const passos: any[] = Array.isArray(recRes.data?.recomendacao) ? recRes.data!.recomendacao : [];
-    const raw: Record<RoutinePeriod, { id: string; step: string }[]> = { am: [], pm: [] };
+    const raw: Record<RoutinePeriod, { id: string; step: string; compat: number | null; copy: string }[]> = { am: [], pm: [] };
     for (const period of ['am', 'pm'] as const) {
       const doPeriodo = passos.filter((p) => p?.periodo === period || p?.periodo === 'am+pm');
       doPeriodo.forEach((p, i) => {
@@ -360,7 +367,11 @@ export default function Home() {
         const prods = p?.produtos ?? [];
         const principal = prods.find((x: any) => x?.principal) ?? prods[0];
         if (!principal?.produto_id) return;
-        raw[period].push({ id: principal.produto_id, step: `Passo ${i + 1} · ${p.categoria ?? ''}` });
+        raw[period].push({
+          id: principal.produto_id, step: `Passo ${i + 1} · ${p.categoria ?? ''}`,
+          compat: typeof principal.compatibilidade === 'number' ? Math.round(principal.compatibilidade) : null,
+          copy: String(principal.copy ?? '').trim(),
+        });
       });
     }
     const ids = [...new Set([...raw.am, ...raw.pm].map((r) => r.id))];
@@ -368,7 +379,7 @@ export default function Home() {
     if (ids.length) {
       const { data: prods, error: erroProdutos } = await supabase
         .from('produtos')
-        .select('id, nome, imagem_url, imagem_recorte_url, imagem_recorte_status')
+        .select('id, nome, marca, categoria, concerns, imagem_url, imagem_recorte_url, imagem_recorte_status')
         .in('id', ids);
       if (erroProdutos) throw erroProdutos;
       (prods ?? []).forEach((p: any) => byId.set(p.id, p));
@@ -379,7 +390,13 @@ export default function Home() {
         const p = byId.get(r.id);
         // Recorte sem fundo quando pronto — algumas fotos originais têm fundo cinza embutido.
         const img = p.imagem_recorte_status === 'ok' && p.imagem_recorte_url ? p.imagem_recorte_url : p.imagem_url;
-        return { id: r.id, name: p.nome, img, step: r.step };
+        const cutout = p.imagem_recorte_status === 'ok' && p.imagem_recorte_url ? p.imagem_recorte_url : null;
+        const det: DetalheItem = {
+          productId: r.id, brand: p.marca ?? undefined, name: p.nome, img: { uri: p.imagem_url }, cutout,
+          compat: r.compat, praLong: r.copy, categoria: p.categoria ?? null, recomendado: true,
+          targets: ((p.concerns ?? []) as string[]).map(concernLabel).filter((l): l is string => !!l),
+        };
+        return { id: r.id, name: p.nome, img, step: r.step, det };
       });
 
     const full = (scan?.full_result ?? null) as { skin_score?: number } | null;
@@ -446,9 +463,12 @@ export default function Home() {
     rowRef.current?.scrollTo({ x: 0, animated: false });
   }), []);
 
+  const contaTeste = useContaTeste();
   // ⚠️ Modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`, temporário): o herói ignora as rotinas feitas
   // hoje, para o "Iniciar skincare" ficar sempre à mostra. Com `false`, o herói de sempre.
-  const hero = heroFor(now, d, SKINCARE_SEMPRE_DISPONIVEL ? {} : hist);
+  // Conta de teste (20261207, `lib/contaTeste`): skincare a qualquer hora e repetido, scan sem os 7 dias.
+  const livre = SKINCARE_SEMPRE_DISPONIVEL || contaTeste;
+  const hero = heroFor(now, d, livre ? {} : hist);
   // Modo noturno: a mesma régua da rotina (18:00 → 03:59), acompanha o relógio de 30 s.
   const noite = isNightTheme(now);
   const days = weekFor(now, hist);
@@ -526,32 +546,25 @@ export default function Home() {
     setAvisoResolvido(true);
   };
 
-  // Celebração de nível pendente (pontos retroativos ou uma subida que ela não viu):
-  // abre a "Sua caminhada" uma vez por sessão do app, depois do aviso 79l e fora do
-  // tutorial de primeiro acesso. A caminhada celebra e confirma no servidor.
+  // ⚠️ A home NÃO abre mais a "Sua caminhada" sozinha para uma subida de nível pendente
+  // (12/nov/2026, pedido do produto: "isso não deveria acontecer ao entrar no app"). A subida é
+  // celebrada na hora em que acontece (depois da carta, ou da barra de pontos —
+  // `BarraPontosHost`); se ficar pendente, a caminhada celebra quando ela a abrir.
   const tutorialPendente = useAppStore((s) => s.homeTutorialPending && !s.homeTutorialSeen);
-  const celebrou = useRef(false);
-  useEffect(() => {
-    if (celebrou.current || !pontos?.celebrar || !avisoResolvido || tutorialPendente) return;
-    celebrou.current = true;
-    // A subida pelos pontos retroativos (a de carta é medida ao raspar).
-    if (pontos.retro) trackFora('nivel_subiu', { nivel: pontos.nivel, origem: 'retro' });
-    router.push('/caminhada?celebrar=1&de=home' as any);
-  }, [pontos?.celebrar, avisoResolvido, tutorialPendente, router]);
 
   // Sobrou uma carta de hoje sem raspar (ex.: o app fechou no meio do fluxo): ela abre
   // sozinha ao entrar na home — depois do aviso 79l, fora do tutorial e depois da celebração
   // de nível. No máximo uma vez por sessão do app por carta (lib/cartaDoDia).
   const cartaPendente = estadoCarta === 'pronta' ? aRaspar[0]?.id ?? null : null;
   useFocusEffect(useCallback(() => {
-    if (!cartaPendente || cartaJaAberta(cartaPendente) || !avisoResolvido || tutorialPendente || pontos?.celebrar) return;
+    if (!cartaPendente || cartaJaAberta(cartaPendente) || !avisoResolvido || tutorialPendente) return;
     const t = setTimeout(() => {
       if (cartaJaAberta(cartaPendente)) return;
       marcarCartaAberta(cartaPendente);
       router.push(`/(carta)/carta?id=${cartaPendente}` as any);
     }, 450);
     return () => clearTimeout(t);
-  }, [cartaPendente, avisoResolvido, tutorialPendente, pontos?.celebrar, router]));
+  }, [cartaPendente, avisoResolvido, tutorialPendente, router]));
 
   const { data: meusGrupos, refresh: recarregarGrupos } = useMeusGrupos();
   const grupo = meusGrupos?.[0] ?? null;
@@ -584,14 +597,14 @@ export default function Home() {
   // sessão do app, fora do tutorial e da celebração de nível.
   const raraMissoes = missoes?.carta && !missoes.carta.raspada_em ? missoes.carta.id : null;
   useFocusEffect(useCallback(() => {
-    if (!raraMissoes || cartaJaAberta(raraMissoes) || cartaPendente || !avisoResolvido || tutorialPendente || pontos?.celebrar) return;
+    if (!raraMissoes || cartaJaAberta(raraMissoes) || cartaPendente || !avisoResolvido || tutorialPendente) return;
     const t = setTimeout(() => {
       if (cartaJaAberta(raraMissoes)) return;
       marcarCartaAberta(raraMissoes);
       router.push(`/(carta)/carta?id=${raraMissoes}` as any);
     }, 600);
     return () => clearTimeout(t);
-  }, [raraMissoes, cartaPendente, avisoResolvido, tutorialPendente, pontos?.celebrar, router]));
+  }, [raraMissoes, cartaPendente, avisoResolvido, tutorialPendente, router]));
 
   const go = (path: string) => {
     haptics.tap();
@@ -614,7 +627,7 @@ export default function Home() {
   const tutRow = useCoachMark('home-row');
 
   // Dica do desafio 4 com o botão apagado (fora do horário): o balão diz quando abre.
-  const botaoApagado = !SKINCARE_SEMPRE_DISPONIVEL && (hero.locked || hero.done);
+  const botaoApagado = !livre && (hero.locked || hero.done);
   useEffect(() => {
     if (guia?.passo !== 'd4-iniciar' || !botaoApagado) return;
     const min = hero.focus === 'pm' ? d.pmTime : d.amTime;
@@ -624,7 +637,7 @@ export default function Home() {
 
   // Scan de rosto a cada 7 dias: o card abre o scan só quando libera.
   // Poder "Scan antecipado" armado: o próximo scan já está liberado.
-  const scanDays = estado?.poderes.scan_antecipado ? 0 : scanDaysLeft(d.lastScanAt, now);
+  const scanDays = estado?.poderes.scan_antecipado || contaTeste ? 0 : scanDaysLeft(d.lastScanAt, now);
   const onScan = () => {
     if (scanDays > 0) {
       haptics.tap();
@@ -718,7 +731,7 @@ export default function Home() {
           <View style={styles.hdrLeft}>
             <TouchableOpacity activeOpacity={0.7} onPress={() => go('/perfil')} style={styles.avatarWrap} accessibilityLabel="Abrir perfil">
               {d.fotoUrl ? (
-                <ExpoImage source={{ uri: d.fotoUrl }} cachePolicy="memory-disk" contentFit="cover" style={styles.avatar} />
+                <ExpoImage source={{ uri: d.fotoUrl }} cachePolicy="memory-disk" allowDownscaling={false} contentFit="cover" style={styles.avatar} />
               ) : (
                 <View style={[styles.avatar, { backgroundColor: '#F6D3E1', alignItems: 'center', justifyContent: 'center' }]}>
                   <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: '700', color: '#E0447F' }}>{d.firstName ? Array.from(d.firstName.trim())[0]?.toLocaleUpperCase('pt-BR') : ''}</Text>
@@ -808,14 +821,14 @@ export default function Home() {
                 // Concluir skincare → "Compartilhar com o grupo?" → câmera → Novo check-in → carta →
                 // mural. Antes ia para o guia passo a passo da aba Rotina. Antes da hora fica apagado e
                 // não responde — menos no modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`), sempre disponível.
-                disabled={!convidada && !SKINCARE_SEMPRE_DISPONIVEL && (hero.locked || hero.done)}
-                accessibilityState={{ disabled: !SKINCARE_SEMPRE_DISPONIVEL && hero.locked }}
+                disabled={!convidada && !livre && (hero.locked || hero.done)}
+                accessibilityState={{ disabled: !livre && hero.locked }}
                 onPress={() => {
                   haptics.action();
                   if (convidada) { abrirTrava('skincare'); return; }
                   router.push({ pathname: '/skincare', params: { periodo: hero.focus, am: String(d.amTime), pm: String(d.pmTime) } } as any);
                 }}
-                style={[styles.heroBtn, ((!SKINCARE_SEMPRE_DISPONIVEL && hero.locked) || convidada) && { opacity: 0.4 }]}
+                style={[styles.heroBtn, ((!livre && hero.locked) || convidada) && { opacity: 0.4 }]}
               >
                 {convidada ? <Lock size={16} color="#fff" strokeWidth={2.4} /> : <Svg width={16} height={16} viewBox="0 0 24 24">
                   <Path d="M6 3.8v16.4a1 1 0 0 0 1.5.86l13.6-8.2a1 1 0 0 0 0-1.72L7.5 2.94A1 1 0 0 0 6 3.8z" fill="#fff" />
@@ -977,8 +990,30 @@ export default function Home() {
         </View>
 
         {/* ── Seu grupo ───────────────────────────────────────────────── */}
-        {meusGrupos && <Text style={[styles.sectionTitle, { marginTop: 18 }]} onLayout={(e) => { grupoY.current = e.nativeEvent.layout.y; }}>Seu grupo</Text>}
-        {!meusGrupos ? null : grupo ? (
+        {/* Com 2+ grupos (12/nov/2026): "Seus grupos" e um card com todos, que abre a lista
+            "Seus grupos" (a mesma do botão da aba Grupos). Com 1, o card do grupo, como antes. */}
+        {meusGrupos && <Text style={[styles.sectionTitle, { marginTop: 18 }]} onLayout={(e) => { grupoY.current = e.nativeEvent.layout.y; }}>{(meusGrupos?.length ?? 0) > 1 ? 'Seus grupos' : 'Seu grupo'}</Text>}
+        {!meusGrupos ? null : meusGrupos.length > 1 ? (
+          <View {...tutGrupo}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => go('/seus-grupos')} style={styles.groupCard} accessibilityLabel="Ver seus grupos">
+            <View style={styles.groupHead}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.groupName} numberOfLines={1}>{`${meusGrupos.length} grupos`}</Text>
+                <Text style={styles.groupSub} numberOfLines={1}>{meusGrupos.map((x) => x.nome).join(' · ')}</Text>
+              </View>
+              <Icon d={CHEVRON} size={16} color={PINK} sw={2.4} />
+            </View>
+            <View style={styles.groupFoot}>
+              <View style={{ flexDirection: 'row', paddingLeft: 10 }}>
+                {meusGrupos.slice(0, 4).map((x, i) => (
+                  <MiniBanner key={x.id} g={x} tamanho={40} redondo style={{ marginLeft: -10, borderWidth: 2, borderColor: '#fff' }} />
+                ))}
+              </View>
+              <Text style={styles.groupCount}>Ver seus grupos</Text>
+            </View>
+          </TouchableOpacity>
+          </View>
+        ) : grupo ? (
           <View {...tutGrupo}>
           <TouchableOpacity activeOpacity={0.85} onPress={() => go(`/grupo?id=${grupo.id}&de=home`)} style={styles.groupCard}>
             <View style={styles.groupHead}>
@@ -1046,8 +1081,9 @@ export default function Home() {
                     style={styles.prod}
                     onPress={() => {
                       haptics.tap();
-                      setProductDetailTarget(p.id);
-                      router.push('/recomendacao-produtos' as any);
+                      // Abre aqui mesmo, por cima da home (fechar volta para a home). Cache
+                      // antigo sem `det`: o mínimo, até a home recarregar.
+                      setDetalhe(p.det ?? { productId: p.id, name: p.name, img: { uri: p.img }, recomendado: true });
                     }}
                   >
                     <View style={styles.prodImgBox}>
@@ -1065,6 +1101,9 @@ export default function Home() {
 
       {/* 79l: "Sua sequência agora conta dias" (uma vez só) */}
       {aviso && <AvisoSequencia antes={aviso.antes} agora={aviso.agora} rm={rm} onFechar={fecharAviso} />}
+
+      {/* Detalhe do produto de "Seus produtos": abre aqui, fechar volta para a home. */}
+      <DetalheProduto item={detalhe} onClose={() => setDetalhe(null)} />
     </View>
   );
 }

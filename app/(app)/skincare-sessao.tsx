@@ -499,7 +499,7 @@ export default function SkincareSessao() {
         aberta={folha === 'aberta'}
         semEscolha
         onCompartilhar={fazerCheckin}
-        onCriarGrupo={() => terminar('/seus-grupos?criar=1')}
+        onCriarGrupo={() => terminar(`/seus-grupos?criar=1&depois=checkin&rotina=${sessao.periodo}`)}
         onFechar={() => terminar('/home')}
       />
     </View>

@@ -74,11 +74,12 @@ export default function Grupos() {
   const pontos = estado?.pontos;
 
   // ── Entrada (a cada foco): foto, card do calendário e as fotos do mês ──────────
-  const [abertura, setAbertura] = useState(0);
+  // Só na primeira abertura (12/nov/2026): ao voltar para a aba, nada some e reentra — e o
+  // calendário não é remontado (as fotos do mês continuam na tela).
+  const abertura = 0;
   useFocusEffect(
     useCallback(() => {
       setTabBarTheme('light');
-      setAbertura((n) => n + 1);
       verificarTutorialGrupos('/grupos');
     }, [setTabBarTheme])
   );
@@ -93,7 +94,12 @@ export default function Grupos() {
   return (
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} refreshControl={puxar} contentContainerStyle={{ paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
+      {/* Puxar para atualizar (12/nov/2026): o espaço que abre acima do cabeçalho mostrava o cinza
+          da tela, cortado do rosa. Atrás da rolagem fica o rosa do topo do cabeçalho (degradê +
+          o círculo branco) e o conteúdo tem o fundo da tela — assim a puxada revela o mesmo
+          rosa, o indicador do sistema continua visível por cima e o repique de baixo segue cinza. */}
+      <View pointerEvents="none" style={[styles.topoPuxada, { height: hh }]} />
+      <ScrollView ref={rolagem} showsVerticalScrollIndicator={false} refreshControl={puxar} contentContainerStyle={{ backgroundColor: '#F6F1F4', paddingBottom: 130 + Math.max(0, insets.bottom - 34) }}>
         <View style={{ height: hh }}>
           <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
             <Svg width={W} height={hh} style={StyleSheet.absoluteFill}>
@@ -154,6 +160,7 @@ export default function Grupos() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F6F1F4' },
+  topoPuxada: { position: 'absolute', left: 0, right: 0, top: 0, backgroundColor: '#FFF2F8' },
   title: { position: 'absolute', left: 0, right: 0, height: 44, alignItems: 'center', justifyContent: 'center' },
   titleT: { fontSize: 17, fontWeight: '600', letterSpacing: -0.4, color: INK },
   gear: { position: 'absolute', right: 8, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },

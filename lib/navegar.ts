@@ -29,6 +29,31 @@ import { StackActions } from '@react-navigation/native';
 // uma 2ª cópia do app aparecer — e registra no Mixpanel (`nav_folha_reparada`).
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TOQUE DUPLO (12/nov/2026, pedido do produto: "toda vez que eu clico duas vezes no botão, a
+// ação é repetida — abre duas vezes"). Guarda única para o app inteiro: uma 2ª ordem de abrir o
+// MESMO destino em menos de 800 ms é ignorada. `useRouter()` devolve este mesmo `router`, então
+// vale para todos os botões que navegam (cards, abas, "Ver todos"…). Destinos diferentes
+// seguem normais (ex.: a trilha de `abrirComTrilha`).
+// ─────────────────────────────────────────────────────────────────────────────
+const ultimaOrdem = { chave: '', em: 0 };
+function semRepetir<F extends (href: any, ...resto: any[]) => any>(original: F): F {
+  return ((href: any, ...resto: any[]) => {
+    const chave = typeof href === 'string' ? href : JSON.stringify(href);
+    const agora = Date.now();
+    if (chave === ultimaOrdem.chave && agora - ultimaOrdem.em < 800) return undefined;
+    ultimaOrdem.chave = chave;
+    ultimaOrdem.em = agora;
+    return original(href, ...resto);
+  }) as F;
+}
+const r: any = router;
+if (!r.__semRepetir) {
+  r.__semRepetir = true;
+  r.push = semRepetir(r.push);
+  r.navigate = semRepetir(r.navigate);
+}
+
 /** A pilha raiz (dentro do `__root` do expo-router). */
 function pilhaRaiz(): any {
   const r: any = store.navigationRef.current?.getRootState();
@@ -142,6 +167,52 @@ export function abrirComTrilha(trilha: Href[]) {
   while (i > 0 && !naPilha(ler(trilha[i]))) i--;
   irPara(trilha[i]);
   for (const t of trilha.slice(i + 1)) router.push(t as any);
+}
+
+/**
+ * FIM de um fluxo (12/nov/2026): o check-in publicado, a carta raspada depois dele. Destino no
+ * grupo → o grupo ENTRA por cima (transição normal, direto do check-in) e, já com ele na tela,
+ * as telas de baixo são trocadas em silêncio pela ABA Grupos (sai a lista do skincare, o
+ * cronômetro, a câmera do check-in, "Seus grupos"…): o voltar do grupo leva à aba Grupos.
+ * ⚠️ Antes: descia até a aba Grupos e só então abria o grupo — a aba ("Perfil") aparecia por um
+ * instante entre o check-in e o grupo; e mais antes ainda o grupo abria por cima do fluxo, e o
+ * voltar (ou a "Sua caminhada" ao fechar) caía na câmera. Outro destino: `irPara`.
+ * `entao` (ex.: abrir a Caminhada) roda com o grupo já na tela e a pilha limpa.
+ */
+export function irParaFim(destino: Href, entao?: () => void) {
+  const d = ler(destino);
+  if (d.caminho !== '/grupo') { irPara(destino, entao); return; }
+  sairPorCimaDoApp(() => {
+    router.push({ pathname: '/grupo', params: d.params } as any);
+    // Depois da transição de entrada (~350 ms da pilha nativa).
+    setTimeout(() => { deixarSoAbaPorBaixo('grupos'); entao?.(); }, 450);
+  });
+}
+
+/** A tela do topo fica; por baixo dela, só as abas (na `aba` pedida). Mesmas chaves: nada remonta. */
+function deixarSoAbaPorBaixo(aba: string) {
+  const ref: any = store.navigationRef.current;
+  const acha = (st: any): any => {
+    for (const r of st?.routes ?? []) {
+      if (r.name === '(app)') return r;
+      const dentro = acha(r.state);
+      if (dentro) return dentro;
+    }
+    return null;
+  };
+  const app = acha(ref?.getRootState());
+  const pilhaApp = app?.state;
+  if (!pilhaApp?.key || (pilhaApp.routes?.length ?? 0) <= 2) return;
+  const abas = pilhaApp.routes.find((r: any) => r.name === '(abas)');
+  const topo = pilhaApp.routes[pilhaApp.routes.length - 1];
+  if (!abas || topo === abas) return;
+  const iAba = abas.state?.routes?.findIndex((r: any) => r.name === aba) ?? -1;
+  const abasNa = iAba >= 0 ? { ...abas, state: { ...abas.state, index: iAba } } : abas;
+  try {
+    ref.dispatch({ type: 'RESET', payload: { ...pilhaApp, index: 1, routes: [abasNa, topo] }, target: pilhaApp.key });
+  } catch (e) {
+    console.warn('[navegar] não deu para limpar a pilha:', e);
+  }
 }
 
 export function voltar(planoB: Href) {

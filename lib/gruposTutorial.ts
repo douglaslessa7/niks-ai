@@ -77,6 +77,8 @@ type Progresso = {
   parada: number;
   grupoId: string | null;
   temMural: boolean;
+  /** Ela já viu ao menos uma parada (13/nov/2026): tutorial visto não volta. */
+  mostrado?: boolean;
 };
 
 export type EtapaTutorial = {
@@ -205,7 +207,12 @@ async function decidir(rota: RotaGrupos | null, gidAberto?: string) {
     const uid = await getUserId();
     if (!uid) return;
     if (progresso?.uid === uid) return;
+    // Trocou de conta (ou o tour perdeu o dono): a parada na tela sai junto. Antes só o
+    // `progresso` era zerado e a `etapa` ficava — o overlay seguia aparecendo, sem dono:
+    // "Toque para continuar" não avançava nada, nada era gravado e ele voltava em "1 de 10"
+    // toda vez que ela entrava no Perfil (vídeo do produto, 13/nov/2026).
     progresso = null;
+    if (etapa) definirEtapa(null);
 
     const salvo = await ler(uid);
     if (!rota && !salvo) return; // Abertura do app sem tutorial pela metade.
@@ -222,6 +229,12 @@ async function decidir(rota: RotaGrupos | null, gidAberto?: string) {
     if (salvo) {
       if (jaFeito(salvo.variante, c)) {
         await apagar(uid);
+        return;
+      }
+      // Fechou o app no meio de um tutorial que ela já estava vendo: conta como visto.
+      // Cada tutorial aparece uma vez só — não recomeça na abertura seguinte.
+      if (salvo.mostrado) {
+        await concluir(salvo);
         return;
       }
       const valido = await revalidarGrupo(salvo);
@@ -248,6 +261,22 @@ async function decidir(rota: RotaGrupos | null, gidAberto?: string) {
       void decidir(proximo.rota, proximo.gidAberto);
     }
   }
+}
+
+/** Grava como visto o que ela começou a ver e encerra (sem recomeçar depois). A parte da
+ *  tela do grupo só conta se ela chegou nela; senão, aparece uma vez quando ela abrir um grupo. */
+async function concluir(p: Progresso) {
+  const naTelaDoGrupo = blocos(p)[p.bloco]?.rota === '/grupo';
+  const agora = new Date().toISOString();
+  const campos: Record<string, string> =
+    p.variante === 'so_grupo' ? { grupos_tutorial_grupo_visto_em: agora }
+      : naTelaDoGrupo
+        ? { grupos_tutorial_visto_em: agora, grupos_tutorial_grupo_visto_em: agora }
+        : { grupos_tutorial_visto_em: agora };
+  if (progresso === p) progresso = null;
+  definirEtapa(null);
+  await apagar(p.uid);
+  await marcar(p.uid, campos);
 }
 
 async function marcar(uid: string, campos: Record<string, string | null>) {
@@ -283,15 +312,17 @@ export function registrarParada(indice: number) {
   const lista = blocos(progresso);
   const antesDoBloco = lista.slice(0, progresso.bloco).reduce((n, x) => n + x.stops.length, 0);
   const inicio = etapa.antes - antesDoBloco;
-  if (progresso.parada === inicio + indice) return;
+  if (progresso.parada === inicio + indice && progresso.mostrado) return;
   progresso.parada = inicio + indice;
+  progresso.mostrado = true;
   void salvar(progresso);
 }
 
 /** Terminou o trecho desta tela: vai ao próximo ou conclui. */
 export async function avancarTutorialGrupos() {
   const p = progresso;
-  if (!p) return;
+  // Sem dono (não deveria acontecer): tira a parada da tela em vez de deixá-la presa.
+  if (!p) { definirEtapa(null); return; }
   if (p.bloco + 1 < blocos(p).length) {
     p.bloco += 1;
     p.parada = 0;
@@ -308,6 +339,15 @@ export async function avancarTutorialGrupos() {
         : { grupos_tutorial_visto_em: agora, grupos_tutorial_grupo_visto_em: agora };
   void apagar(p.uid);
   void marcar(p.uid, campos);
+}
+
+/** Ela saiu da tela do trecho no meio dele (sem concluir): se foi para a tela do próximo
+ *  trecho, segue o tour; para qualquer outro lugar, o tutorial conta como visto. */
+export function saiuDaTelaDoTutorialGrupos(rotaAtual: string) {
+  const p = progresso;
+  if (!p) { definirEtapa(null); return; }
+  if (blocos(p)[p.bloco + 1]?.rota === rotaAtual) { void avancarTutorialGrupos(); return; }
+  void concluir(p);
 }
 
 /** Só para o atalho de desenvolvimento do Perfil. */

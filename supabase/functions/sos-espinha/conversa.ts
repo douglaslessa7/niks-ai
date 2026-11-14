@@ -68,7 +68,11 @@ export async function responderConversa(supabase: Supabase, userId: string, corp
   const agora = new Date()
   const { count } = await supabase.from('coach_messages').select('id', { count: 'exact', head: true })
     .eq('conversation_id', conversationId).eq('role', 'user').gte('created_at', inicioDoDiaBrasilia(agora))
-  if ((count ?? 0) >= LIMITE_MENSAGENS_POR_DIA) return { status: 429, json: { error: 'limite' } }
+  // Conta de teste (20261207, tabela `contas_teste`): sem o limite de mensagens do dia.
+  if ((count ?? 0) >= LIMITE_MENSAGENS_POR_DIA) {
+    const { data: teste } = await supabase.rpc('eh_conta_teste', { p_uid: userId })
+    if (teste !== true) return { status: 429, json: { error: 'limite' } }
+  }
 
   const urls = (await Promise.all(novas.map((f, i) => guardarFoto(supabase, userId, f.base64, `sos${i}`)))).filter(Boolean) as string[]
   const { data: anteriores } = await supabase.from('coach_messages').select('role, content, image_url, created_at')

@@ -10,6 +10,7 @@
 // Estado em AsyncStorage: um índice (só cresce) + o horário em que a dica atual
 // foi mostrada (em milissegundos).
 // ─────────────────────────────────────────────────────────────────────────────
+import { ehContaTeste } from '../contaTeste';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CATALOGO_DICAS, Dica } from './catalogo';
 
@@ -22,6 +23,7 @@ const INDEX_KEY = 'dica_do_dia:index';
 const SHOWN_AT_KEY = 'dica_do_dia:shown_at';
 
 const UMA_DIA_MS = 24 * 60 * 60 * 1000;
+let avancouNestaAbertura = false;
 
 // O índice guardado é um contador que só cresce (0, 1, 2, …). A volta ao início do
 // catálogo é aplicada SÓ aqui, na exibição — assim, quando o catálogo crescer, quem
@@ -51,7 +53,9 @@ export async function getDicaDoDia(now: Date = new Date()): Promise<Dica> {
       // Primeiro acesso (ou usuária antiga migrando): fica na dica atual e liga o
       // relógio de 24h a partir de agora. Não incrementa.
       await AsyncStorage.setItem(SHOWN_AT_KEY, String(agora));
-    } else if (agora - shownAt >= UMA_DIA_MS) {
+    } else if (agora - shownAt >= UMA_DIA_MS || (ehContaTeste() && !avancouNestaAbertura)) {
+      // Conta de teste (20261207): anda uma casa a cada abertura do app.
+      avancouNestaAbertura = true;
       // Passaram-se 24h desde a última dica → anda exatamente uma casa e reinicia
       // o relógio a partir de agora (por isso não pula várias de uma vez).
       index += 1;

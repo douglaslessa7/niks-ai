@@ -13,13 +13,14 @@ import { Alert } from 'react-native';
 import type { useRouter } from 'expo-router';
 import { useLote } from './loteProdutos';
 import type { Lote } from './rotinaLotes';
+import { ehContaTeste } from './contaTeste';
 
 export function abrirMontarRotina(router: ReturnType<typeof useRouter>, loteHoje: Lote | null | undefined): void {
   if (loteHoje?.status === 'processando') {
     router.push({ pathname: '/(scan)/lote-montando', params: { id: loteHoje.id } } as any);
   } else if (loteHoje?.status === 'pronto' && !loteHoje.visto_em) {
     router.push({ pathname: '/(scan)/lote-resultado', params: { id: loteHoje.id } } as any);
-  } else if (loteHoje) {
+  } else if (loteHoje && !ehContaTeste()) { // conta de teste (20261207): mais de um por dia
     Alert.alert('Você já montou uma rotina hoje', 'Dá para montar uma por dia. Tente de novo amanhã.');
   } else {
     useLote.getState().limpar();

@@ -23,6 +23,7 @@ Olhe a foto e responda com um plano curto e prático para hoje:
 - Prefira ativos pontuais para espinha (ácido salicílico, peróxido de benzoíla, ácido azelaico, niacinamida, enxofre). Um hidratante ou um calmante só entra se ajudar a recuperar a região.
 - Baseie-se apenas nos ativos listados. Nunca afirme um ativo que não esteja na lista.
 - Sempre em cima da espinha, em camada fina, nunca no rosto todo. Não combine dois ativos fortes na mesma noite.
+- <ProdutosPermitidos> são TODOS os que ela tem em casa ("Tenho em casa" na estante), estejam ou não na rotina. Compare os da rotina com os que estão só na estante e escolha o melhor para essa espinha: um produto fora da rotina pode ser a melhor escolha, e pode ser indicado.
 - Se o produto já estiver na rotina dela, diga apenas o ajuste de hoje.
 - Em "quando", use "agora", "manha" (só se ainda for de manhã) ou "noite", de acordo com a <HoraAtual>.
 </Produtos>

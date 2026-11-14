@@ -144,11 +144,74 @@ async function chamar<T>(body: Record<string, unknown>): Promise<T> {
 
 // ── Leituras ────────────────────────────────────────────────────────────────────
 export const meusGrupos = () => chamar<{ grupos: GrupoResumo[] }>({ acao: 'meus_grupos' }).then((r) => r.grupos);
+// Detalhe de check-in em memória (12/nov/2026, "abrir o check-in tem que ser instantâneo"):
+// o mural do grupo já traz tudo o que a tela de detalhes mostra, então quem toca no item
+// semeia aqui e a tela abre pronta; a leitura do servidor só confere/atualiza por baixo.
+// Também no disco (12/nov/2026, "ao fechar e abrir o NIKS a foto demora"): a memória zerava a
+// cada abertura do app; agora volta do AsyncStorage (os últimos 120). O link da foto pode ter
+// vencido (1 h), mas a foto sai do cache do expo-image pela chave estável (lib/fotosRapidas) e a
+// leitura do servidor traz o link novo.
+const detalhesEmMemoria = new Map<string, CheckinDetalhe>();
+const CHAVE_DETALHES = 'grupos:detalhes:v1';
+const MAX_DETALHES = 120;
+let gravar: ReturnType<typeof setTimeout> | null = null;
+function guardarDetalhes() {
+  if (gravar) clearTimeout(gravar);
+  gravar = setTimeout(() => {
+    gravar = null;
+    const lista = [...detalhesEmMemoria.values()].slice(-MAX_DETALHES);
+    AsyncStorage.setItem(CHAVE_DETALHES, JSON.stringify(lista)).catch(() => {});
+  }, 800);
+}
+function lembrarDetalhe(c: CheckinDetalhe) {
+  detalhesEmMemoria.delete(c.checkin_id);   // vai para o fim (mais recente)
+  detalhesEmMemoria.set(c.checkin_id, c);
+  if (detalhesEmMemoria.size > MAX_DETALHES) detalhesEmMemoria.delete(detalhesEmMemoria.keys().next().value as string);
+  guardarDetalhes();
+}
+AsyncStorage.getItem(CHAVE_DETALHES).then((t) => {
+  if (!t) return;
+  for (const c of JSON.parse(t) as CheckinDetalhe[]) if (c?.checkin_id && !detalhesEmMemoria.has(c.checkin_id)) detalhesEmMemoria.set(c.checkin_id, c);
+}).catch(() => {});
+export const checkinDetalheEmMemoria = (checkinId: string) => detalhesEmMemoria.get(checkinId) ?? null;
+
+// A foto de um check-in que ainda não está na memória (o calendário só tem a foto): o detalhe
+// abre já mostrando a foto, e o resto entra quando o servidor responde.
+const fotosConhecidas = new Map<string, string>();
+export const lembrarFotoDoCheckin = (checkinId: string, url: string | null | undefined) => { if (url) fotosConhecidas.set(checkinId, url); };
+export const fotoConhecidaDoCheckin = (checkinId: string) => fotosConhecidas.get(checkinId) ?? null;
+
+/** Busca por baixo os detalhes que faltam (3 de cada vez), para o toque abrir pronto. */
+const buscando = new Set<string>();
+export async function preaquecerDetalhes(ids: string[]) {
+  const faltam = ids.filter((id) => !detalhesEmMemoria.has(id) && !buscando.has(id));
+  faltam.forEach((id) => buscando.add(id));
+  const fila = [...faltam];
+  const um = async () => {
+    for (let id = fila.shift(); id; id = fila.shift()) {
+      await checkinDetalhe(id).catch(() => null);
+      buscando.delete(id);
+    }
+  };
+  await Promise.all([um(), um(), um()]);
+}
+/** Um item do mural vira o detalhe dele (mesmos campos; o grupo é o do mural). */
+export function semearCheckinDetalhe(it: ItemMural, grupoId: string) {
+  if (it.tipo !== 'checkin' || !it.checkin_id || detalhesEmMemoria.has(it.checkin_id)) return;
+  lembrarDetalhe({
+    checkin_id: it.checkin_id, user_id: it.user_id, rotina: it.rotina ?? 'am', dia: it.dia,
+    titulo: it.titulo, descricao: it.descricao, hora_exibida: it.hora_exibida, foto_url: it.foto_url,
+    voce: it.voce, grupo_id: grupoId, autora: it.autora, estatisticas: it.estatisticas ?? null,
+  });
+}
 /** null = não existe mais ou ela não pode ver (moderação, bloqueio, saiu do grupo). */
 export const checkinDetalhe = (checkinId: string) =>
   chamar<{ checkin: CheckinDetalhe }>({ acao: 'checkin_detalhe', checkin_id: checkinId })
-    .then((r) => r.checkin)
-    .catch((e: Error) => { if (/não encontrado|HTTP 404/.test(e.message)) return null; throw e; });
+    .then((r) => { lembrarDetalhe(r.checkin); return r.checkin; })
+    .catch((e: Error) => {
+      if (/não encontrado|HTTP 404/.test(e.message)) { detalhesEmMemoria.delete(checkinId); guardarDetalhes(); return null; }
+      throw e;
+    });
 export const grupoDetalhe = (grupoId: string) => chamar<{ grupo: GrupoResumo }>({ acao: 'grupo', grupo_id: grupoId }).then((r) => r.grupo);
 export const muralGrupo = (grupoId: string, antes?: string) =>
   chamar<{ itens: ItemMural[] }>({ acao: 'mural', grupo_id: grupoId, antes }).then((r) => r.itens);

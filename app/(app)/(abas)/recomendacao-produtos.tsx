@@ -20,6 +20,8 @@ import { listColecao, removeFromColecao, requestMissingColecaoCutouts, type Cole
 import { getScanCutouts, requestMissingScanCutouts } from '../../../lib/scanCutouts';
 import { useColecaoToggle } from '../../../hooks/useColecaoToggle';
 import Shelf, { type ShelfHandle } from '../../../components/product/Shelf';
+import { seMudou } from '../../../lib/seMudou';
+import DetalheProduto from '../../../components/product/DetalheProduto';
 import ProdutoEstanteOverlay, { type RetanguloOrigem } from '../../../components/product/ProdutoEstanteOverlay';
 import { ShelfAddButton, ShelfRemoveLink, confirmShelfRemove } from '../../../components/product/ShelfStatus';
 import { getUserId, peekUserId } from '../../../lib/currentUser';
@@ -421,9 +423,11 @@ export default function RecomendacaoProdutos() {
   const aplicarRec = useCallback((r: { passos: any[]; prods: any[] }) => {
     const m = montarRec(r);
     if (m.am.length === 0 && m.pm.length === 0 && m.flat.length === 0) { setState('empty'); return; }
-    setAm(m.am);
-    setPm(m.pm);
-    setRecList(m.flat);
+    // Só muda se mudou (lib/seMudou): reaplicar a mesma recomendação ao voltar para a aba não
+    // re-renderiza a tela inteira.
+    setAm(seMudou(m.am));
+    setPm(seMudou(m.pm));
+    setRecList(seMudou(m.flat));
     setState('ready');
   }, []);
 
@@ -484,7 +488,7 @@ export default function RecomendacaoProdutos() {
         temNaTela: scanTemDado.current,
         aplicar: (items) => {
           scanTemDado.current = true;
-          setScans(items);
+          setScans(seMudou(items));
           setScanState(items.length ? 'ready' : 'empty');
         },
         semDado: () => setScanState('loading'),
@@ -530,7 +534,7 @@ export default function RecomendacaoProdutos() {
   // Produtos escolhidos na rotina — recarrega ao focar (a usuária pode ter trocado na Rotina).
   // (Minha rotina no servidor, por nome do passo — antes era o savedProducts do celular.)
   const reloadSaved = useCallback(() => {
-    getUserId().then((uid) => { if (uid) return sincronizar('salvos', uid, { temNaTela: false, aplicar: setSaved }); }).catch(() => {});
+    getUserId().then((uid) => { if (uid) return sincronizar('salvos', uid, { temNaTela: false, aplicar: (v) => setSaved(seMudou(v as Record<string, SavedProduct>)) }); }).catch(() => {});
   }, []);
   useFocusEffect(useCallback(() => { reloadSaved(); }, [reloadSaved]));
 
@@ -543,7 +547,7 @@ export default function RecomendacaoProdutos() {
       if (!uid) { setColecao([]); setColState('ready'); return; }
       const list = await sincronizar('colecao', uid, {
         temNaTela: colTemDado.current,
-        aplicar: (l) => { colTemDado.current = true; setColecao(l); setColState('ready'); },
+        aplicar: (l) => { colTemDado.current = true; setColecao(seMudou(l)); setColState('ready'); },
         semDado: () => setColState('loading'),
       });
       // Itens vindos de scan antigo sem recorte: pede (cota da sessão) e recarrega a
@@ -571,12 +575,6 @@ export default function RecomendacaoProdutos() {
   useEffect(() => { if (colecao.length === 0) setEditing(false); }, [colecao.length]);
 
   // "Tenho em casa" no detalhe de um recomendado (catálogo) e de um escaneado.
-  const detailSrc = useMemo(() => (detail?.productId ? {
-    origem: 'catalogo' as const, produtoId: detail.productId, nome: detail.name ?? null, marca: detail.brand ?? null,
-    categoria: detail.categoria ?? null, compat: detail.compat ?? null,
-    imagemUrl: detail.img && typeof detail.img === 'object' && 'uri' in detail.img ? detail.img.uri : null,
-  } : null), [detail]);
-  const detailCol = useColecaoToggle(detailSrc, loadColecao);
   const scanSrc = useMemo(() => (scanDetail && scanDetail.result?.status === 'ok' ? {
     origem: 'scan' as const, productScanId: scanDetail.id, nome: scanDetail.name, marca: scanDetail.brand,
     categoria: scanDetail.result?.produto?.categoria ?? null, compat: scanDetail.match,
@@ -1202,66 +1200,12 @@ export default function RecomendacaoProdutos() {
           e a descrição; embaixo, fixo sobre um esmaecido, "Adicionar à estante" (ou o selo
           "Na sua estante"). O "Salvar na minha rotina" saiu (Fase 2 do plano da Rotina):
           o produto de um passo agora se escolhe na própria Rotina, na folha "Escolher produto". */}
-      <Modal visible={!!detail} animationType="slide" onRequestClose={() => setDetail(null)} transparent={false}>
-        <View style={{ flex: 1, backgroundColor: '#F9F2F5' }}>
-          <LinearGradient colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']} locations={[0, 0.3, 0.6, 1]} style={StyleSheet.absoluteFill} />
-          {detail && (() => {
-            const owned = !!detailCol.owned;
-            return (
-              <>
-                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 200 }} showsVerticalScrollIndicator={false}>
-                  <View style={[pd.imgCard, { marginTop: insets.top + 63 }]}>
-                    <ExpoImage source={detail.cutout ? { uri: detail.cutout } : detail.img} style={{ width: 170, height: 196 }} contentFit="contain" accessibilityLabel={detail.name} />
-                  </View>
-                  <View style={{ marginTop: 18, paddingHorizontal: 20 }}>
-                    {detail.compat != null && (
-                      <View style={pd.badge}>
-                        <View style={pd.badgeDot}>
-                          <Svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
-                        </View>
-                        <Text style={pd.badgeText}>{`${detail.compat}% compatível com sua pele`}</Text>
-                      </View>
-                    )}
-                    {!!detail.brand && <Text style={pd.brand}>{detail.brand}</Text>}
-                    <Text style={pd.name} lineBreakStrategyIOS="push-out">{detail.name}</Text>
-                    {/* Faixa de preço: só quando aberto de um recomendado (lib/faixaPreco) */}
-                    {(() => {
-                      const f = detail.recomendado && detail.productId ? faixas.get(detail.productId) : undefined;
-                      return f ? <FaixaPreco faixa={f} linha style={{ marginTop: 10 }} /> : null;
-                    })()}
-                    {!!(detail.targets && detail.targets.length) && (
-                      <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {detail.targets!.map((tg) => (
-                          <View key={tg} style={pd.tag}><Text style={pd.tagText}>{tg}</Text></View>
-                        ))}
-                      </View>
-                    )}
-                    {!!detail.praLong && <Text style={pd.desc} lineBreakStrategyIOS="push-out">{detail.praLong}</Text>}
-                  </View>
-                </ScrollView>
-
-                {/* fechar */}
-                <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setDetail(null); }} style={[pd.close, { top: insets.top + 15 }]} accessibilityLabel="Fechar">
-                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
-                </TouchableOpacity>
-
-                {/* esmaecido + botões fixos */}
-                <LinearGradient pointerEvents="none" colors={['rgba(249,242,245,0)', 'rgba(249,242,245,0.95)', 'rgba(249,242,245,0.95)']} locations={[0, 0.4, 1]} style={pd.fade} />
-                <View style={[pd.actions, { bottom: Math.max(insets.bottom, 20) }]}>
-                  {/* Estante: "Adicionar à estante" ou o selo "Na sua estante" (ShelfStatus —
-                      o mesmo visual do resultado do scan). Lendo o estado: nada. */}
-                  {detailSrc && detailCol.owned !== null && (
-                    <ShelfAddButton owned={owned} busy={detailCol.busy} onAdd={() => { void detailCol.toggle(); }} />
-                  )}
-                  {detailSrc && (
-                    <ShelfRemoveLink owned={owned} busy={detailCol.busy} name={detail.name} onRemove={() => { void detailCol.toggle(); }} style={{ marginTop: 2 }} />
-                  )}
-                </View>
-              </>
-            );
-          })()}
-        </View>
-      </Modal>
+      <DetalheProduto
+        item={detail}
+        faixa={detail?.recomendado && detail.productId ? faixas.get(detail.productId) : undefined}
+        onClose={() => setDetail(null)}
+        onColecaoMudou={loadColecao}
+      />
 
       {/* ── Detalhe de PRODUTO ESCANEADO ────────────────────────────────────────
           MESMA tela do resultado do scan (`app/(scan)/product-result.tsx`): as duas

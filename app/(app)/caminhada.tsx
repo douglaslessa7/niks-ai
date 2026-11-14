@@ -2,7 +2,7 @@ import { useAcesso } from '../../lib/acesso';
 import { paywallDaMedalha } from '../../lib/trava';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTelaFocada } from '../../hooks/useTelaFocada';
-import { View, Text, Image, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Image, StyleSheet, TouchableOpacity, Pressable, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
 import Animated, {
   Easing, ReduceMotion, cancelAnimation, interpolateColor, scrollTo, useAnimatedReaction, useAnimatedRef,
-  useAnimatedScrollHandler, useAnimatedStyle, useFrameCallback, useReducedMotion, useSharedValue, withDelay,
+  useAnimatedProps, useAnimatedScrollHandler, useAnimatedStyle, useFrameCallback, useReducedMotion, useSharedValue, withDelay,
   withSpring, withTiming, type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
@@ -65,7 +65,6 @@ const eo = Easing.bezier(...EO);
 const eio = Easing.bezier(...EIO);
 const gaveta = Easing.bezier(...GAVETA);
 const VISTO_KEY = (uid: string) => `caminhada:total_visto:${uid}`;
-const PASSEIO_KEY = (uid: string) => `caminhada:passeio_visto:${uid}`;
 
 // Mola do design (ζ, resposta em s) → física do Reanimated.
 function spr(z: number, r: number, velocity = 0, eps = 0.5) {
@@ -76,11 +75,27 @@ function spr(z: number, r: number, velocity = 0, eps = 0.5) {
   };
 }
 
-/** Texto que acompanha os pontos animados sem re-renderizar a tela inteira. */
+/**
+ * Texto que acompanha os pontos animados. Desenhado no UI thread (12/nov/2026): antes cada
+ * número novo virava um `setState` no JS — 3 contadores, quadro a quadro, justo na subida de
+ * nível — e a tela engasgava. `fmtFn` é um worklet.
+ */
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 function Vivo({ xp, fmtFn, style }: { xp: SharedValue<number>; fmtFn: (v: number) => string; style: any }) {
-  const [v, setV] = useState(() => Math.round(xp.get()));
-  useAnimatedReaction(() => Math.round(xp.get()), (n, prev) => { if (n !== prev) scheduleOnRN(setV, n); });
-  return <Text style={style}>{fmtFn(v)}</Text>;
+  const props = useAnimatedProps(() => {
+    const t = fmtFn(Math.round(xp.get()));
+    return { text: t, defaultValue: t } as any;
+  });
+  return (
+    <AnimatedTextInput
+      editable={false}
+      pointerEvents="none"
+      underlineColorAndroid="transparent"
+      defaultValue={fmtFn(Math.round(xp.get()))}
+      animatedProps={props}
+      style={[{ padding: 0, margin: 0 }, style]}
+    />
+  );
 }
 
 type Cel = { nivel: Nivel; retro: boolean };
@@ -119,6 +134,13 @@ export default function Caminhada() {
   // do render em que foram agendadas (que podia ser de antes de o estado chegar).
   const D = useRef({ tab: tabela, lim, ic });
   D.current = { tab: tabela, lim, ic };
+  // A trilha já NASCE na posição dela (12/nov/2026): o `scrollTo` depois de montar era ignorado na
+  // 1ª abertura do app (a lista ainda sem tamanho), a tela mostrava o topo (NIKS) até a rede
+  // responder e então saltava. Calculado uma vez, com os pontos guardados no aparelho.
+  const offsetInicial = useRef<number | null>(null);
+  if (offsetInicial.current == null && base?.pontos && lim.length) {
+    offsetInicial.current = sMark(base.pontos.total, lim, ic, vph);
+  }
 
   // ── Estado da animação ──────────────────────────────────────────────────────
   const [nivel, setNivel] = useState<Nivel | null>(null);   // nível exibido (sobe durante a subida)
@@ -126,6 +148,23 @@ export default function Caminhada() {
   const [sheetN, setSheetN] = useState<number | null>(null);
   const [lastSheet, setLastSheet] = useState(5);
   const [cel, setCel] = useState<Cel | null>(null);
+  // Montagem em etapas (12/nov/2026, medido no simulador: abrir a caminhada travava o JS por
+  // ~730 ms e o desenho por ~170 ms — 13 cartas de nível com 9 valores e 8 estilos animados
+  // cada, todas montadas no 1º quadro). Abre só com os níveis em volta do dela (o que aparece
+  // na tela, ±2) e, depois da transição de entrada, monta os outros de 2 em 2, um por quadro.
+  const [raio, setRaio] = useState(2);
+  useEffect(() => {
+    let r = 2;
+    let cancelado = false;
+    const passo = () => {
+      if (cancelado) return;
+      r += 2;
+      setRaio(r);
+      if (r < NIVEIS_TRILHA) requestAnimationFrame(passo);
+    };
+    const t = setTimeout(passo, 450);
+    return () => { cancelado = true; clearTimeout(t); };
+  }, []);
   const [shakes, setShakes] = useState<Record<number, number>>({});
   const [breaks, setBreaks] = useState<Record<number, number>>({});
   const [chipTxt, setChipTxt] = useState('');
@@ -212,20 +251,10 @@ export default function Caminhada() {
 
   // 68b · passeio de abertura — só na PRIMEIRA vez que ela abre a tela (por conta).
   // Nas outras, abre direto no "Você está aqui" e só o marcador pulsa.
-  const passeio = useCallback(async () => {
-    if (rm) return;
-    const ja = uid ? await AsyncStorage.getItem(PASSEIO_KEY(uid)).catch(() => null) : '1';
-    if (ja) { pulsar(); return; }
-    if (uid) AsyncStorage.setItem(PASSEIO_KEY(uid), '1').catch(() => {});
-    touring.current = true;
-    later(350, () => {
-      if (!touring.current) return;
-      rolar(0, 1, 0.6, () => later(380, () => {
-        if (!touring.current) return;
-        rolar(sMark(xp.get(), D.current.lim, D.current.ic, vph), 1, 0.75, () => { touring.current = false; pulsar(); });
-      }));
-    });
-  }, [rm, uid, later, rolar, xp, vph, pulsar]);
+  // ⚠️ Desligado (12/nov/2026, pedido do produto): o passeio subia até o NIKS e voltava, e na
+  // prática rodava a cada abertura do app — parecia a tela "começando no topo e descendo
+  // travada". Agora a caminhada abre direto no "Você está aqui" e só o marcador pulsa.
+  const passeio = useCallback(async () => { pulsar(); }, [pulsar]);
 
   // ── 68e · celebração ───────────────────────────────────────────────────────
   const mostrarCel = useCallback((c: Cel, done?: () => void) => {
@@ -468,6 +497,11 @@ export default function Caminhada() {
       sheetY.set(rm ? 0 : withTiming(0, { duration: 420, easing: gaveta }));
     });
   };
+  // Estável entre renders (12/nov/2026): uma função nova a cada render desfazia o `memo` das 13
+  // cartas e cada passo da subida de nível re-renderizava a trilha inteira.
+  const tocarRef = useRef(tocarCarta);
+  tocarRef.current = tocarCarta;
+  const tocarEstavel = useCallback((n: number) => tocarRef.current(n), []);
   const fecharFolha = () => {
     haptics.tap();
     scrimO.set(withTiming(0, { duration: 280, easing: Easing.ease }));
@@ -547,8 +581,8 @@ export default function Caminhada() {
           <View style={{ alignItems: 'flex-end' }}>
             {/* "NIKS Points" só na linha de baixo (com a unidade nas duas, o nome não cabia).
                 No NIKS (último nível) não há próximo: só o total e "Nível máximo". */}
-            <Vivo xp={xp} fmtFn={(v) => (nivel ? (ultimoNivel ? fmt(v) : `${fmt(v)} / ${fmt(teto)}`) : ' ')} style={styles.hdrXp} />
-            <Vivo xp={xp} fmtFn={(v) => (nivel ? (ultimoNivel ? 'Nível máximo' : `faltam ${fmt(Math.max(0, teto - v))} NIKS Points`) : ' ')} style={styles.hdrFalta} />
+            <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return nivel ? (ultimoNivel ? fmt(v) : `${fmt(v)} / ${fmt(teto)}`) : ' '; }} style={styles.hdrXp} />
+            <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return nivel ? (ultimoNivel ? 'Nível máximo' : `faltam ${fmt(Math.max(0, teto - v))} NIKS Points`) : ' '; }} style={styles.hdrFalta} />
           </View>
         </View>
         <View style={styles.barWrap}>
@@ -568,6 +602,7 @@ export default function Caminhada() {
           onScrollBeginDrag={() => { arrastou.current = true; pararRolagem(); }}
           onTouchStart={() => { if (touring.current) pararRolagem(); }}
           refreshControl={puxar}
+          contentOffset={{ x: 0, y: offsetInicial.current ?? 0 }}
           contentContainerStyle={{ height: CONTENT_H }}
         >
           <View style={{ position: 'absolute', left: ox, top: 0, width: 393, height: CONTENT_H }}>
@@ -575,6 +610,7 @@ export default function Caminhada() {
             <View style={styles.railBase} />
             <Animated.View style={[styles.rail, railSt]} />
             {tabela.slice(0, NIVEIS_TRILHA).map((lv) => {
+              if (Math.abs(lv.n - naTrilha) > raio) return null; // ainda não montado (ver `raio`)
               const locked = lv.n > L;
               const isIcon = lv.n === NIVEIS_TRILHA;
               return (
@@ -585,7 +621,7 @@ export default function Caminhada() {
                     n={lv.n} locked={locked} isCurrent={lv.n === naTrilha} isIcon={isIcon}
                     left={CARD_LEFT} top={cardTop(lv.n)} rolando={rolando} vph={vph}
                     shakeKey={shakes[lv.n] ?? 0} breakKey={breaks[lv.n] ?? 0} rm={rm}
-                    onTap={locked ? () => tocarCarta(lv.n) : undefined}
+                    onTap={locked ? tocarEstavel : undefined}
                   />
                   <View pointerEvents="none" style={[styles.nameBlock, { top: cardTop(lv.n) + 192 }]}>
                     <Text style={[styles.lvName, { color: locked ? MUTE : INK }]}>{lv.titulo}</Text>
@@ -600,7 +636,7 @@ export default function Caminhada() {
               <View style={styles.markerDot} />
               <View style={styles.bubble}>
                 <Text style={styles.bubbleTop}>Você está aqui</Text>
-                <Vivo xp={xp} fmtFn={(v) => `${fmt(v)} NIKS Points`} style={styles.bubbleXp} />
+                <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return `${fmt(v)} NIKS Points`; }} style={styles.bubbleXp} />
               </View>
             </Animated.View>
           </View>
@@ -720,10 +756,10 @@ const RastroDoVoo = memo(function RastroDoVoo({ flying, tick, chipX, chipY, rast
   return null;
 });
 
-function RotuloNivel({ n, texto, cor, xp, lim, ic }: { n: number; texto: string; cor: string; xp: SharedValue<number>; lim: Limites; ic: Icone }) {
+const RotuloNivel = memo(function RotuloNivel({ n, texto, cor, xp, lim, ic }: { n: number; texto: string; cor: string; xp: SharedValue<number>; lim: Limites; ic: Icone }) {
   const st = useAnimatedStyle(() => ({ opacity: lim.length && Math.abs(xpY(xp.get(), lim, ic) - dotY(n)) < 34 ? 0 : 1 }), [lim, ic, n]);
   return <Animated.Text style={[styles.dotLabel, { top: dotY(n) - 7, color: cor }, st]}>{texto}</Animated.Text>;
-}
+});
 
 
 const styles = StyleSheet.create({

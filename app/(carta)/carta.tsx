@@ -1,5 +1,5 @@
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
-import { irPara, sairPorCimaDoApp } from '../../lib/navegar';
+import { irParaFim, sairPorCimaDoApp } from '../../lib/navegar';
 import { paywallAposCarta } from '../../lib/trava';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, Alert, AppState, BackHandler, useWindowDimensions } from 'react-native';
@@ -16,7 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 import {
-  Blur, BlurStyle, Canvas, Group, Paint, PaintStyle, Path as SkiaPath, Picture, Skia, TileMode,
+  Blur, Canvas, Group, Paint, PaintStyle, Path as SkiaPath, Picture, Skia, TileMode,
   createPicture, notifyChange, useImage, vec, type SkImage,
 } from '@shopify/react-native-skia';
 import { haptics } from '../../lib/haptics';
@@ -137,9 +137,9 @@ const ALERTA_ESCURO = '#D3263A';
 // A Carta 2 não tem o brilho branco da Carta 1 (nada festivo): só a sombra escura.
 const SOMBRA_ALERTA = '0px 0px 26px 2px rgba(253,58,66,0.35), 0px 22px 44px rgba(60,0,16,0.50)';
 // Transição de alerta (ms desde o "Continuar" da Carta 1): a carta sai (240), o fundo vira o
-// rosa-escuro (500), "Mas nem tudo são boas notícias, <nome>." 300–1250 com o batimento,
-// "Encontramos algo que precisa da sua atenção." 1400–2300, a Carta 2 entra aos 2500.
-const TRANS = { sai: 240, escurece: 500, t1: 300, t1Fora: 1250, t2: 1400, t2Fora: 2300, fim: 2500 };
+// rosa-escuro (500), "<nome>, encontramos algo sério na sua análise." 300–2300 com o batimento
+// (frase única desde 12/nov/2026, pedido do produto), a Carta 2 entra aos 2500.
+const TRANS = { sai: 240, escurece: 500, t1: 300, t1Fora: 2300, fim: 2500 };
 // Entrada da Carta 2 (alerta, não prêmio): surge no centro com um tranco curto (0,92 → 1,04 em
 // 120 ms, ease-out; depois assenta em 1 sem sobra) e um tremor leve logo em seguida.
 const TRANCO_MS = 120;
@@ -343,7 +343,9 @@ export default function CartaScreen() {
   // uma 2ª cópia do app como FOLHA — a tela "descia" com um vão em cima (12/nov/2026,
   // lib/navegar). Com destino, o `irPara` fecha a carta e só então navega.
   const fechar = (entao?: () => void) => {
-    if (depois) { irPara(depois as any, entao); return; }
+    // Fim de um fluxo (check-in, skincare): `irParaFim` tira o fluxo da pilha antes (o voltar do
+    // grupo — ou a Caminhada ao fechar — não cai mais na câmera do check-in).
+    if (depois) { irParaFim(depois as any, entao); return; }
     if (entao) { sairPorCimaDoApp(entao); return; }   // volta para onde ela estava, e então…
     if (router.canGoBack()) router.back();
     else router.replace('/(app)/home' as any);
@@ -497,6 +499,11 @@ export default function CartaScreen() {
   // ── Estado da tela (só o que muda a UI; nada por quadro) ──────────────────
   const [phase, setPhaseJS] = useState<Phase>('enter');
   const [progress, setProgress] = useState(0);
+  // O quanto já raspou, no UI thread (12/nov/2026): a barra do "Continuar" acompanha daqui. O
+  // estado `progress` só muda ao destravar (e nos recomeços) — antes mudava a cada 4 movimentos
+  // do dedo e a tela inteira re-renderizava enquanto ela raspava.
+  const progSV = useSharedValue(0);
+  const avisouDestravou = useSharedValue(false);
   const [hint, setHint] = useState(false);
   const [recs, setRecs] = useState(false);
   const [btnShown, setBtnShown] = useState(false);
@@ -537,10 +544,10 @@ export default function CartaScreen() {
   const txt1 = useSharedValue(0), txt2 = useSharedValue(0), luz = useSharedValue(0);
   const bob = useSharedValue(0), maoO = useSharedValue(0), maoX = useSharedValue(0);
   const [handOb, setHandOb] = useState(false);
-  // As duas cartas: `escuro` = o rosa-escuro da transição (fica na Carta 2); `txt3`/`txt4` = os
-  // dois textos da transição; `tremor` = o deslocamento X do tremor da Carta 2; `borda`/`pulso`
+  // As duas cartas: `escuro` = o rosa-escuro da transição (fica na Carta 2); `txt3` = o
+  // texto da transição; `tremor` = o deslocamento X do tremor da Carta 2; `borda`/`pulso`
   // = a borda rosa-escuro pulsando; `festa` = 0 tira as partículas (worklets leem aqui).
-  const escuro = useSharedValue(0), txt3 = useSharedValue(0), txt4 = useSharedValue(0);
+  const escuro = useSharedValue(0), txt3 = useSharedValue(0);
   const tremor = useSharedValue(0), borda = useSharedValue(0), pulso = useSharedValue(0), festa = useSharedValue(1);
   // Na revelação o título vira "Sua pele aparenta N anos" (a idade do resultado).
   const [tituloIdade, setTituloIdade] = useState(false);
@@ -565,14 +572,14 @@ export default function CartaScreen() {
     useAppStore.getState().setEtapaCartaOb('alerta');
     festa.set(0); parts.set([]);
     saindoOb.current = false;
-    setPhaseJS('enter'); setProgress(0); setHint(false); setBtnShown(false); setHandOb(false); setNumOb(null); setTituloIdade(false); setRevelada(false);
+    setPhaseJS('enter'); setProgress(0); progSV.set(0); avisouDestravou.set(false); setHint(false); setBtnShown(false); setHandOb(false); setNumOb(null); setTituloIdade(false); setRevelada(false);
     scratch.set(Skia.Path.Make()); last.set(null);
     grid.set(new Array(COLS * ROWS).fill(0)); cleared.set(0); moves.set(0); down.set(false);
     foilO.set(1); foilS.set(1); foilBlur.set(0); flash.set(0); sheen.set(0);
     lift.set(0); tx.set(0); ty.set(0); ph.set(PH_ENTER);
     fx0.set(0); fy0.set(0); fs0.set(1); fp.set(1); fs.set(1); fr.set(1);
     y.set(0); ry.set(0); rz.set(0); glow.set(0); raysO.set(0); bob.set(0); luz.set(0);
-    txt1.set(0); txt2.set(0); txt3.set(0); txt4.set(0); maoO.set(0); head.set(0);
+    txt1.set(0); txt2.set(0); txt3.set(0); maoO.set(0); head.set(0);
     tremor.set(0); pulso.set(0); borda.set(0);
     if (imediato) { veil.set(1); escuro.set(1); }
     o.set(0);
@@ -631,8 +638,6 @@ export default function CartaScreen() {
     });
     later(TRANS.t1 + 140, () => haptics.action());    // …e médio
     later(TRANS.t1Fora, () => txt3.set(withTiming(0, { duration: 200, easing: EO, reduceMotion: ReduceMotion.Never })));
-    later(TRANS.t2, () => txt4.set(withTiming(1, { duration: 260, easing: EO, reduceMotion: ReduceMotion.Never })));
-    later(TRANS.t2Fora, () => txt4.set(withTiming(0, { duration: 200, easing: EO, reduceMotion: ReduceMotion.Never })));
     later(TRANS.sai + 60, () => setFaceAlerta(true));   // a Carta 1 já sumiu: troca a frente
     later(TRANS.fim, () => bootAlerta());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -665,8 +670,8 @@ export default function CartaScreen() {
     if (st.etapaCartaOb === 'alertaRaspada') { router.back(); return; }   // o loading abre a "Calma"
     if (st.etapaCartaOb === 'boaRaspada' || st.etapaCartaOb === 'alerta') { veil.set(1); bootAlerta(true); return; }
     irEtapa('boa'); setFaceAlerta(false); festa.set(1);
-    escuro.set(0); txt3.set(0); txt4.set(0); tremor.set(0); borda.set(0); pulso.set(0);
-    setPhaseJS('enter'); setProgress(0); setHint(false); setRecs(false); setBtnShown(false); setHandOb(false); setNumOb(null); setTituloIdade(false); setRevelada(false);
+    escuro.set(0); txt3.set(0); tremor.set(0); borda.set(0); pulso.set(0);
+    setPhaseJS('enter'); setProgress(0); progSV.set(0); avisouDestravou.set(false); setHint(false); setRecs(false); setBtnShown(false); setHandOb(false); setNumOb(null); setTituloIdade(false); setRevelada(false);
     scratch.set(Skia.Path.Make()); last.set(null);
     grid.set(new Array(COLS * ROWS).fill(0)); cleared.set(0); moves.set(0); down.set(false);
     foilO.set(1); foilS.set(1); foilBlur.set(0); flash.set(0); sheen.set(0);
@@ -747,7 +752,7 @@ export default function CartaScreen() {
     cancelAnimationFrame(numRaf.current);
     if (obMode) { bootOb(); return; }
     const cfg = CARTAS[tipo];
-    setPhaseJS('enter'); setProgress(0); setHint(false); setRecs(false); setBtnShown(false); setPacote(null);
+    setPhaseJS('enter'); setProgress(0); progSV.set(0); avisouDestravou.set(false); setHint(false); setRecs(false); setBtnShown(false); setPacote(null);
     setNum(cfg.to ?? 0); setSecs(6720);
     scratch.set(Skia.Path.Make()); last.set(null);
     grid.set(new Array(COLS * ROWS).fill(0)); cleared.set(0); moves.set(0); down.set(false);
@@ -842,22 +847,27 @@ export default function CartaScreen() {
   });
   const partPic = useDerivedValue(() => {
     const list = parts.get();
+    // 12/nov/2026 (tranco na entrada da carta): antes cada partícula criava, a CADA quadro,
+    // um Paint novo e — nas brancas — um filtro de desfoque (MaskFilter) novo, o que pesava
+    // justamente no voo da carta (rastro de 2 partículas por quadro). Agora: dois Paints e uma
+    // estrela de raio 1 por quadro, e o "halo" das brancas é um círculo rosa translúcido maior
+    // (sem desfoque). A estrela é desenhada escalando a de raio 1.
+    const p = Skia.Paint();
+    const sh = Skia.Paint();
+    sh.setColor(Skia.Color('rgba(255,94,168,1)'));
+    const estrela = Skia.Path.Make();
+    estrela.moveTo(0, -1); estrela.quadTo(0, 0, 1, 0); estrela.quadTo(0, 0, 0, 1); estrela.quadTo(0, 0, -1, 0); estrela.quadTo(0, 0, 0, -1);
     return createPicture((cv) => {
       for (const q of list) {
         const a = Math.max(0, 1 - q.life / q.max);
-        const p = Skia.Paint();
-        if (q.c === '#FFFFFF') {
-          const sh = Skia.Paint();
-          sh.setColor(Skia.Color('rgba(255,94,168,0.6)')); sh.setAlphaf(0.6 * a);
-          sh.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 2, true));
-          if (q.star) { /* sombra só nos pontos, como no design */ } else cv.drawCircle(q.x, q.y, q.s / 2 + 1, sh);
+        if (q.c === '#FFFFFF' && !q.star) {
+          sh.setAlphaf(0.22 * a);
+          cv.drawCircle(q.x, q.y, q.s / 2 + 2, sh);
         }
         p.setColor(Skia.Color(q.c)); p.setAlphaf(a);
         if (q.star) {
           const r = q.s * 1.9;
-          const path = Skia.Path.Make();
-          path.moveTo(0, -r); path.quadTo(0, 0, r, 0); path.quadTo(0, 0, 0, r); path.quadTo(0, 0, -r, 0); path.quadTo(0, 0, 0, -r);
-          cv.save(); cv.translate(q.x, q.y); cv.rotate((q.rot * 180) / Math.PI, 0, 0); cv.drawPath(path, p); cv.restore();
+          cv.save(); cv.translate(q.x, q.y); cv.rotate((q.rot * 180) / Math.PI, 0, 0); cv.scale(r, r); cv.drawPath(estrela, p); cv.restore();
         } else {
           cv.drawCircle(q.x, q.y, q.s / 2, p);
         }
@@ -930,7 +940,7 @@ export default function CartaScreen() {
   };
 
   const reveal = useCallback(() => {
-    setPhaseJS('revealed'); setHint(false); setProgress(1);
+    setPhaseJS('revealed'); setHint(false); setProgress(1); progSV.set(1);
     haptics.success();
     if (srvMode) {
       setRevelada(true);
@@ -1033,13 +1043,10 @@ export default function CartaScreen() {
   }, [obMode]);
   const onScratching = useCallback(() => { setPhaseJS('scratching'); setHint(false); }, []);
 
-  const tilt = (px: number, py: number, max: number) => {
-    'worklet';
-    if (rm) return;
-    const x = Math.min(1, Math.max(0, px / CW)), yy = Math.min(1, Math.max(0, py / CH));
-    tx.set(withSpring(-(yy - 0.5) * 2 * max * 0.8, spr(1, 0.3)));
-    ty.set(withSpring((x - 0.5) * 2 * max, spr(1, 0.3)));
-  };
+  // Sem inclinar a carta sob o dedo (13/nov/2026). O giro 3D (rotateX/Y com perspectiva) faz o
+  // iOS desenhar a carta como uma imagem deformada: ela ficava serrilhada, em baixa resolução,
+  // durante toda a raspagem e só voltava nítida ~1 s depois da revelação, quando o giro voltava
+  // a 0. Raspadinha de verdade fica parada na mesa — e o traço agora cai exatamente sob o dedo.
   const untilt = () => {
     'worklet';
     if (rm) return;
@@ -1048,7 +1055,11 @@ export default function CartaScreen() {
   const measure = () => {
     'worklet';
     const p = cleared.get() / (COLS * ROWS);
-    scheduleOnRN(setProgress, p);
+    progSV.set(p);
+    if (p >= UNLOCK && !avisouDestravou.get()) {
+      avisouDestravou.set(true);
+      scheduleOnRN(setProgress, p);
+    }
     if (p >= UNLOCK && ph.get() < PH_REVEALED) {
       ph.set(PH_REVEALED);
       down.set(false);
@@ -1113,13 +1124,11 @@ export default function CartaScreen() {
       } else {
         scratchAt(e.x, e.y);
       }
-      tilt(e.x, e.y, 7);
     })
     .onUpdate((e) => {
       const p = ph.get();
       if (!down.get() || p === PH_ENTER || p >= PH_REVEALED) return;
       if (p === PH_READY || p === PH_SCRATCH) scratchAt(e.x, e.y);
-      if (ph.get() < PH_REVEALED) tilt(e.x, e.y, 7);
     })
     .onFinalize(() => {
       const was = down.get();
@@ -1204,7 +1213,6 @@ export default function CartaScreen() {
   const txt1Style = useAnimatedStyle(() => ({ opacity: txt1.get(), transform: [{ translateY: (1 - txt1.get()) * 8 }] }));
   const txt2Style = useAnimatedStyle(() => ({ opacity: txt2.get(), transform: [{ translateY: (1 - txt2.get()) * 8 }] }));
   const txt3Style = useAnimatedStyle(() => ({ opacity: txt3.get(), transform: [{ translateY: rm ? 0 : (1 - txt3.get()) * 8 }] }));
-  const txt4Style = useAnimatedStyle(() => ({ opacity: txt4.get(), transform: [{ translateY: rm ? 0 : (1 - txt4.get()) * 8 }] }));
   const escuroStyle = useAnimatedStyle(() => ({ opacity: escuro.get() }));
   const luzStyle = useAnimatedStyle(() => ({ opacity: luz.get(), transform: [{ scale: 0.25 + 0.45 * luz.get() }] }));
   // Mãozinha: vai e vem 56 pt em cima da carta, inclinando junto (o gesto de raspar).
@@ -1288,7 +1296,9 @@ export default function CartaScreen() {
     setTipo(ORDEM_CARTAS[(i + 1) % ORDEM_CARTAS.length]);
     setRun((r) => r + 1);
   };
-  const fill = unlocked ? 0 : Math.min(1, progress / UNLOCK);
+  const fillSt = useAnimatedStyle(() => ({
+    transform: [{ scaleX: withTiming(unlocked ? 0 : Math.min(1, progSV.get() / UNLOCK), { duration: 220, easing: Easing.bezier(0.23, 1, 0.32, 1) }) }],
+  }), [unlocked]);
 
   const hh = Math.floor(secs / 3600), mm = Math.floor((secs % 3600) / 60);
   const ease = CSS_EO;
@@ -1323,10 +1333,7 @@ export default function CartaScreen() {
             Encontramos algo bom na sua análise.
           </Animated.Text>
           <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 48, left: 32, right: 32 }, txt3Style]}>
-            {nome ? `Mas nem tudo são boas notícias, ${nome}.` : 'Mas nem tudo são boas notícias.'}
-          </Animated.Text>
-          <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 48, left: 32, right: 32 }, txt4Style]}>
-            Encontramos algo que precisa da sua atenção.
+            {nome ? `${nome}, encontramos algo sério na sua análise.` : 'Encontramos algo sério na sua análise.'}
           </Animated.Text>
           <Animated.View pointerEvents="none" style={[styles.luz, { left: stageX + CW / 2 - LUZ / 2, top: stageY + CH / 2 - LUZ / 2 }, luzStyle]} />
         </>
@@ -1604,12 +1611,7 @@ export default function CartaScreen() {
             transitionDuration: 240,
           }]}
         >
-          <Animated.View
-            style={[styles.btnFill, {
-              transform: [{ scaleX: fill }],
-              transitionProperty: 'transform', transitionDuration: 220, transitionTimingFunction: ease,
-            } as any]}
-          />
+          <Animated.View style={[styles.btnFill, fillSt]} />
           <Animated.Text style={[styles.btnText, { color: obMode ? (naAlerta ? VERMELHO_ALERTA : PINK) : unlocked ? '#FFFFFF' : '#B5B5B5', transitionProperty: 'color', transitionDuration: 240 }, obMode && { fontWeight: '700' }]}>
             {obMode ? (naBoa ? 'Continuar' : 'Quero resolver isso') : 'Continuar'}
           </Animated.Text>

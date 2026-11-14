@@ -1,4 +1,5 @@
 import '../global.css';
+import MedidorFps from '../components/debug/MedidorFps'; // TEMP-FPS
 import { useEffect, useState } from 'react';
 import { AppState, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
@@ -54,6 +55,14 @@ const TELAS_SEM_GESTO = new Set([
   'paywall-soft', 'signup',
   'bv-entrou', 'bv-rotina', 'bv-foto', 'bv-projecao', 'bv-pacto', 'bv-recompensa', 'bv-sequencia', 'bv-nivel',
 ]);
+/** O `(onboarding)` está na pilha raiz (o scan aberto é o do onboarding)? */
+function sobreOnboarding(navigation: { getState?: () => { routes?: { name: string }[] } | undefined }): boolean {
+  try {
+    return Boolean(navigation.getState?.()?.routes?.some((r) => r.name === '(onboarding)'));
+  } catch {
+    return false;
+  }
+}
 /** Nome da tela aberta dentro de um grupo (a rota do grupo na pilha raiz). */
 function telaAberta(route: { state?: { index?: number; routes?: { name: string }[] }; params?: object }): string | undefined {
   const st = route.state;
@@ -388,8 +397,12 @@ export default function RootLayout() {
                     {/* Quando a tela aberta é a ÚNICA da pilha do grupo (ex.: o loading que substituiu
                         a câmera), quem decide o gesto de voltar é ESTA pilha, não a do grupo: sem isto,
                         arrastar a borda fecharia o scan inteiro no meio da análise (10/nov/2026). */}
-                    <Stack.Screen name="(scan)" options={({ route }) => ({ gestureEnabled: !TELAS_SEM_GESTO.has(telaAberta(route) ?? '') })} />
-                    <Stack.Screen name="(onboarding)" options={({ route }) => ({ gestureEnabled: !TELAS_SEM_GESTO.has(telaAberta(route) ?? '') })} />
+                    {/* Onboarding SEM gesto de voltar (12/nov/2026, pedido do produto): arrastar a borda
+                        tirava da pilha o GRUPO inteiro e a pessoa voltava quase o onboarding todo. No
+                        onboarding só a setinha volta, e só uma tela. O `(scan)` também fica sem gesto
+                        quando está por cima do onboarding (scan-prep, carta, personalização, demo). */}
+                    <Stack.Screen name="(scan)" options={({ route, navigation }) => ({ gestureEnabled: !TELAS_SEM_GESTO.has(telaAberta(route) ?? '') && !sobreOnboarding(navigation) })} />
+                    <Stack.Screen name="(onboarding)" options={{ gestureEnabled: false }} />
                     {/* Carta de raspar: abre POR CIMA do app (o app desfocado fica atrás) */}
                     <Stack.Screen
                       name="(carta)"
@@ -404,6 +417,7 @@ export default function RootLayout() {
                 <GuiaHost />
                 {/* Barra de nível no topo para os NIKS Points ganhos sem carta (regras novas). */}
                 <BarraPontosHost />
+                {(__DEV__ || process.env.EXPO_PUBLIC_MEDIR_FPS === '1') && <MedidorFps />}{/* TEMP-FPS */}
               </SafeAreaProvider>
             </GestureHandlerRootView>
           </CustomPurchaseControllerProvider>

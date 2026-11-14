@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { BackHandler, Image, Text, View, useWindowDimensions } from 'react-native';
+import { BackHandler, Text, View, useWindowDimensions } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import Animated, {
   Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { ListChecks, ScanFace, ShoppingBag } from 'lucide-react-native';
+import { ListChecks, ScanFace, ShoppingBag, Trophy } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import BalancedText from '../../components/BalancedText';
@@ -19,7 +19,7 @@ import { OB_STEPS } from '../../components/onboarding/kit';
 // isso") e da "Calma, <nome>.", antes do resultado do scan. Réplica da trilha do Tapfit ("Como funciona")
 // na identidade do NIKS: "SEU CAMINHO" · título em 2 linhas (a 1ª leve, a 2ª em destaque) ·
 // "Montamos cada passo." · trilha sinuosa com 3 pontos (ícone em círculo + texto, alternando
-// de lado) terminando na flor do NIKS com halo · "Meta estimada…" · "Quero chegar lá".
+// de lado) terminando no troféu (círculo rosa com halo) · "Meta estimada…" · "Quero chegar lá".
 // O texto vem da MESMA carta que ela viu (`lib/cartaOnboarding.ts`): nunca um número fixo.
 //
 // Animação: partiu da MEDIDA no vídeo de 60 fps do Tapfit (04/nov/2026) e, a pedido do
@@ -73,7 +73,6 @@ const FLOR = 36;        // círculo rosa da flor
 const HALO = 62;
 const FIM_BAIXO = 46;   // da flor até o fim da área (o texto final desce um pouco)
 const GAP_TXT = 12;
-const LOGO_BRANCO = require('../../assets/onboarding/niks-logo-branco-v3.png');
 
 /** Catmull-Rom → cúbicas: curva suave passando pelos pontos. */
 function caminho(pts: [number, number][]) {
@@ -331,7 +330,7 @@ export default function SeuCaminho() {
                 </View>
               </Animated.View>
 
-              {/* A flor do NIKS no fim, com halo; o texto final à esquerda dela */}
+              {/* O troféu no fim (era a flor do NIKS), com halo; o texto final à esquerda dela */}
               <Animated.View pointerEvents="none" style={[grupo(xF, yF), florStyle]}>
                 <View style={{
                   position: 'absolute', left: xF - HALO / 2, top: yF - HALO / 2, width: HALO, height: HALO,
@@ -351,7 +350,7 @@ export default function SeuCaminho() {
                     }, brilhoStyle]} />
                     <View style={{ width: FLOR + 5, height: FLOR + 5, borderRadius: (FLOR + 5) / 2, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
                       <View style={{ width: FLOR, height: FLOR, borderRadius: FLOR / 2, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}>
-                        <Image source={LOGO_BRANCO} style={{ width: 24, height: 24 }} />
+                        <Trophy size={19} color="#FFFFFF" strokeWidth={2.2} />
                       </View>
                     </View>
                   </Animated.View>

@@ -9,7 +9,7 @@ import Animated, {
   Easing, useAnimatedReaction, useAnimatedScrollHandler, useAnimatedStyle, useReducedMotion,
   useSharedValue, withDelay, withSequence, withTiming, type SharedValue,
 } from 'react-native-reanimated';
-import { ListChecks, ScanFace, ShoppingBag } from 'lucide-react-native';
+import { ListChecks, ScanFace, ShoppingBag, Trophy } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 import { CONCERN_LABELS } from '../../components/onboarding/answers';
 import { useAppStore } from '../../store/onboarding';
@@ -322,7 +322,6 @@ const HALO = 62;
 const FIM_BAIXO = 46;
 const GAP_TXT = 12;
 const JORNADA_H = 400;        // a altura máxima da trilha no "Seu caminho"
-const LOGO_BRANCO = require('../../assets/onboarding/niks-logo-branco-v3.png');
 // Os tempos do "Seu caminho" contados do 1º ponto (lá, 396 ms depois da entrada da tela).
 const J = { p1: 378, linha: [100, 560] as const, p2: 275, p3: 408, flor: 570, destaque: 1034 };
 const LINHA_CURVA = Easing.bezier(0.5, 0.25, 0.55, 1);
@@ -523,7 +522,7 @@ function Jornada({ cam, telaW, modo, reduce }: { cam: CaminhoOnboarding; telaW: 
             }, brilhoStyle]} />
             <View style={{ width: FLOR + 5, height: FLOR + 5, borderRadius: (FLOR + 5) / 2, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
               <View style={{ width: FLOR, height: FLOR, borderRadius: FLOR / 2, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' }}>
-                <Image source={LOGO_BRANCO} style={{ width: 24, height: 24 }} />
+                <Trophy size={19} color="#FFFFFF" strokeWidth={2.2} />
               </View>
             </View>
           </Animated.View>

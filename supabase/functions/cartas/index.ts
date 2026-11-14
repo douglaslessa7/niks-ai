@@ -60,13 +60,19 @@ async function detalhes(supabase: Supa, userId: string, ids: string[]) {
 
 // Regras novas: os pontos retroativos (uma vez por conta) entram ANTES da marca — depois
 // dela as rotinas novas não têm carta 'rotina:am|pm' e contariam de novo nessa conta.
-async function marcarV2(supabase: Supa, userId: string) {
+async function marcarV2(supabase: Supa, userId: string, appPontos = false) {
   {
     const { error } = await supabase.rpc('aplicar_pontos_retro', { p_uid: userId })
     if (error) throw error
   }
   const { error } = await supabase.rpc('marcar_regras_v2', { p_uid: userId })
   if (error) throw error
+  // `regras: 3` (1.62 (2)+, migration 20261208120000): o app entende o modo pontos — a conta
+  // entra nele (NIKS Points na comemoração, carta só de poder). Uma vez por conta.
+  if (appPontos) {
+    const { error: e3 } = await supabase.rpc('marcar_app_pontos', { p_uid: userId })
+    if (e3) throw e3
+  }
 }
 
 serve(async (req) => {
@@ -80,7 +86,9 @@ serve(async (req) => {
 
   const body = await req.json().catch(() => ({}))
   const acao = String(body?.acao ?? '')
-  const v2 = Number(body?.regras) === 2
+  // 2 = regras novas; 3 = regras novas + o app entende o modo pontos (1.62 (2)+).
+  const v2 = Number(body?.regras) >= 2
+  const appPontos = Number(body?.regras) >= 3
   const supabase = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
 
   try {
@@ -95,7 +103,7 @@ serve(async (req) => {
         const { error } = await supabase.rpc('aplicar_pontos_retro', { p_uid: userId })
         if (error) throw error
       }
-      if (v2) await marcarV2(supabase, userId)
+      if (v2) await marcarV2(supabase, userId, appPontos)
       // 3. Rotinas feitas sem internet.
       const novas: string[] = []
       if (Array.isArray(body?.pendentes)) {
@@ -120,7 +128,7 @@ serve(async (req) => {
       const periodo = body?.periodo === 'pm' ? 'pm' : body?.periodo === 'am' ? 'am' : null
       if (!periodo) return json({ error: 'periodo inválido' }, 400)
       if (v2) {
-        await marcarV2(supabase, userId)
+        await marcarV2(supabase, userId, appPontos)
         const { data, error } = await supabase.rpc('concluir_rotina_v2', { p_uid: userId, p_periodo: periodo })
         if (error) throw error
         const [carta] = data?.carta ? await detalhes(supabase, userId, [data.carta]) : []
@@ -149,8 +157,8 @@ serve(async (req) => {
 
     if (acao === 'regras') {
       if (!v2) return json({ error: 'regras inválidas' }, 400)
-      await marcarV2(supabase, userId)
-      return json({ ok: true, regras: 2 })
+      await marcarV2(supabase, userId, appPontos)
+      return json({ ok: true, regras: appPontos ? 3 : 2 })
     }
 
     // Desafios do primeiro acesso (08/nov/2026, migration 20261113120000): o progresso sai dos
@@ -159,7 +167,7 @@ serve(async (req) => {
     // 1 por dia. `marcar: 'guia'` grava que ela começou os desafios. Só nas regras novas.
     if (acao === 'missoes') {
       if (!v2) return json({ error: 'regras inválidas' }, 400)
-      await marcarV2(supabase, userId)
+      await marcarV2(supabase, userId, appPontos)
       const marcar = body?.marcar
       if (marcar === 'guia') {
         const { error } = await supabase.rpc('missoes_marcar', { p_uid: userId, p_o: marcar })
@@ -176,7 +184,7 @@ serve(async (req) => {
     // nova; repetir não faz nada (`{ ok: false, motivo }`).
     if (acao === 'boas_vindas') {
       if (!v2) return json({ error: 'regras inválidas' }, 400)
-      await marcarV2(supabase, userId)
+      await marcarV2(supabase, userId, appPontos)
       const { data, error } = await supabase.rpc('boas_vindas', { p_uid: userId })
       if (error) throw error
       return json(data)

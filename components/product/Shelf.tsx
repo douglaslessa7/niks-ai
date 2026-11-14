@@ -6,6 +6,7 @@ import Svg, { Path, Circle, Defs, RadialGradient, Stop, Rect, Ellipse } from 're
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing, cancelAnimation, runOnJS, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
@@ -98,7 +99,7 @@ function firstFree(taken: { s: number; x: number; w: number }[], w: number): She
 }
 
 // ── Miniatura arrastável ──────────────────────────────────────────────────────
-function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, oculto, onStart, onMove, onDrop, onTap }: {
+const ShelfItem = memo(function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, oculto, onStart, onMove, onDrop, onTap }: {
   p: Prod; cx: number; by: number; nonce: number; k: number; z: number; editing: boolean; semArraste: boolean; oculto: boolean;
   onStart: (id: string) => void;
   onMove: (id: string, cx: number, by: number) => void;
@@ -121,6 +122,10 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, ocul
   const sy = useSharedValue(1);
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
+  // Último ponto avisado ao JS: o alvo da queda só é recalculado a cada 3 pt de movimento,
+  // não a cada quadro (12/nov/2026, arraste mais leve).
+  const avisoX = useSharedValue(-1e4);
+  const avisoY = useSharedValue(-1e4);
 
   // Vai (ou volta) para o lugar dela: "left" desacelera, "top" acelera (cai).
   useEffect(() => {
@@ -153,6 +158,7 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, ocul
       dragging.value = 1;
       startX.value = cx.value;
       startY.value = by.value;
+      avisoX.value = -1e4; avisoY.value = -1e4;
       lift.value = withTiming(1.12, { duration: 120 });
       runOnJS(onStart)(p.id);
     })
@@ -162,7 +168,10 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, ocul
       by.value = startY.value + e.translationY / k;
       const r = clamp((e.velocityX / k) * 0.026, -12, 12);
       rot.value = r * 0.6 + rot.value * 0.4;
-      runOnJS(onMove)(p.id, cx.value, by.value);
+      if (Math.abs(cx.value - avisoX.value) >= 3 || Math.abs(by.value - avisoY.value) >= 3) {
+        avisoX.value = cx.value; avisoY.value = by.value;
+        runOnJS(onMove)(p.id, cx.value, by.value);
+      }
     })
     .onFinalize(() => {
       if (!dragging.value) return; // toque/segurada que não virou arraste
@@ -185,10 +194,10 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, ocul
     if (ok) runOnJS(tocou)();
   });
 
+  // O lugar dela fica no left/top (muda só quando ela muda de lugar); o arraste e a ida
+  // até lá são um translate a partir dele — sem refazer o layout a cada quadro.
   const boxStyle = useAnimatedStyle(() => ({
-    left: cx.value - p.w / 2,
-    top: by.value - p.h,
-    transform: [{ scale: lift.value }, { scaleX: sx.value }, { scaleY: sy.value }, { rotate: `${rot.value + wig.value}deg` }],
+    transform: [{ translateX: cx.value - tcx }, { translateY: by.value - tby }, { scale: lift.value }, { scaleX: sx.value }, { scaleY: sy.value }, { rotate: `${rot.value + wig.value}deg` }],
   }));
   // Sombra no chão: desce e clareia quando o produto está no ar.
   const groundStyle = useAnimatedStyle(() => {
@@ -212,7 +221,7 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, ocul
         collapsable={false}
         accessibilityRole="button"
         accessibilityLabel={editing ? `Remover ${p.name}` : p.status === 'tenho' ? p.name : `${p.name}, ${STATUS_COLECAO[p.status].rotulo}`}
-        style={[{ position: 'absolute', width: p.w, height: p.h, zIndex: z, transformOrigin: '50% 100%', opacity: oculto ? 0 : 1 }, boxStyle]}
+        style={[{ position: 'absolute', left: tcx - p.w / 2, top: tby - p.h, width: p.w, height: p.h, zIndex: z, transformOrigin: '50% 100%', opacity: oculto ? 0 : 1 }, boxStyle]}
       >
         <Animated.View style={[{ position: 'absolute', left: -p.w * 0.25, width: p.w * 1.5, height: 10 }, groundStyle]} pointerEvents="none">
           <Svg width={p.w * 1.5} height={10}>
@@ -254,17 +263,18 @@ function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, editing, semArraste, ocul
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
 // ── Indicador de onde o produto vai cair (elipse rosa na prateleira) ──────────
-function DropMark({ x, y, w, on }: { x: number; y: number; w: number; on: boolean }) {
+// Movida por valores compartilhados (sem re-render da estante durante o arraste). Elipse
+// de 100 pt escalada na largura do produto; translate em vez de left/top.
+type Marca = { x: SharedValue<number>; y: SharedValue<number>; w: SharedValue<number>; on: SharedValue<number> };
+function DropMark({ m }: { m: Marca }) {
   const style = useAnimatedStyle(() => ({
-    left: withTiming(x, { duration: 120 }),
-    top: withTiming(y, { duration: 120 }),
-    width: withTiming(w, { duration: 120 }),
-    opacity: withTiming(on ? 1 : 0, { duration: 150 }),
-  }), [x, y, w, on]);
-  return <Animated.View pointerEvents="none" style={[{ position: 'absolute', height: 10, borderRadius: 999, backgroundColor: 'rgba(255,94,168,0.28)' }, style]} />;
+    opacity: m.on.get(),
+    transform: [{ translateX: m.x.get() }, { translateY: m.y.get() }, { scaleX: m.w.get() / 100 }],
+  }));
+  return <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: 100, height: 10, borderRadius: 999, backgroundColor: 'rgba(255,94,168,0.28)', transformOrigin: '0% 50%' }, style]} />;
 }
 
 export type ShelfHandle = { share: () => Promise<void> };
@@ -291,7 +301,8 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
   const [pos, setPos] = useState<Record<string, ShelfPos>>({});
   const posRef = useRef<Record<string, ShelfPos>>({});
   const [dragId, setDragId] = useState<string | null>(null);
-  const [drop, setDrop] = useState<{ x: number; y: number; w: number; on: boolean }>({ x: 0, y: 0, w: 0, on: false });
+  const marca: Marca = { x: useSharedValue(0), y: useSharedValue(0), w: useSharedValue(0), on: useSharedValue(0) };
+  const marcaRef = useRef(marca); // os mesmos valores a vida toda
   const [nonce, setNonce] = useState<Record<string, number>>({});
   const [capturing, setCapturing] = useState(false);
   const stageRef = useRef<View>(null);
@@ -372,30 +383,38 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [byId, prods, nShelves]);
 
+  // O mais recente de cada um, para os callbacks do arraste ficarem estáveis (os itens são
+  // `memo`: pegar um produto não re-renderiza os outros).
+  const alvoRef = useRef({ target, byId, onDragActive });
+  alvoRef.current = { target, byId, onDragActive };
   const onStart = useCallback((id: string) => {
-    dragRef.current = id; haptics.select(); setDragId(id); onDragActive(true);
-  }, [onDragActive]);
+    dragRef.current = id; haptics.select(); setDragId(id); alvoRef.current.onDragActive(true);
+  }, []);
   const onMove = useCallback((id: string, cx: number, by: number) => {
     // Um último "movendo" que chegue depois do "soltou" não pode reacender a marca.
     if (dragRef.current !== id) return;
-    const t = target(id, cx, by);
+    const t = alvoRef.current.target(id, cx, by);
     const key = t ? `${t.s}:${t.x}` : 'none';
     if (key === lastTarget.current) return;
     lastTarget.current = key;
+    const m = marcaRef.current;
     if (t) {
-      const dw = (byId.get(id)?.w ?? 40) * 1.8;
-      setDrop({ x: t.x - dw / 2, y: shelfY(t.s) - 5, w: dw, on: true });
+      const dw = (alvoRef.current.byId.get(id)?.w ?? 40) * 1.8;
+      const nova = m.on.get() < 0.01; // acendendo: nasce no lugar, sem deslizar de onde estava
+      const ir = (sv: SharedValue<number>, v: number) => sv.set(nova ? v : withTiming(v, { duration: 120 }));
+      ir(m.x, t.x - dw / 2); ir(m.y, shelfY(t.s) - 5); ir(m.w, dw);
+      m.on.set(withTiming(1, { duration: 150 }));
     } else {
-      setDrop((d) => ({ ...d, on: false }));
+      m.on.set(withTiming(0, { duration: 150 }));
     }
-  }, [target, byId]);
+  }, []);
   const onDrop = useCallback((id: string, cx: number, by: number) => {
     dragRef.current = null;
     lastTarget.current = '';
     setDragId(null);
-    onDragActive(false);
-    setDrop((d) => ({ ...d, on: false }));
-    const t = target(id, cx, by);
+    alvoRef.current.onDragActive(false);
+    marcaRef.current.on.set(withTiming(0, { duration: 150 }));
+    const t = alvoRef.current.target(id, cx, by);
     const cur = posRef.current[id];
     // Só grava se mudou de lugar (soltar no mesmo ponto não escreve nada).
     if (t && (!cur || cur.s !== t.s || cur.x !== t.x)) {
@@ -406,7 +425,7 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
     }
     // Sem vaga → volta para onde estava (o nonce força a animação de volta).
     setNonce((n) => ({ ...n, [id]: (n[id] ?? 0) + 1 }));
-  }, [target, onDragActive]);
+  }, []);
   const onTap = useCallback((id: string, origem: RetanguloOrigem | null) => {
     const c = itemById.get(id);
     if (!c) return;
@@ -525,7 +544,7 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
             </TouchableOpacity>
           </View>
         )}
-        <DropMark {...drop} />
+        <DropMark m={marcaRef.current} />
 
         {/* Espaço "+" (TESTE — ver SHOW_ADD_SLOT): tracejado no tamanho de um produto. */}
         {addSlot && (

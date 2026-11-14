@@ -20,6 +20,7 @@ import { tipoDoPasso } from '../../lib/tipoPasso';
 import { diasDoPasso, seloFrequencia } from '../../lib/frequencia';
 import { janelaDoSkincare, SKINCARE_SEMPRE_DISPONIVEL } from '../../lib/concluirSkincare';
 import { comecarSessao } from '../../lib/sessaoSkincare';
+import { useContaTeste } from '../../lib/contaTeste';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import StepIcon from '../../components/rotina/StepIcon';
 import AlvoGuia from '../../components/coach/AlvoGuia';
@@ -186,15 +187,18 @@ export default function Skincare() {
 
   const dia = diaDaSemana(sessionDate(agora));
   const passos = minha ? minha[periodo].filter((p) => passoValeNoDia(p, dia)) : null;
+  const contaTeste = useContaTeste();
   // ⚠️ Modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`, temporário): só a lista vazia trava.
-  const pode = SKINCARE_SEMPRE_DISPONIVEL
+  // Conta de teste (20261207, `lib/contaTeste`): como o modo de teste — só a lista vazia trava.
+  const livre = SKINCARE_SEMPRE_DISPONIVEL || contaTeste;
+  const pode = livre
     ? !!passos?.length
     : janelaDoSkincare(periodo, agora, amTime, pmTime) && !!passos?.length && !feitaHoje;
 
   // Dica do desafio 4 (lib/guia.ts): fora do horário, o botão fica apagado — o balão diz
   // quando abre ("Seu skincare abre às HH:MM.").
   const guia = useGuia();
-  const foraDoHorario = !SKINCARE_SEMPRE_DISPONIVEL && !!passos?.length && !feitaHoje
+  const foraDoHorario = !livre && !!passos?.length && !feitaHoje
     && !janelaDoSkincare(periodo, agora, amTime, pmTime);
   useEffect(() => {
     if (guia?.passo !== 'd4-concluir' || !foraDoHorario) return;

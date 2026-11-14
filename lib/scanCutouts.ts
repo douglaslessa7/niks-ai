@@ -5,6 +5,7 @@
 // Recorte do catálogo = URL pública (recorte_url); feito na foto = arquivo no bucket
 // privado product-scans (recorte_path) → URL assinada. Sem recorte: o app usa a foto original.
 // ─────────────────────────────────────────────────────────────────────────────
+import { ehContaTeste } from './contaTeste';
 import { supabase } from './supabase';
 
 export type ScanCutout = { url: string | null; w: number | null; h: number | null; status: string | null };
@@ -40,10 +41,10 @@ export async function getScanCutouts(scanIds: string[]): Promise<Record<string, 
 const SESSION_LIMIT = 40;
 const asked = new Set<string>();
 export function scanCutoutBudgetLeft(): number {
-  return Math.max(0, SESSION_LIMIT - asked.size);
+  return ehContaTeste() ? SESSION_LIMIT : Math.max(0, SESSION_LIMIT - asked.size);
 }
 export async function requestScanCutout(scanId: string): Promise<string | null> {
-  if (asked.has(scanId) || asked.size >= SESSION_LIMIT) return null;
+  if (asked.has(scanId) || (asked.size >= SESSION_LIMIT && !ehContaTeste())) return null; // conta de teste: sem teto
   asked.add(scanId);
   try {
     const { data, error } = await supabase.functions.invoke('recortar-produto', { body: { scanId } });

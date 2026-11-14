@@ -28,6 +28,8 @@ const IMAGENS: Record<string, number> = {
   'rosa:0': require('../../assets/medalhas/rosa-0.webp'),
 };
 
+export const IMAGENS_MEDALHA = Object.values(IMAGENS);
+
 const ImagemAnimada = Animated.createAnimatedComponent(Image);
 
 // `estilo`: animação (opacidade, pulso) na própria imagem, sem camada em volta. Opacidade numa

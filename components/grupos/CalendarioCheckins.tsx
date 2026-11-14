@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'expo-router';
-import { View, Text, TouchableOpacity, Image, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { useRouter } from 'expo-router';
+import { View, Text, TouchableOpacity, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
+import { fonteDoCheckin } from '../../lib/fotosRapidas';
+import { abrirComOrigem } from '../../lib/origemZoom';
 import Svg, { Path } from 'react-native-svg';
 import Animated, {
   Easing, useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming,
@@ -8,7 +11,7 @@ import Animated, {
 import { haptics } from '../../lib/haptics';
 import { useCachedQuery } from '../../lib/cache';
 import { useUserId } from '../../lib/currentUser';
-import { chavePerfilGrupos, perfilGrupos, type PerfilGrupos } from '../../lib/gruposServidor';
+import { chavePerfilGrupos, lembrarFotoDoCheckin, perfilGrupos, preaquecerDetalhes, type PerfilGrupos } from '../../lib/gruposServidor';
 import { dateKey, sessionDate } from '../../lib/routineProgress';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +63,9 @@ function Seta({ d, color }: { d: string; color: string }) {
 }
 
 type Props = {
+  /** Para onde o detalhe do check-in volta sem tela atrás. Antes vinha de `usePathname()`, que
+   *  re-renderizava o calendário (montado na aba Grupos) a CADA navegação do app (12/nov/2026). */
+  volta?: string;
   /** Muda a cada abertura da tela: refaz a entrada do card e das fotos. */
   abertura: number;
   rm: boolean;
@@ -70,10 +76,9 @@ type Props = {
   atualizar?: number;
 };
 
-export default function CalendarioCheckins({ abertura, rm, entrada = true, style, atualizar = 0 }: Props) {
+export default function CalendarioCheckins({ abertura, rm, entrada = true, style, atualizar = 0, volta = '/grupos' }: Props) {
   const userId = useUserId();
   const router = useRouter();
-  const pathname = usePathname();
   const hoje = sessionDate();
   const hojeKey = dateKey(hoje);
   const [mes, setMes] = useState(() => new Date(hoje.getFullYear(), hoje.getMonth(), 1));
@@ -122,11 +127,32 @@ export default function CalendarioCheckins({ abertura, rm, entrada = true, style
   const fotos = new Map((carregado ? p.dias : []).map((d) => [d.dia, d.foto_url]));
   // Os check-ins do dia (manhã/noite) → tela de detalhes, voltando para esta tela.
   const doDia = new Map((carregado ? p.dias : []).map((d) => [d.dia, (d.checkins ?? []).map((c) => c.id)]));
+  // O toque abre pronto (12/nov/2026): com o mês na tela, os detalhes dos check-ins dele já vêm
+  // por baixo (e ficam no disco — lib/gruposServidor); a foto de cada dia já fica conhecida.
+  const diasDoMes = carregado ? p.dias : null;
+  useEffect(() => {
+    if (!diasDoMes) return;
+    const ids: string[] = [];
+    for (const d of diasDoMes) {
+      const cs = d.checkins ?? [];
+      if (cs[0]) lembrarFotoDoCheckin(cs[0].id, d.foto_url);
+      for (const c of cs) ids.push(c.id);
+    }
+    ids.reverse();   // os mais recentes primeiro
+    const t = setTimeout(() => { void preaquecerDetalhes(ids); }, 600);   // depois da entrada da tela
+    return () => clearTimeout(t);
+  }, [diasDoMes]);
+  const celulas = useRef(new Map<string, View>());   // células com foto (origem do zoom)
   const abrirDia = (key: string) => {
     const ids = doDia.get(key) ?? [];
     if (!ids.length) return;
     haptics.tap();
-    router.push({ pathname: '/checkin-detalhe', params: { ids: ids.join(','), volta: pathname } } as any);
+    // O detalhe cresce a partir da foto redonda do dia e volta para ela (lib/origemZoom): a
+    // célula é medida e recortada no círculo de 42 pt do meio.
+    const chave = ids.join(',');
+    abrirComOrigem(celulas.current.get(key), chave, 21, () =>
+      router.push({ pathname: '/checkin-detalhe', params: { ids: chave, volta } } as any),
+    (o) => ({ x: o.x + (o.w - 42) / 2, y: o.y + (o.h - 42) / 2, w: 42, h: 42, r: 21 }));
   };
   const inicio = mes.getDay();
   const total = new Date(mes.getFullYear(), mes.getMonth() + 1, 0).getDate();
@@ -168,9 +194,12 @@ export default function CalendarioCheckins({ abertura, rm, entrada = true, style
               if (c.foto) {
                 const ordem = iFoto++;
                 return (
-                  <TouchableOpacity key={c.key} activeOpacity={0.75} disabled={!doDia.get(c.key)?.length} onPress={() => abrirDia(c.key)} style={styles.cell} accessibilityLabel={`Check-in do dia ${c.n}`}>
+                  <TouchableOpacity key={c.key} ref={(r) => { if (r) celulas.current.set(c.key, r); else celulas.current.delete(c.key); }} activeOpacity={0.75} disabled={!doDia.get(c.key)?.length} onPress={() => abrirDia(c.key)} style={styles.cell} accessibilityLabel={`Check-in do dia ${c.n}`}>
                     <Salta delay={trocou ? 60 + ordem * 18 : 260 + ordem * 22} de={trocou ? 0.85 : 0.8} rm={rm} style={[styles.fotoDia, { borderColor: c.today ? PINK : '#fff' }]}>
-                      <Image source={{ uri: c.foto }} style={styles.fotoImg} />
+                      {/* Do cache pela chave estável (o link assinado muda a cada leitura do mês, e a
+                          foto era baixada de novo a cada entrada na aba) ou o arquivo local do
+                          check-in recém-publicado — lib/fotosRapidas (12/nov/2026). */}
+                      <ExpoImage source={fonteDoCheckin(doDia.get(c.key)?.[0], c.foto)} cachePolicy="memory-disk" contentFit="cover" transition={0} style={styles.fotoImg} />
                     </Salta>
                   </TouchableOpacity>
                 );

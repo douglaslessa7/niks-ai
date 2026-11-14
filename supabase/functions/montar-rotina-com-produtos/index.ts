@@ -338,7 +338,11 @@ Deno.serve(async (req) => {
       // Teto: 1 lote por dia (erro não conta).
       const { count } = await supabase.from('rotina_lotes').select('id', { count: 'exact', head: true })
         .eq('user_id', userId).neq('status', 'erro').gte('criado_em', inicioDoDiaBrasilia())
-      if ((count ?? 0) >= 1) return json({ error: 'Você já montou uma rotina hoje.' }, 429)
+      // Conta de teste (20261207, tabela `contas_teste`): sem o teto do dia.
+      if ((count ?? 0) >= 1) {
+        const { data: teste } = await supabase.rpc('eh_conta_teste', { p_uid: userId })
+        if (teste !== true) return json({ error: 'Você já montou uma rotina hoje.' }, 429)
+      }
 
       const { data: lote, error } = await supabase.from('rotina_lotes')
         .insert({ user_id: userId, caminhos, tem_rotulo: temRotulo }).select('id').single()

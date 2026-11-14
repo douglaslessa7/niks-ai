@@ -41,7 +41,8 @@ type Props = {
   /** Muda → o cadeado quebra. */
   breakKey: number;
   rm: boolean;
-  onTap?: () => void;
+  /** Tocou na carta trancada (recebe o nível). Função ESTÁVEL do pai — o `memo` depende disso. */
+  onTap?: (n: number) => void;
 };
 
 function CartaNivel({ n, locked, isCurrent, isIcon, left, top, rolando, vph, shakeKey, breakKey, rm, onTap }: Props) {
@@ -130,7 +131,7 @@ function CartaNivel({ n, locked, isCurrent, isIcon, left, top, rolando, vph, sha
   const pulsoSt = usePulsoMedalha(isCurrent, rm, undefined, rolando);
   return (
     <Animated.View style={[{ position: 'absolute', left, top, width: CARD_W, height: CARD_H }, cardSt]}>
-      <Pressable onPress={onTap} disabled={!onTap} style={StyleSheet.absoluteFill} accessibilityLabel={`Nível ${n}${locked ? ', trancado' : ''}`}>
+      <Pressable onPress={onTap ? () => onTap(n) : undefined} disabled={!onTap} style={StyleSheet.absoluteFill} accessibilityLabel={`Nível ${n}${locked ? ', trancado' : ''}`}>
         {isIcon && <View pointerEvents="none" style={[styles.iconGlow, { experimental_backgroundImage: ICON_GLOW }]} />}
         <View pointerEvents="none" style={styles.center}>
           <Medalha nivel={n} tamanho={MEDALHA} estilo={[pulsoSt, medalhaSt]} />

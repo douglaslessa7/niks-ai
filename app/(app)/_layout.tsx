@@ -3,12 +3,13 @@ import BalaoEspinha from '../../components/espinha/BalaoEspinha';
 import { buscarConvite } from '../../lib/espinhaAcompanhamento';
 import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import { abrirComTrilha, irPara } from '../../lib/navegar';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { Easing, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import { GlassView } from 'expo-glass-effect';
+import AvisoAtualizacao from '../../components/AvisoAtualizacao';
 import { useVidroNavbar } from '../../lib/vidroNavbar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
@@ -32,7 +33,7 @@ import { preaquecerApp } from '../../lib/preaquecer';
 import { getUserId } from '../../lib/currentUser';
 import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
-import { finishProdutosTutorial, useProdutosTutorialPending } from '../../lib/produtosTutorial';
+import { finishProdutosTutorial, marcarProdutosTutorialVisto, useProdutosTutorialPending } from '../../lib/produtosTutorial';
 import AvisoLote from '../../components/rotina/AvisoLote';
 import ConvitePendente from '../../components/grupos/ConvitePendente';
 import ToquePush from '../../components/ToquePush';
@@ -42,7 +43,7 @@ import { useGuia } from '../../lib/guia';
 import { comecarDesafios } from '../../lib/missoes';
 import TutorialOverlay, { PreaquecerVeu } from '../../components/coach/TutorialOverlay';
 import {
-  avancarTutorialGrupos, registrarParada, retomarTutorialGrupos, useEtapaTutorialGrupos,
+  avancarTutorialGrupos, registrarParada, retomarTutorialGrupos, saiuDaTelaDoTutorialGrupos, useEtapaTutorialGrupos,
 } from '../../lib/gruposTutorial';
 
 // ── Bottom navbar — réplica da `nav` "splitHouse" da tela 57d do Claude Design
@@ -62,13 +63,13 @@ import {
 // e o `setTabBarVisible(true)` do blur deixava a navbar por cima da câmera.
 const TELA_CHEIA = new Set([
   '/checkin', '/skincare', '/checkin-detalhe', '/calendario', '/conquistas',
-  '/dica-do-dia', '/grupo-jornada', '/grupo-ranking', '/niks-chat',
+  '/dica-do-dia', '/grupo-jornada', '/grupo-ranking', '/niks-chat', '/convidar-grupo',
 ]);
 // Telas secundárias: pilha nativa por cima das abas (ver o render de AppLayout).
 const TELAS_DA_PILHA = [
   'set-name', 'skin-result', 'calendario', 'conquistas', 'alarme', 'progresso', 'dica-do-dia',
   'caminhada', 'seus-grupos', 'grupo', 'grupo-ranking', 'grupo-jornada', 'checkin', 'skincare',
-  'skincare-sessao', 'revisao-denuncias', 'produto-amiga', 'checkin-detalhe',
+  'skincare-sessao', 'revisao-denuncias', 'produto-amiga', 'checkin-detalhe', 'convidar-grupo',
 ];
 // Rolagem horizontal ou grade que se arrasta de lado: voltar só pela borda esquerda.
 const SO_BORDA = new Set(['skin-result', 'calendario', 'conquistas', 'progresso', 'grupo-ranking', 'checkin-detalhe', 'alarme']);
@@ -534,6 +535,11 @@ export default function AppLayout() {
     produtosTutorialPending &&
     produtosStageReady;
 
+  // Apareceu: já conta como visto no servidor (fechar o app no meio não o traz de volta).
+  useEffect(() => {
+    if (showProdutosCoachMarks) void marcarProdutosTutorialVisto();
+  }, [showProdutosCoachMarks]);
+
   // ── Tutorial dos Grupos: obrigatório, um de cada vez, atravessa até 3 telas ────────
   const etapaGrupos = useEtapaTutorialGrupos();
   const convidadaNoApp = useEhConvidada();
@@ -565,6 +571,17 @@ export default function AppLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etapaGrupos?.chave, gruposLiberado]);
 
+  // Saiu da tela do trecho com ele já à vista (um push, um link, o voltar do Android): o
+  // tutorial não fica pendurado para recomeçar na volta — segue para o próximo trecho, se ela
+  // foi para a tela dele, ou conta como visto (13/nov/2026: "cada tutorial só uma vez").
+  const trechoMostrado = useRef<string | null>(null);
+  useEffect(() => {
+    if (showGruposTutorial && etapaGrupos) { trechoMostrado.current = etapaGrupos.chave; return; }
+    if (!etapaGrupos || trechoMostrado.current !== etapaGrupos.chave || pathname === etapaGrupos.rota) return;
+    trechoMostrado.current = null;
+    saiuDaTelaDoTutorialGrupos(pathname);
+  }, [showGruposTutorial, etapaGrupos, pathname]);
+
   // Aquece o Skia antes do 1º tutorial/dica: conta nova logo na entrada (o tour vem em
   // seguida); as demais, depois que a home assentou. Sai depois de desenhar.
   const [aquecer, setAquecer] = useState(false);
@@ -578,6 +595,30 @@ export default function AppLayout() {
     return () => { clearTimeout(liga); clearTimeout(desliga); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
+
+  // A pilha não depende de nada desta tela (opções fixas): memorizada, um re-render do layout
+  // (navbar, rota, store) não reprocessa as ~20 telas a cada navegação (12/nov/2026).
+  const pilha = useMemo(() => (
+    <Stack screenOptions={{ headerShown: false, fullScreenGestureEnabled: true }}>
+      <Stack.Screen name="(abas)" />
+      {TELAS_DA_PILHA.map((name) => (
+        <Stack.Screen
+          key={name}
+          name={name}
+          options={name === 'convidar-grupo' ? { presentation: 'modal' } // folha nativa (12/nov/2026)
+            // Detalhe do check-in (12/nov/2026): por cima da tela de trás, que aparece enquanto ela
+            // puxa para baixo para sair; a entrada e a saída são da própria tela.
+            : name === 'checkin-detalhe' ? { presentation: 'transparentModal', animation: 'none', gestureEnabled: false }
+            : SEM_ANIMACAO.has(name) ? { gestureEnabled: false, animation: 'fade', animationDuration: 380 }
+            : SEM_GESTO.has(name) ? { gestureEnabled: false } : SO_BORDA.has(name) ? { fullScreenGestureEnabled: false } : undefined}
+          // Uma cópia só de cada tela na pilha (abrir de novo tira a antiga); o grupo e o
+          // detalhe do check-in, uma por grupo/check-in.
+          dangerouslySingular={name === 'grupo' ? (_n, p) => `grupo:${p?.id ?? ''}`
+            : name === 'checkin-detalhe' ? (_n, p) => `cd:${p?.ids ?? ''}` : true}
+        />
+      ))}
+    </Stack>
+  ), []);
 
   if (!ready) return null;
 
@@ -594,30 +635,24 @@ export default function AppLayout() {
           aparece por baixo). De qualquer ponto da tela, exceto onde há rolagem horizontal
           (`SO_BORDA`: aí só da borda). Sem gesto nenhum no check-in e no skincare em andamento
           (`SEM_GESTO`), onde voltar perderia o que está sendo feito — lá só o botão. */}
-      <Stack screenOptions={{ headerShown: false, fullScreenGestureEnabled: true }}>
-        <Stack.Screen name="(abas)" />
-        {TELAS_DA_PILHA.map((name) => (
-          <Stack.Screen
-            key={name}
-            name={name}
-            options={SEM_ANIMACAO.has(name) ? { gestureEnabled: false, animation: 'fade', animationDuration: 380 }
-              : SEM_GESTO.has(name) ? { gestureEnabled: false } : SO_BORDA.has(name) ? { fullScreenGestureEnabled: false } : undefined}
-            // Uma cópia só de cada tela na pilha (abrir de novo tira a antiga); o grupo e o
-            // detalhe do check-in, uma por grupo/check-in.
-            dangerouslySingular={name === 'grupo' ? (_n, p) => `grupo:${p?.id ?? ''}`
-              : name === 'checkin-detalhe' ? (_n, p) => `cd:${p?.ids ?? ''}` : true}
-          />
-        ))}
-      </Stack>
+      {pilha}
       {/* A navbar volta com um esmaecimento curto (12/nov/2026): ao sair de uma tela cheia (a
-          comemoração do skincare, a câmera…) ela não "pisca" por cima da tela que ainda está saindo. */}
+          comemoração do skincare, a câmera…) ela não "pisca" por cima da tela que ainda está saindo.
+          E sai do mesmo jeito: abrindo o detalhe do check-in, ela sumia de uma vez no 1º quadro.
+          ⚠️ 13/nov/2026: entra e sai DESLIZANDO (só translateY), nunca com opacidade. A casa e a
+          pílula são Liquid Glass (`GlassView`): montadas por baixo de uma opacidade < 1 (o FadeIn
+          de antes), o vidro não desenha — voltando das Conquistas o círculo da casa sumia. */}
       {navbarVisivel && (
-        <Animated.View entering={FadeIn.duration(320)} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+        <Animated.View entering={SlideInDown.duration(320).easing(Easing.bezier(0.23, 1, 0.32, 1))} exiting={SlideOutDown.duration(200)} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
           <GlobalBottomBar />
         </Animated.View>
       )}
       {aquecer && <PreaquecerVeu />}
       {navbarVisivel && !showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && !convidadaNoApp && <BalaoEspinha />}
+      {/* Pop-up "Nova versão do NIKS" (13/nov/2026): só na Home carregada, assinante (a convidada
+          fica de fora), sem tutorial nem desafio na tela. */}
+      <AvisoAtualizacao liberado={splashDone && ready && !needsName && !pendingShare && pathname === '/home' && coachStageReady
+        && !convidadaNoApp && !(homeTutorialPending && !homeTutorialSeen) && !guiaAtiva && !tutorialGruposAtivo} />
       {/* ⚠️ DEPOIS da navbar e IRMÃO dela, de propósito: o tutorial precisa
           escurecer a tela inteira, navbar inclusive (designs 58/59). Dentro da
           `home.tsx` ele ficaria ABAIXO da navbar por mais zIndex que levasse

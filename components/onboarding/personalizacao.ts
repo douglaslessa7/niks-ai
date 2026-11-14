@@ -67,10 +67,10 @@ export const PERGUNTAS: Record<ComOpcoes, Pergunta> = {
     titulo: 'Alguns ativos precisam ser evitados. Você está:',
     campo: 'pregnancy_status',
     opcoes: [
-      { label: 'Grávida', value: 'pregnant' },
-      { label: 'Amamentando', value: 'breastfeeding' },
-      { label: 'Tentando engravidar', value: 'trying' },
       { label: 'Nenhuma das opções', value: 'none' },
+      { label: 'Tentando engravidar', value: 'trying' },
+      { label: 'Amamentando', value: 'breastfeeding' },
+      { label: 'Grávida', value: 'pregnant' },
     ],
   },
   alergia: {

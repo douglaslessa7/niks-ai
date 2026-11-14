@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "video/capturas/.storyboard.html"
+        ],
+        "createdAt": "2026-11-13T20:44:44.545Z",
+        "reason": "Claude: storyboard interno renderizado em PNG; miniaturas 'fora do vídeo' esmaecidas de propósito para indicar que não entram no vídeo"
+      }
+    ]
+  }
+}

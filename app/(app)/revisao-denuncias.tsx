@@ -1,5 +1,7 @@
 // Revisão de denúncias (Parte B, Fase 2). Tela escondida, aberta pelo push: quem não está em
 // `moderadores` recebe "sem_permissão" do servidor e volta para a home. A trava é do servidor.
+import { Image as ExpoImage } from 'expo-image';
+import { fonteEstavel } from '../../lib/fotosRapidas';
 import { voltar as voltarOu } from '../../lib/navegar';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -67,7 +69,7 @@ export default function RevisaoDenuncias() {
       {lista?.length === 0 && <Text style={styles.vazio}>Nenhuma denúncia aberta.</Text>}
       {lista?.map((d) => (
         <View key={d.id} style={styles.card}>
-          {d.foto_url && <Image source={{ uri: d.foto_url }} style={styles.foto} resizeMode="cover" />}
+          {d.foto_url && <ExpoImage source={fonteEstavel(d.foto_url)} cachePolicy="memory-disk" style={styles.foto} contentFit="cover" />}
           <Text style={styles.linha}>{d.tipo === 'foto' ? 'Foto' : 'Integrante'} de {d.alvo ?? 'conta apagada'}, no grupo {d.grupo ?? 'apagado'}</Text>
           <Text style={styles.detalhe}>Denunciada por {d.denunciante ?? 'conta apagada'} em {new Date(d.criado_em).toLocaleString('pt-BR')}</Text>
           {!!d.motivo && <Text style={styles.detalhe}>Motivo: {d.motivo}</Text>}

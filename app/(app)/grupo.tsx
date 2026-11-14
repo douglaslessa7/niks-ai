@@ -1,12 +1,17 @@
+import { preaquecerSubtelasGrupo } from '../../lib/preaquecerSubtelasGrupo';
 import { saiuSemGrupo } from '../../lib/acesso';
+import ConvidarAposCheckin from '../../components/grupos/ConvidarAposCheckin';
+import { ehContaTeste } from '../../lib/contaTeste';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Pressable, ActionSheetIOS, Alert, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, Pressable, ActionSheetIOS, Alert, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image as ExpoImage } from 'expo-image';
+import { fonteDoCheckin, fonteEstavel, preaquecerFotos } from '../../lib/fotosRapidas';
+import { abrirComOrigem } from '../../lib/origemZoom';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
   Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSpring, withTiming,
@@ -14,20 +19,19 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
-import { useCachedQuery } from '../../lib/cache';
-import { useUserId } from '../../lib/currentUser';
+import { useCachedQuery, writeCache } from '../../lib/cache';
+import { getUserId, useUserId } from '../../lib/currentUser';
 import { useEstadoCartas } from '../../lib/cartasServidor';
 import {
   bloquear, chaveGrupo, denunciar, grupoDetalhe, invalidarGrupos, muralGrupo, rankingGrupo,
-  removerIntegrante, sairDoGrupo, type GrupoResumo, type Integrante, type ItemMural, type LinhaRanking,
+  removerIntegrante, sairDoGrupo, semearCheckinDetalhe, type GrupoResumo, type Integrante, type ItemMural, type LinhaRanking,
 } from '../../lib/gruposServidor';
-import { enviarConvite, type Canal } from '../../lib/convite';
 import { BANNERS_GRUPO } from './seus-grupos';
 import { sessionDate, dateKey } from '../../lib/routineProgress';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { MiniaturasProdutos, resumoEstatisticas, tituloEstatisticas } from '../../components/grupos/EstatisticasCheckin';
 import { onCoachPrepare, useCoachStage } from '../../lib/coachMarks';
-import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
+import { useEtapaTutorialGrupos, verificarTutorialGrupos } from '../../lib/gruposTutorial';
 import { voltar as voltarOu } from '../../lib/navegar';
 import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
@@ -65,6 +69,7 @@ const MESES_C = ['jan.', 'fev.', 'mar.', 'abr.', 'maio', 'jun.', 'jul.', 'ago.',
 const ICO = {
   trofeu: ['M6 9H4.5a2.5 2.5 0 0 1 0-5H6', 'M18 9h1.5a2.5 2.5 0 0 0 0-5H18', 'M4 22h16', 'M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22', 'M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22', 'M18 2H6v7a6 6 0 0 0 12 0V2Z'],
   rota: ['M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15'],
+  compartilhar: ['M12 2v13', 'm16 6-4-4-4 4', 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8'],
   invite: ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6'],
   flag: ['M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7'],
   block: ['M4.9 4.9l14.2 14.2', 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z'],
@@ -117,6 +122,27 @@ async function carregar(gid: string): Promise<DadosGrupo> {
   return { grupo, mural, semana };
 }
 
+/**
+ * Deixa o grupo PRONTO antes de abrir (12/nov/2026): lê do servidor, grava no cache da tela e
+ * baixa as fotos (banner, mural, integrantes). Chamado ao publicar o check-in, enquanto o botão
+ * ainda gira — o grupo abre com o check-in novo e as fotos na tela, sem o "0 check-ins" e as
+ * fotos chegando depois. Nunca espera mais que `limiteMs`.
+ */
+export async function preaquecerGrupo(gid: string, limiteMs = 1500): Promise<void> {
+  const fim = Date.now() + limiteMs;
+  const tudo = (async () => {
+    const uid = await getUserId();
+    if (!uid) return;
+    const d = await carregar(gid);
+    await writeCache(chaveGrupo(uid, gid), d);
+    const avatares = [...(d.grupo?.integrantes ?? []).map((m) => m.foto), ...d.mural.slice(0, 8).map((m) => m.autora?.foto)]
+      .filter((u): u is string => !!u);
+    if (avatares.length) void ExpoImage.prefetch([...new Set(avatares)], 'memory-disk').catch(() => false);
+    await preaquecerFotos([d.grupo?.banner_url, ...d.mural.slice(0, 6).map((m) => m.foto_url)], Math.max(0, fim - Date.now()));
+  })().catch(() => {});
+  await Promise.race([tudo, new Promise<void>((r) => setTimeout(r, limiteMs))]);
+}
+
 function rotuloDia(dia: string, hoje: string): string {
   const d = new Date(`${dia}T12:00:00`);
   return dia === hoje ? `Hoje, ${DIAS_SEM[d.getDay()].toLowerCase()}` : `${DIAS_SEM[d.getDay()]}, ${d.getDate()} de ${MESES_C[d.getMonth()]}`;
@@ -125,25 +151,24 @@ const hora = (iso: string) => { const d = new Date(iso); return `${d.getHours()}
 const curta = (d: Date) => `${d.getDate()} de ${MESES_C[d.getMonth()]}`;
 
 // Banner do topo (212): o degradê do grupo (ou a foto), a flor em padrão de 26 e uma grande à direita.
-function BannerTopo({ g, w, h }: { g: GrupoResumo | undefined; w: number; h: number }) {
+// O padrão é UMA imagem já pronta (`estampa-flores`, flores brancas de 26 pt em 480 × 320 pt,
+// cortada pelo banner) — antes eram ~130 <Image> (uma por flor), montadas no 1º quadro da entrada
+// da tela: era um dos trancos ao abrir o grupo (13/nov/2026). O `resizeMode="repeat"` não serve:
+// na nova arquitetura do iOS ele desenha só a 1ª flor. Só redesenha se o banner mudar.
+const LADRILHO = require('../../assets/grupos/estampa-flores.png');
+const BannerTopo = memo(function BannerTopo({ g, w, h }: { g: GrupoResumo | undefined; w: number; h: number }) {
   const rosa = g?.banner !== 'niks-1';
-  const cols = Math.floor(w / 26), rows = Math.floor(h / 26);
-  const gx = cols > 1 ? (w - cols * 26) / (cols - 1) : 0, gy = rows > 1 ? (h - rows * 26) / (rows - 1) : 0;
   return (
     <View style={{ height: h, overflow: 'hidden', experimental_backgroundImage: rosa ? BANNERS_GRUPO[1].bg : BANNERS_GRUPO[0].bg }}>
-      {g?.banner === 'foto' && g.banner_url ? <ExpoImage source={{ uri: g.banner_url }} style={StyleSheet.absoluteFill} contentFit="cover" /> : (
+      {g?.banner === 'foto' && g.banner_url ? <ExpoImage source={fonteEstavel(g.banner_url)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" /> : (
         <>
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { opacity: 0.16 }]}>
-            {Array.from({ length: rows }).map((_, r) => Array.from({ length: cols }).map((__, c) => (
-              <Image key={`${r}-${c}`} source={LOGO} style={{ position: 'absolute', left: c * (26 + gx), top: r * (26 + gy), width: 26, height: 26, tintColor: '#fff' }} />
-            )))}
-          </View>
+          <Image source={LADRILHO} style={{ position: 'absolute', left: 0, top: 0, width: 480, height: 320, opacity: 0.16 }} />
           <Image source={LOGO} style={{ position: 'absolute', right: -34, top: 40, width: 190, height: 192, tintColor: '#fff', opacity: 0.32 }} />
         </>
       )}
     </View>
   );
-}
+}, (a, b) => a.w === b.w && a.h === b.h && a.g?.banner === b.g?.banner && a.g?.banner_url?.split('?')[0] === b.g?.banner_url?.split('?')[0]);
 
 /** Só o 1º item do mural é alvo do tutorial (duas instâncias da mesma chave se apagam). */
 const AlvoItem = ({ primeiro, children }: { primeiro: boolean; children: React.ReactNode }) =>
@@ -157,7 +182,7 @@ export default function Grupo() {
   const { width: W } = useWindowDimensions();
   const rm = useReducedMotion();
   const userId = useUserId();
-  const { id, de } = useLocalSearchParams<{ id?: string; de?: string }>();
+  const { id, de, convidar } = useLocalSearchParams<{ id?: string; de?: string; convidar?: string }>();
   // `router.back()` numa aba oculta cai na home (1ª aba): o destino é explícito.
   const voltar = () => voltarOu(de === 'home' ? '/home' : '/seus-grupos');
   const gid = typeof id === 'string' ? id : '';
@@ -172,15 +197,19 @@ export default function Grupo() {
   const y = (v: number) => insets.top + v - 54;
   const bannerH = y(212);
 
-  const [run, setRun] = useState(0);
+  // A entrada toca só na primeira abertura: ao voltar do check-in, do ranking ou do convite a
+  // tela já está pronta, sem apagar e subir de novo (12/nov/2026).
+  const run = 0;
   useFocusEffect(
     useCallback(() => {
       setTabBarTheme('light');
-      setRun((n) => n + 1);
       void refresh?.();
       if (gid) AsyncStorage.setItem(`grupo:visto:${gid}`, new Date().toISOString()).catch(() => {});
       if (gid) verificarTutorialGrupos('/grupo', gid);
-      return () => fecharFolha(true);
+      // Ranking e Jornada já com dado e imagens quando ela tocar (depois da entrada desta tela).
+      // 1,3 s: depois da cascata de entrada (até ~1 s); antes, aos 0,6 s, disputava os quadros com ela.
+      const tAquecer = gid ? setTimeout(() => preaquecerSubtelasGrupo(gid), 1300) : null;
+      return () => { if (tAquecer) clearTimeout(tAquecer); fecharFolha(true); };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [gid])
   );
@@ -188,6 +217,7 @@ export default function Grupo() {
   // Tutorial dos Grupos: palco pronto com ESTE grupo carregado; a rolagem acompanha as paradas.
   useCoachStage('grupo', g?.id === gid);
   const rolagem = useRef<ScrollView | null>(null);
+  const fotosMural = useRef(new Map<string, View>());   // miniaturas dos check-ins (origem do zoom)
   const muralY = useRef(0);
   useEffect(() => onCoachPrepare((alvo) => {
     rolagem.current?.scrollTo({ y: alvo === 'mural' ? Math.max(0, muralY.current - 90) : 0, animated: false });
@@ -231,16 +261,44 @@ export default function Grupo() {
   };
   const depois = async () => { await invalidarGrupos(gid); void refresh?.(); };
 
+  // Convite depois do check-in (12/nov/2026): publicou o check-in do skincare num grupo só dela →
+  // o pop-up para convidar as amigas. Só com o grupo carregado, ela ainda sozinha nele e sem o
+  // tutorial do grupo na tela; uma vez (o parâmetro é limpo).
+  // ⚠️ O pedido fica num ref e o agendamento NÃO é cancelado quando o parâmetro some: limpar
+  // o parâmetro re-roda o efeito, e o cleanup cancelava o pop-up antes de ele abrir (bug visto no
+  // iPhone, 12/nov/2026).
+  const [convite, setConvite] = useState(false);
+  const pedidoConvite = useRef(false);
+  const etapaTutorial = useEtapaTutorialGrupos();
+  useEffect(() => {
+    if (convidar !== '1') return;
+    pedidoConvite.current = true;
+    router.setParams({ convidar: undefined } as any);
+  }, [convidar]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!pedidoConvite.current || !g || etapaTutorial) return;
+    pedidoConvite.current = false;
+    if (g.total > 1) return;
+    setTimeout(() => setConvite(true), 500);
+  }, [convidar, g, etapaTutorial]);
+  // A tela de convite (`convidar-grupo`): o botão Compartilhar do topo, o "Convidar amigas" do
+  // menu "…" e o do pop-up depois do check-in levam todos a ela.
+  const abrirConvite = () => {
+    if (!gid) return;
+    router.push({ pathname: '/convidar-grupo', params: { id: gid } } as any);
+  };
+  const convidarAmigas = () => {
+    setConvite(false);
+    setTimeout(abrirConvite, 200);
+  };
+
   const acaoMenu = (k: string) => {
     haptics.tap();
     if (!g) return;
     fecharFolha(false, () => {
       if (k === 'invite') {
-        const canais: Canal[] = ['whatsapp', 'instagram', 'copiar'];
-        ActionSheetIOS.showActionSheetWithOptions(
-          { title: 'Convidar amigas', options: ['WhatsApp', 'Instagram', 'Copiar link', 'Cancelar'], cancelButtonIndex: 3 },
-          (i) => { if (i < 3) enviarConvite(canais[i], g.id, g.nome).then((r) => { if (r.copiado) Alert.alert('Link copiado'); }).catch(() => Alert.alert('Não deu para gerar o convite agora')); },
-        );
+        // A tela de convite (12/nov/2026), no lugar da folha antiga "WhatsApp / Instagram / Copiar link".
+        abrirConvite();
       } else if (k === 'flag') {
         escolher('Denunciar integrante', outras, (m) => Alert.alert(`Denunciar ${m.nome}?`, 'A equipe do NIKS vai analisar em até 24 horas.', [
           { text: 'Cancelar', style: 'cancel' },
@@ -311,7 +369,7 @@ export default function Grupo() {
     if (ult && ult.dia === it.dia) ult.itens.push(it); else dias.push({ dia: it.dia, itens: [it] });
   }
   const minhasHoje = new Set((data?.mural ?? []).filter((m) => m.tipo === 'checkin' && m.voce && m.dia === hoje).map((m) => m.rotina));
-  const feito = minhasHoje.has('am') && minhasHoje.has('pm');
+  const feito = !ehContaTeste() && minhasHoje.has('am') && minhasHoje.has('pm'); // conta de teste: sem "feitos"
   let iIn = 3;
 
   return (
@@ -324,14 +382,16 @@ export default function Grupo() {
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); voltar(); }} style={[styles.roundBtn, { top: y(58), left: 16 }]} accessibilityLabel="Voltar">
             <Icon d={['m15 18-6-6 6-6']} size={20} color={INK} sw={2.2} />
           </TouchableOpacity>
+          {/* Compartilhar (12/nov/2026): separado do "…" e em destaque — abre a tela de convite. */}
+          <TouchableOpacity activeOpacity={0.8} onPress={() => { haptics.tap(); abrirConvite(); }} style={[styles.roundBtn, styles.compartilharBtn, { top: y(58), right: 16 + 36 + 10 }]} accessibilityLabel="Compartilhar o grupo" disabled={!gid}>
+            <Icon d={ICO.compartilhar} size={18} color="#FFFFFF" sw={2.2} />
+          </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.7} onPress={() => abrirFolha({ tipo: 'menu' })} style={[styles.roundBtn, { top: y(58), right: 16 }]} accessibilityLabel="Mais opções">
             <AlvoGuia chave="grupo-menu"><Dots size={20} color={INK} r={1.8} /></AlvoGuia>
           </TouchableOpacity>
-          {/* Puxar para atualizar: o banner opaco cobre o indicador do sistema; este fica
-              entre o voltar e o "…" enquanto atualiza. */}
-          {puxar.props.refreshing && (
-            <ActivityIndicator color="#FF5EA8" pointerEvents="none" style={{ position: 'absolute', top: y(58) + 9, alignSelf: 'center' }} />
-          )}
+          {/* Puxar para atualizar: só o indicador do sistema (o `RefreshControl`, lá em cima).
+              O 2º indicador que ficava aqui, entre o voltar e o "…", saiu (12/nov/2026: apareciam
+              dois ao mesmo tempo). */}
         </View>
 
         <Entra i={0} run={run} rm={rm} style={styles.card}>
@@ -431,12 +491,19 @@ export default function Grupo() {
                       haptics.tap();
                       // Check-in (meu ou de uma amiga) → tela de detalhes; produto de amiga → produto-amiga.
                       if (it.tipo === 'produto') router.push({ pathname: '/produto-amiga', params: { grupo: g!.id, id: it.compartilhamento_id! } } as any);
-                      else router.push({ pathname: '/checkin-detalhe', params: { ids: it.checkin_id!, grupo: g!.id } } as any);
+                      else {
+                        semearCheckinDetalhe(it, g!.id);   // o detalhe abre pronto, sem carregar
+                        // O detalhe cresce a partir desta miniatura e volta para ela (lib/origemZoom).
+                        abrirComOrigem(fotosMural.current.get(it.id), it.checkin_id!, 14, () =>
+                          router.push({ pathname: '/checkin-detalhe', params: { ids: it.checkin_id!, grupo: g!.id } } as any));
+                      }
                     }}
                     style={styles.item}
                   >
-                    <View style={[styles.itemFoto, est && styles.itemFotoEst]}>
-                      {it.foto_url ? <Image source={{ uri: it.foto_url }} style={{ width: '100%', height: '100%' }} /> : null}
+                    <View ref={(r) => { if (r) fotosMural.current.set(it.id, r); else fotosMural.current.delete(it.id); }} style={[styles.itemFoto, est && styles.itemFotoEst]}>
+                      {/* A foto que ela acabou de publicar sai do arquivo local; as outras, do cache pela
+                          chave estável (o link assinado muda a cada leitura) — lib/fotosRapidas. */}
+                      {it.foto_url ? <ExpoImage source={it.tipo === 'checkin' ? fonteDoCheckin(it.checkin_id, it.foto_url) : fonteEstavel(it.foto_url)} cachePolicy="memory-disk" contentFit="cover" transition={0} style={{ width: '100%', height: '100%' }} /> : null}
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -468,6 +535,8 @@ export default function Grupo() {
           </View>
         ))}
       </ScrollView>
+
+      <ConvidarAposCheckin aberto={convite} onConvidar={convidarAmigas} onFechar={() => setConvite(false)} />
 
       {/* ── Folhas (81g/81h) ─────────────────────────────────────────────── */}
       <Animated.View style={[StyleSheet.absoluteFill, styles.veu, veuSt]} pointerEvents={folha ? 'auto' : 'none'}>
@@ -511,6 +580,7 @@ export default function Grupo() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F6F1F4' },
   roundBtn: { position: 'absolute', width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
+  compartilharBtn: { backgroundColor: PINK, boxShadow: '0px 4px 10px rgba(255,94,168,0.35)' },
 
   card: {
     marginTop: -48, marginHorizontal: 16, paddingTop: 20, paddingHorizontal: 16, paddingBottom: 16, borderRadius: 20,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
+import { View, Text, TextInput, Image, StyleSheet, Pressable, useWindowDimensions } from 'react-native';
 import Animated, {
-  cancelAnimation, Easing, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useFrameCallback,
+  cancelAnimation, Easing, useAnimatedProps, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useFrameCallback,
   useSharedValue, withDelay, withSequence, withSpring, withTiming, type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -11,6 +11,7 @@ import { haptics } from '../../lib/haptics';
 import { nivelDe } from '../../lib/niveis';
 import Medalha from '../medalhas/Medalha';
 import { fmtPontos, type NivelTabela } from '../../lib/cartasServidor';
+import { fmt as fmtW } from '../caminhada/geometria';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pacote de NIKS Points, depois da revelação na tela de raspar. Não há design; o visual
@@ -99,10 +100,25 @@ function Mini({ i, t, voo }: { i: number; t: SharedValue<number>; voo: Voo }) {
   );
 }
 
+// O número que acompanha a barra, desenhado no UI thread (12/nov/2026): antes cada número novo
+// era um `setState` no JS e a contagem pulava em degraus (771 → 789 → 799…), travada. `fmtFn`
+// é um worklet.
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 function Vivo({ xp, fmtFn, style }: { xp: SharedValue<number>; fmtFn: (v: number) => string; style: any }) {
-  const [v, setV] = useState(() => Math.round(xp.get()));
-  useAnimatedReaction(() => Math.round(xp.get()), (n, prev) => { if (n !== prev) scheduleOnRN(setV, n); });
-  return <Text style={style}>{fmtFn(v)}</Text>;
+  const props = useAnimatedProps(() => {
+    const t = fmtFn(Math.round(xp.get()));
+    return { text: t, defaultValue: t } as any;
+  });
+  return (
+    <AnimatedTextInput
+      editable={false}
+      pointerEvents="none"
+      underlineColorAndroid="transparent"
+      defaultValue={fmtFn(Math.round(xp.get()))}
+      animatedProps={props}
+      style={[{ padding: 0, margin: 0 }, style]}
+    />
+  );
 }
 
 type Props = {
@@ -174,16 +190,17 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
     }
     hdr.set(withSpring(1, mola(1, 0.35)));
     if (semCartas) {
-      // Sem carta: a barra enche de uma vez, com mola, e o número conta junto.
+      // Sem carta: a barra enche e o número conta junto, num ease-out de 1,1 s (12/nov/2026:
+      // a mola de meio segundo, com o número em degraus, parecia travada e rápida demais).
       const id = setTimeout(() => {
-        barK.set(withSpring(fracao(para), mola(0.8, 0.45)));
-        xp.set(withSpring(para, mola(1, 0.5)));
+        barK.set(withTiming(fracao(para), { duration: 1100, easing: EO }));
+        xp.set(withTiming(para, { duration: 1100, easing: EO }));
         pisca.set(0);
         pisca.set(withTiming(1, { duration: 620, easing: EO }));
         haptics.action();
         if (subiu) brilho.set(withSequence(withTiming(1, { duration: 220, easing: EO }), withTiming(0.35, { duration: 900, easing: EO })));
-      }, 260);
-      const fimId = setTimeout(terminar, 1000);
+      }, 420);
+      const fimId = setTimeout(terminar, 1700);
       return () => { clearTimeout(id); clearTimeout(fimId); };
     }
     t.set(withTiming(FIM, { duration: FIM, easing: Easing.linear }));
@@ -303,10 +320,10 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
             <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{nv.titulo}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Vivo xp={xp} fmtFn={(v) => (ultimo ? fmtPontos(v) : `${fmtPontos(Math.min(v, teto))} / ${fmtPontos(teto)}`)} style={styles.hdrXp} />
+            <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return ultimo ? fmtW(v) : `${fmtW(Math.min(v, teto))} / ${fmtW(teto)}`; }} style={styles.hdrXp} />
             <Vivo
               xp={xp}
-              fmtFn={(v) => (ultimo ? 'Nível máximo' : v >= teto ? 'nível completo' : `faltam ${fmtPontos(teto - v)} NIKS Points`)}
+              fmtFn={(v) => { 'worklet'; return ultimo ? 'Nível máximo' : v >= teto ? 'nível completo' : `faltam ${fmtW(teto - v)} NIKS Points`; }}
               style={styles.hdrFalta}
             />
           </View>

@@ -5,7 +5,7 @@
 // Desde as regras novas das cartas (05/nov/2026) é o caminho ÚNICO: o botão da aba Rotina
 // também abre a lista. A carta do dia abre sozinha no fim do fluxo, com ou sem check-in.
 // ─────────────────────────────────────────────────────────────────────────────
-import { irPara } from './navegar';
+import { irParaFim } from './navegar';
 import type { Router } from 'expo-router';
 import {
   markStepCompleted, markRoutineDone, clearRoutineFlow, type RoutinePeriod, type StepKey,
@@ -82,7 +82,8 @@ export async function abrirCartasEDepois(router: Router, destino: string, pronto
     marcarCartaAberta(primeira);
     router.push({ pathname: '/(carta)/carta', params: { id: primeira, depois: destino } } as any);
   } else {
-    irPara(destino as any); // aba ou tela já na pilha: desce até ela (lib/navegar)
-    soltarPontos();
+    // Fim do fluxo: grupo por cima da aba Grupos; aba/tela na pilha: desce até ela. A barra
+    // de pontos só entra com o destino já na tela (antes subia no meio da troca de telas).
+    irParaFim(destino as any, () => soltarPontos());
   }
 }

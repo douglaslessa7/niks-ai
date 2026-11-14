@@ -13,6 +13,7 @@
 // o calendário é o de check-ins da aba Grupos (components/grupos/CalendarioCheckins). Cartas e
 // medalhas vêm de lib/conquistas: exemplo do design só em __DEV__, zerado em produção.
 // ─────────────────────────────────────────────────────────────────────────────
+import { useDepoisDaTransicao } from '../../hooks/useDepoisDaTransicao';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Pressable, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,7 +25,6 @@ import Animated, {
   Easing, useReducedMotion, type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import {
   getRoutineHistory, routineDayStreak, sessionDate, dateKey, type RoutineHistory,
@@ -170,7 +170,6 @@ export default function Conquistas() {
   const insets = useSafeAreaInsets();
   const { width: W } = useWindowDimensions();
   const rm = useReducedMotion();
-  const setTabBarVisible = useAppStore((s) => s.setTabBarVisible);
   const top = insets.top - 54; // deslocamento do frame do design (barra de status 54)
 
   const [hist, setHist] = useState<RoutineHistory>({});
@@ -222,7 +221,7 @@ export default function Conquistas() {
   // Ao focar: tela cheia (sem navbar), histórico fresco e a entrada dos widgets. Voltar
   // do calendário completo não repete a entrada.
   useFocusEffect(useCallback(() => {
-    setTabBarVisible(false);
+    // Navbar: some pela rota (TELA_CHEIA no layout), sem escrita no store (re-render do layout).
     const fresh = !skipEnter.current;
     skipEnter.current = false;
     if (fresh) {
@@ -238,9 +237,9 @@ export default function Conquistas() {
       sheen.set(0);
       sheen.set(withTiming(1, { duration: 820, easing: EIO }));
     }, 5000);
-    return () => { setTabBarVisible(true); clearInterval(shine); cancelAnimation(clock); };
+    return () => { clearInterval(shine); cancelAnimation(clock); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setTabBarVisible, rm]));
+  }, [rm]));
 
   // Barra da meta: começa vazia e enche com a mola da home (ζ0,78 r0,6) aos 260 ms;
   // brilho na carta da meta aos 820 ms.
@@ -257,12 +256,28 @@ export default function Conquistas() {
   const n6 = useCount(dias, run, 120, rm);
   const n23 = useCount(col.total, run, 190, rm);
 
+  // ── Camadas escondidas montadas DEPOIS (12/nov/2026) ──────────────────────
+  // "Suas cartas" (uma Carta por carta raspada), "Medalhas" e o deck ficavam montados desde a
+  // abertura, invisíveis, e entravam em todo re-render da tela: a entrada demorava. Agora o hub
+  // monta primeiro; as camadas, 0,9 s depois da transição (ou na hora, se ela tocar antes).
+  const depois = useDepoisDaTransicao();
+  const [camadas, setCamadas] = useState(false);
+  useEffect(() => {
+    if (!depois || camadas) return;
+    const t = setTimeout(() => setCamadas(true), 900);
+    return () => clearTimeout(t);
+  }, [depois, camadas]);
+
   // ── Navegação entre as camadas ────────────────────────────────────────────
   const push = (which: 'album' | 'medals') => {
     haptics.tap();
     setScr(which); setLast(which);
-    if (rm) pushO.set(withTiming(1, { duration: 220, easing: EASE }));
-    else { pushO.set(1); pushP.set(withTiming(1, { duration: 480, easing: EDR })); }
+    const anima = () => {
+      if (rm) pushO.set(withTiming(1, { duration: 220, easing: EASE }));
+      else { pushO.set(1); pushP.set(withTiming(1, { duration: 480, easing: EDR })); }
+    };
+    // Tocou antes de as camadas montarem: monta e anima no quadro seguinte.
+    if (!camadas) { setCamadas(true); requestAnimationFrame(() => requestAnimationFrame(anima)); } else anima();
   };
   const pop = () => {
     haptics.tap();
@@ -444,6 +459,9 @@ export default function Conquistas() {
             </View>
           </Enter>
 
+          {/* w2–w4 montam depois do deslize de entrada (12/nov/2026): o calendário e o resto
+              ficam abaixo da dobra e pesavam a entrada; aparecem com a entrada escalonada deles. */}
+          {depois && (<>
           {/* w2 · Próximas conquistas */}
           <Enter i={2} run={run} rm={rm}>
             <Text style={styles.sectionTitle}>Próximas conquistas</Text>
@@ -464,7 +482,7 @@ export default function Conquistas() {
 
           {/* w3 · calendário de check-ins do mês — o MESMO da aba Grupos (81a) */}
           <Enter i={3} run={run} rm={rm}>
-            <CalendarioCheckins abertura={run} rm={rm} entrada={false} style={styles.calCard} atualizar={recargaCal} />
+            <CalendarioCheckins abertura={run} rm={rm} entrada={false} style={styles.calCard} atualizar={recargaCal} volta="/conquistas" />
           </Enter>
 
           {/* w4 · Ver todos os check-ins → calendário completo */}
@@ -480,12 +498,14 @@ export default function Conquistas() {
               </TouchableOpacity>
             </View>
           </Enter>
+          </>)}
         </ScrollView>
         <TopBar top={top} title="Suas conquistas" onPress={() => { haptics.tap(); voltarOu('/home'); }} label="Fechar" />
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: INK }, dimSt]} />
       </Animated.View>
 
       {/* ═══ Suas coleções (77c/78a) · Medalhas (77d) ═════════════════════ */}
+      {camadas && (
       <Animated.View pointerEvents={scr !== 'hub' ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, styles.pushLayer, pushSt]}>
         <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
         <Bg />
@@ -548,8 +568,10 @@ export default function Conquistas() {
         <TopBar top={top} title={last === 'album' ? 'Suas cartas' : 'Medalhas'} back onPress={pop} label="Voltar" />
         </View>
       </Animated.View>
+      )}
 
       {/* ═══ Dentro do deck (78b) ══════════════════════════════════════════ */}
+      {camadas && (
       <Animated.View pointerEvents={deck ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, styles.pushLayer, l2St]}>
         <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
         <Bg />
@@ -576,6 +598,7 @@ export default function Conquistas() {
         <TopBar top={top} title={deckObj.titulo} back onPress={closeDeck} label="Voltar" />
         </View>
       </Animated.View>
+      )}
 
       {/* ═══ Detalhe da carta (78c/78d) ═══════════════════════════════════ */}
       <Animated.View pointerEvents={card != null ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { zIndex: 20 }, dSt]}>

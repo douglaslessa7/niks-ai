@@ -237,6 +237,58 @@ type Props = {
   apenasFaiscas?: boolean;
 };
 
+// O nome do problema nas cartas do onboarding (12/nov/2026, bug da 1.62: "mancha / s").
+// Com `numberOfLines={2}` + `adjustsFontSizeToFit` o iOS prefere QUEBRAR a palavra no meio a
+// diminuir a fonte. Aqui as linhas são montadas por PALAVRA (nunca no meio de uma) e cada uma
+// é um <Text> de UMA linha, que só encolhe. A fonte é uma só para todas as linhas: a estimada
+// pela linha mais longa (largura média de um caractere em SF Pro bold/heavy ≈ `K` × fonte);
+// o `adjustsFontSizeToFit` de cada linha é só a rede de segurança se a estimativa errar.
+// Uma linha se couber com fonte ≥ `minUmaLinha`; senão divide em 2 linhas equilibradas.
+function linhasPorPalavra(texto: string, larg: number, max: number, K: number, minUmaLinha: number) {
+  const palavras = texto.trim().split(/\s+/);
+  const caber = (n: number) => Math.min(max, larg / (Math.max(1, n) * K));
+  const uma = caber(texto.length);
+  if (palavras.length === 1 || uma >= minUmaLinha) return { linhas: [texto], fs: uma };
+  let melhor = { linhas: [texto], fs: uma };
+  for (let i = 1; i < palavras.length; i++) {
+    const a = palavras.slice(0, i).join(' ');
+    const b = palavras.slice(i).join(' ');
+    const fs = caber(Math.max(a.length, b.length));
+    if (fs > melhor.fs) melhor = { linhas: [a, b], fs };
+  }
+  return melhor;
+}
+
+// Margem lateral do texto das cartas do onboarding (unidades do design, carta de 220): era 16;
+// o nome do problema e a pílula encostavam na moldura de dentro (fio branco a 9).
+const MARGEM_OB = 22;
+// Largura média de um caractere minúsculo / tamanho da fonte (SF Pro, com o entreletra usado).
+const K_HEAVY = 0.64;
+const K_BOLD = 0.56;
+const pilulaOb = (s: number) => ({
+  marginTop: 18 * s, alignSelf: 'stretch' as const, paddingVertical: 8 * s, paddingHorizontal: 12 * s,
+  borderRadius: 20 * s, justifyContent: 'center' as const,
+});
+const textoPilulaOb = (s: number) => ({
+  color: '#fff', fontSize: 14 * s, lineHeight: 18 * s, fontWeight: '700' as const, letterSpacing: -0.2 * s, textAlign: 'center' as const,
+});
+
+function TextoPorPalavra({ texto, larg, max, K, minUmaLinha, style }: {
+  texto: string; larg: number; max: number; K: number; minUmaLinha: number; style: any;
+}) {
+  const { linhas, fs } = linhasPorPalavra(texto, larg, max, K, minUmaLinha);
+  return (
+    <>
+      {linhas.map((l, i) => (
+        <Text key={i} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}
+          style={[style, { alignSelf: 'stretch', textAlign: 'center', fontSize: fs, lineHeight: fs * 1.12 }]}>
+          {l}
+        </Text>
+      ))}
+    </>
+  );
+}
+
 /** Sombra da carta (para quem recorta a carta e desenha a sombra por fora). */
 export function sombraCarta(v: VisualCarta): string {
   if (v.k === 'alerta') return SOMBRA_ALERTA;
@@ -346,15 +398,19 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
     // que uma mulher comum da sua idade"). Mesmo fundo, holo e faíscas da carta da idade.
     // `semNumero` (desligada): "Encontramos sinais de" · [problema] grande · pílula com a região.
     const fraseBaixo = v.semNumero ? v.regiaoTexto ?? null : 'do que a usuária padrão';
+    const larg = wi - 2 * X(MARGEM_OB);
     corpo = (
       <>
         <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,255,255,0.95), rgba(255,190,192,0.35) 60%, rgba(255,190,192,0))' }} />
-        <View style={{ position: 'absolute', left: X(16), right: X(16), top: Y(18), bottom: Y(18), alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', left: X(MARGEM_OB), right: X(MARGEM_OB), top: Y(20), bottom: Y(20), alignItems: 'center', justifyContent: 'center' }}>
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
             {v.semNumero ? 'Encontramos sinais de' : 'Você tem'}
           </Text>
           {v.semNumero ? (
-            <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6} style={{ alignSelf: 'stretch', marginTop: 8 * s, fontSize: 44 * s, lineHeight: 48 * s, fontWeight: '800', letterSpacing: -1.2 * s, color: VERMELHO_ALERTA, textAlign: 'center' }}>{v.problema}</Text>
+            <View style={{ alignSelf: 'stretch', marginTop: 8 * s }}>
+              <TextoPorPalavra texto={v.problema} larg={larg} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
+                style={{ fontWeight: '800', letterSpacing: -1 * s, color: VERMELHO_ALERTA }} />
+            </View>
           ) : (
             <>
               <View style={{ marginTop: 4 * s, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' }}>
@@ -365,12 +421,15 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
                   <Text style={{ marginLeft: 2 * s, fontSize: 40 * s, lineHeight: 44 * s, fontWeight: '800', color: VERMELHO_ALERTA }}>%</Text>
                 )}
               </View>
-              <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 21 * s, lineHeight: 26 * s, fontWeight: '700', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>{`mais ${v.problema}`}</Text>
+              <View style={{ alignSelf: 'stretch' }}>
+                <TextoPorPalavra texto={`mais ${v.problema}`} larg={larg} max={21 * s} K={K_BOLD} minUmaLinha={17 * s}
+                  style={{ fontWeight: '700', letterSpacing: -0.4 * s, color: INK }} />
+              </View>
             </>
           )}
           {!!fraseBaixo && (
-            <View style={{ marginTop: 22 * s, alignSelf: 'stretch', paddingVertical: 10 * s, paddingHorizontal: 14 * s, borderRadius: 24 * s, backgroundColor: VERMELHO_ALERTA, justifyContent: 'center', boxShadow: `0px ${4 * s}px ${10 * s}px rgba(200,30,54,0.28)` }}>
-              <Text style={{ color: '#fff', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.2 * s, textAlign: 'center' }}>{fraseBaixo}</Text>
+            <View style={[pilulaOb(s), { backgroundColor: VERMELHO_ALERTA, boxShadow: `0px ${4 * s}px ${10 * s}px rgba(200,30,54,0.28)` }]}>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{fraseBaixo}</Text>
             </View>
           )}
         </View>
@@ -385,14 +444,17 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
         <Faisca i={4} parado={parado} size={10 * s} color="#FFFFFF" style={{ left: X(24), top: Y(40) }} />
         <Faisca i={5} parado={parado} size={13 * s} color="#FFFFFF" style={{ right: X(24), top: Y(150) }} />
         <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,250,240,0.95), rgba(255,200,150,0.35) 60%, rgba(255,200,150,0))' }} />
-        <View style={{ position: 'absolute', left: X(16), right: X(16), top: Y(18), bottom: Y(18), alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', left: X(MARGEM_OB), right: X(MARGEM_OB), top: Y(20), bottom: Y(20), alignItems: 'center', justifyContent: 'center' }}>
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
             Você tem
           </Text>
-          <Text style={{ marginTop: 6 * s, fontSize: 21 * s, lineHeight: 26 * s, fontWeight: '700', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>menos</Text>
-          <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6} style={{ alignSelf: 'stretch', marginTop: 2 * s, fontSize: 44 * s, lineHeight: 48 * s, fontWeight: '800', letterSpacing: -1.2 * s, color: PINK, textAlign: 'center' }}>{v.problema}</Text>
-          <View style={{ opacity: v.numero != null ? 1 : 0, marginTop: 22 * s, alignSelf: 'stretch', paddingVertical: 10 * s, paddingHorizontal: 14 * s, borderRadius: 24 * s, backgroundColor: PINK, justifyContent: 'center', boxShadow: `0px ${4 * s}px ${10 * s}px rgba(240,140,100,0.25)` }}>
-            <Text style={{ color: '#fff', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.2 * s, textAlign: 'center' }}>{`do que ${v.numero ?? 0}% das usuárias`}</Text>
+          <Text style={{ marginTop: 4 * s, fontSize: 20 * s, lineHeight: 25 * s, fontWeight: '700', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>menos</Text>
+          <View style={{ alignSelf: 'stretch', marginTop: 4 * s }}>
+            <TextoPorPalavra texto={v.problema} larg={wi - 2 * X(MARGEM_OB)} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
+              style={{ fontWeight: '800', letterSpacing: -1 * s, color: PINK }} />
+          </View>
+          <View style={[pilulaOb(s), { opacity: v.numero != null ? 1 : 0, backgroundColor: PINK, boxShadow: `0px ${4 * s}px ${10 * s}px rgba(240,140,100,0.25)` }]}>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{`do que ${v.numero ?? 0}% das usuárias`}</Text>
           </View>
         </View>
       </>

@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Image, AccessibilityInfo } from 'react-native';
+import { View, Text, AccessibilityInfo } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useOnMount } from '../../components/onboarding/kit';
 import {
-  BV, BvScreen, BolhaRadial, BvProgresso, BvEtiqueta, BvBotao, LOGO_ROSA, useBvFrame,
+  BV, BvScreen, BolhaRadial, BvProgresso, BvEtiqueta, BvBotao, useBvFrame,
 } from '../../components/boasVindas/kit';
 import { Confete, Odometro } from '../../components/boasVindas/comemoracao';
 import Medalha from '../../components/medalhas/Medalha';
@@ -67,7 +66,7 @@ export default function BvRecompensa() {
 
   const selo = useAnimatedStyle(() => ({
     opacity: Math.min(1, pop.value * 2),
-    transform: [{ rotate: '45deg' }, { scale: 0.6 + 0.4 * pop.value }],
+    transform: [{ scale: 0.6 + 0.4 * pop.value }], // sem o giro de 45° do selo antigo (losango): a medalha fica reta
   }));
 
   return (
@@ -96,23 +95,16 @@ export default function BvRecompensa() {
         </View>
         <Text style={{ fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: BV.ink }}>NIKS Points</Text>
 
-        {/* Sombra no de fora, recorte no de dentro (README #20: overflow corta a sombra). */}
+        {/* A medalha que ela acabou de ganhar: Bronze 2 (12/nov/2026, pedido do produto; antes
+            era o selo rosa com a flor do NIKS). Mesma entrada de antes (`selo`). */}
         <Animated.View style={[{
-          marginTop: 40, width: 132, height: 132, borderRadius: 34, backgroundColor: '#FBCDE5',
-          shadowColor: BV.pink, shadowOffset: { width: 0, height: 18 }, shadowOpacity: 0.3, shadowRadius: 20,
+          marginTop: 24, width: 176, height: 176, alignItems: 'center', justifyContent: 'center',
+          shadowColor: BV.pink, shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.28, shadowRadius: 18,
         }, selo]}>
-          <View style={{ flex: 1, borderRadius: 34, borderWidth: 3, borderColor: '#FFFFFF', overflow: 'hidden' }}>
-            <LinearGradient
-              colors={['#FFE1EE', '#FBCDE5', '#EBD6FB', '#FFD9EA']} locations={[0, 0.38, 0.66, 1]}
-              start={{ x: 0.25, y: 0 }} end={{ x: 0.75, y: 1 }}
-              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-            />
-            <View style={{ position: 'absolute', top: 8, left: 8, right: 8, bottom: 8, borderRadius: 26, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.95)' }} />
-            <Image source={LOGO_ROSA} style={{ position: 'absolute', left: 31, top: 31, width: 64, height: 64, transform: [{ rotate: '-45deg' }] }} />
-          </View>
+          <Medalha nivel={2} tamanho={176} />
         </Animated.View>
 
-        <Text style={{ marginTop: 44, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: BV.sub }}>CONQUISTA DESBLOQUEADA</Text>
+        <Text style={{ marginTop: 26, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: BV.sub }}>CONQUISTA DESBLOQUEADA</Text>
         <Text style={{ marginTop: 6, fontSize: 30, lineHeight: 34, fontWeight: '800', letterSpacing: -1, color: BV.ink }}>Ponto de partida</Text>
 
         <View style={{ marginTop: 22, width: '100%' }}>

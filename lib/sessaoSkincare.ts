@@ -73,6 +73,14 @@ export async function encerrarSessao(): Promise<void> {
 export type SkincareConcluido = { periodo: RoutinePeriod; duracao_s: number; passos: PassoSessao[]; em: number };
 let ultimo: SkincareConcluido | null = null;
 export function guardarUltimoSkincare(s: Omit<SkincareConcluido, 'em'>) { ultimo = { ...s, em: Date.now() }; }
+/** Qualquer skincare concluído há menos de 3 h que ainda não virou check-in (ex.: ela não tinha grupo). */
+export function skincareSemCheckin(): SkincareConcluido | null {
+  return ultimo && Date.now() - ultimo.em < RETOMAR_ATE_MS ? ultimo : null;
+}
+
+/** Virou check-in (ou ela dispensou): não oferece de novo. */
+export function limparUltimoSkincare() { ultimo = null; }
+
 /** O último skincare concluído do período, se foi há menos de 3 h. */
 export function ultimoSkincare(periodo: RoutinePeriod): SkincareConcluido | null {
   return ultimo && ultimo.periodo === periodo && Date.now() - ultimo.em < RETOMAR_ATE_MS ? ultimo : null;

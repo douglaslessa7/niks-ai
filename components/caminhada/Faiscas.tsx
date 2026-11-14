@@ -36,10 +36,15 @@ const Faiscas = forwardRef<FaiscasRef, { off?: boolean }>(function Faiscas({ off
   const lista = useSharedValue<Faisca[]>([]);
   const agora = useSharedValue(0);
 
+  // Só redesenha enquanto há faísca viva (12/nov/2026: antes o `agora` mudava a cada quadro e o
+  // Canvas inteiro era refeito o tempo todo, mesmo vazio — custo fixo no UI thread da caminhada).
+  // `relogio` segue o tempo sempre (barato); `agora` (o que o desenho lê) só com faíscas.
+  const relogio = useSharedValue(0);
   useFrameCallback((fi) => {
-    agora.set(fi.timestamp);
+    relogio.set(fi.timestamp);
     const l = lista.get();
     if (!l.length) return;
+    agora.set(fi.timestamp);
     const vivas = l.filter((f) => fi.timestamp - f.born < f.delay + f.dur);
     if (vivas.length !== l.length) lista.set(vivas);
   });
@@ -47,11 +52,11 @@ const Faiscas = forwardRef<FaiscasRef, { off?: boolean }>(function Faiscas({ off
   useImperativeHandle(ref, () => ({
     spark: (x, y, dx, dy, dur, delay = 0) => {
       if (off) return;
-      lista.set([...lista.get(), nova(x, y, dx, dy, dur, delay, agora.get())]);
+      lista.set([...lista.get(), nova(x, y, dx, dy, dur, delay, relogio.get())]);
     },
     burst: (cx, cy, n, spread) => {
       if (off) return;
-      const now = agora.get();
+      const now = relogio.get();
       const add: Faisca[] = [];
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
@@ -60,7 +65,7 @@ const Faiscas = forwardRef<FaiscasRef, { off?: boolean }>(function Faiscas({ off
       }
       lista.set([...lista.get(), ...add]);
     },
-  }), [off, lista, agora]);
+  }), [off, lista, relogio]);
 
   const pic = useDerivedValue(() => {
     const l = lista.get();
