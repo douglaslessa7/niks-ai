@@ -15,6 +15,7 @@
 // multi-foto (13b)".
 // ═══════════════════════════════════════════════════════════════════════════
 import { travaSeHouverSessao } from '../_shared/assinatura.ts'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -842,6 +843,7 @@ Use esta imagem para mandíbula, região pré-auricular, lateral e asa do nariz,
     let lastError = ''
 
     for (let attempt = 1; attempt <= 3; attempt++) {
+      const t0 = Date.now()
       const response = await fetch(openaiUrl, {
         method: 'POST',
         headers: {
@@ -873,6 +875,8 @@ Use esta imagem para mandíbula, região pré-auricular, lateral e asa do nariz,
       })
 
       const data = await response.json()
+      // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+      registrarChatOpenAI('analyze-skin-app', 'gpt-5.4-mini', data, { auth: req.headers.get('authorization'), duracaoMs: Date.now() - t0 })
 
       const isUnavailable = !response.ok && (response.status === 503 || response.status === 500)
       if (isUnavailable) {

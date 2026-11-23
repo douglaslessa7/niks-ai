@@ -87,7 +87,7 @@ function synthCopy(p: ProdutoCatalogo, idioma: Idioma = 'pt'): string {
   return t.length > 160 ? `${t.slice(0, 159).trimEnd()}…` : t.charAt(0).toUpperCase() + t.slice(1)
 }
 
-async function escreverCopies(escolhas: Escolha[], perfilTexto: string, idioma: Idioma = 'pt'): Promise<Map<string, string>> {
+async function escreverCopies(escolhas: Escolha[], perfilTexto: string, idioma: Idioma = 'pt', uid: string | null = null): Promise<Map<string, string>> {
   const itens = new Map<string, { passo: string; p: ProdutoCatalogo }>()
   for (const e of escolhas) for (const p of [e.principal, ...e.alternativas]) if (p) itens.set(p.id, { passo: e.passo.name, p })
   const out = new Map<string, string>()
@@ -96,7 +96,7 @@ async function escreverCopies(escolhas: Escolha[], perfilTexto: string, idioma: 
   const texto = await chamarIA([
     { role: 'system', content: idioma === 'en' ? PEDIDO_COPIES_EN : 'Você é uma dermatologista consultora brasileira. Para cada produto, escreva uma frase curta (até ~18 palavras), pessoal, em pt-BR, dizendo por que ESTE produto combina com ELA neste passo — cite o tipo de pele, uma dor dela ou o ativo. Nada genérico e sem repetir frases. Responda SÓ JSON: {"copies":[{"produto_id":"...","copy":"..."}]}' },
     { role: 'user', content: `PERFIL: ${perfilTexto}\n\nPRODUTOS:\n${JSON.stringify(lista)}` },
-  ])
+  ], { funcao: 'motor-v2-copies', uid })
   try {
     const j = JSON.parse(texto ?? '{}')
     for (const c of j?.copies ?? []) if (typeof c?.produto_id === 'string' && typeof c?.copy === 'string' && c.copy.trim()) out.set(c.produto_id, c.copy.trim())
@@ -251,7 +251,7 @@ export async function montarProdutosV2(db: any, uid: string | null, op: OpcoesRe
 
   // Frases de cada produto (IA, com reserva montada no código).
   const perfilTexto = JSON.stringify({ tipo_pele: filtros.tipoPele, dores: plano.marcadas, gestante: perfil.gravida })
-  const copies = await escreverCopies(r.escolhas, perfilTexto, op.idioma ?? 'pt')
+  const copies = await escreverCopies(r.escolhas, perfilTexto, op.idioma ?? 'pt', uid)
   const copy = (p: ProdutoCatalogo) => copies.get(p.id) ?? synthCopy(p, op.idioma ?? 'pt')
 
   // recomendacoes_produtos — mesmo formato de sempre; o mesmo passo de manhã e de noite vira 'am+pm'.

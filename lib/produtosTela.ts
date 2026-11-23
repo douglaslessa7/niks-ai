@@ -38,8 +38,9 @@ const valido = (t: TipoProdutos, at: number) => !ASSINADOS.includes(t) || Date.n
 async function buscarRecomendacao(uid: string): Promise<RecomendacaoCrua> {
   const { data: row, error } = await supabase.from('recomendacoes_produtos').select('recomendacao').eq('user_id', uid).maybeSingle();
   if (error) throw error;
-  const passos: any[] = Array.isArray(row?.recomendacao) ? row!.recomendacao : [];
-  const ids = [...new Set(passos.flatMap((p) => (p?.produtos ?? []).map((x: any) => x?.produto_id)).filter(Boolean))];
+  const recCrua: unknown = row?.recomendacao;
+  const passos: any[] = Array.isArray(recCrua) ? recCrua : [];
+  const ids = [...new Set(passos.flatMap((p) => (Array.isArray(p?.produtos) ? p.produtos : []).map((x: any) => x?.produto_id)).filter(Boolean))];
   if (!ids.length) return { passos, prods: [] };
   const { data: prods, error: e2 } = await supabase.from('produtos')
     .select('id, marca, nome, imagem_url, concerns, categoria, imagem_recorte_url, imagem_recorte_status')

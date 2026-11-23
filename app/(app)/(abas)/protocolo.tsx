@@ -14,6 +14,7 @@
 // antes de a Minha rotina existir (store como fallback) e a geração sob demanda para
 // usuária legada — lógica intacta. A ideal nunca é alterada por esta tela.
 // ─────────────────────────────────────────────────────────────────────────────
+import { erroDaAba } from '../../../components/ErroAba';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, Image, TouchableOpacity, Animated, Easing, Modal, Alert,
@@ -460,10 +461,13 @@ export default function Protocolo() {
       if (scanErr) return 'falhou';
 
       const scanResult = scan?.full_result as ScanResult | undefined;
+      const skinScanId = scan?.id;
       if (
+        !skinScanId ||
         !scanResult ||
         typeof scanResult.skin_score !== 'number' ||
-        !(scanResult.skin_type_detected ?? '').trim()
+        typeof scanResult.skin_type_detected !== 'string' ||
+        !scanResult.skin_type_detected.trim()
       ) {
         return 'sem-scan';
       }
@@ -483,7 +487,7 @@ export default function Protocolo() {
         generateAndSaveProtocol({
           scanResult,
           onboardingData,
-          skinScanId: scan!.id,
+          skinScanId,
           userId: uid,
           onSuccess: (result) => { produced = result; },
           onFinally: () => resolve(),
@@ -1972,3 +1976,6 @@ const styles = StyleSheet.create({
   },
 
 });
+
+// Erro nesta aba fica nesta aba: não derruba o app inteiro (1.64, components/ErroAba).
+export const ErrorBoundary = erroDaAba('protocolo');

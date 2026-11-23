@@ -52,8 +52,9 @@ async function doCatalogo(item: ColecaoItem, userId: string, produtoId: string):
   ]);
   if (error) throw error;
   const passos: any[] = Array.isArray(rec?.recomendacao) ? rec.recomendacao : [];
-  const x = passos.flatMap((s) => s?.produtos ?? []).find((y: any) => y?.produto_id === produtoId);
-  const noPasso = passos.find((s) => (s?.produtos ?? []).some((y: any) => y?.produto_id === produtoId));
+  const prodsDe = (s: any): any[] => (Array.isArray(s?.produtos) ? s.produtos : []);
+  const x = passos.flatMap(prodsDe).find((y: any) => y?.produto_id === produtoId);
+  const noPasso = passos.find((s) => prodsDe(s).some((y: any) => y?.produto_id === produtoId));
   const nomePasso = String(noPasso?.passo ?? noPasso?.categoria ?? '').trim();
   const passoRecomendado = nomePasso ? { passo: nomePasso, periodo: typeof noPasso?.periodo === 'string' ? noPasso.periodo : null } : null;
   const compat = item.compat ?? (typeof x?.compatibilidade === 'number' ? Math.round(x.compatibilidade) : null);

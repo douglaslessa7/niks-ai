@@ -13,6 +13,7 @@
 //   • Sair da conta (pílula) + "Apagar minha conta" (link) + versão.
 // Vermelho #D4183D continua como cor SEMÂNTICA de ação destrutiva.
 // ─────────────────────────────────────────────────────────────────────────────
+import { erroDaAba } from '../../../components/ErroAba';
 import { useEhConvidada } from '../../../lib/acesso';
 import { useUserId } from '../../../lib/currentUser';
 import { useEstadoCartas } from '../../../lib/cartasServidor';
@@ -553,3 +554,6 @@ const styles = StyleSheet.create({
   deleteText: { fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: DANGER, opacity: 0.85 },
   version: { marginTop: 4, fontSize: 12, letterSpacing: -0.1, color: CHEVRON },
 });
+
+// Erro nesta aba fica nesta aba: não derruba o app inteiro (1.64, components/ErroAba).
+export const ErrorBoundary = erroDaAba('perfil');

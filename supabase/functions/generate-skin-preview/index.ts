@@ -1,4 +1,5 @@
 import { limitePorIp } from '../_shared/limiteIp.ts'
+import { registrarImagemOpenAI } from '../_shared/ia-custos.ts'
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -63,6 +64,7 @@ serve(async (req) => {
     const openaiController = new AbortController()
     const openaiTimeout = setTimeout(() => openaiController.abort(), 90_000)
     let openaiResponse: Response
+    const t0 = Date.now()
     try {
       openaiResponse = await fetch('https://api.openai.com/v1/images/edits', {
         method: 'POST',
@@ -93,6 +95,8 @@ serve(async (req) => {
     }
 
     const openaiData = await openaiResponse.json()
+    // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+    registrarImagemOpenAI('generate-skin-preview', 'gpt-image-2', openaiData, { auth: req.headers.get('authorization'), duracaoMs: Date.now() - t0 })
     const generatedB64 = openaiData?.data?.[0]?.b64_json
 
     if (!generatedB64) {

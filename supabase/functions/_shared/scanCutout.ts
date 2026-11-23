@@ -13,6 +13,7 @@
 // Secrets: REPLICATE_API_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // ─────────────────────────────────────────────────────────────────────────────
 import { Image } from './imagescript/mod.ts'
+import { registrarReplicate } from './ia-custos.ts'
 
 const MODEL = 'sprited/birefnet'
 const BUCKET = 'product-scans'
@@ -66,7 +67,7 @@ async function modelVersion(token: string): Promise<string> {
 }
 
 // Tira o fundo; um pedido por vez, esperando quando a conta devolve 429.
-async function removeBackground(imageUrl: string, token: string): Promise<Uint8Array> {
+async function removeBackground(imageUrl: string, token: string, uid: string | null = null): Promise<Uint8Array> {
   const version = await modelVersion(token)
   const t0 = Date.now()
   let pr = { status: 0, body: null as any }
@@ -83,6 +84,8 @@ async function removeBackground(imageUrl: string, token: string): Promise<Uint8A
     await sleep(1500)
     pred = (await replicate(`/predictions/${pred.id}`, token)).body
   }
+  // Custo (segundos de GPU) em `ia_custos`, em segundo plano. Predição que falhou também é cobrada.
+  registrarReplicate('recorte-produto', MODEL, pred, { userId: uid })
   if (pred?.status !== 'succeeded' || !pred?.output) console.error('scanCutout: resposta do Replicate', pr.status, JSON.stringify(pred ?? pr.body ?? null).slice(0, 1500))
   if (pred?.status !== 'succeeded' || !pred?.output) throw new Error(pred?.error ?? `predição ${pred?.status ?? 'http ' + pr.status}`)
   const res = await fetch(String(pred.output))
@@ -199,7 +202,7 @@ export async function ensureScanCutout(supabase: any, scanId: string, opts: Opts
     const { data: signed, error: signErr } = await supabase.storage.from(BUCKET).createSignedUrl(scan.image_path, 600)
     if (signErr || !signed?.signedUrl) throw new Error(`URL da foto: ${signErr?.message ?? 'vazia'}`)
 
-    const img = trimAndFit(await Image.decode(await removeBackground(signed.signedUrl, token)))
+    const img = trimAndFit(await Image.decode(await removeBackground(signed.signedUrl, token, scan.user_id ?? null)))
 
     // PNG temporário (mesma pasta da usuária) → o Storage converte para WebP.
     const tmp = `${scan.user_id}/${scanId}_tmp.png`

@@ -9,6 +9,10 @@
 // que a conta já tinha feito conta como concluído, sem pontos. Concluídos os 4, uma carta rara
 // por conta, fora da regra de 1 carta por dia, que não vence até ser raspada.
 // Contas novas: depois do tour, o desafio 1 começa sozinho. Contas existentes: só o card.
+// 1.64 (23/nov/2026, decisão do produto): SEM PRODUTO DE CASA (nunca escaneou e nada marcado
+// "Tenho em casa" na coleção), a ordem vira 4 → 1 → 2 → 3: "Fazer o skincare" primeiro (dá
+// para fazer com os produtos "Quero comprar"). Quem já tem produto segue 1 → 2 → 3 → 4. Só
+// muda a ORDEM no aparelho; o servidor paga cada desafio do mesmo jeito. Ver `ordemDesafios`.
 // ─────────────────────────────────────────────────────────────────────────────
 import { irPara } from './navegar';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
@@ -56,7 +60,11 @@ export async function estadoMissoes(body: Record<string, unknown> = {}, opts: Op
 
 export function useMissoes() {
   const uid = useUserId();
-  const fetcher = useCallback(() => estadoMissoes(), []);
+  // A ordem dos desafios depende de ter produto de casa: confere junto, a cada leitura.
+  const fetcher = useCallback(() => {
+    void conferirProdutoDeCasa();
+    return estadoMissoes();
+  }, []);
   useEffect(() => { if (uid) void carregarPulados(uid); }, [uid]);
   return useCachedQuery<EstadoMissoes>(uid ? chaveMissoes(uid) : null, fetcher, { staleMs: 0, enabled: Boolean(uid) });
 }
@@ -130,11 +138,58 @@ export function usePulados(): DesafioId[] {
   );
 }
 
+// ── Ordem dos desafios (1.64) ─────────────────────────────────────────────────
+// `true` = a conta tem ao menos um item "Tenho em casa" na coleção. `null` = ainda não
+// conferido (vale a ordem de sempre — nunca reordena por falta de dado).
+let temCasa: boolean | null = null;
+const ouvintesCasa = new Set<() => void>();
+const definirTemCasa = (v: boolean | null) => {
+  if (v === temCasa) return;
+  temCasa = v;
+  ouvintesCasa.forEach((f) => f());
+};
+
+/** Lê a coleção (só uma contagem). Falhou → mantém o que já sabia. Nunca lança. */
+export async function conferirProdutoDeCasa(): Promise<void> {
+  try {
+    const uid = await getUserId();
+    if (!uid) return;
+    const contar = (comStatus: boolean) => {
+      let q = supabase.from('colecao_produtos').select('id', { count: 'exact', head: true }).eq('user_id', uid);
+      if (comStatus) q = q.eq('status', 'tenho');
+      return q;
+    };
+    let { count, error } = await contar(true);
+    // Sem a coluna `status` (42703): todo item da coleção vale "Tenho em casa" (como em lib/colecao.ts).
+    if (error?.code === '42703') ({ count, error } = await contar(false));
+    if (error) throw error;
+    definirTemCasa((count ?? 0) > 0);
+  } catch (e) {
+    console.warn('[missoes] conferir produto de casa falhou:', e);
+  }
+}
+
+const ORDEM_SEM_CASA: readonly DesafioId[] = ['d4', 'd1', 'd2', 'd3'];
+
+/** Ordem em que o card mostra e guia os desafios. Sem produto de casa (nunca escaneou — d1 —
+ *  e nada "Tenho em casa"): o skincare primeiro. Fora isso, a de sempre. */
+export const ordemDesafios = (e: EstadoMissoes, casa: boolean | null = temCasa): readonly DesafioId[] =>
+  casa === false && !e.d1 ? ORDEM_SEM_CASA : DESAFIOS;
+
+export function useOrdemDesafios(e: EstadoMissoes): readonly DesafioId[] {
+  const casa = useSyncExternalStore(
+    (f) => { ouvintesCasa.add(f); return () => { ouvintesCasa.delete(f); }; },
+    () => temCasa,
+    () => temCasa,
+  );
+  return ordemDesafios(e, casa);
+}
+
 /** Desafio que não dá para guiar agora: a estante precisa de um produto escaneado e a rotina, de passos. */
 export const desafioBloqueado = (e: EstadoMissoes, d: DesafioId) =>
   (d === 'd2' && !e.d1) || (d === 'd3' && !periodoDaRotina(e));
 
-const aFazer = (e: EstadoMissoes) => DESAFIOS.filter((d) => !e[d] && !desafioBloqueado(e, d));
+const aFazer = (e: EstadoMissoes) => ordemDesafios(e).filter((d) => !e[d] && !desafioBloqueado(e, d));
 
 /** O próximo desafio a fazer (o card guia este e os pulados): primeiro os não pulados. */
 export const proximoDesafio = (e: EstadoMissoes, lista: DesafioId[] = pulados): DesafioId | null => {
@@ -201,9 +256,15 @@ export async function comecarDesafios(): Promise<void> {
   try {
     const uid = await getUserId();
     if (!uid) return;
-    const e = peekCache<EstadoMissoes>(chaveMissoes(uid))?.data ?? (await estadoMissoes());
-    if (!e || e.d1 || e.guia_visto_em) return;
-    iniciarGuia({ passo: 'd1-aba', guiado: true });
+    const [e] = await Promise.all([
+      peekCache<EstadoMissoes>(chaveMissoes(uid))?.data ?? estadoMissoes(),
+      temCasa === null ? conferirProdutoDeCasa() : Promise.resolve(),
+    ]);
+    if (!e || e.guia_visto_em) return;
+    // O primeiro da ordem (1.64): sem produto de casa, o skincare; senão, o scan.
+    const primeiro = ordemDesafios(e)[0];
+    if (e[primeiro]) return;
+    iniciarGuia(primeiro === 'd4' ? { passo: 'd4-iniciar', guiado: true } : { passo: 'd1-aba', guiado: true });
     void marcarGuiaVisto();
     const { error } = await supabase.from('users').update({ rotina_intro_status: 'guiado' }).eq('id', uid).is('rotina_intro_status', null);
     if (error) console.warn('[missoes] intro da Rotina → guiado falhou:', error.message);

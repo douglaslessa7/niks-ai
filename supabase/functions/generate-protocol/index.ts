@@ -4,6 +4,7 @@ import { detectTargetActive } from '../_shared/protocol-write.ts'
 import { clienteServico, gerarRotinaV2, usaMotorNovo } from '../_shared/motor/gerar.ts'
 import { INSTRUCAO_EN_ROTINA, paraIdioma } from '../_shared/motor/ingles.ts'
 import { lerReacoes, resumoParaIA } from '../_shared/motor/reacoes.ts'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -158,7 +159,8 @@ function correctiveMessage(vs: Violation[]): string {
 }
 
 // Segunda chamada corretiva. MESMO modelo/params da chamada principal, com timeout.
-async function correctiveCall(systemPrompt: string, userMessage: string, firstText: string, corrective: string): Promise<string | null> {
+async function correctiveCall(systemPrompt: string, userMessage: string, firstText: string, corrective: string, uid: string | null = null): Promise<string | null> {
+  const t0 = Date.now()
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
   try {
@@ -187,6 +189,8 @@ async function correctiveCall(systemPrompt: string, userMessage: string, firstTe
     })
     if (!r.ok) return null
     const d = await r.json()
+    // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+    registrarChatOpenAI('generate-protocol-correcao', 'gpt-5.4-mini', d, { userId: uid, duracaoMs: Date.now() - t0 })
     return d?.choices?.[0]?.message?.content ?? null
   } catch {
     return null
@@ -195,7 +199,7 @@ async function correctiveCall(systemPrompt: string, userMessage: string, firstTe
   }
 }
 
-async function validateAndMaybeFix(text: string, onboardingData: any, systemPrompt: string, userMessage: string, vlog: VLog): Promise<string> {
+async function validateAndMaybeFix(text: string, onboardingData: any, systemPrompt: string, userMessage: string, vlog: VLog, uid: string | null = null): Promise<string> {
   let proto: any
   try {
     proto = JSON.parse(text)
@@ -218,7 +222,7 @@ async function validateAndMaybeFix(text: string, onboardingData: any, systemProm
   if (violations.length === 0) return text
 
   vlog('RETRY_TRIGGERED', { violations })
-  const fixed = await correctiveCall(systemPrompt, userMessage, text, correctiveMessage(violations))
+  const fixed = await correctiveCall(systemPrompt, userMessage, text, correctiveMessage(violations), uid)
   if (!fixed) {
     vlog('RETRY_CALL_FAILED') // rede/timeout/não-ok → grava a 1ª resposta
     return text
@@ -588,6 +592,7 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
 9. Use TODOS os campos disponíveis em onboardingData para personalizar o protocolo conforme as regras da seção "USO OBRIGATÓRIO DOS DADOS DO ONBOARDING"
 10. Retorne apenas JSON válido`
 
+    const t0 = Date.now()
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -625,6 +630,8 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
     }
 
     const data = await openaiResponse.json()
+    // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+    registrarChatOpenAI('generate-protocol', 'gpt-5.4-mini', data, { userId: uidSessao, duracaoMs: Date.now() - t0 })
 
     if (!data.choices || data.choices.length === 0) {
       console.error('OpenAI returned no choices. Full response:', JSON.stringify(data))
@@ -642,7 +649,7 @@ Gere o protocolo personalizado AM/PM seguindo todas as regras do sistema. Apliqu
       console.warn('PROTOCOL_VALIDATION', JSON.stringify({ reason, ...ctx }))
     // Trava de gravidez por último: o que a retentativa não corrigiu, o código remove.
     const finalText = enforcePregnancyLock(
-      await validateAndMaybeFix(text, onboardingData, systemPrompt, userMessage, vlog),
+      await validateAndMaybeFix(text, onboardingData, systemPrompt, userMessage, vlog, uidSessao),
       onboardingData, vlog,
     )
 

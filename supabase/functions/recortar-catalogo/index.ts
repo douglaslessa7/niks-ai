@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Image } from '../_shared/imagescript/mod.ts'
+import { registrarReplicate } from '../_shared/ia-custos.ts'
 
 // Recorte SEM FUNDO das fotos do catálogo (Fase 2) — só para administrador.
 // Para cada produto: foto original → BiRefNet no Replicate (`sprited/birefnet`) →
@@ -111,6 +112,8 @@ serve(async (req) => {
         await sleep(1500)
         pred = (await replicate(`/predictions/${pred.id}`, token)).body
       }
+      // Custo (segundos de GPU) em `ia_custos`, parte 'interno' (trabalho de admin). Segundo plano.
+      registrarReplicate('recortar-catalogo', MODEL, pred, { parte: 'interno' })
       if (pred?.status !== 'succeeded' || !pred?.output) throw new Error(pred?.error ?? `predição ${pred?.status ?? 'http ' + pr.status}`)
 
       const pngRes = await fetch(String(pred.output))

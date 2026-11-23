@@ -144,7 +144,8 @@ async function buscarBase(uid: string): Promise<Base> {
   // Recomendados: TODOS os da IA (cada produto uma vez). Passo vindo da rotina ideal →
   // os do passo correspondente (mesmo nome do passo atual ou do passo da ideal, mesmo
   // período) vêm primeiro; passo criado por ela → na ordem da recomendação.
-  const passosRec: any[] = Array.isArray(recRes.data?.recomendacao) ? recRes.data!.recomendacao : [];
+  const recCrua: unknown = recRes.data?.recomendacao;
+  const passosRec: any[] = Array.isArray(recCrua) ? recCrua : [];
   const copyPorId = new Map<string, string>();
   const todosIds: string[] = [];
   for (const r of passosRec) {
@@ -181,7 +182,7 @@ function montar(b: Base, passo: PassoRotina): Dados {
       && String(r?.periodo ?? '').includes(passo.periodo))
       ?? passosRec.find((r) => !r?.sem_produto && nomes.has(normStepKey(r?.passo ?? '')));
     // Sem repetidos: a recomendação pode trazer o mesmo produto 2× no passo (chave repetida na lista).
-    primeiros = [...new Set<string>((doPasso?.produtos ?? []).map((x: any) => x?.produto_id).filter(Boolean))];
+    primeiros = [...new Set<string>((Array.isArray(doPasso?.produtos) ? doPasso.produtos : []).map((x: any) => x?.produto_id).filter(Boolean))];
   }
   const recIds = [...primeiros, ...todosIds.filter((id) => !primeiros.includes(id))];
 
@@ -507,33 +508,33 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
             )}
             {/* Recomendados SÓ do tipo do passo (ex.: protetores solares) — primeira seção,
                 sem filtros e sem "Ver todos" (a lista é curta). */}
-            {(dados?.doPasso.length ?? 0) > 0 && (
+            {(dados?.doPasso?.length ?? 0) > 0 && (
               <>
-                <Text style={s.secTitle}>{(dados!.catPasso && TITULO_DO_PASSO[dados!.catPasso]) || t('Recomendados pra este passo')}</Text>
+                <Text style={s.secTitle}>{(dados?.catPasso && TITULO_DO_PASSO[dados.catPasso]) || t('Recomendados pra este passo')}</Text>
                 <Text style={s.secSub}>{t('Os que a NIKS recomenda pra sua pele.')}</Text>
-                {fileira(dados!.doPasso)}
+                {fileira(dados?.doPasso ?? [])}
               </>
             )}
 
             {/* Da sua estante — filtros em cima da fileira */}
-            {(dados?.estante.length ?? 0) === 0 ? (
+            {(dados?.estante?.length ?? 0) === 0 ? (
               <>
-                <Text style={[s.secTitle, (dados?.doPasso.length ?? 0) > 0 && { marginTop: 26 }]}>{t('Da sua estante')}</Text>
+                <Text style={[s.secTitle, (dados?.doPasso?.length ?? 0) > 0 && { marginTop: 26 }]}>{t('Da sua estante')}</Text>
                 <Text style={s.vazio}>{t('Sua estante está vazia. Escaneie um produto que você tem em casa.')}</Text>
               </>
             ) : (
               <>
-                {cabecalho(t('Da sua estante'), 'estante', (dados?.doPasso.length ?? 0) > 0 ? 26 : 8)}
+                {cabecalho(t('Da sua estante'), 'estante', (dados?.doPasso?.length ?? 0) > 0 ? 26 : 8)}
                 {filtros(tags, cat, setCat)}
                 {fileira(estanteFiltrada)}
               </>
             )}
 
             {/* Seus escaneados */}
-            {(dados?.escaneados.length ?? 0) > 0 && (
+            {(dados?.escaneados?.length ?? 0) > 0 && (
               <>
                 {cabecalho(t('Seus escaneados'), 'escaneados', 26)}
-                {fileira(dados!.escaneados)}
+                {fileira(dados?.escaneados ?? [])}
               </>
             )}
 

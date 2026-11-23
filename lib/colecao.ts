@@ -73,7 +73,7 @@ async function compatFallback(userId: string, prodIds: string[], scanIds: string
       : Promise.resolve({ data: [] } as any),
   ]);
   const passos = Array.isArray(rec?.data?.recomendacao) ? rec.data.recomendacao : [];
-  passos.forEach((s: any) => (s?.produtos ?? []).forEach((x: any) => {
+  passos.forEach((s: any) => (Array.isArray(s?.produtos) ? s.produtos : []).forEach((x: any) => {
     if (x?.produto_id && typeof x.compatibilidade === 'number' && !byProd.has(x.produto_id)) byProd.set(x.produto_id, Math.round(x.compatibilidade));
   }));
   (scans?.data ?? []).forEach((r: any) => {
@@ -149,8 +149,9 @@ export async function listColecao(userId: string): Promise<ColecaoItem[]> {
 // `onDone` roda a cada recorte que voltou — quem chama recarrega a lista.
 export async function requestMissingColecaoCutouts(items: ColecaoItem[], onDone?: () => void): Promise<void> {
   const scanIds = items
-    .filter((c) => c.origem === 'scan' && c.productScanId && !c.cutoutUrl)
-    .map((c) => c.productScanId!);
+    .filter((c) => c.origem === 'scan' && !c.cutoutUrl)
+    .map((c) => c.productScanId)
+    .filter((id): id is string => !!id);
   if (!scanIds.length) return;
   const st = await getScanCutouts(scanIds);
   await requestMissingScanCutouts(scanIds.map((id) => ({ id, status: st[id]?.status })), () => onDone?.());

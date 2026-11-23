@@ -240,6 +240,7 @@ xcrun simctl uninstall booted br.com.niksai.app && xcrun simctl install booted /
     - **Botão de histórico (topo direito):** abre painel flutuante com as últimas 5 conversas do usuário (`coach_conversations` ordenadas por `created_at desc`). Cada item exibe o título (primeiros 80 chars da primeira mensagem do usuário) e o tempo relativo da última mensagem (`Xm`, `Xh`, `Xd`, `Xmm`). Ao tocar em um item, carrega as mensagens daquela conversa e entra em modo `active`.
 - **TODO elemento clicável dá retorno tátil** — `import { haptics } from '.../lib/haptics'` e chamar como primeira linha do `onPress`. **Nunca** `expo-haptics` direto na tela. Ver "HAPTICS" para a escala (`tap`/`action`/`select`/`success`/`warning`/`error`) e o que fica de fora
 - **Dado de rede vai por `useCachedQuery`** (`lib/cache.ts`), não por `useFocusEffect` cru — senão a tela refaz tudo a cada troca de aba. E quem **escreve** no banco precisa chamar `invalidateCache`. Ver "CACHE DE DADOS"
+- **Aba nova exporta o próprio `ErrorBoundary`** (`export const ErrorBoundary = erroDaAba('<aba>')`, `components/ErroAba.tsx`) — sem ele, um erro na aba (mesmo pré-carregada, por trás) derruba o app inteiro. Ver "Erros de tela: ErrorBoundary da raiz e por aba"
 - **`getUserId()`/`useUserId()` (`lib/currentUser.ts`) em vez de `supabase.auth.getUser()`** — o `getUser()` é ida à rede; só usar nele operações sensíveis (apagar conta)
 - **Expo Router** para navegação — `useRouter()`, `router.push()`, `router.back()`
 - **TypeScript** em tudo — nunca JavaScript puro
@@ -681,6 +682,7 @@ Chamada via `supabase.rpc('delete_user')` no client. O `SECURITY DEFINER` permit
 - `coach_protocol_suggestions` — propostas de alteração de rotina feitas pela NIKS no chat (ver "Coach — alteração de protocolo (v3)")
 - `minha_rotina_passos` — a rotina que ela FAZ, um registro por passo (ver decisão **6b**)
 - `rotina_lotes` — um registro por "Montar minha rotina com meus produtos" (scan em lote): `status` processando/pronto/erro, `caminhos`/`tem_rotulo` (imagens no bucket `rotina-lotes`), `resultado` (JSON da IA + o `colecao_item_id` de cada produto), `notificado_em`/`visto_em`/`aplicado_em`. RLS: ela lê e marca visto; **só a função cria** (sem policy de insert). Migration `20261009180000` (ver **6b**)
+- `erros_app` — erros de tela pegos pelos ErrorBoundary do app (build 1.64; migration `20261223120000_erros_app.sql`, ✅ em produção desde 23/nov/2026). Uma linha por erro: `sessao` (id da abertura do app), `user_id` (null deslogada), `tela` (`'raiz'` ou o nome da aba), `nome`, `mensagem`, `stack`, `versao`, `build`, `plataforma`, `criado_em`. **O app só insere** (anon e authenticated, só nas colunas acima; logada só com o próprio `user_id`); ninguém lê, altera ou apaga pelo app — leitura pelo painel/SQL. **1 registro por erro por sessão:** índice único em `(sessao, assinatura)`, `assinatura` = md5 de tela + nome + mensagem (gerada pelo banco). Tamanhos limitados por CHECK (a anon key é pública). Quem grava: `lib/erroApp.ts` (ver "Erros de tela: ErrorBoundary da raiz e por aba"). Desfazer: `~/Developer/niks-ai-backups/2026-11-23_erros_app/DESFAZER.sql`.
 - `produtos` — **catálogo de produtos reais** lido pela Edge Function `recomendar-produtos`. ⚠️ **NÃO está em `supabase/migrations/`** (foi criada pelo dashboard) — para ver o schema ao vivo, consulte o banco, não os arquivos. **92 produtos** (ago/2026): 43 importados (Coreia 28, Canadá 7, França 4, EUA 3, Japão 1) + 49 brasileiros (Creamy 29, Principia 20). RLS ligada; escrita só via service role. `UNIQUE (nome, marca)`. **`faixa_preco`** (1–3, obrigatória, nov/2026) vem da marca pela tabela `marcas_faixa_preco` — **marca nova entra lá ANTES dos produtos**, senão o banco recusa — ver "Feature: Faixa de preço dos produtos recomendados".
   - **Vocabulário controlado — 3 colunas têm CHECK constraint:**
     - `categoria` (11): `limpeza`, `limpeza_oleosa`, `tonico`, `serum`, `hidratante`, `oclusivo`, `protetor_solar` + as 4 adicionadas em ago/2026 para os lotes nacionais: `esfoliante`, `olhos`, `tratamento_local`, `tratamento_noturno`. ⚠️ **O `ALTER` que adicionou as 4 foi rodado direto no banco, sem migration** (a tabela não tem histórico versionado).
@@ -3720,6 +3722,26 @@ Chat com a NIKS AI (4ª aba "niks" do menu inferior). Redesenhada para o novo de
 
 **Testado no simulador (10/nov/2026):** voltar pelo botão das 17 telas a partir das origens reais; cadeias Grupos › Seus grupos › Grupo › Ranking/Jornada/Detalhe/Produto da amiga; navbar a partir da pilha; trilha dos pushes (grupo e denúncia) e do tutorial dos grupos (inclusive retomado de outra aba); link com o app aberto; carta depois do check-in pelo grupo, pela Rotina e no fim do skincare (o check-in sai da pilha e a carta não vira folha); opções do gesto por tela e com folha aberta. **Sem teste automático do arrasto** (o simulador não tem como gerar o toque daqui): a sensação do gesto foi conferida e aprovada no iPhone físico (10/nov/2026). Android: o voltar do sistema é o da pilha (não testado).
 - ⚠️ Comportamento ANTIGO, não mudou: telas da pilha RAIZ (scan, onboarding, carta) que fazem `router.replace/push('/(app)/…')` abrem uma segunda cópia do `(app)` na raiz (o `(app)` da raiz não tem gesto, então não aparece para a usuária).
+
+### Erros de tela: ErrorBoundary da raiz e por aba (1.64, 23/nov/2026)
+
+**Por quê (caso real, nov/2026):** uma assinante ficou presa em "Algo deu errado / Tentar de novo" e só soubemos por e-mail. Desde a 1.63 as abas são **pré-carregadas por trás** (`app/(app)/(abas)/_layout.tsx`: Produtos, Rotina, Grupos, Perfil e Chat montam 2,5–5 s depois da home), e o único ErrorBoundary era o da raiz — um erro numa aba que ela nem abriu trocava o app INTEIRO pela tela de erro, a cada "Tentar de novo".
+
+**Duas camadas:**
+- **Raiz** (`export function ErrorBoundary` em `app/_layout.tsx`): rede de última instância. Fica FORA dos providers — só componentes básicos do React Native. Manda `erro_tela` ao Mixpanel (`tela: 'raiz'`) e grava em `erros_app`.
+- **Cada aba** (`components/ErroAba.tsx`): as 6 abas exportam `export const ErrorBoundary = erroDaAba('<nome da aba>');` no fim do arquivo. O erro fica PRESO NA ABA: as outras abas e a navbar seguem funcionando; a aba mostra "Não deu para abrir esta tela" + "Tentar de novo". Aba que quebrou montando por trás **tenta de novo sozinha uma vez** quando é aberta de verdade (o foco traz dado fresco; o que quebrou pode ter sido o cache). Também manda `erro_tela` (com `tela`) e grava em `erros_app`.
+- ⚠️ **Aba nova = exportar o `ErrorBoundary` dela.** O expo-router só usa o boundary exportado pelo próprio arquivo da rota; sem ele, o erro sobe até a raiz e derruba o app. (Boundary no `(abas)/_layout.tsx` NÃO serve: ele troca o navegador de abas inteiro.)
+
+**Registro — `lib/erroApp.ts` (`registrarErroApp(tela, erro)`):** grava tela, nome, mensagem (≤ 1000), stack (≤ 4000), `user_id` (`peekUserId()`), versão (`expoConfig.version`), build (`expo-application`) e plataforma em `erros_app`. Nunca lança, não espera a rede, 1 registro por erro por sessão do app (o banco confere o mesmo) e no máximo 20 erros diferentes por sessão. A 1.63 e anteriores só mandam o `erro_tela` ao Mixpanel (`distinct_id` = `user_id`).
+
+**Ler os erros** (painel ou Management API — ver "SUPABASE"):
+```sql
+select criado_em, tela, nome, mensagem, user_id, versao, build
+from erros_app order by criado_em desc limit 50;
+-- por conta: where user_id = '<uuid>'
+```
+
+**Junto (1.64): leitura tolerante dos dados da rotina e dos produtos.** O `!` do TypeScript some na compilação — não protege nada em tempo de execução. O que derruba tela é usar como lista o que não é lista. Por isso: `rotina_am`/`rotina_pm` passam por `passosCrus` e `dicas` por `dicasCruas` em `protocolo.tsx` (fora do formato → vazio/null, mantendo as posições de `dicas`, porque `dicas[4]` é o cronograma); `passo.produtos` da recomendação só é lido com `Array.isArray` (home, Produtos, `EscolherProdutoSheet`, `lib/produtosTela.ts`, `lib/colecao.ts`, `lib/analiseEstante.ts`). Regra: dado que vem do banco ou do cache, checar o formato antes de `.map`/`.length`.
 
 ### Tab Bar / Navbar (`app/(app)/_layout.tsx` — `GlobalBottomBar`)
 

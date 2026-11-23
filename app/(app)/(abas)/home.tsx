@@ -1,3 +1,4 @@
+import { erroDaAba } from '../../../components/ErroAba';
 import { useEhConvidada } from '../../../lib/acesso';
 import { abrirTrava, type FRASES } from '../../../lib/trava';
 import CadeadoSobre from '../../../components/trava/CadeadoSobre';
@@ -359,13 +360,14 @@ export default function Home() {
 
     // "Seus produtos": o produto principal de cada passo, separado por período e
     // numerado na ordem dos passos daquele período ("Passo 2 · Hidratação").
-    const passos: any[] = Array.isArray(recRes.data?.recomendacao) ? recRes.data!.recomendacao : [];
+    const recCrua: unknown = recRes.data?.recomendacao;
+    const passos: any[] = Array.isArray(recCrua) ? recCrua : [];
     const raw: Record<RoutinePeriod, { id: string; step: string; compat: number | null; copy: string }[]> = { am: [], pm: [] };
     for (const period of ['am', 'pm'] as const) {
       const doPeriodo = passos.filter((p) => p?.periodo === period || p?.periodo === 'am+pm');
       doPeriodo.forEach((p, i) => {
         if (p?.sem_produto) return;
-        const prods = p?.produtos ?? [];
+        const prods: any[] = Array.isArray(p?.produtos) ? p.produtos : [];
         const principal = prods.find((x: any) => x?.principal) ?? prods[0];
         if (!principal?.produto_id) return;
         raw[period].push({
@@ -413,8 +415,8 @@ export default function Home() {
       firstName: String(user?.nome ?? '').trim().split(/\s+/)[0] ?? '',
       amTime: parseTime(user?.rotina_manha_horario, DEFAULT_AM),
       pmTime: parseTime(user?.rotina_noite_horario, DEFAULT_PM),
-      amCount: minhaCount?.am ?? (Array.isArray(proto?.rotina_am) ? proto!.rotina_am.length : 0),
-      pmCount: minhaCount?.pm ?? (Array.isArray(proto?.rotina_pm) ? proto!.rotina_pm.length : 0),
+      amCount: minhaCount?.am ?? (Array.isArray(proto?.rotina_am) ? proto.rotina_am.length : 0),
+      pmCount: minhaCount?.pm ?? (Array.isArray(proto?.rotina_pm) ? proto.rotina_pm.length : 0),
       products: { am: resolve(raw.am), pm: resolve(raw.pm) },
       homeTutorialSeenAt: (user?.home_tutorial_seen_at ?? null) as string | null,
       lastScanAt: (scan?.created_at ?? null) as string | null,
@@ -1285,3 +1287,6 @@ const styles = StyleSheet.create({
   prodName: { marginTop: 14, fontSize: 16, fontWeight: '500', lineHeight: 20, letterSpacing: -0.3, color: INK },
   prodStep: { marginTop: 3, fontSize: 14, lineHeight: 18, color: MUTE, letterSpacing: -0.1 },
 });
+
+// Erro nesta aba fica nesta aba: não derruba o app inteiro (1.64, components/ErroAba).
+export const ErrorBoundary = erroDaAba('home');

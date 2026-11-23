@@ -23,6 +23,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { limitePorIp } from '../_shared/limiteIp.ts'
 import { validarAncora, type Ancora } from '../_shared/analise-rapida.ts'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -730,6 +731,7 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
     let lastError = ''
 
     for (let attempt = 1; attempt <= 3; attempt++) {
+      const t0 = Date.now()
       const response = await fetch(openaiUrl, {
         method: 'POST',
         headers: {
@@ -759,6 +761,8 @@ Avalie cada métrica estritamente pelo que vê na imagem, de forma independente 
       })
 
       const data = await response.json()
+      // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+      registrarChatOpenAI('analyze-skin', 'gpt-5.4-mini', data, { auth: req.headers.get('authorization'), duracaoMs: Date.now() - t0 })
 
       const isUnavailable = !response.ok && (response.status === 503 || response.status === 500)
       if (isUnavailable) {

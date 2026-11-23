@@ -103,6 +103,8 @@ export type CartaHoje = {
 };
 
 export type EstadoCartas = {
+  /** A conta ainda não tem linha em `users` (corrida do cadastro): estado vazio, nada gravado. */
+  sem_conta?: boolean;
   /** 2 = regras novas (o servidor respondeu com `estado_cartas_v2`). */
   regras?: number;
   hoje: string;
@@ -254,6 +256,9 @@ async function buscarEstado(): Promise<EstadoCartas> {
   if (!enviado) body.historico = await historicoLocal();
   if (fila.length) body.pendentes = fila;
   const estado = await chamar<EstadoCartas>(body);
+  // Conta ainda sem linha em `users` (servidor devolveu o estado vazio, 1.64): nada foi
+  // gravado — histórico e fila continuam para o próximo `estado`.
+  if (estado.sem_conta) return estado;
   // Só limpa o que foi enviado com sucesso.
   if (!enviado) await AsyncStorage.setItem(HIST_KEY, new Date().toISOString()).catch(() => {});
   if (fila.length) await AsyncStorage.removeItem(FILA_KEY).catch(() => {});

@@ -135,10 +135,10 @@ async function avisarCheckin(supabase: Supa, checkinId: string) {
 }
 
 // Filtro automático (Fase 2): recusa ou indisponibilidade impedem a publicação.
-async function filtrarArquivo(supabase: Supa, bucket: string, path: string) {
+async function filtrarArquivo(supabase: Supa, bucket: string, path: string, uid: string | null = null) {
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 120)
   if (error || !data?.signedUrl) return { liberada: false as const, motivo: 'filtro_indisponivel' as const }
-  return moderarImagem(data.signedUrl)
+  return moderarImagem(data.signedUrl, uid)
 }
 
 const recusaDoFiltro = (r: { motivo?: string; categoria?: string }) =>
@@ -315,7 +315,7 @@ serve(async (req) => {
         const bannerPath = typeof body?.banner_path === 'string' ? body.banner_path : null
         if (bannerPath) {
           if (!bannerPath.startsWith(`${uid}/`)) return json({ ok: false, motivo: 'banner' })
-          const filtro = await filtrarArquivo(supabase, BUCKET, bannerPath)
+          const filtro = await filtrarArquivo(supabase, BUCKET, bannerPath, uid)
           if (!filtro.liberada) return recusaDoFiltro(filtro)
         }
         const r = await rpc(supabase, 'criar_grupo', {
@@ -400,7 +400,7 @@ serve(async (req) => {
         const nome = path.slice(uid.length + 1)
         const { data: achados } = await supabase.storage.from(BUCKET).list(uid, { search: nome, limit: 1 })
         if (!achados?.some((o: { name: string }) => o.name === nome)) return json({ ok: false, motivo: 'foto' })
-        const filtro = await filtrarArquivo(supabase, BUCKET, path)
+        const filtro = await filtrarArquivo(supabase, BUCKET, path, uid)
         if (!filtro.liberada) return recusaDoFiltro(filtro)
         const grupos = Array.isArray(body?.grupos) ? body.grupos.filter((g: unknown) => typeof g === 'string' && UUID.test(g)).slice(0, 50) : []
         const hora = typeof body?.hora_exibida === 'string' && !Number.isNaN(Date.parse(body.hora_exibida)) ? body.hora_exibida : null
@@ -422,7 +422,7 @@ serve(async (req) => {
         if (!UUID.test(scan)) return json({ error: 'product_scan_id inválido' }, 400)
         const { data: foto } = await supabase.from('product_scans').select('image_path').eq('id', scan).eq('user_id', uid).maybeSingle()
         if (foto?.image_path) {
-          const filtro = await filtrarArquivo(supabase, 'product-scans', foto.image_path)
+          const filtro = await filtrarArquivo(supabase, 'product-scans', foto.image_path, uid)
           if (!filtro.liberada) return recusaDoFiltro(filtro)
         }
         const grupos = Array.isArray(body?.grupos) ? body.grupos.filter((g: unknown) => typeof g === 'string' && UUID.test(g)).slice(0, 50) : []
@@ -440,7 +440,7 @@ serve(async (req) => {
       case 'moderar_perfil': {
         const b = typeof body?.base64 === 'string' ? body.base64 : ''
         if (!b || b.length > 4_000_000) return json({ error: 'foto inválida' }, 400)
-        const filtro = await moderarImagem(`data:image/jpeg;base64,${b}`)
+        const filtro = await moderarImagem(`data:image/jpeg;base64,${b}`, uid)
         return filtro.liberada ? json({ ok: true }) : recusaDoFiltro(filtro)
       }
 

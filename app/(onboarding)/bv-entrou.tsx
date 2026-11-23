@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
+import { getCustomerInfo, ENTITLEMENT_ID } from '../../lib/revenuecat';
 import { useObName, useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaBranca, BolhaRadial, SEMANAS_ROTINA, diaMesCurto, BvEtiqueta, BvTitulo, BvBotao, LOGO_ROSA, useBvFrame,
@@ -10,11 +12,25 @@ import {
 // Boas-vindas pós-pagamento · tela 1 "Você entrou" (design NiksBoasVindas, frame "01").
 // Vem do paywall com a compra confirmada e SEM conta (`paywall-soft` › `confirmarESeguir`).
 // Fluxo das 8 telas e o que é gravado: `lib/boasVindas.ts`.
-// ⚠️ PROVISÓRIO (decisão do produto, 07/nov/2026: copiar o design): "Membro nº 12.408" e
-// "Anual · Rotina de 4 semanas" são FIXOS — não vêm de dado nenhum (o plano pode ter sido o
-// mensal). Não pode ir ao ar assim.
 // 23/nov/2026 (decisão do produto): sem número de membro inventado — "Membro desde <hoje>".
-const PLANO_PROVISORIO = t('Anual · Rotina de {{semanas}} semanas', { semanas: SEMANAS_ROTINA }); // plano de 1 mês (07/nov/2026)
+// Plano = o REAL comprado (1.64): lido do RevenueCat (`entitlements.active.premium`), pelo id do
+// produto (`br.com.niksai.app.anual.*` / `.mensal.*`). Sem dado (RevenueCat lento, sem rede,
+// id fora do padrão) → só "Rotina de 4 semanas", nunca um plano chutado.
+type Plano = 'anual' | 'mensal' | null;
+
+function planoDoProduto(id: string | undefined): Plano {
+  if (!id) return null;
+  if (/\.anual\./.test(id)) return 'anual';
+  if (/\.mensal\./.test(id)) return 'mensal';
+  return null;
+}
+
+function textoPlano(plano: Plano): string {
+  const semanas = SEMANAS_ROTINA;
+  if (plano === 'anual') return t('Anual · Rotina de {{semanas}} semanas', { semanas });
+  if (plano === 'mensal') return t('Mensal · Rotina de {{semanas}} semanas', { semanas });
+  return t('Rotina de {{semanas}} semanas', { semanas });
+}
 
 export default function BvEntrou() {
   const router = useRouter();
@@ -22,6 +38,16 @@ export default function BvEntrou() {
   const name = useObName();
   const { y } = useBvFrame();
   useOnMount(() => track('boas_vindas_tela', { tela: 1, nome: 'entrou' }));
+  const [plano, setPlano] = useState<Plano>(null);
+  useEffect(() => {
+    let vivo = true;
+    const teto = new Promise<null>((r) => setTimeout(() => r(null), 3000));
+    Promise.race([getCustomerInfo().catch(() => null), teto]).then((info) => {
+      if (!vivo || !info) return;
+      setPlano(planoDoProduto(info.entitlements.active[ENTITLEMENT_ID]?.productIdentifier));
+    });
+    return () => { vivo = false; };
+  }, []);
 
   return (
     <BvScreen>
@@ -65,7 +91,7 @@ export default function BvEntrou() {
           </View>
           <View style={{ alignItems: 'flex-end', flexShrink: 1, marginLeft: 12 }}>
             <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: BV.sub }}>{t('PLANO')}</Text>
-            <Text numberOfLines={1} adjustsFontSizeToFit style={{ marginTop: 5, fontSize: 15, fontWeight: '600', letterSpacing: -0.3, color: BV.ink }}>{PLANO_PROVISORIO}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ marginTop: 5, fontSize: 15, fontWeight: '600', letterSpacing: -0.3, color: BV.ink }}>{textoPlano(plano)}</Text>
           </View>
         </View>
       </View>

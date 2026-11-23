@@ -1,3 +1,4 @@
+import { erroDaAba } from '../../../components/ErroAba';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Image, Modal, TouchableOpacity, TextInput, Keyboard,
@@ -156,7 +157,7 @@ function buildItem(passo: RecPasso, prodMap: Map<string, Prod>, prefix: string, 
     };
   }
 
-  const resolved = (passo.produtos ?? [])
+  const resolved = (Array.isArray(passo?.produtos) ? passo.produtos : [])
     .map((x) => ({ x, p: prodMap.get(x.produto_id) }))
     .filter((r): r is { x: RecProduto; p: Prod } => !!r.p);
   if (resolved.length === 0) return null;
@@ -204,7 +205,7 @@ function montarRec({ passos, prods }: { passos: any[]; prods: any[] }): { am: It
   for (const passo of passos) {
     if (passo.sem_produto) continue;
     const step = (passo.passo || passo.categoria || '').trim();
-    for (const x of passo.produtos ?? []) {
+    for (const x of Array.isArray(passo?.produtos) ? passo.produtos : []) {
       const prod = prodMap.get(x.produto_id);
       if (!prod || seen.has(prod.id)) continue;
       seen.add(prod.id);
@@ -711,8 +712,8 @@ export default function RecomendacaoProdutos() {
             <Text style={p47.shelfTagText}>{t('Na estante')}</Text>
           </View>
         )}
-        {(p.cutoutUrl ?? p.photoUrl)
-          ? <ExpoImage source={fonteImagem((p.cutoutUrl ?? p.photoUrl)!)} cachePolicy="memory-disk" style={{ width: 108, height: 108 }} contentFit="contain" accessibilityLabel={p.name ?? undefined} />
+        {(p.cutoutUrl || p.photoUrl)
+          ? <ExpoImage source={fonteImagem(p.cutoutUrl || p.photoUrl || '')} cachePolicy="memory-disk" style={{ width: 108, height: 108 }} contentFit="contain" accessibilityLabel={p.name ?? undefined} />
           : <IconHerb />}
         {faixa && <FaixaPreco faixa={faixa} style={{ right: 10, bottom: 10 }} />}
       </View>
@@ -1345,3 +1346,6 @@ const pd = StyleSheet.create({
   fade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 220 },
   actions: { position: 'absolute', left: 18, right: 18, gap: 10 },
 });
+
+// Erro nesta aba fica nesta aba: não derruba o app inteiro (1.64, components/ErroAba).
+export const ErrorBoundary = erroDaAba('recomendacao-produtos');

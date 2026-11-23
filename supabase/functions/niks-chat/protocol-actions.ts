@@ -1,6 +1,7 @@
 import { temMinhaRotina, lerMinhaRotina, gravarMudanca } from '../_shared/minha-rotina.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { validateProposal, applyProposal, logRefusal, semCamposInternos } from '../_shared/protocol-write.ts'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
@@ -134,6 +135,7 @@ Regras:
 
 Mensagem da usuária: ${userMessage}`
 
+    const t0 = Date.now()
     const resp = await fetch(OPENAI_URL, {
       method: 'POST',
       headers: {
@@ -158,6 +160,8 @@ Mensagem da usuária: ${userMessage}`
     }
 
     const data = await resp.json()
+    // Custo em `ia_custos`, em segundo plano.
+    registrarChatOpenAI('niks-chat-aprovacao', 'gpt-5.4-mini', data, { userId, duracaoMs: Date.now() - t0 })
     const text = data.choices[0].message.content
     const { intent } = JSON.parse(extractJSON(text)) as { intent: 'approved' | 'rejected' | 'unclear' }
 

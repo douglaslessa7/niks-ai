@@ -75,6 +75,40 @@ async function marcarV2(supabase: Supa, userId: string, appPontos = false) {
   }
 }
 
+// Conta que ainda não tem linha em `users` (23/nov/2026): o app chama o `estado` logo depois
+// de entrar com Google/Apple, às vezes antes de o cadastro criar a linha. Todas as funções SQL
+// do estado gravam com chave para `users` (sequencias, pontos_usuario) e davam 500
+// (23503, ~1% das chamadas). Espera um pouco pela linha (quase sempre chega no mesmo minuto);
+// se não chegar, devolve um estado VAZIO, sem gravar nada — o próximo `estado` traz o real.
+const ESPERA_CONTA_MS = [0, 400, 800, 1200] // até ~2,4 s no total
+
+async function contaExiste(supabase: Supa, userId: string): Promise<boolean> {
+  for (const ms of ESPERA_CONTA_MS) {
+    if (ms) await new Promise((r) => setTimeout(r, ms))
+    const { data, error } = await supabase.from('users').select('id').eq('id', userId).maybeSingle()
+    if (error) throw error
+    if (data) return true
+  }
+  return false
+}
+
+// Mesmo formato do `estado_cartas(_v2)` para conta nova, só com os campos obrigatórios do app
+// (lib/cartasServidor.ts › EstadoCartas). `sem_conta: true` avisa o app 1.64+ para não dar o
+// histórico e a fila offline como enviados (o app da loja ignora o campo).
+function estadoVazio(v2: boolean) {
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+  return {
+    ...(v2 ? { regras: 2, carta_hoje: { id: null, tipo: null, estado: 'bloqueada', origem: null }, carta_volta: null } : { cartas_hoje: { cota: 0, dadas: 0 } }),
+    hoje,
+    sequencia: { atual: 0, recorde: 0, ultimo_dia: null },
+    rotina_hoje: false,
+    a_raspar: [],
+    poderes: v2 ? { protecao: 0, pontos_dobro_dias: [], pontos_dobro_ate: null } : { protecao: 0 },
+    cartas_novas: [],
+    sem_conta: true,
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -93,6 +127,11 @@ serve(async (req) => {
 
   try {
     if (acao === 'estado') {
+      // 0. Sem linha em `users` ainda (corrida do cadastro): estado vazio, sem erro e sem gravar.
+      if (!(await contaExiste(supabase, userId))) {
+        console.warn('[cartas] estado sem linha em users — devolvendo estado vazio', userId)
+        return json(estadoVazio(v2))
+      }
       // 1. Histórico do celular (uma vez por usuária; a função SQL ignora as seguintes).
       if (Array.isArray(body?.historico)) {
         const { error } = await supabase.rpc('sincronizar_historico', { p_uid: userId, p_dias: body.historico.slice(0, 400) })

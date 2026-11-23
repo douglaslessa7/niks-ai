@@ -12,6 +12,7 @@ import { perfilMotor } from './perfil.ts'
 import { montarPlano, textosDosAvisos, type Plano } from './plano.ts'
 import { mensagemV2, SYSTEM_V2 } from './prompt.ts'
 import { INSTRUCAO_EN_ROTINA, type Idioma } from './ingles.ts'
+import { registrarChatOpenAI } from '../ia-custos.ts'
 
 export function clienteServico(): any {
   return createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -35,11 +36,13 @@ export async function memoriasAtivas(supabase: any, uid: string | null): Promise
   return (data ?? []) as { type?: string; value?: string }[]
 }
 
-export async function chamarIA(messages: { role: string; content: string }[]): Promise<string | null> {
+/** `quem`: só para o custo em `ia_custos` (nome da etapa + conta), gravado em segundo plano. */
+export async function chamarIA(messages: { role: string; content: string }[], quem: { funcao: string; uid: string | null } = { funcao: 'motor-v2', uid: null }): Promise<string | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 90000)
   try {
     for (let tentativa = 1; tentativa <= 3; tentativa++) {
+      const t0 = Date.now()
       const r = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}` },
@@ -54,6 +57,7 @@ export async function chamarIA(messages: { role: string; content: string }[]): P
       })
       if (r.ok) {
         const d = await r.json()
+        registrarChatOpenAI(quem.funcao, 'gpt-5.4-mini', d, { userId: quem.uid, duracaoMs: Date.now() - t0 })
         return d?.choices?.[0]?.message?.content ?? null
       }
       const corpo = await r.text().catch(() => '')
@@ -94,14 +98,14 @@ export async function gerarRotinaV2(
 
   const correcoes: string[] = []
   const msgs = [{ role: 'system', content: idioma === 'en' ? SYSTEM_V2 + INSTRUCAO_EN_ROTINA : SYSTEM_V2 }, { role: 'user', content: mensagemV2(scanResult, onboardingData, plano) }]
-  const primeiro = await chamarIA(msgs)
+  const primeiro = await chamarIA(msgs, { funcao: 'motor-v2-rotina', uid })
   let proto = lerJson(primeiro)
   if (!proto) throw new Error('motor v2: a IA não devolveu uma rotina legível')
 
   let problemas = problemasDaRotina(proto, plano)
   if (problemas.length) {
     correcoes.push(`ia:${problemas.map((p) => p.tipo).join(',')}`)
-    const segunda = lerJson(await chamarIA([...msgs, { role: 'assistant', content: primeiro! }, { role: 'user', content: mensagemCorretiva(problemas) }]))
+    const segunda = lerJson(await chamarIA([...msgs, { role: 'assistant', content: primeiro! }, { role: 'user', content: mensagemCorretiva(problemas) }], { funcao: 'motor-v2-correcao', uid }))
     if (segunda && problemasDaRotina(segunda, plano).length <= problemas.length) proto = segunda
     problemas = problemasDaRotina(proto, plano)
   }

@@ -1734,6 +1734,8 @@
   "Não deu pra abrir": "Couldn't open it",
   "Não encontramos um link ou imagem nesse compartilhamento.": "We couldn't find a link or image in what you shared.",
   "Algo deu errado": "Something went wrong",
+  "Não deu para abrir esta tela": "We couldn't open this screen",
+  "As outras partes do app continuam funcionando.": "The rest of the app still works.",
   "Início": "Home",
   "Atualize o NIKS": "Update NIKS",
   "Para continuar, instale a versão mais recente.": "To keep going, install the latest version.",
@@ -1782,5 +1784,7 @@
   "Os resultados podem variar.": "Results may vary.",
   "MEMBRO DESDE": "MEMBER SINCE",
   "Hoje você já começou a sua sequência.": "You've already started your streak today.",
-  "Vale NIKS Points": "Earns NIKS Points"
+  "Vale NIKS Points": "Earns NIKS Points",
+  "Mensal · Rotina de {{semanas}} semanas": "Monthly · {{semanas}}-week routine",
+  "Rotina de {{semanas}} semanas": "{{semanas}}-week routine"
 }

@@ -19,6 +19,7 @@ import type { PurchaseResult, RestoreResult } from 'expo-superwall';
 import Superwall from 'expo-superwall/compat';
 import Purchases from 'react-native-purchases';
 import { MixpanelProvider, trackFora, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
+import { registrarErroApp } from '../lib/erroApp';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
 import { ShareIntentProvider } from 'expo-share-intent';
 import { ShareIntentBridge } from '../components/share/ShareIntentBridge';
@@ -257,8 +258,9 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Pro
   useEffect(() => {
     console.error('[ErrorBoundary] erro de tela:', error);
     try {
-      trackFora('erro_tela', { nome: error?.name ?? 'Error', mensagem: String(error?.message ?? '').slice(0, 200) });
+      trackFora('erro_tela', { tela: 'raiz', nome: error?.name ?? 'Error', mensagem: String(error?.message ?? '').slice(0, 200) });
     } catch {}
+    registrarErroApp('raiz', error); // 1.64: tabela `erros_app` (lib/erroApp)
   }, [error]);
 
   return (

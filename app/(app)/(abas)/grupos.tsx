@@ -1,3 +1,4 @@
+import { erroDaAba } from '../../../components/ErroAba';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -179,3 +180,6 @@ const styles = StyleSheet.create({
   verTodos: { height: 44, paddingHorizontal: 22, borderRadius: 100, backgroundColor: '#fff', justifyContent: 'center', boxShadow: '0px 1px 2px rgba(18,18,18,0.04)' },
   verTodosT: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: INK },
 });
+
+// Erro nesta aba fica nesta aba: não derruba o app inteiro (1.64, components/ErroAba).
+export const ErrorBoundary = erroDaAba('grupos');

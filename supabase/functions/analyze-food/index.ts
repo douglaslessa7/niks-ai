@@ -1,4 +1,5 @@
 import { travaSeHouverSessao } from '../_shared/assinatura.ts'
+import { registrarGemini } from '../_shared/ia-custos.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -108,12 +109,15 @@ REGRAS FINAIS:
 
     let data: any = null
     for (let attempt = 1; attempt <= 3; attempt++) {
+      const t0 = Date.now()
       const response = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: geminiBody,
       })
       data = await response.json()
+      // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+      registrarGemini('analyze-food', 'gemini-2.5-pro', data, { auth: req.headers.get('authorization'), duracaoMs: Date.now() - t0 })
 
       const is503 = data?.error?.code === 503 || data?.error?.status === 'UNAVAILABLE'
       if (!data.candidates && is503 && attempt < 3) {

@@ -13,6 +13,7 @@ import { usaMotorNovo } from '../_shared/motor/gerar.ts'
 import { montarProdutosV2 } from '../_shared/motor/recomendar.ts'
 import { ativoLegivelEn, paraIdioma, SEM_PRODUTO_EN } from '../_shared/motor/ingles.ts'
 import { avaliarProduto, lerReacoes } from '../_shared/motor/reacoes.ts'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 
 // Etapa 3 da tradução (nov/2026): com `idioma: 'en'` no corpo, os classificadores abaixo
 // também entendem os nomes de passo em INGLÊS (rotina escrita em inglês) e os textos para
@@ -306,9 +307,10 @@ function stepIntent(name: string, ingredient: string, en = false): { codes: stri
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenAI (mesmo padrão do generate-protocol: gpt-5.4-mini, json_object, retry 3x)
 // ─────────────────────────────────────────────────────────────────────────────
-async function callOpenAI(systemPrompt: string, userPrompt: string): Promise<any> {
+async function callOpenAI(systemPrompt: string, userPrompt: string, uid: string | null = null): Promise<any> {
   let lastErr: unknown = null
   for (let attempt = 1; attempt <= 3; attempt++) {
+    const t0 = Date.now()
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -337,6 +339,8 @@ async function callOpenAI(systemPrompt: string, userPrompt: string): Promise<any
       throw lastErr
     }
     const data = await res.json()
+    // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+    registrarChatOpenAI('recomendar-produtos', 'gpt-5.4-mini', data, { userId: uid, duracaoMs: Date.now() - t0 })
     const content = data?.choices?.[0]?.message?.content ?? ''
     const start = content.indexOf('{')
     const end = content.lastIndexOf('}')
@@ -601,7 +605,7 @@ Responda SOMENTE com JSON no formato:
     const systemPromptIdioma = en
       ? systemPrompt + '\n\nLANGUAGE — OVERRIDES THE OUTPUT LANGUAGE ABOVE: the user reads the app in English. Write every "copy" in natural American English, warm and personal (same rules: short, ~18 words, specific to her). Keep the JSON format and the ids exactly as specified.'
       : systemPrompt
-    const aiOut = iaSteps.length > 0 ? await callOpenAI(systemPromptIdioma, userPrompt) : { passos: [] }
+    const aiOut = iaSteps.length > 0 ? await callOpenAI(systemPromptIdioma, userPrompt, user_id) : { passos: [] }
 
     // ── Validação: só ids elegíveis, exatamente 1 principal, 1–3 por passo ───
     const aiByIndex = new Map<number, any>()

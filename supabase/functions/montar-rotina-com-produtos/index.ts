@@ -37,6 +37,7 @@ import { buildContextPack } from '../analisar-produto/prompt.ts'
 import { MONTAR_ROTINA_SYSTEM_PROMPT } from './prompt.ts'
 import { ensureScanCutout, norm, sameBrand, sameName } from '../_shared/scanCutout.ts'
 import { usaMotorNovo } from '../_shared/motor/gerar.ts'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 import { AntesDeGravar, processarLoteV2 } from './v2.ts'
 import { INSTRUCAO_EN, PUSH, ativosEn, idiomaDoCorpo, motivoEn, type Idioma } from './en.ts'
 
@@ -126,7 +127,7 @@ function conferir(r: any, total: number): any {
 }
 
 // Chamada à IA (com 2 novas tentativas em 500/503) + conferência. Lança em falha.
-async function analisar(context: any, produtos: { base64: string; mimeType?: string; tem_rotulo: boolean }[], idioma: Idioma = 'pt') {
+async function analisar(context: any, produtos: { base64: string; mimeType?: string; tem_rotulo: boolean }[], idioma: Idioma = 'pt', uid: string | null = null) {
   // Mesmo formato de blocos do analisar-produto; aqui o protocolo é a rotina IDEAL.
   const pack = buildContextPack(context)
     .replace('<CurrentProtocol>', '<IdealRoutine>')
@@ -151,6 +152,7 @@ async function analisar(context: any, produtos: { base64: string; mimeType?: str
   const t0 = Date.now()
   let data: any = null
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const t1 = Date.now()
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('OPENAI_API_KEY')}` },
@@ -171,6 +173,8 @@ async function analisar(context: any, produtos: { base64: string; mimeType?: str
       }),
     })
     data = await res.json()
+    // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+    registrarChatOpenAI('montar-rotina-com-produtos', MODELO, data, { userId: uid, duracaoMs: Date.now() - t1, esforco: 'low' })
     if ((res.status === 500 || res.status === 503) && tentativa < 3) {
       await new Promise((r) => setTimeout(r, 3000))
       continue
@@ -343,7 +347,7 @@ async function processarLote(supabase: any, userId: string, loteId: string, cami
     const context = await buildContext(supabase, userId, { rotina: 'ideal' })
     const { resultado, medicao } = await analisar(context, imagens.map((b, i) => ({
       base64: paraBase64(b!), mimeType: 'image/jpeg', tem_rotulo: !!temRotulo[i],
-    })), idioma)
+    })), idioma, userId)
     const scansNovos = await paraEstante(supabase, userId, loteId, caminhos, resultado, idioma)
 
     // Grava o resultado, troca a Minha rotina pela montada (automático — decisão de
@@ -426,7 +430,7 @@ Deno.serve(async (req) => {
       }
     }
     const context = await buildContext(supabase, userId, { rotina: 'ideal' })
-    const { resultado, medicao } = await analisar(context, produtos, idioma)
+    const { resultado, medicao } = await analisar(context, produtos, idioma, userId)
     console.log('MONTAR_ROTINA_MEDICAO', JSON.stringify({ userId, produtos: produtos.length, ...medicao }))
     return json({ ...resultado, _medicao: medicao })
   } catch (e) {

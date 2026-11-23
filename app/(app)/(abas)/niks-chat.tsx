@@ -1,3 +1,4 @@
+import { erroDaAba } from '../../../components/ErroAba';
 import { avisarSeSemAssinatura } from '../../../lib/respostaIA';
 import {
   View, Text, TouchableOpacity, ScrollView, TextInput, Animated, Easing,
@@ -1674,3 +1675,6 @@ const styles = StyleSheet.create({
   histWhen: { fontSize: 13, color: MUTED },
   histPrev: { fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: MUTED },
 });
+
+// Erro nesta aba fica nesta aba: não derruba o app inteiro (1.64, components/ErroAba).
+export const ErrorBoundary = erroDaAba('niks-chat');

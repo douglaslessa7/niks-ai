@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
@@ -45,6 +46,7 @@ Se não houver fatos relevantes a extrair, retorne: { "memories": [] }
 Mensagem da usuária: ${userMessage}
 Resposta da NIKS: ${assistantResponse}`
 
+    const t0 = Date.now()
     const resp = await fetch(OPENAI_URL, {
       method: 'POST',
       headers: {
@@ -68,6 +70,8 @@ Resposta da NIKS: ${assistantResponse}`
     }
 
     const data = await resp.json()
+    // Custo em `ia_custos`, em segundo plano (já roda depois da resposta do chat).
+    registrarChatOpenAI('niks-chat-memoria', 'gpt-5.4-mini', data, { userId, duracaoMs: Date.now() - t0 })
     const text = data.choices[0].message.content
     const parsed = JSON.parse(extractJSON(text)) as { memories: ExtractedMemory[] }
     const qualified = parsed.memories.filter(m => m.confidence >= 0.75)

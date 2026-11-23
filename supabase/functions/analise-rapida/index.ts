@@ -23,6 +23,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 import { limitePorIp } from '../_shared/limiteIp.ts'
 import { PROBLEMAS, REGIOES, validar, type Problema } from '../_shared/analise-rapida.ts'
+import { registrarChatOpenAI } from '../_shared/ia-custos.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -136,6 +137,8 @@ Deno.serve(async (req) => {
           }),
         })
         const data = await response.json().catch(() => ({}))
+        // Custo em `ia_custos`, em segundo plano (não atrasa a resposta).
+        registrarChatOpenAI('analise-rapida', 'gpt-5.4-mini', data, { auth: req.headers.get('authorization'), duracaoMs: Date.now() - inicio })
         const choice = data?.choices?.[0]
         console.log(`[analise-rapida] tentativa ${tentativa} · HTTP ${response.status} · ${Date.now() - inicio} ms · pedidos=${pedidos.length} · finish_reason=${choice?.finish_reason ?? '-'} · usage=${JSON.stringify(data?.usage ?? {})}`)
         if (!response.ok || !choice) {

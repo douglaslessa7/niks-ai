@@ -3,6 +3,8 @@
 // só para texto, então uma imagem com menor é pega pela categoria `sexual`.
 // Se a OpenAI falhar, a foto NÃO é publicada.
 
+import { registrarIa } from './ia-custos.ts'
+
 const CATEGORIAS_BLOQUEADAS = ['sexual', 'violence/graphic', 'self-harm', 'self-harm/intent', 'self-harm/instructions']
 const TETO_MS = 15000
 
@@ -13,9 +15,10 @@ export type ResultadoFiltro =
 
 const indisponivel: ResultadoFiltro = { liberada: false, motivo: 'filtro_indisponivel' }
 
-/** `url`: endereço assinado ou `data:image/jpeg;base64,…`. Nunca lança. */
-export async function moderarImagem(url: string): Promise<ResultadoFiltro> {
+/** `url`: endereço assinado ou `data:image/jpeg;base64,…`. Nunca lança. `uid`: só para `ia_custos`. */
+export async function moderarImagem(url: string, uid: string | null = null): Promise<ResultadoFiltro> {
   try {
+    const t0 = Date.now()
     const r = await fetch('https://api.openai.com/v1/moderations', {
       method: 'POST',
       headers: { Authorization: `Bearer ${Deno.env.get('OPENAI_API_KEY') ?? ''}`, 'Content-Type': 'application/json' },
@@ -26,6 +29,8 @@ export async function moderarImagem(url: string): Promise<ResultadoFiltro> {
       console.error('[moderacao] OpenAI', r.status)
       return indisponivel
     }
+    // Moderação é gratuita: a linha em `ia_custos` (custo 0) só conta as chamadas. Segundo plano.
+    registrarIa({ funcao: 'moderacao', provedor: 'openai', modelo: 'omni-moderation-latest', userId: uid, custoUsd: 0, duracaoMs: Date.now() - t0 })
     const categorias = (await r.json())?.results?.[0]?.categories
     if (!categorias || typeof categorias !== 'object') return indisponivel
     const categoria = CATEGORIAS_BLOQUEADAS.find((c) => categorias[c] === true)

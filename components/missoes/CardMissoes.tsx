@@ -20,7 +20,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
 import { t } from '../../lib/i18n';
-import { desafioBloqueado, proximoDesafio, quantasFeitas, textoProgressoRotina, usePulados, type DesafioId, type EstadoMissoes } from '../../lib/missoes';
+import { desafioBloqueado, proximoDesafio, quantasFeitas, textoProgressoRotina, useOrdemDesafios, usePulados, type DesafioId, type EstadoMissoes } from '../../lib/missoes';
 
 const INK = '#121212';
 const MUTE = '#8A8387';
@@ -83,12 +83,14 @@ export default function CardMissoes({ estado, onMissao }: { estado: EstadoMissoe
 
   const pulados = usePulados();
   const proximo = proximoDesafio(estado, pulados);
-  const linhas: { id: MissaoId; feito: boolean; sub: string | null }[] = [
-    { id: 'd1', feito: estado.d1, sub: null },
-    { id: 'd2', feito: estado.d2, sub: null },
-    { id: 'd3', feito: estado.d3, sub: textoProgressoRotina(estado) },
-    { id: 'd4', feito: estado.d4, sub: null },
-  ];
+  // Ordem (1.64): sem produto de casa, "Fazer o skincare" vem primeiro (`ordemDesafios`).
+  // O número no círculo é a posição na lista.
+  const ordem = useOrdemDesafios(estado);
+  const linhas: { id: MissaoId; feito: boolean; sub: string | null }[] = ordem.map((id) => ({
+    id,
+    feito: estado[id],
+    sub: id === 'd3' ? textoProgressoRotina(estado) : null,
+  }));
 
   return (
     <Animated.View style={[styles.sombra, entraSt]}>
