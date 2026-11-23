@@ -6,6 +6,7 @@ import { ScanLoadingView } from '../../components/scan/ScanLoadingView';
 import { ObPillButton } from '../../components/onboarding/kit';
 import { haptics } from '../../lib/haptics';
 import { analisarEspinha, fotoAtual, lerUltimaAnalise, limparFoto, salvarUltimaAnalise } from '../../lib/sosEspinha';
+import { t } from '../../lib/i18n';
 
 // Carregamento do SOS espinha: a tela única de loading dos scans, com a foto dela e a linha
 // de scan no disco. Os três desfechos sem análise têm texto e botão próprios.
@@ -78,18 +79,18 @@ export default function SosLoading() {
       return;
     }
     if (r.status === 'precisa_foto') {
-      setAviso({ titulo: 'Não consegui ver bem', texto: 'Tire outra foto, com boa luz e com a espinha no centro.', botao: 'Tirar outra foto', acao: outraFoto });
+      setAviso({ titulo: t('Não consegui ver bem'), texto: t('Tire outra foto, com boa luz e com a espinha no centro.'), botao: t('Tirar outra foto'), acao: outraFoto });
     } else if (r.status === 'limite') {
       const temUltima = !!(await lerUltimaAnalise());
       if (!vivoRef.current) return;
       setAviso({
-        titulo: 'Você já fez 5 análises hoje',
-        texto: 'Amanhã você pode analisar de novo. Até lá, siga os cuidados da sua última análise.',
-        botao: temUltima ? 'Ver minha última análise' : 'Concluir',
+        titulo: t('Você já fez 5 análises hoje'),
+        texto: t('Amanhã você pode analisar de novo. Até lá, siga os cuidados da sua última análise.'),
+        botao: temUltima ? t('Ver minha última análise') : t('Concluir'),
         acao: () => { haptics.tap(); router.replace((temUltima ? '/(scan)/sos-resultado' : '/(app)/home') as any); },
       });
     } else {
-      setAviso({ titulo: 'Não deu para analisar agora', texto: 'Verifique sua internet e tente de novo.', botao: 'Tentar novamente', acao: () => { haptics.tap(); executar(); } });
+      setAviso({ titulo: t('Não deu para analisar agora'), texto: t('Verifique sua internet e tente de novo.'), botao: t('Tentar novamente'), acao: () => { haptics.tap(); executar(); } });
     }
   }, [andar, outraFoto, router]);
 

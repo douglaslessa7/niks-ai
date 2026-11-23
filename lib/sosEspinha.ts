@@ -4,6 +4,7 @@
 import { avisarSeSemAssinatura } from './respostaIA';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { idioma } from './i18n';
 import { getAccessToken } from './sessionToken';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -53,7 +54,7 @@ export async function analisarEspinha(): Promise<ResultadoSos> {
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/sos-espinha`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
-      body: JSON.stringify({ image: { base64: foto.base64, mimeType: 'image/jpeg' } }),
+      body: JSON.stringify({ image: { base64: foto.base64, mimeType: 'image/jpeg' }, idioma }),
       signal: controller.signal,
     });
     if (resp.status === 429) return { status: 'limite' };

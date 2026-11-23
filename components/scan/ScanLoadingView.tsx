@@ -21,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Line, Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { OB, ObPillButton, useObFrame } from '../onboarding/kit';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -32,26 +33,26 @@ export type ScanLoadingKind = 'face' | 'product' | 'sos';
 
 // Etapas do design — uma por pontinho; trocam a cada 25% da porcentagem.
 const STEPS: Record<ScanLoadingKind, string[]> = {
-  face: ['Lendo suas fotos', 'Mapeando as áreas do rosto', 'Cruzando com o seu perfil de pele', 'Montando seu relatório'],
-  product: ['Lendo o rótulo', 'Analisando os ingredientes', 'Comparando com a sua rotina atual', 'Calculando a compatibilidade'],
-  sos: ['Olhando sua espinha de perto…', 'Conferindo sua estante e sua rotina…', 'Separando o que fazer agora…'],
+  face: [t('Lendo suas fotos'), t('Mapeando as áreas do rosto'), t('Cruzando com o seu perfil de pele'), t('Montando seu relatório')],
+  product: [t('Reconhecendo o produto'), t('Analisando os ingredientes'), t('Comparando com a sua rotina atual'), t('Calculando a compatibilidade')],
+  sos: [t('Olhando sua espinha de perto…'), t('Conferindo sua estante e sua rotina…'), t('Separando o que fazer agora…')],
 };
 
 const COPY: Record<ScanLoadingKind, { eyebrow: string; demand: string; errorTitle: string; errorHint: string }> = {
   face: {
-    eyebrow: 'Scan de pele',
-    demand: 'A análise da sua pele está sendo finalizada. Por favor, aguarde só mais',
-    errorTitle: 'Não conseguimos analisar a sua pele',
-    errorHint: 'Tire uma nova foto para tentar novamente',
+    eyebrow: t('Scan de pele'),
+    demand: t('A análise da sua pele está sendo finalizada. Por favor, aguarde só mais'),
+    errorTitle: t('Não conseguimos analisar a sua pele'),
+    errorHint: t('Tire uma nova foto para tentar novamente'),
   },
   product: {
-    eyebrow: 'Scan de produto',
-    demand: 'A análise do produto está sendo finalizada. Por favor, aguarde só mais',
-    errorTitle: 'Não conseguimos analisar o produto',
-    errorHint: 'Tire uma nova foto do produto para tentar novamente',
+    eyebrow: t('Scan de produto'),
+    demand: t('A análise do produto está sendo finalizada. Por favor, aguarde só mais'),
+    errorTitle: t('Não conseguimos analisar o produto'),
+    errorHint: t('Tire uma nova foto do produto para tentar novamente'),
   },
   // O SOS desenha os próprios estados de erro (`sos-loading`): daqui só usa o eyebrow.
-  sos: { eyebrow: 'SOS espinha', demand: '', errorTitle: '', errorHint: '' },
+  sos: { eyebrow: t('SOS espinha'), demand: '', errorTitle: '', errorHint: '' },
 };
 
 // Anel: SVG 272 × 272, raio 128, traço 12 (trilho branco + progresso rosa).
@@ -136,7 +137,7 @@ export function ScanLoadingView({
       {showError ? (
         <ErrorState
           copy={erroAoSalvar ? { ...copy, errorTitle: erroAoSalvar.titulo, errorHint: '' } : copy}
-          botao={erroAoSalvar?.botao ?? 'Tentar novamente'}
+          botao={erroAoSalvar?.botao ?? t('Tentar novamente')}
           onRetry={onRetry}
         />
       ) : (
@@ -218,7 +219,7 @@ export function ScanLoadingView({
               {steps[stepIdx]}
             </Text>
             <Text style={{ fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: MUTED, textAlign: 'center' }}>
-              Isso leva só alguns segundos. Não feche o app.
+              {t('Isso leva só alguns segundos. Não feche o app.')}
             </Text>
           </View>
 
@@ -277,10 +278,10 @@ function DemandNotice({ top, text, countdown, paused }: { top: number; text: str
       </Svg>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
-          Estamos com alta demanda agora
+          {t('Estamos com alta demanda agora')}
         </Text>
         <Text style={{ fontSize: 12, lineHeight: 18, color: '#FFFFFF' }}>
-          {paused ? 'Por favor, aguarde só mais um pouco.' : (
+          {paused ? t('Por favor, aguarde só mais um pouco.') : (
             <>{text} <Text style={{ fontWeight: '700' }}>{countdown}s</Text>.</>
           )}
         </Text>
@@ -304,7 +305,7 @@ function ErrorState({ copy, botao, onRetry }: { copy: (typeof COPY)[ScanLoadingK
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>{copy.errorTitle}</Text>
           <Text style={{ fontSize: 12, lineHeight: 18, color: '#FFFFFF' }}>
-            Estamos com alta demanda no momento. Tente novamente em instantes.
+            {t('Estamos com alta demanda no momento. Tente novamente em instantes.')}
           </Text>
         </View>
       </View>
@@ -317,7 +318,7 @@ function ErrorState({ copy, botao, onRetry }: { copy: (typeof COPY)[ScanLoadingK
       </Svg>
 
       <Text style={{ fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK, textAlign: 'center', marginBottom: 6 }}>
-        Algo deu errado por aqui...
+        {t('Algo deu errado por aqui...')}
       </Text>
       <Text style={{ fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: MUTED, textAlign: 'center', marginBottom: 32 }}>
         {copy.errorHint}

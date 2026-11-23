@@ -27,11 +27,18 @@ export type FimDaCompra = { status: 'ok' | 'sem_sessao' | 'falhou' | 'interrompi
 
 // Uma execução por vez: a tela e o segundo plano nunca salvam juntos.
 let emAndamento: Promise<FimDaCompra> | null = null;
+// Geração (18/nov/2026): a tela de espera abandona uma execução que estourou o teto
+// (`abandonarExecucao`, lib/esperaDaRotina.ts). A abandonada não grava mais nada; a próxima
+// começa do zero.
+let geracao = 0;
 // Sem registro no aparelho, o scan já salvo e as falhas ficam só na memória.
 let scanSalvoMem: string | null = null;
+let rotinaSalvaMem = false;
 let falhasMem = 0;
 
 async function executar(): Promise<FimDaCompra> {
+  const minha = geracao;
+  const abandonada = () => minha !== geracao;
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const uid = session?.user?.id;
@@ -55,12 +62,12 @@ async function executar(): Promise<FimDaCompra> {
       return agora.scanSource !== 'onboarding' || agora.skinImageUri !== fotoDaCompra;
     };
     const interrompida: FimDaCompra = { status: 'interrompida', falhas: reg?.falhas ?? falhasMem };
-    if (scanNovo()) return interrompida;
+    if (scanNovo() || abandonada()) return interrompida;
 
     // 1. O relatório completo (só se houve scan neste onboarding).
     const temScan = !!st.skinImageBase64 || !!st.scanResult;
     const relatorio = temScan ? await aguardarAnaliseCompleta() : null;
-    if (scanNovo()) return interrompida;
+    if (scanNovo() || abandonada()) return interrompida;
     if (temScan && !relatorio) throw new Error('análise completa falhou');
 
     // 2. Perfil + scan na conta (o scan uma vez só, mesmo tentando de novo ou retomando).
@@ -73,10 +80,14 @@ async function executar(): Promise<FimDaCompra> {
       await atualizarCompraPendente({ skinScanId });
     }
 
-    if (scanNovo()) return interrompida;
+    if (scanNovo() || abandonada()) return interrompida;
 
     // 3. A rotina (a pré-gerada desde a compra, ou gera agora) + recomendações.
-    if (relatorio) {
+    // Uma vez só (16/nov/2026): se o app fechou/reiniciou depois de gravar a rotina, a retomada
+    // não grava outra por cima (no teste, a 2ª gravação passou a ser a "ideal" da conta). A
+    // recomendação já foi pedida ao servidor junto com a 1ª; se não chegou, a aba Rotina refaz.
+    const rotinaSalva = reg?.rotinaSalva || rotinaSalvaMem;
+    if (relatorio && !rotinaSalva) {
       const { onboarding: o, setProtocolResult, setProtocolGenerating } = useAppStore.getState();
       setProtocolGenerating(true);
       await saveOnboardingProtocol({
@@ -86,9 +97,14 @@ async function executar(): Promise<FimDaCompra> {
         skinScanId: scanSalvo,
         onSuccess: (r) => { if (!scanNovo()) setProtocolResult(r); },
         onFinally: () => setProtocolGenerating(false),
+        aoGravar: async () => {
+          rotinaSalvaMem = true;
+          await atualizarCompraPendente({ rotinaSalva: true });
+        },
       });
     }
 
+    if (abandonada()) return interrompida;
     // 3b. Boas-vindas pós-pagamento (se ela selou o pacto). Nunca segura a tela.
     await concluirBoasVindas(uid, await lerCompraPendente());
 
@@ -96,10 +112,12 @@ async function executar(): Promise<FimDaCompra> {
     await apagarCompraPendente();
     invalidateCache(`home:${uid}`);
     scanSalvoMem = null;
+    rotinaSalvaMem = false;
     falhasMem = 0;
     return { status: 'ok', falhas: 0 };
   } catch (e) {
     console.warn('[concluirCompra] não terminou:', e);
+    if (abandonada()) return { status: 'interrompida', falhas: falhasMem };
     const reg = await lerCompraPendente();
     const falhas = (reg?.falhas ?? falhasMem) + 1;
     falhasMem = falhas;
@@ -110,8 +128,17 @@ async function executar(): Promise<FimDaCompra> {
 }
 
 export function concluirCompraPendente(): Promise<FimDaCompra> {
-  if (!emAndamento) emAndamento = executar().finally(() => { emAndamento = null; });
+  if (!emAndamento) {
+    const p: Promise<FimDaCompra> = executar().finally(() => { if (emAndamento === p) emAndamento = null; });
+    emAndamento = p;
+  }
   return emAndamento;
+}
+
+/** A tentativa atual estourou o teto da tela: ela não grava mais nada e a próxima começa do zero. */
+export function abandonarExecucao(): void {
+  geracao++;
+  emAndamento = null;
 }
 
 /** Devolve o onboarding da compra ao store e dispara o que faltar (relatório, rotina). */

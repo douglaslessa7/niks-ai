@@ -24,6 +24,7 @@ import type { CoachStage } from './coachMarks';
 import { getUserId } from './currentUser';
 import { meusGrupos, muralGrupo } from './gruposServidor';
 import { supabase } from './supabase';
+import { t } from './i18n';
 
 export type RotaGrupos = '/grupos' | '/seus-grupos' | '/grupo';
 type Variante = 'sem' | 'com' | 'so_grupo';
@@ -34,38 +35,38 @@ const PERFIL: Bloco = {
   rota: '/grupos',
   stage: 'grupos',
   stops: [
-    { t: 'Sua foto usa a moldura da sua medalha. Suba de nível para conquistar molduras novas.', a: { u: ['perfil-foto'], pad: 0, r: 'pill' } },
-    { t: 'Seus grupos ficam aqui.', a: { u: ['perfil-seus-grupos'], pad: 4, r: 'pill' } },
+    { t: t('Sua foto usa a moldura da sua medalha. Suba de nível para conquistar molduras novas.'), a: { u: ['perfil-foto'], pad: 0, r: 'pill' } },
+    { t: t('Seus grupos ficam aqui.'), a: { u: ['perfil-seus-grupos'], pad: 4, r: 'pill' } },
   ],
 };
 const LISTA_SEM: Bloco = {
   rota: '/seus-grupos',
   stage: 'seusGrupos',
   stops: [
-    { t: 'No grupo, vocês fazem skincare juntas e veem quem é mais constante.', a: { u: ['lista-vazio'], pad: 8, r: 24 } },
-    { t: 'Crie o seu aqui: dê um nome e convide as amigas pelo link.', a: { u: ['lista-criar'], pad: 4, r: 'pill' } },
-    { t: 'Recebeu o link de uma amiga? Toque nele para entrar no grupo dela.', a: { u: ['lista-vazio'], pad: 8, r: 24 } },
-    { t: 'Quando você entrar em um grupo, mostramos como ele funciona.', a: { u: ['lista-vazio'], pad: 8, r: 24 } },
+    { t: t('No grupo, vocês fazem skincare juntas e veem quem é mais constante.'), a: { u: ['lista-vazio'], pad: 8, r: 24 } },
+    { t: t('Crie o seu aqui: dê um nome e convide as amigas pelo link.'), a: { u: ['lista-criar'], pad: 4, r: 'pill' } },
+    { t: t('Recebeu o link de uma amiga? Toque nele para entrar no grupo dela.'), a: { u: ['lista-vazio'], pad: 8, r: 24 } },
+    { t: t('Quando você entrar em um grupo, mostramos como ele funciona.'), a: { u: ['lista-vazio'], pad: 8, r: 24 } },
   ],
 };
 const LISTA_COM: Bloco = {
   rota: '/seus-grupos',
   stage: 'seusGrupos',
   stops: [
-    { t: 'Cada grupo mostra quem já fez o skincare hoje e sua posição na semana.', a: { u: ['lista-card'], pad: 4, r: 20 } },
-    { t: 'Crie outro grupo aqui ou entre em um pelo link de uma amiga.', a: { u: ['lista-criar'], pad: 6, r: 'pill' } },
+    { t: t('Cada grupo mostra quem já fez o skincare hoje e sua posição na semana.'), a: { u: ['lista-card'], pad: 4, r: 20 } },
+    { t: t('Crie outro grupo aqui ou entre em um pelo link de uma amiga.'), a: { u: ['lista-criar'], pad: 6, r: 'pill' } },
   ],
 };
 const PARADAS_GRUPO: TutStop[] = [
-  { t: 'Estas são as integrantes. Cada foto tem a moldura da medalha dela.', a: { u: ['grupo-membros'], pad: 8, r: 18 } },
-  { t: 'Aqui você convida amigas, denuncia, bloqueia ou sai do grupo.', a: { u: ['grupo-menu'], pad: 8, r: 'pill' } },
-  { t: 'Quem faz mais check-ins na semana lidera e fica com a coroa.', a: { u: ['grupo-duelo'], pad: 10, r: 18 } },
-  { t: 'Tire uma foto depois do skincare. Só as integrantes veem, e o check-in dá NIKS Points.', a: { u: ['grupo-checkin'], pad: 4, r: 'pill' } },
-  { t: 'Valem até 2 check-ins por dia. Quem vence a semana ganha uma carta rara.', a: { u: ['grupo-ranking'], pad: 4, r: 20 } },
-  { t: 'Na Jornada, vocês comparam os NIKS Points e o nível de cada uma.', a: { u: ['grupo-jornada'], pad: 4, r: 20 } },
+  { t: t('Estas são as integrantes. Cada foto tem a moldura da medalha dela.'), a: { u: ['grupo-membros'], pad: 8, r: 18 } },
+  { t: t('Aqui você convida amigas, denuncia, bloqueia ou sai do grupo.'), a: { u: ['grupo-menu'], pad: 8, r: 'pill' } },
+  { t: t('Quem faz mais check-ins na semana lidera e fica com a coroa.'), a: { u: ['grupo-duelo'], pad: 10, r: 18 } },
+  { t: t('Tire uma foto depois do skincare. Só as integrantes veem, e o check-in dá NIKS Points.'), a: { u: ['grupo-checkin'], pad: 4, r: 'pill' } },
+  { t: t('Valem até 2 check-ins por dia. Quem vence a semana ganha uma carta rara.'), a: { u: ['grupo-ranking'], pad: 4, r: 20 } },
+  { t: t('Na Jornada, vocês comparam os NIKS Points e o nível de cada uma.'), a: { u: ['grupo-jornada'], pad: 4, r: 20 } },
 ];
 const PARADA_MURAL: TutStop = {
-  t: 'Check-ins e produtos escaneados aparecem aqui. Compartilhar um produto também dá NIKS Points, uma vez por dia.',
+  t: t('Check-ins e produtos escaneados aparecem aqui. Compartilhar um produto também dá NIKS Points, uma vez por dia.'),
   a: { u: ['grupo-mural', 'grupo-mural-item'], pad: 8, r: 20 },
   scroll: 'mural',
 };

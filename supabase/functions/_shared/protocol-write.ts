@@ -49,49 +49,76 @@ export type ProposedChanges = {
 const norm = (s: string) =>
   (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
 
-export function classifyStep(name: string, ingredient: string): { category: string; icon: IconName } {
+
+// ── Inglês (etapa 3 da tradução, nov/2026) ─────────────────────────────────────
+// Rotina escrita em inglês (app com idioma 'en'): os classificadores também entendem os
+// nomes em inglês — SÓ com `en = true`. Em português (padrão) nada muda.
+const EN_PROTETOR = ['sunscreen', 'sunblock', 'sun protection']
+const EN_LIMPEZA = ['cleansing', 'face wash', 'facial wash', 'micellar', 'makeup remover']
+const EN_OLEO_LIMPEZA = ['cleansing oil', 'cleansing balm']
+const EN_TONICO = ['toner', 'essence']
+const EN_BARREIRA = ['barrier']
+const EN_HIDRATACAO = ['moisturi', 'ceramide', 'emollient', 'gel-cream', 'gel cream', 'hydrating', 'face cream', 'night cream', 'day cream', 'rich cream']
+const EN_FINALIZACAO = ['occlusive', 'squalane', 'facial oil', 'face oil', 'petrolatum', 'vaseline']
+const EN_TRATAMENTO = ['acid', 'retinoid', 'tretinoin', 'vitamin c', 'niacinamide', 'antioxidant', 'treatment', 'spot']
+const EN_REPARADOR = ['repair', 'ceramide']
+const EN_OLHOS = ['eye cream', 'eye serum', 'eye gel', 'eye area', 'under-eye', 'undereye', 'under eye', 'dark circle', 'periorbital', 'around the eyes']
+const EN_RETINOIDE = ['tretinoin', 'retinoid', 'adapalene', 'hydroxypinacolone']
+const EN_BHA = ['salicylic', 'beta hydroxy', 'beta-hydroxy']
+const EN_AHA = ['mandelic', 'glycolic', 'lactic', 'gluconolactone', 'chemical exfoliant', 'alpha hydroxy', 'alpha-hydroxy']
+const EN_TRANEXAMICO = ['tranexamic']
+const EN_CENTELLA = ['panthenol', 'soothing', 'calming']
+const EN_MUCINA = ['mucin']
+const EN_HIALURONICO = ['hyaluronic', 'hyaluronate']
+const EN_VITC = ['vitamin c', 'antioxidant']
+
+export function classifyStep(name: string, ingredient: string, en = false): { category: string; icon: IconName } {
   const t = `${name} ${ingredient}`.toLowerCase()
-  const has = (...ks: string[]) => ks.some((k) => t.includes(k))
-  if (has('protetor solar', 'protetor', 'fps', 'filtro solar', 'spf')) return { category: 'Proteção', icon: 'sun' }
-  if (has('limpeza', 'cleanser', 'sabonete', 'espuma de limp', 'demaquilante', 'água micelar', 'agua micelar')) {
-    const oleoso = has('óleo', 'oleo', 'balm', 'bálsamo', 'balsamo', 'oil')
+  const has0 = (...ks: string[]) => ks.some((k) => t.includes(k))
+  // Listas (arrays): termos em inglês, só com en = true, no mesmo lugar da ordem.
+  const has = (...ks: (string | string[])[]) => has0(...ks.flatMap((k) => (Array.isArray(k) ? (en ? k : []) : [k])))
+  if (has('protetor solar', 'protetor', 'fps', 'filtro solar', 'spf', EN_PROTETOR)) return { category: 'Proteção', icon: 'sun' }
+  if (has('limpeza', 'cleanser', 'sabonete', 'espuma de limp', 'demaquilante', 'água micelar', 'agua micelar', EN_LIMPEZA)) {
+    const oleoso = has('óleo', 'oleo', 'balm', 'bálsamo', 'balsamo', 'oil', EN_OLEO_LIMPEZA)
     return { category: 'Limpeza', icon: oleoso ? 'drop' : 'cleanser' }
   }
-  if (has('tônico', 'tonico', 'essência', 'essencia', 'tônica', 'tonica')) return { category: 'Tônico', icon: 'drop' }
-  if (has('barreira')) return { category: 'Barreira', icon: 'shield' }
-  if (has('hidratante', 'ceramida', 'emoliente', 'gel-creme', 'gel creme', 'creme hidratante', 'hidrata')) {
+  if (has('tônico', 'tonico', 'essência', 'essencia', 'tônica', 'tonica', EN_TONICO)) return { category: 'Tônico', icon: 'drop' }
+  if (has('barreira', EN_BARREIRA)) return { category: 'Barreira', icon: 'shield' }
+  if (has('hidratante', 'ceramida', 'emoliente', 'gel-creme', 'gel creme', 'creme hidratante', 'hidrata', EN_HIDRATACAO)) {
     return { category: 'Hidratação', icon: 'flask' }
   }
-  if (has('oclusivo', 'esqualano', 'óleo facial', 'oleo facial', 'vaselina')) return { category: 'Finalização', icon: 'drop' }
+  if (has('oclusivo', 'esqualano', 'óleo facial', 'oleo facial', 'vaselina', EN_FINALIZACAO)) return { category: 'Finalização', icon: 'drop' }
   if (has('sérum', 'serum', 'ácido', 'acido', 'retinol', 'retinoide', 'retinal', 'tretinoína', 'tretinoina',
-          'vitamina c', 'niacinamida', 'azelaico', 'peptíde', 'peptide', 'antioxidante', 'aha', 'bha', 'tratamento')) {
-    if (has('reparador', 'ceramida')) return { category: 'Tratamento', icon: 'flask' }
+          'vitamina c', 'niacinamida', 'azelaico', 'peptíde', 'peptide', 'antioxidante', 'aha', 'bha', 'tratamento', EN_TRATAMENTO)) {
+    if (has('reparador', 'ceramida', EN_REPARADOR)) return { category: 'Tratamento', icon: 'flask' }
     return { category: 'Tratamento', icon: 'sparkle' }
   }
   return { category: 'Cuidado', icon: 'sparkle' }
 }
 
 export type ActiveTarget = { kind: 'eye' | 'unknown' | 'known'; label?: string; codes?: string[]; molecule?: string }
-export function detectTargetActive(name: string, ingredient: string): ActiveTarget {
+export function detectTargetActive(name: string, ingredient: string, en = false): ActiveTarget {
   const t = norm(`${name} ${ingredient}`)
-  const has = (...ks: string[]) => ks.some((k) => t.includes(k))
+  const has0 = (...ks: string[]) => ks.some((k) => t.includes(k))
+  // Listas (arrays): termos em inglês, só com en = true. `molecule` continua pelos termos em português.
+  const has = (...ks: (string | string[])[]) => has0(...ks.flatMap((k) => (Array.isArray(k) ? (en ? k : []) : [k])))
   // Aditivo (não muda kind/label/codes): devolve a keyword específica que casou, para
   // checagem molécula-a-molécula no generate-protocol. O Coach lê só kind/label/codes e ignora este campo.
   const hit = (...ks: string[]) => { const k = ks.find((x) => t.includes(x)); return k ? k.trim() : undefined }
-  if (has('olheira', 'periocular', 'area dos olhos', 'contorno dos olhos', 'para os olhos', 'para olhos')) return { kind: 'eye' }
+  if (has('olheira', 'periocular', 'area dos olhos', 'contorno dos olhos', 'para os olhos', 'para olhos', EN_OLHOS)) return { kind: 'eye' }
   if (has('bakuchiol')) return { kind: 'unknown', label: 'bakuchiol' }
-  if (has('retinol', 'retinal', 'retinaldeido', 'tretinoina', 'retinoide', 'adapaleno', ' hpr', 'hidroxipinacolona')) return { kind: 'known', label: 'retinoide', codes: ['retinol'], molecule: hit('retinol', 'retinal', 'retinaldeido', 'tretinoina', 'retinoide', 'adapaleno', ' hpr', 'hidroxipinacolona') }
+  if (has('retinol', 'retinal', 'retinaldeido', 'tretinoina', 'retinoide', 'adapaleno', ' hpr', 'hidroxipinacolona', EN_RETINOIDE)) return { kind: 'known', label: 'retinoide', codes: ['retinol'], molecule: hit('retinol', 'retinal', 'retinaldeido', 'tretinoina', 'retinoide', 'adapaleno', ' hpr', 'hidroxipinacolona') }
   if (has('azelaico', 'azelaic')) return { kind: 'known', label: 'azelaico', codes: ['acido_azelaico'], molecule: hit('azelaico', 'azelaic') }
-  if (has('salicilico', ' bha', 'betaidroxi', ' lha')) return { kind: 'known', label: 'bha', codes: ['acido_salicilico'], molecule: hit('salicilico', ' bha', 'betaidroxi', ' lha') }
-  if (has('mandelico', 'glicolico', 'lactico', 'latico', ' aha', ' pha', 'esfoliante quimico', 'esfoliacao quimica')) return { kind: 'known', label: 'aha', codes: ['acido_mandelico', 'acido_glicolico', 'aha', 'pha'], molecule: hit('mandelico', 'glicolico', 'lactico', 'latico', ' aha', ' pha', 'esfoliante quimico', 'esfoliacao quimica') }
-  if (has('tranexamico')) return { kind: 'known', label: 'tranexamico', codes: ['acido_tranexamico'], molecule: hit('tranexamico') }
+  if (has('salicilico', ' bha', 'betaidroxi', ' lha', EN_BHA)) return { kind: 'known', label: 'bha', codes: ['acido_salicilico'], molecule: hit('salicilico', ' bha', 'betaidroxi', ' lha') }
+  if (has('mandelico', 'glicolico', 'lactico', 'latico', ' aha', ' pha', 'esfoliante quimico', 'esfoliacao quimica', EN_AHA)) return { kind: 'known', label: 'aha', codes: ['acido_mandelico', 'acido_glicolico', 'aha', 'pha'], molecule: hit('mandelico', 'glicolico', 'lactico', 'latico', ' aha', ' pha', 'esfoliante quimico', 'esfoliacao quimica') }
+  if (has('tranexamico', EN_TRANEXAMICO)) return { kind: 'known', label: 'tranexamico', codes: ['acido_tranexamico'], molecule: hit('tranexamico') }
   if (has('niacinamid')) return { kind: 'known', label: 'niacinamida', codes: ['niacinamida'], molecule: hit('niacinamid') }
   if (has('peptide', 'peptideo')) return { kind: 'known', label: 'peptideos', codes: ['peptideos'], molecule: hit('peptide', 'peptideo') }
-  if (has('centella', 'cica ', 'pantenol', 'calmante', 'madecassoside')) return { kind: 'known', label: 'centella', codes: ['centella'], molecule: hit('centella', 'cica ', 'pantenol', 'calmante', 'madecassoside') }
+  if (has('centella', 'cica ', 'pantenol', 'calmante', 'madecassoside', EN_CENTELLA)) return { kind: 'known', label: 'centella', codes: ['centella'], molecule: hit('centella', 'cica ', 'pantenol', 'calmante', 'madecassoside') }
   if (has('pdrn')) return { kind: 'known', label: 'pdrn', codes: ['pdrn'], molecule: hit('pdrn') }
-  if (has('mucina', 'snail', 'caracol')) return { kind: 'known', label: 'mucina', codes: ['mucina_de_caracol'], molecule: hit('mucina', 'snail', 'caracol') }
-  if (has('hialuronico', 'hialuronato')) return { kind: 'known', label: 'hialuronico', codes: ['acido_hialuronico'], molecule: hit('hialuronico', 'hialuronato') }
-  if (has('vitamina c', 'vit c', 'ascorb', 'antioxidante')) return { kind: 'known', label: 'vitamina_c', codes: ['vitamina_c'], molecule: hit('vitamina c', 'vit c', 'ascorb', 'antioxidante') }
+  if (has('mucina', 'snail', 'caracol', EN_MUCINA)) return { kind: 'known', label: 'mucina', codes: ['mucina_de_caracol'], molecule: hit('mucina', 'snail', 'caracol') }
+  if (has('hialuronico', 'hialuronato', EN_HIALURONICO)) return { kind: 'known', label: 'hialuronico', codes: ['acido_hialuronico'], molecule: hit('hialuronico', 'hialuronato') }
+  if (has('vitamina c', 'vit c', 'ascorb', 'antioxidante', EN_VITC)) return { kind: 'known', label: 'vitamina_c', codes: ['vitamina_c'], molecule: hit('vitamina c', 'vit c', 'ascorb', 'antioxidante') }
   return { kind: 'unknown' }
 }
 
@@ -132,10 +159,10 @@ export function logRefusal(scope: string, reason: string, ctx: Record<string, un
 
 // Vários produtos espremidos num passo só ("Água micelar…, Creme…, Protetor…"): partes
 // separadas por vírgula/+/; que caem em 2+ categorias diferentes. Um passo = um produto.
-export function pareceVariosProdutos(texto: string): boolean {
+export function pareceVariosProdutos(texto: string, en = false): boolean {
   const partes = String(texto ?? '').split(/,|\+|;/).map((x) => x.trim()).filter(Boolean)
   if (partes.length < 2) return false
-  const cats = new Set(partes.map((x) => classifyStep(x, '').category).filter((c) => c !== 'Cuidado'))
+  const cats = new Set(partes.map((x) => classifyStep(x, '', en).category).filter((c) => c !== 'Cuidado'))
   return cats.size >= 2
 }
 
@@ -151,12 +178,12 @@ function validarDias(v: unknown): { ok: true; value: string[] | null } | { ok: f
   return { ok: true, value: canon.length ? canon : null }
 }
 
-function validarPasso(r: Record<string, unknown>): { ok: true; value: PassoProposto } | { ok: false; reason: string } {
+function validarPasso(r: Record<string, unknown>, en = false): { ok: true; value: PassoProposto } | { ok: false; reason: string } {
   const step_name = typeof r.step_name === 'string' ? r.step_name.trim() : ''
   if (!step_name) return { ok: false, reason: 'missing-step_name' }
   const ingredient = typeof r.ingredient === 'string' ? r.ingredient.trim() : ''
   if (!ingredient) return { ok: false, reason: 'missing-ingredient' }
-  if (pareceVariosProdutos(ingredient) || pareceVariosProdutos(step_name)) return { ok: false, reason: 'multiple-products-in-one-step' }
+  if (pareceVariosProdutos(ingredient, en) || pareceVariosProdutos(step_name, en)) return { ok: false, reason: 'multiple-products-in-one-step' }
   const dias = validarDias(r.schedule_days)
   if (!dias.ok) return { ok: false, reason: 'invalid-schedule_days' }
   const instruction = typeof r.instruction === 'string' && r.instruction.trim() ? r.instruction.trim() : null
@@ -164,7 +191,7 @@ function validarPasso(r: Record<string, unknown>): { ok: true; value: PassoPropo
 }
 
 // ── Rule 1 — validação de schema em runtime ───────────────────────────────────
-export function validateProposal(raw: unknown):
+export function validateProposal(raw: unknown, en = false):
   | { ok: true; value: ProposedChanges }
   | { ok: false; reason: string } {
   if (raw === null || typeof raw !== 'object') return { ok: false, reason: 'not-an-object' }
@@ -186,7 +213,7 @@ export function validateProposal(raw: unknown):
     const steps: PassoProposto[] = []
     for (const x of r.steps) {
       if (!x || typeof x !== 'object') return { ok: false, reason: 'invalid-steps' }
-      const v = validarPasso(x as Record<string, unknown>)
+      const v = validarPasso(x as Record<string, unknown>, en)
       if (!v.ok) return { ok: false, reason: `step-${v.reason}` }
       steps.push(v.value)
     }
@@ -201,7 +228,7 @@ export function validateProposal(raw: unknown):
   // Remoção: o passo que sai já está identificado (nome e/ou código) — o ingrediente é opcional.
   const ingredient = (typeof r.ingredient === 'string' ? r.ingredient.trim() : '') || (action === 'remove' ? step_name : '')
   if (!ingredient) return { ok: false, reason: 'missing-ingredient' }
-  if (action !== 'remove' && (pareceVariosProdutos(ingredient) || pareceVariosProdutos(step_name))) {
+  if (action !== 'remove' && (pareceVariosProdutos(ingredient, en) || pareceVariosProdutos(step_name, en))) {
     return { ok: false, reason: 'multiple-products-in-one-step' }
   }
 
@@ -239,10 +266,10 @@ export function buildIngredientWithDays(ingredient: string, days?: string[] | nu
   return `${base} (${days.join('/')})`
 }
 
-function makeCoachStep(changes: PassoProposto, id: number): ProtocolStep {
+function makeCoachStep(changes: PassoProposto, id: number, en = false): ProtocolStep {
   const ingredient = buildIngredientWithDays(changes.ingredient, changes.schedule_days)
-  const { category } = classifyStep(changes.step_name, ingredient)
-  const active = detectTargetActive(changes.step_name, ingredient)
+  const { category } = classifyStep(changes.step_name, ingredient, en)
+  const active = detectTargetActive(changes.step_name, ingredient, en)
   const color =
     (active.kind === 'known' && active.label && COLOR_BY_ACTIVE[active.label]) ||
     COLOR_BY_CATEGORY[category] || '#E8F5E9'
@@ -250,7 +277,7 @@ function makeCoachStep(changes: PassoProposto, id: number): ProtocolStep {
     id,
     name: changes.step_name,
     ingredient,
-    instruction: changes.instruction || 'Aplique conforme orientação da NIKS.',
+    instruction: changes.instruction || (en ? 'Apply as NIKS recommended.' : 'Aplique conforme orientação da NIKS.'),
     steps: [],
     color,
     waitTime: null,
@@ -260,13 +287,13 @@ function makeCoachStep(changes: PassoProposto, id: number): ProtocolStep {
   }
 }
 
-function rankOf(step: ProtocolStep): number {
+function rankOf(step: ProtocolStep, en = false): number {
   const name = String(step.name ?? '')
   const ing = String(step.ingredient ?? '')
-  const { category } = classifyStep(name, ing)
+  const { category } = classifyStep(name, ing, en)
   let rank = CATEGORY_RANK[category] ?? 45
   if (category === 'Tratamento') {
-    const a = detectTargetActive(name, ing)
+    const a = detectTargetActive(name, ing, en)
     const sub = a.kind === 'known' && a.label && ACTIVE_SUBRANK[a.label] != null ? ACTIVE_SUBRANK[a.label] : 5
     rank += sub / 100
   }
@@ -274,10 +301,10 @@ function rankOf(step: ProtocolStep): number {
 }
 
 // Rule 5 — insere na posição clínica (após o último passo de rank <=), nunca no fim cru.
-function insertClinically(steps: ProtocolStep[], step: ProtocolStep): ProtocolStep[] {
-  const r = rankOf(step)
+function insertClinically(steps: ProtocolStep[], step: ProtocolStep, en = false): ProtocolStep[] {
+  const r = rankOf(step, en)
   let idx = 0
-  for (let i = 0; i < steps.length; i++) if (rankOf(steps[i]) <= r) idx = i + 1
+  for (let i = 0; i < steps.length; i++) if (rankOf(steps[i], en) <= r) idx = i + 1
   return [...steps.slice(0, idx), step, ...steps.slice(idx)]
 }
 
@@ -294,11 +321,13 @@ function assemble(
 export function applyProposal(
   current: { rotina_am: ProtocolStep[]; rotina_pm: ProtocolStep[] },
   changes: ProposedChanges,
+  /** Rotina em inglês (etapa 3 da tradução): os classificadores entendem os nomes em inglês. */
+  en = false,
 ): { ok: true; next: { rotina_am: ProtocolStep[]; rotina_pm: ProtocolStep[] } } | { ok: false; reason: string } {
   const am = Array.isArray(current.rotina_am) ? [...current.rotina_am] : []
   const pm = Array.isArray(current.rotina_pm) ? [...current.rotina_pm] : []
   const period = changes.period === 'am' ? am : pm
-  const newActive = detectTargetActive(changes.step_name, changes.ingredient)
+  const newActive = detectTargetActive(changes.step_name, changes.ingredient, en)
 
   // Rule 2 — trava clínica AM (add/replace): retinoide/AHA nunca de manhã.
   if ((changes.action === 'add' || changes.action === 'replace') &&
@@ -310,11 +339,11 @@ export function applyProposal(
   // ── REPLACE_PERIOD ── a rotina inteira do período vira a lista, cada passo separado.
   if (changes.action === 'replace_period') {
     const lista = changes.steps ?? []
-    const novos = lista.map((p, i) => makeCoachStep(p, i + 1))
+    const novos = lista.map((p, i) => makeCoachStep(p, i + 1, en))
     // Mesmas travas, sobre a lista inteira.
     const vistos = new Set<string>()
     for (const st of novos) {
-      const a = detectTargetActive(String(st.name), String(st.ingredient))
+      const a = detectTargetActive(String(st.name), String(st.ingredient), en)
       if (changes.period === 'am' && a.kind === 'known' && a.label && AM_FORBIDDEN_ACTIVES.includes(a.label)) {
         return { ok: false, reason: `clinical-am-forbidden:${a.label}` }
       }
@@ -324,15 +353,15 @@ export function applyProposal(
       }
     }
     // Limpeza / hidratação / protetor que o período tinha não podem sumir.
-    const catsNovas = new Set(novos.map((st) => classifyStep(String(st.name), String(st.ingredient)).category))
+    const catsNovas = new Set(novos.map((st) => classifyStep(String(st.name), String(st.ingredient), en).category))
     for (const st of period) {
-      const c = classifyStep(String(st.name ?? ''), String(st.ingredient ?? '')).category
+      const c = classifyStep(String(st.name ?? ''), String(st.ingredient ?? ''), en).category
       if (PROTECTED_CATEGORIES.includes(c) && !catsNovas.has(c)) return { ok: false, reason: `period-missing-protected:${c}` }
     }
     // De manhã, o protetor é sempre o último.
     const ordenados = changes.period === 'am'
-      ? [...novos.filter((st) => classifyStep(String(st.name), String(st.ingredient)).category !== 'Proteção'),
-         ...novos.filter((st) => classifyStep(String(st.name), String(st.ingredient)).category === 'Proteção')]
+      ? [...novos.filter((st) => classifyStep(String(st.name), String(st.ingredient), en).category !== 'Proteção'),
+         ...novos.filter((st) => classifyStep(String(st.name), String(st.ingredient), en).category === 'Proteção')]
       : novos
     return { ok: true, next: assemble(changes.period, ordenados, am, pm) }
   }
@@ -344,10 +373,10 @@ export function applyProposal(
     if (!target) {
       if (outro.some((st) => st._rowId === changes.target_id)) return { ok: false, reason: 'target-other-period' }
     } else {
-      const cat = classifyStep(String(target.name ?? ''), String(target.ingredient ?? '')).category
+      const cat = classifyStep(String(target.name ?? ''), String(target.ingredient ?? ''), en).category
       if (PROTECTED_CATEGORIES.includes(cat)) {
         if (changes.action === 'remove') return { ok: false, reason: `protected-step:${cat}` }
-        const newCat = classifyStep(changes.step_name, changes.ingredient).category
+        const newCat = classifyStep(changes.step_name, changes.ingredient, en).category
         if (newCat !== cat) return { ok: false, reason: `protected-replace-category-mismatch:${cat}->${newCat}` }
         if (newActive.kind === 'known' && newActive.label && STRONG_ACTIVES.includes(newActive.label)) {
           return { ok: false, reason: `protected-replace-strong-active:${newActive.label}` }
@@ -356,11 +385,11 @@ export function applyProposal(
       const sem = period.filter((st) => st !== target)
       if (changes.action === 'remove') return { ok: true, next: assemble(changes.period, sem, am, pm) }
       if (newActive.kind === 'known' && newActive.label && sem.some((st) => {
-        const a = detectTargetActive(String(st.name ?? ''), String(st.ingredient ?? ''))
+        const a = detectTargetActive(String(st.name ?? ''), String(st.ingredient ?? ''), en)
         return a.kind === 'known' && a.label === newActive.label
       })) return { ok: false, reason: `replace-would-duplicate:${newActive.label}` }
-      const step = makeCoachStep(changes, nextId(period))
-      return { ok: true, next: assemble(changes.period, insertClinically(sem, step), am, pm) }
+      const step = makeCoachStep(changes, nextId(period), en)
+      return { ok: true, next: assemble(changes.period, insertClinically(sem, step, en), am, pm) }
     }
   }
 
@@ -369,19 +398,19 @@ export function applyProposal(
     // Rule 6 — dedup: mesmo ativo conhecido já no período → recusa (a op certa é replace).
     if (newActive.kind === 'known' && newActive.label) {
       const dup = period.some((s) => {
-        const a = detectTargetActive(String(s.name ?? ''), String(s.ingredient ?? ''))
+        const a = detectTargetActive(String(s.name ?? ''), String(s.ingredient ?? ''), en)
         return a.kind === 'known' && a.label === newActive.label
       })
       if (dup) return { ok: false, reason: `add-duplicate:${newActive.label}` }
     }
-    const step = makeCoachStep(changes, nextId(period))               // Rule 4 (item completo) + Rule 3 (id)
-    return { ok: true, next: assemble(changes.period, insertClinically(period, step), am, pm) } // Rule 5 + 7
+    const step = makeCoachStep(changes, nextId(period), en)               // Rule 4 (item completo) + Rule 3 (id)
+    return { ok: true, next: assemble(changes.period, insertClinically(period, step, en), am, pm) } // Rule 5 + 7
   }
 
   // ── REMOVE / REPLACE ── (por id, resolvido semanticamente — nunca substring; Rule 3)
   const refName = changes.action === 'replace' && changes.replaces ? changes.replaces : changes.step_name
   const refIng = changes.action === 'replace' && changes.replaces ? changes.replaces : changes.ingredient
-  const refCat = classifyStep(refName, refIng).category
+  const refCat = classifyStep(refName, refIng, en).category
 
   // Proteção de limpeza/hidratante/protetor. `remove` NUNCA toca nesses três.
   // `replace` é permitido num passo protegido SÓ como troca de MESMA categoria e SEM
@@ -393,7 +422,7 @@ export function applyProposal(
     if (changes.action === 'remove') return { ok: false, reason: `protected-step:${refCat}` }
 
     // Cond. 1 — o que entra tem de ser da mesma categoria do que sai.
-    const newCat = classifyStep(changes.step_name, changes.ingredient).category
+    const newCat = classifyStep(changes.step_name, changes.ingredient, en).category
     if (newCat !== refCat) {
       return { ok: false, reason: `protected-replace-category-mismatch:${refCat}->${newCat}` }
     }
@@ -403,21 +432,21 @@ export function applyProposal(
     }
     // Passo protegido não tem ativo reconhecível → resolve o alvo pela CATEGORIA.
     const catMatches = period.filter(
-      (s) => classifyStep(String(s.name ?? ''), String(s.ingredient ?? '')).category === refCat,
+      (s) => classifyStep(String(s.name ?? ''), String(s.ingredient ?? ''), en).category === refCat,
     )
     if (catMatches.length === 0) return { ok: false, reason: `target-not-found:${refCat}` }
     if (catMatches.length > 1) return { ok: false, reason: `target-ambiguous:${refCat}` }
     const target = catMatches[0]
-    const step = makeCoachStep(changes, nextId(period))
-    return { ok: true, next: assemble(changes.period, insertClinically(period.filter((s) => s !== target), step), am, pm) }
+    const step = makeCoachStep(changes, nextId(period), en)
+    return { ok: true, next: assemble(changes.period, insertClinically(period.filter((s) => s !== target), step, en), am, pm) }
   }
 
-  const targetActive = detectTargetActive(refName, refIng)
+  const targetActive = detectTargetActive(refName, refIng, en)
   if (targetActive.kind !== 'known' || !targetActive.label) return { ok: false, reason: 'target-active-unrecognized' }
 
   const matches = period.filter((s) => {
-    if (classifyStep(String(s.name ?? ''), String(s.ingredient ?? '')).category !== 'Tratamento') return false
-    const a = detectTargetActive(String(s.name ?? ''), String(s.ingredient ?? ''))
+    if (classifyStep(String(s.name ?? ''), String(s.ingredient ?? ''), en).category !== 'Tratamento') return false
+    const a = detectTargetActive(String(s.name ?? ''), String(s.ingredient ?? ''), en)
     return a.kind === 'known' && a.label === targetActive.label
   })
   if (matches.length === 0) return { ok: false, reason: `target-not-found:${targetActive.label}` }
@@ -433,11 +462,11 @@ export function applyProposal(
   const withoutTarget = period.filter((s) => s !== target)
   if (newActive.kind === 'known' && newActive.label) {
     const collide = withoutTarget.some((s) => {
-      const a = detectTargetActive(String(s.name ?? ''), String(s.ingredient ?? ''))
+      const a = detectTargetActive(String(s.name ?? ''), String(s.ingredient ?? ''), en)
       return a.kind === 'known' && a.label === newActive.label
     })
     if (collide) return { ok: false, reason: `replace-would-duplicate:${newActive.label}` }
   }
-  const step = makeCoachStep(changes, nextId(period))
-  return { ok: true, next: assemble(changes.period, insertClinically(withoutTarget, step), am, pm) }
+  const step = makeCoachStep(changes, nextId(period), en)
+  return { ok: true, next: assemble(changes.period, insertClinically(withoutTarget, step, en), am, pm) }
 }

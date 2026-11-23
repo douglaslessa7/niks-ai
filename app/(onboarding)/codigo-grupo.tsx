@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Keyboard, Pressable, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB, ObScreen, ObTitle, ObSubtitle, ObPillButton, useObFrame } from '../../components/onboarding/kit';
@@ -76,12 +77,12 @@ export default function CodigoGrupo() {
       <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss} accessible={false}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, paddingTop: y(90), justifyContent: 'center' }}>
           <View>
-            <ObTitle>{nomeDela ? `${nomeDela}, você tem um código de grupo do NIKS?` : 'Você tem um código de grupo do NIKS?'}</ObTitle>
-            <ObSubtitle style={{ marginTop: 24, marginHorizontal: 30 }}>Se uma amiga te convidou, digite o código que ela te mandou.</ObSubtitle>
+            <ObTitle>{nomeDela ? t('{{nome}}, você tem um código de grupo do NIKS?', { nome: nomeDela }) : t('Você tem um código de grupo do NIKS?')}</ObTitle>
+            <ObSubtitle style={{ marginTop: 24, marginHorizontal: 30 }}>{t('Se uma amiga te convidou, digite o código que ela te mandou.')}</ObSubtitle>
             <View style={{ marginTop: 24, marginHorizontal: 17, height: 57, borderRadius: 12, backgroundColor: OB.option, justifyContent: 'center' }}>
               <TextInput
                 value={codigo}
-                onChangeText={(t) => mudar(t, 'digitado')}
+                onChangeText={(texto) => mudar(texto, 'digitado')}
                 placeholder="NIKS-XXXXXX"
                 placeholderTextColor="rgba(18,18,18,0.25)"
                 autoCapitalize="characters"
@@ -94,12 +95,12 @@ export default function CodigoGrupo() {
               />
             </View>
             <Text style={{ marginTop: 10, marginHorizontal: 17, minHeight: 22, textAlign: 'center', fontSize: 16, lineHeight: 22, fontWeight: '600', color: erro ? '#D93A6B' : OB.pink }}>
-              {erro || (grupo !== null ? `Grupo ${grupo} ✓` : '')}
+              {(erro && t(erro)) || (grupo !== null ? t('Grupo {{grupo}} ✓', { grupo }) : '')}
             </Text>
             <View style={{ alignItems: 'center' }}><BotaoColarCodigo onColar={(c) => mudar(extrairCodigo(c), 'colado')} /></View>
             <ObPillButton onPress={continuar} disabled={grupo === null} style={{ marginTop: 48 }} />
             <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }} onPress={pular} style={{ alignSelf: 'center', marginTop: 14 }}>
-              <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: '600', color: OB.ink }}>Pular</Text>
+              <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: '600', color: OB.ink }}>{t('Pular')}</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

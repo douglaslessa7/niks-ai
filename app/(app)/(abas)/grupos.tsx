@@ -18,6 +18,7 @@ import CalendarioCheckins, { Salta, mesKey } from '../../../components/grupos/Ca
 import AlvoGuia from '../../../components/coach/AlvoGuia';
 import { onCoachPrepare, useCoachStage } from '../../../lib/coachMarks';
 import { verificarTutorialGrupos } from '../../../lib/gruposTutorial';
+import { t } from '../../../lib/i18n';
 import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,8 +115,8 @@ export default function Grupos() {
               <Circle cx={-120 + 320} cy={y(-390) + 320} r={320} fill="rgba(255,255,255,0.38)" />
             </Svg>
           </View>
-          <View pointerEvents="none" style={[styles.title, { top: y(54) }]}><Text style={styles.titleT}>Perfil</Text></View>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/perfil' as any); }} style={[styles.gear, { top: y(54) }]} accessibilityLabel="Perfil e configurações">
+          <View pointerEvents="none" style={[styles.title, { top: y(54) }]}><Text style={styles.titleT}>{t('Perfil')}</Text></View>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/perfil' as any); }} style={[styles.gear, { top: y(54) }]} accessibilityLabel={t('Perfil e configurações')}>
             <Icon d={GEAR} size={24} color={INK} sw={1.8} circle={[12, 12, 3]} />
           </TouchableOpacity>
           {/* Foto com a moldura do material da medalha atual (08/nov/2026; NiksMolduras 2a).
@@ -126,21 +127,21 @@ export default function Grupos() {
             </AlvoGuia>
           </Salta>
           <Text style={[styles.nome, { top: y(216) }]} numberOfLines={1}>{p?.nome ?? ''}</Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/caminhada?de=grupos' as any); }} style={[styles.nivelBtn, { top: y(248) }]} accessibilityLabel="Sua caminhada">
-            <Text style={styles.nivel}>{pontos ? `Nível ${pontos.nivel} · ${pontos.titulo}` : p ? `Nível ${p.nivel} · ${p.titulo}` : ' '}</Text>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/caminhada?de=grupos' as any); }} style={[styles.nivelBtn, { top: y(248) }]} accessibilityLabel={t('Sua caminhada')}>
+            <Text style={styles.nivel}>{pontos ? t('Nível {{nivel}} · {{titulo}}', { nivel: pontos.nivel, titulo: t(pontos.titulo) }) : p ? t('Nível {{nivel}} · {{titulo}}', { nivel: p.nivel, titulo: t(p.titulo) }) : ' '}</Text>
           </TouchableOpacity>
           <View style={[styles.stats, { top: y(282) }]}>
             {[{ n: p?.checkins ?? 0, l: 'Check-ins' }, { n: p?.dias_ativos ?? 0, l: 'Dias ativos' }].map((x) => (
               <View key={x.l} style={styles.stat}>
                 <Text style={styles.statN}>{x.n}</Text>
-                <Text style={styles.statL}>{x.l}</Text>
+                <Text style={styles.statL}>{t(x.l)}</Text>
               </View>
             ))}
           </View>
           <View style={[styles.pillRow, { top: y(348) }]}>
             <AlvoGuia chave="perfil-seus-grupos">
               <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/seus-grupos' as any); }} style={styles.pill}>
-                <Text style={styles.pillT}>Seus grupos</Text>
+                <Text style={styles.pillT}>{t('Seus grupos')}</Text>
               </TouchableOpacity>
             </AlvoGuia>
           </View>
@@ -150,7 +151,7 @@ export default function Grupos() {
 
         <View style={{ marginTop: 18, alignItems: 'center' }}>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); router.push('/calendario?de=grupos' as any); }} style={styles.verTodos}>
-            <Text style={styles.verTodosT}>Ver todos os check-ins</Text>
+            <Text style={styles.verTodosT}>{t('Ver todos os check-ins')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

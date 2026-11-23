@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import { invalidateCache, invalidateCachePrefixo } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 // ── Ajustar a foto de perfil ────────────────────────────────────────────────────
 // A usuária tocou na própria foto ("Seu progresso" ou Perfil — `lib/profilePhoto`) e
@@ -142,7 +143,7 @@ export default function AjustarFoto() {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Sessão expirada.');
+      if (!user) throw new Error(t('Sessão expirada.'));
 
       // Um ponto a offset `o` do centro do círculo veio do pixel `(o − t)/eff` da origem.
       // O recorte é a caixa D×D centrada no círculo → lado `D/eff` em pixels da imagem.
@@ -167,12 +168,12 @@ export default function AjustarFoto() {
         ],
         { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
-      if (!out.base64) throw new Error('Falha ao processar a imagem.');
+      if (!out.base64) throw new Error(t('Falha ao processar a imagem.'));
 
       // Filtro antes de subir: a foto de perfil aparece para as integrantes dos grupos.
       const filtro = await moderarFotoPerfil(out.base64);
       if (!filtro.ok) {
-        throw new Error(filtro.motivo === 'filtro' ? 'Essa foto não pode ser publicada no grupo. Tente outra.' : 'Não conseguimos conferir essa foto agora. Tente de novo.');
+        throw new Error(filtro.motivo === 'filtro' ? t('Essa foto não pode ser publicada no grupo. Tente outra.') : t('Não conseguimos conferir essa foto agora. Tente de novo.'));
       }
 
       // Mesmo bucket privado dos scans; o prefixo `home_` separa da foto de análise.
@@ -195,7 +196,7 @@ export default function AjustarFoto() {
       router.back(); // a home revalida ao ganhar foco — sem callback nem estado extra
     } catch (e: any) {
       setSaving(false); // a tela fica aberta: nada foi gravado, ela pode tentar de novo
-      Alert.alert('Não deu certo', e?.message ?? 'Não conseguimos salvar sua foto. Tente de novo.');
+      Alert.alert(t('Não deu certo'), e?.message ?? t('Não conseguimos salvar sua foto. Tente de novo.'));
     }
   };
 
@@ -217,13 +218,13 @@ export default function AjustarFoto() {
             style={styles.backBtn}
             hitSlop={10}
             disabled={saving}
-            accessibilityLabel="Voltar"
+            accessibilityLabel={t('Voltar')}
           >
             <Svg width={18} height={18} viewBox="0 0 24 24">
               <Path d="M15 5l-7 7 7 7" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Ajuste sua foto</Text>
+          <Text style={styles.headerTitle}>{t('Ajuste sua foto')}</Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -254,7 +255,7 @@ export default function AjustarFoto() {
             </GestureDetector>
           </LinearGradient>
 
-          <Text style={styles.hint}>Arraste e pince para enquadrar</Text>
+          <Text style={styles.hint}>{t('Arraste e pince para enquadrar')}</Text>
         </View>
       </SafeAreaView>
 
@@ -269,7 +270,7 @@ export default function AjustarFoto() {
           {saving ? (
             <ActivityIndicator color={WHITE} />
           ) : (
-            <Text style={styles.ctaText}>Usar esta foto</Text>
+            <Text style={styles.ctaText}>{t('Usar esta foto')}</Text>
           )}
         </TouchableOpacity>
       </View>

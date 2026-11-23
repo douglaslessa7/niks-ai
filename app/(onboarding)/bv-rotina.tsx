@@ -1,16 +1,16 @@
 import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaCanto, BvProgresso, BvEtiqueta, BvTitulo, BvBotao, useBvFrame,
-  SEMANAS_ROTINA, REDUCAO_DOR_PCT, useDorPrincipal,
+  SEMANAS_ROTINA, menosDe, useDorPrincipal,
 } from '../../components/boasVindas/kit';
 
 // Boas-vindas · tela 2 "Rotina pronta" (frame "02"). Plano de 1 MÊS (07/nov/2026, pedido do
 // produto) em torno da DOR PRINCIPAL (a mesma da carta de alerta): "4 semanas" · "2× por dia" ·
-// "−40% de <dor>", e as fases semana 1 / semanas 2–3 / semana 4.
-// ⚠️ PROVISÓRIO: os −40% (`REDUCAO_DOR_PCT`) não vêm de dado nenhum.
+// "Menos <dor>" (sem porcentagem desde 23/nov/2026), e as fases semana 1 / semanas 2–3 / semana 4.
 export default function BvRotina() {
   const router = useRouter();
   const { track } = useMixpanel();
@@ -19,9 +19,9 @@ export default function BvRotina() {
   useOnMount(() => track('boas_vindas_tela', { tela: 2, nome: 'rotina', dor: dor.problema }));
 
   const fases = [
-    { cor: '#FFC2DB', peso: 1, titulo: 'Fase 1 · Adaptação', texto: 'Semana 1 · sua pele se acostuma aos ativos' },
-    { cor: '#FF8CC0', peso: 2, titulo: 'Fase 2 · Tratamento', texto: 'Semanas 2–3 · ativos na dose certa' },
-    { cor: BV.pink, peso: 1, titulo: 'Fase 3 · Resultado', texto: `Semana ${SEMANAS_ROTINA} · meta de −${REDUCAO_DOR_PCT}% de ${dor.nome}` },
+    { cor: '#FFC2DB', peso: 1, titulo: t('Fase 1 · Adaptação'), texto: t('Semana 1 · sua pele se acostuma aos ativos') },
+    { cor: '#FF8CC0', peso: 2, titulo: t('Fase 2 · Tratamento'), texto: t('Semanas 2–3 · ativos na dose certa') },
+    { cor: BV.pink, peso: 1, titulo: t('Fase 3 · Resultado'), texto: t('Semana {{semana}} · meta: {{dor}} sob controle', { semana: SEMANAS_ROTINA, dor: dor.nome }) },
   ];
 
   const stat = (n: string, label: string, cor: string = BV.ink) => (
@@ -37,13 +37,13 @@ export default function BvRotina() {
       <BvProgresso feitas={1} />
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(104), paddingHorizontal: 20 }}>
-        <BvEtiqueta>FEITA SÓ PRA VOCÊ</BvEtiqueta>
-        <BvTitulo style={{ marginTop: 10 }}>Sua rotina está pronta.</BvTitulo>
+        <BvEtiqueta>{t('FEITA SÓ PRA VOCÊ')}</BvEtiqueta>
+        <BvTitulo style={{ marginTop: 10 }}>{t('Sua rotina está pronta.')}</BvTitulo>
 
         <View style={{ marginTop: 22, flexDirection: 'row', gap: 8 }}>
-          {stat(String(SEMANAS_ROTINA), 'semanas')}
-          {stat('2×', 'por dia')}
-          {stat(`−${REDUCAO_DOR_PCT}%`, `de ${dor.nome}`, BV.pink)}
+          {stat(String(SEMANAS_ROTINA), t('semanas'))}
+          {stat('2×', t('por dia'))}
+          {stat(menosDe(dor.nome), dor.nome, BV.pink)}
         </View>
 
         <View style={{ marginTop: 10, borderRadius: 18, backgroundColor: BV.card, paddingTop: 18, paddingHorizontal: 18, paddingBottom: 8 }}>
@@ -65,7 +65,7 @@ export default function BvRotina() {
         </View>
       </View>
 
-      <BvBotao label="Ver meu dia 1" onPress={() => router.push('/(onboarding)/bv-foto' as any)} />
+      <BvBotao label={t('Ver meu dia 1')} onPress={() => router.push('/(onboarding)/bv-foto' as any)} />
     </BvScreen>
   );
 }

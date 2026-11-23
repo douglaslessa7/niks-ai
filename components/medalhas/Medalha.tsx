@@ -11,6 +11,7 @@ import { Image } from 'expo-image';
 import Animated from 'react-native-reanimated';
 import type { StyleProp, ImageStyle } from 'react-native';
 import { medalhaDoNivel } from '../../lib/niveis';
+import { t } from '../../lib/i18n';
 
 const IMAGENS: Record<string, number> = {
   'bronze:1': require('../../assets/medalhas/bronze-1.webp'),
@@ -43,7 +44,7 @@ function Medalha({ nivel, tamanho, estilo }: { nivel: number; tamanho: number; e
       contentFit="contain"
       transition={0}
       cachePolicy="memory"
-      accessibilityLabel={`Medalha ${nome}`}
+      accessibilityLabel={t('Medalha {{nome}}', { nome: t(nome) })}
     />
   );
 }

@@ -1,6 +1,9 @@
 import { travaAssinatura, uidDaSessao } from '../_shared/assinatura.ts'
 import { limitePorIp } from '../_shared/limiteIp.ts'
 import { detectTargetActive } from '../_shared/protocol-write.ts'
+import { clienteServico, gerarRotinaV2, usaMotorNovo } from '../_shared/motor/gerar.ts'
+import { INSTRUCAO_EN_ROTINA, paraIdioma } from '../_shared/motor/ingles.ts'
+import { lerReacoes, resumoParaIA } from '../_shared/motor/reacoes.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -242,7 +245,10 @@ Deno.serve(async (req) => {
   if (bloqueio) return bloqueio
 
   try {
-    const { scanResult, onboardingData } = await req.json()
+    const corpo = await req.json()
+    const { scanResult, onboardingData } = corpo
+    // Idioma do celular (etapa 3 da tradução). Sem o campo (app antigo) → português, como sempre.
+    const idioma = paraIdioma(corpo?.idioma)
 
     if (!scanResult) {
       return new Response(JSON.stringify({ error: 'scanResult é obrigatório' }), {
@@ -251,7 +257,22 @@ Deno.serve(async (req) => {
       })
     }
 
-    const systemPrompt = `Você é um dermatologista clínico especializado em cosmetologia com 20 anos de experiência. Sua missão é construir um protocolo de skincare AM (manhã) e PM (noite) completamente individualizado a partir de uma ficha clínica de análise de pele por IA.
+    // Motor da rotina v2 (nov/2026): só para quem `usa_motor_novo` libera — contas da
+    // lista `motor_config.contas` e, com o motor ligado, contas novas. Quem já tem rotina
+    // nunca passa por aqui. Falhou → segue no motor antigo (rotina imperfeita > nenhuma).
+    try {
+      const db = clienteServico()
+      if (await usaMotorNovo(db, uidSessao)) {
+        const r = await gerarRotinaV2({ scanResult, onboardingData, uid: uidSessao, supabase: db, idioma })
+        return new Response(JSON.stringify(r.protocolo), {
+          headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' },
+        })
+      }
+    } catch (e) {
+      console.error('MOTOR_V2_FALHOU', String(e))
+    }
+
+    const systemPromptPt = `Você é um dermatologista clínico especializado em cosmetologia com 20 anos de experiência. Sua missão é construir um protocolo de skincare AM (manhã) e PM (noite) completamente individualizado a partir de uma ficha clínica de análise de pele por IA.
 
 PRINCÍPIO ABSOLUTO: Cada passo deve ser clinicamente justificado pelos achados reais da ficha. Zero templates genéricos. O protocolo deve refletir a condição específica da pessoa. Todo texto de saída deve estar em português brasileiro.
 
@@ -464,9 +485,9 @@ Os dados de \`onboardingData\` devem personalizar ativamente o protocolo. Não i
 **\`allergy_type\`**:
 - \`'none'\` → sem restrições adicionais
 - \`'sensitive'\` → protocolo conservador: priorizar ativos comprovadamente bem tolerados (niacinamida, ceramidas, ácido azelaico), evitar fragrâncias e álcool desnaturado, preferir concentrações mais baixas de ácidos e retinol, mencionar no \`introduction_warnings\` que a pele é sensível/reativa e que a introdução gradual é ainda mais crítica
-- \`'reaction'\` → ler \`allergy_description\` e EXCLUIR obrigatoriamente qualquer ativo, família de ativos ou produto mencionado do protocolo; mencionar no \`introduction_warnings\` quais ativos foram evitados e o motivo
+- \`'reaction'\` → seguir a seção REAÇÕES DECLARADAS da mensagem (leitura feita pelo app): EXCLUIR o que ela manda excluir, e SÓ isso; mencionar no \`introduction_warnings\` quais ativos foram evitados e o motivo
 
-**\`allergy_description\`**: usado apenas quando \`allergy_type\` = \`'reaction'\`. Ler com atenção — o usuário pode mencionar um ativo específico ("retinol"), uma família ("ácidos"), uma marca ou produto. Excluir do protocolo tudo que se relacione com o que foi descrito. Em caso de dúvida, ser conservador e excluir.
+**\`allergy_description\`**: usado apenas quando \`allergy_type\` = \`'reaction'\`. A reação vale para o INGREDIENTE citado, não para a família: reação leve a um ácido (ex.: glicólico) exclui só esse ácido e permite os mais suaves da mesma família (lático, mandélico, PHA) em concentração baixa; BHA e as outras famílias continuam permitidos. Só uma reação FORTE (ou um termo genérico como \"ácidos\", \"peeling\") exclui a família. Quando a mensagem trouxer REAÇÕES DECLARADAS, ela manda.
 
 **\`skincare_routine_type\`**:
 - \`'zero'\` → criar protocolo completamente do zero, sem considerar produtos existentes
@@ -524,6 +545,9 @@ Schema obrigatório (respeite os nomes dos campos exatamente):
   "introduction_schedule": "<cronograma de introdução gradual dos ativos potentes prescritos (retinol, AHAs, BHAs). Formato: descreva semana a semana como o usuário deve introduzir cada ativo novo. Exemplo para retinol: 'Semanas 1–2: aplique o Sérum de Retinol apenas 2x por semana (ex: terça e sexta). Semanas 3–4: aumente para 3x por semana se não houver irritação. A partir da semana 5: use nas noites indicadas conforme o cronograma. Para o Ácido Mandélico: inicie 2x por semana nas primeiras 2 semanas, depois siga o cronograma indicado.' Se o protocolo não tiver ativos que requerem introdução gradual, retorne null>"
 }`
 
+    // Inglês: o mesmo prompt + a instrução de idioma no fim. Português: idêntico ao de sempre.
+    const systemPrompt = idioma === 'en' ? systemPromptPt + INSTRUCAO_EN_ROTINA : systemPromptPt
+
     const barrierFlag =
       scanResult.barrier_status === 'comprometida' || scanResult.barrier_status === 'severamente_comprometida'
         ? 'ATENÇÃO CRÍTICA: BARREIRA COMPROMETIDA DETECTADA — aplicar fase de estabilização obrigatória (Regra das 6 Semanas). Zero ácidos, zero retinoides, zero vitamina C pura.'
@@ -540,7 +564,10 @@ Schema obrigatório (respeite os nomes dos campos exatamente):
         ? `ATENÇÃO: Fotótipo ${scanResult.skin_phototype} — usar ácido mandélico em vez de glicólico, derivados de vitamina C em vez de L-AA puro se houver risco de irritação, ácido azelaico como despigmentante preferencial, SPF tintado com óxidos de ferro.`
         : null
 
-    const flags = [barrierFlag, rosaceaFlag, phototypeCaution].filter(Boolean).join('\n')
+    // Reação declarada lida pelo código (23/nov/2026): por ingrediente, não pela família.
+    const reacoesIA = resumoParaIA(lerReacoes(onboardingData?.allergy_description))
+    const reacaoFlag = reacoesIA ? `REAÇÕES DECLARADAS (obrigatório; exclua só o indicado):\n${reacoesIA}` : ''
+    const flags = [barrierFlag, rosaceaFlag, phototypeCaution, reacaoFlag].filter(Boolean).join('\n')
 
     const userMessage = `Ficha clínica (resultado do analyze-skin):
 ${JSON.stringify(scanResult, null, 2)}

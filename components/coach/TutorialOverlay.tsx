@@ -27,6 +27,7 @@ import Reanimated, {
 import { Canvas, Fill, Group, RoundedRect, Skia } from '@shopify/react-native-skia';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import {
   CoachRect, CoachTargetKey, CoachTargets,
   requestCoachMeasure, requestCoachPrepare, useCoachTargets,
@@ -232,10 +233,15 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
   const firstRef = useRef(true);
   const aKey = A ? `${A.x},${A.y},${A.w},${A.h},${A.r}` : '';
   const bKey = B ? `${B.x},${B.y},${B.w},${B.h},${B.r}` : '';
+  // Para onde o recorte já está indo: o toque dispara o movimento na hora (ver `go`); a
+  // remedição só corrige se o alvo mudou de verdade (não reinicia a animação no meio).
+  const indo = useRef('');
   useEffect(() => {
     if (!A) return;
     const first = firstRef.current;
     firstRef.current = false;
+    if (!first && indo.current === `${aKey}|${bKey}`) return;
+    indo.current = `${aKey}|${bKey}`;
     moveBox(av, A, first || reduzir);
     moveBox(bv, B ?? A, first || reduzir);
     if (first) ovOp.set(withTiming(1, { duration: 350, easing: REasing.ease }));
@@ -272,9 +278,21 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
       at(900, () => setTipOn(true));
       return;
     }
-    at(180, () => { requestCoachPrepare(rolagem(stops[n])); requestCoachMeasure(chaves); setS(n); });
+    // Sem rolagem (18/nov/2026): o recorte sai NA HORA do toque, na thread de UI, com a posição
+    // já medida — antes esperava 180 ms + uma ida e volta ao JS (medir → setState → render).
+    // O texto do balão troca escondido (220 ms) e ele volta antes do recorte assentar.
+    const nA = boxOf(stops[n].a, targets, W, off);
+    const nB = stops[n].b ? boxOf(stops[n].b!, targets, W, off) : null;
+    if (nA) {
+      indo.current = `${nA.x},${nA.y},${nA.w},${nA.h},${nA.r}|${nB ? `${nB.x},${nB.y},${nB.w},${nB.h},${nB.r}` : ''}`;
+      moveBox(av, nA, reduzir);
+      moveBox(bv, nB ?? nA, reduzir);
+    }
+    requestCoachPrepare(rolagem(stops[n]));
+    requestCoachMeasure(chaves);
+    at(220, () => setS(n));
     at(330, () => requestCoachMeasure(chaves));
-    at(520, () => setTipOn(true));
+    at(380, () => setTipOn(true));
   };
   const close = () => {
     if (closing) return;
@@ -295,8 +313,8 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
   if (!st || !ready) return semPular && !vazio ? <View style={StyleSheet.absoluteFill} /> : null;
 
   const fim = total != null ? antes + s + 1 >= total : s === LAST;
-  const contagem = `${antes + s + 1} de ${total ?? stops.length}`;
-  const dica = fim ? 'Toque para começar' : 'Toque para continuar';
+  const contagem = t('{{atual}} de {{total}}', { atual: antes + s + 1, total: total ?? stops.length });
+  const dica = fim ? t('Toque para começar') : t('Toque para continuar');
   const baloes = (
     <Animated.View
       pointerEvents="none"
@@ -344,8 +362,8 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
       {/* Pular */}
       {!semPular && (
         <View pointerEvents="box-none" style={[styles.skipWrap, skipNoTopo && { bottom: undefined, top: insets.top + 8 }]}>
-          <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); close(); }} style={styles.skip} accessibilityRole="button" accessibilityLabel="Pular tutorial">
-            <Text style={styles.skipText}>Pular</Text>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); close(); }} style={styles.skip} accessibilityRole="button" accessibilityLabel={t('Pular tutorial')}>
+            <Text style={styles.skipText}>{t('Pular')}</Text>
           </TouchableOpacity>
         </View>
       )}

@@ -10,6 +10,7 @@
 import { useEffect } from 'react';
 import { Text, StyleSheet, type ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { t } from '../../lib/i18n';
 import Animated, { useSharedValue, useAnimatedStyle, withDelay, withSpring, withTiming, Easing, ReduceMotion } from 'react-native-reanimated';
 
 const PINK = '#FF5EA8';
@@ -48,7 +49,7 @@ export default function SeloProtegida({ run = 0, rm, animar = true, origem = 'ce
   return (
     <Animated.View style={[styles.selo, { transformOrigin: origem === 'left' ? 'left center' : 'center' }, style, st]}>
       <Escudo size={13} />
-      <Text style={styles.seloText}>SEQUÊNCIA PROTEGIDA</Text>
+      <Text style={styles.seloText}>{t('SEQUÊNCIA PROTEGIDA')}</Text>
     </Animated.View>
   );
 }

@@ -7,6 +7,7 @@
 // Irmão de `lib/metricColor.ts`, que é a fonte única da COR de uma métrica.
 
 import { MetricKey } from './metricColor';
+import { t } from './i18n';
 
 export type MetricDef = {
   key: MetricKey;
@@ -23,12 +24,13 @@ export type MetricDef = {
 
 /** Ordem canônica — a mesma da grade 3×2 da home. Não reordenar. */
 export const METRIC_DEFS: MetricDef[] = [
-  { key: 'qualidade_pele',   label: 'Qualidade da pele',    short: 'Qualidade',   positive: true  },
-  { key: 'atratividade',     label: 'Atratividade',         short: 'Atratividade', positive: true  },
-  { key: 'juventude',        label: 'Juventude',            short: 'Juventude',   positive: true  },
-  { key: 'oleosidade',       label: 'Oleosidade',           short: 'Oleosidade',  positive: false },
-  { key: 'acne',             label: 'Acne',                 short: 'Acne',        positive: false },
-  { key: 'linhas_expressao', label: 'Linhas de\nexpressão', short: 'Linhas',      positive: false },
+  // Rótulos só de tela (nada compara nem grava): já na língua do celular.
+  { key: 'qualidade_pele',   label: t('Qualidade da pele'),    short: t('Qualidade'),   positive: true  },
+  { key: 'atratividade',     label: t('Atratividade'),         short: t('Atratividade'), positive: true  },
+  { key: 'juventude',        label: t('Juventude'),            short: t('Juventude'),   positive: true  },
+  { key: 'oleosidade',       label: t('Oleosidade'),           short: t('Oleosidade'),  positive: false },
+  { key: 'acne',             label: t('Acne'),                 short: t('Acne'),        positive: false },
+  { key: 'linhas_expressao', label: t('Linhas de\nexpressão'), short: t('Linhas'),      positive: false },
 ];
 
 export const METRIC_BY_KEY: Record<MetricKey, MetricDef> = METRIC_DEFS.reduce(

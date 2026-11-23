@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  BackHandler, Image, ImageSourcePropType, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions,
+  BackHandler, Image, ImageSourcePropType, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -11,10 +11,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
-import { Contador } from '../../components/cartas/Carta';
 import { OB, ObHeader } from '../../components/onboarding/kit';
 import { useObPassoVisto } from '../../components/onboarding/passo';
 import { OB_STEPS } from '../../components/onboarding/kit';
+import { t } from '../../lib/i18n';
 
 // Onboarding — demonstração do scan de produto, telas 3 e 4 (04/nov/2026), depois da transição
 // rosa "Nem todo produto serve para a sua pele…" (`(scan)/demo-transicao`, que termina com o
@@ -57,15 +57,15 @@ import { OB_STEPS } from '../../components/onboarding/kit';
  *  ⚠️ A foto mostra um produto de MARCA REAL — ver a nota da linha 11e do README. */
 const FOTO_PRODUTO: ImageSourcePropType | null = require('../../assets/onboarding/demo-produto-foto.jpg');
 /** Nome do produto no card do resultado. */
-const NOME_PRODUTO = 'Gel de Limpeza Principia';
+const NOME_PRODUTO = t('Gel de Limpeza Principia');
 
 // As frases da "análise" (04/nov/2026, pedido do produto: "analisando componentes,
 // verificando…"), em maiúsculas espaçadas como no Tapfit ("OLHANDO O PRATO…") e no nosso
 // "VER O QUE O NIKS LÊ" — a caixa alta vem do estilo (`textTransform`), o leitor de tela lê normal.
 // Só 2 frases, cada uma ≈ 1,7 s na tela para dar tempo de ler (pedido do produto, 04/nov/2026).
 const MENSAGENS = [
-  'Analisando componentes...',
-  'Verificando a compatibilidade...',
+  t('Analisando componentes...'),
+  t('Verificando a compatibilidade...'),
 ];
 // Mais devagar que o Tapfit (lá: 4 mensagens a cada ~0,55 s, linhas de 630 ms e resultado aos
 // 2,24 s): uma passada da linha por frase, 900 ms cada, e o resultado aos 3,4 s.
@@ -82,8 +82,8 @@ const COMPATIBILIDADE = 22;
 // produto. 06/nov/2026 (pedido do produto): saiu o 1º, "Ele é feito para pele normal a oleosa."
 // (vinha do rótulo do CeraVe; a foto agora é a da Principia) — ficam dois.
 const MOTIVOS = [
-  'A espuma pode ressecar e deixar a pele repuxando.',
-  'Os ativos são bons, mas não são os que a sua pele precisa agora.',
+  t('A espuma pode ressecar e deixar a pele repuxando.'),
+  t('Os ativos são bons, mas não são os que a sua pele precisa agora.'),
 ];
 // A entrada do conteúdo da folha (05/nov/2026, pedido do produto: rápida, suave, de cima para
 // baixo, e o anel por último): um relógio só (`cascata`, em ms) e cada item — o rótulo, o nome,
@@ -176,6 +176,10 @@ const DS = {
 const ANEL_R = 39;
 const ANEL_C = 2 * Math.PI * ANEL_R;
 const ArcoAnel = Animated.createAnimatedComponent(Circle);
+// O número "22" conta na thread de UI, junto com o arco (16/nov/2026): antes contava pelo
+// JavaScript (um setState por número, ~1,3 s) e engasgava no iPhone. Um TextInput só de
+// leitura é o jeito de trocar texto sem passar pelo React a cada quadro.
+const NumeroAnimado = Animated.createAnimatedComponent(TextInput);
 const EASE_FOLHA = Easing.bezier(0.32, 0.72, 0, 1);    // a curva da folha do iOS
 // O arco enche na MESMA curva e duração do número (`Contador`: ease-out quártico em `CONTA_RAPIDA`).
 const CONTA_CURVA = Easing.out(Easing.poly(4));
@@ -200,7 +204,6 @@ export default function DemoScan() {
 
   const [fase, setFase] = useState<Fase>('pronto');
   const [msg, setMsg] = useState(0);
-  const [numero, setNumero] = useState<number | null>(null);
   const [podeSeguir, setPodeSeguir] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const espera = (ms: number, fn: () => void) => { timers.current.push(setTimeout(fn, ms)); };
@@ -271,6 +274,10 @@ export default function DemoScan() {
     ? { opacity: folha.get() }
     : { transform: [{ translateY: (1 - folha.get()) * (folhaAlt + 40) }] }));
   // Em 0% a ponta redonda do arco ainda desenharia um ponto: ele só aparece quando começa a encher.
+  const numeroProps = useAnimatedProps(() => {
+    const n = String(Math.round(anel.get() * 100));
+    return { text: n, defaultValue: n } as any;
+  });
   const arcoProps = useAnimatedProps(() => ({
     strokeDashoffset: ANEL_C * (1 - anel.get()),
     strokeOpacity: anel.get() > 0.003 ? 1 : 0,
@@ -332,7 +339,6 @@ export default function DemoScan() {
     if (!reduce) cascata.set(withDelay(tCascata, withTiming(CASCATA_FIM, { duration: CASCATA_FIM, easing: Easing.linear })));
     // O anel é o último item da cascata: a contagem começa quando ele já apareceu quase todo.
     const tConta = reduce ? inicio : tCascata + (CASCATA.itens - 1) * CASCATA.passo + 200;
-    espera(tConta, () => setNumero(COMPATIBILIDADE));
     const alvo = COMPATIBILIDADE / 100;
     if (reduce) anel.set(alvo);
     else anel.set(withDelay(tConta, withTiming(alvo, { duration: CONTA_RAPIDA, easing: CONTA_CURVA })));
@@ -507,8 +513,8 @@ export default function DemoScan() {
       {fase === 'pronto' || fase === 'escaneando' ? (
         <Animated.View pointerEvents={fase === 'pronto' ? 'box-none' : 'none'} style={[StyleSheet.absoluteFill, avisoStyle]}>
           <View style={{ position: 'absolute', left: 24, right: 24, bottom: avisoBottom, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 14, paddingHorizontal: 18, boxShadow: '0px 8px 24px rgba(18,18,18,0.10)' }}>
-            <Text style={{ textAlign: 'center', fontSize: 15, lineHeight: 20, fontWeight: '700', color: OB.ink }}>Esta foto é nossa.</Text>
-            <Text style={{ marginTop: 2, textAlign: 'center', fontSize: 14, lineHeight: 19, color: OB.sub }}>Toque e veja como o NIKS analisa um produto.</Text>
+            <Text style={{ textAlign: 'center', fontSize: 15, lineHeight: 20, fontWeight: '700', color: OB.ink }}>{t('Esta foto é nossa.')}</Text>
+            <Text style={{ marginTop: 2, textAlign: 'center', fontSize: 14, lineHeight: 19, color: OB.sub }}>{t('Toque e veja como o NIKS analisa um produto.')}</Text>
           </View>
           <View style={{ position: 'absolute', left: 0, right: 0, bottom: btnBottom, alignItems: 'center' }}>
             <View style={{ width: BTN, height: BTN, alignItems: 'center', justifyContent: 'center' }}>
@@ -519,7 +525,7 @@ export default function DemoScan() {
                 onPressOut={() => aperto.set(withTiming(1, { duration: 160, easing: EASE_OUT }))}
                 hitSlop={10}
                 accessibilityRole="button"
-                accessibilityLabel="Ver o que o NIKS lê"
+                accessibilityLabel={t('Ver o que o NIKS lê')}
               >
                 <Animated.View style={[{ width: BTN, height: BTN, borderRadius: BTN / 2, backgroundColor: '#FFFFFF', borderWidth: 3, borderColor: OB.pink, alignItems: 'center', justifyContent: 'center', boxShadow: '0px 6px 18px rgba(255,94,168,0.35)' }, botaoStyle]}>
                   <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: OB.pink }} />
@@ -528,7 +534,7 @@ export default function DemoScan() {
             </View>
           </View>
           <Text style={{ position: 'absolute', left: 0, right: 0, bottom: labelBottom, textAlign: 'center', fontSize: 12, lineHeight: 16, fontWeight: '700', letterSpacing: 1.6, color: OB.ink }}>
-            VER O QUE O NIKS LÊ
+            {t('VER O QUE O NIKS LÊ')}
           </Text>
         </Animated.View>
       ) : null}
@@ -605,14 +611,14 @@ export default function DemoScan() {
             <Circle cx={8} cy={8} r={8} fill={OB.pink} />
             <Path d="M4.6 8.2l2.3 2.3 4.5-4.8" fill="none" stroke="#FFFFFF" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
-          <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: '700', letterSpacing: 1.6, color: OB.pink }}>ANALISADO PELO NIKS</Text>
+          <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: '700', letterSpacing: 1.6, color: OB.pink }}>{t('ANALISADO PELO NIKS')}</Text>
         </Entra>
         <Entra i={1} t={cascata}>
           <Text numberOfLines={2} style={{ marginTop: 8, fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.5, color: OB.ink }}>{NOME_PRODUTO}</Text>
         </Entra>
 
         <Entra i={2} t={cascata}>
-          <Text style={[rotuloPequeno, { marginTop: 22 }]}>POR QUE NÃO RECOMENDAMOS</Text>
+          <Text style={[rotuloPequeno, { marginTop: 22 }]}>{t('POR QUE NÃO RECOMENDAMOS')}</Text>
         </Entra>
         <View style={{ marginTop: 4 }}>
           {MOTIVOS.map((m, r) => (
@@ -630,15 +636,15 @@ export default function DemoScan() {
 
         <View style={{ marginTop: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
           <Entra i={3 + MOTIVOS.length} t={cascata} style={{ flexShrink: 1, gap: 6 }}>
-            <Text style={rotuloPequeno}>COMPATIBILIDADE</Text>
+            <Text style={rotuloPequeno}>{t('COMPATIBILIDADE')}</Text>
             <Text style={{ fontSize: 28, lineHeight: 32, fontWeight: '700', letterSpacing: -0.6, color: DS.veredito }}>
-              Não recomendado
+              {t('Não recomendado')}
             </Text>
           </Entra>
           <Entra i={4 + MOTIVOS.length} t={cascata} style={{ width: DS.anel, height: DS.anel }}>
             <View
               accessible
-              accessibilityLabel={`${COMPATIBILIDADE}% compatível com a sua pele`}
+              accessibilityLabel={t('{{pct}}% compatível com a sua pele', { pct: COMPATIBILIDADE })}
               style={{ width: DS.anel, height: DS.anel }}
             >
               <Svg width={DS.anel} height={DS.anel} style={{ position: 'absolute', left: 0, top: 0, transform: [{ rotate: '-90deg' }] }}>
@@ -659,9 +665,13 @@ export default function DemoScan() {
                 />
               </Svg>
               <View style={[StyleSheet.absoluteFill, { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', paddingTop: 25 }]}>
-                {numero != null
-                  ? <Contador alvo={numero} contar={!reduce} duracao={CONTA_RAPIDA} style={styles.numero} />
-                  : <Text style={styles.numero}>0</Text>}
+                <NumeroAnimado
+                  editable={false}
+                  pointerEvents="none"
+                  defaultValue="0"
+                  animatedProps={numeroProps}
+                  style={[styles.numero, { padding: 0, margin: 0, minWidth: 36, textAlign: 'right' }]}
+                />
                 <Text style={styles.porcento}>%</Text>
               </View>
             </View>
@@ -674,7 +684,7 @@ export default function DemoScan() {
             activeOpacity={0.88}
             style={{ height: 48, paddingHorizontal: 30, borderRadius: 24, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center', boxShadow: '0px 6px 16px rgba(255,94,168,0.28)' }}
           >
-            <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>Quero saber o que usar</Text>
+            <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>{t('Quero saber o que usar')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </Animated.View>

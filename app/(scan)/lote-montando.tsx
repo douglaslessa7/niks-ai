@@ -18,13 +18,14 @@ import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { usePalco } from '../../lib/palco';
 import { buscarLote, fotosDoLote, tentarDeNovo, TetoDoDiaError, type Lote } from '../../lib/rotinaLotes';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
 const SOFT = '#6E6468';
 const INTERVALO_MS = 3000;
 const ETAPA_MS = 7000;
-const CHECKS = ['Lendo os rótulos', 'Cruzando com a sua pele', 'Separando manhã e noite'];
+const CHECKS = [t('Reconhecendo seus produtos'), t('Cruzando com a sua pele'), t('Separando manhã e noite')];
 const LOGO = require('../../assets/home/score-logo-pink.png');
 
 export default function LoteMontando() {
@@ -101,8 +102,8 @@ export default function LoteMontando() {
       setLoteId(novo);
     } catch (e) {
       Alert.alert(
-        'Não deu para tentar de novo',
-        e instanceof TetoDoDiaError ? 'Você já montou uma rotina hoje. Tente de novo amanhã.' : 'Verifique sua conexão e tente de novo.',
+        t('Não deu para tentar de novo'),
+        e instanceof TetoDoDiaError ? t('Você já montou uma rotina hoje. Tente de novo amanhã.') : t('Verifique sua conexão e tente de novo.'),
       );
     } finally {
       setTentando(false);
@@ -156,13 +157,15 @@ export default function LoteMontando() {
 
         {/* Textos */}
         <View pointerEvents="none" style={{ position: 'absolute', left: 28, right: 28, top: 398, alignItems: 'center', gap: 8 }}>
-          <Text style={st.titulo}>{erro ? 'Não deu para montar sua rotina' : 'Montando sua rotina'}</Text>
+          <Text style={st.titulo}>{erro ? t('Não deu para montar sua rotina') : t('Montando sua rotina')}</Text>
           <Text style={st.sub}>
             {erro
-              ? 'Algo deu errado do nosso lado. Suas fotos estão guardadas: é só tentar de novo.'
+              ? t('Algo deu errado do nosso lado. Suas fotos estão guardadas: é só tentar de novo.')
               : n === 1
-                ? 'Estou analisando seu produto e encaixando no passo certo pra sua pele.'
-                : `Estou analisando seus ${n || ''} produtos e encaixando cada um no passo certo pra sua pele.`.replace('seus  ', 'seus ')}
+                ? t('Estou analisando seu produto e encaixando no passo certo pra sua pele.')
+                : n
+                  ? t('Estou analisando seus {{n}} produtos e encaixando cada um no passo certo pra sua pele.', { n })
+                  : t('Estou analisando seus produtos e encaixando cada um no passo certo pra sua pele.')}
           </Text>
         </View>
 
@@ -193,16 +196,16 @@ export default function LoteMontando() {
         )}
 
         {!erro && (
-          <Text pointerEvents="none" style={st.rodape}>Leva alguns segundos. Pode seguir usando o app, eu te aviso quando ficar pronta.</Text>
+          <Text pointerEvents="none" style={st.rodape}>{t('Leva alguns segundos. Pode seguir usando o app, eu te aviso quando ficar pronta.')}</Text>
         )}
 
         {erro && (
           <TouchableOpacity onPress={deNovo} disabled={tentando} activeOpacity={0.85} style={[st.botao, { bottom: 34 + 52 + 10 }]}>
-            {tentando ? <ActivityIndicator color="#FFFFFF" /> : <Text style={st.botaoTxt}>Tentar de novo</Text>}
+            {tentando ? <ActivityIndicator color="#FFFFFF" /> : <Text style={st.botaoTxt}>{t('Tentar de novo')}</Text>}
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={continuar} activeOpacity={0.85} style={[st.botao, erro && { backgroundColor: '#FFFFFF', shadowOpacity: 0 }]}>
-          <Text style={[st.botaoTxt, erro && { color: '#E8468F' }]}>{erro ? 'Voltar' : 'Continuar usando o app'}</Text>
+          <Text style={[st.botaoTxt, erro && { color: '#E8468F' }]}>{erro ? t('Voltar') : t('Continuar usando o app')}</Text>
         </TouchableOpacity>
       </View>
     </View>

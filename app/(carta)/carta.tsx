@@ -34,6 +34,7 @@ import { useObName } from '../../components/onboarding/kit';
 import { cartaDoOnboarding, pontoForteDoOnboarding } from '../../lib/cartaOnboarding';
 import { useObPassoVisto } from '../../components/onboarding/passo';
 import { OB_STEPS } from '../../components/onboarding/kit';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Carta de raspar — réplica do protótipo 67a do Claude Design ("Cartas de raspar",
@@ -390,7 +391,7 @@ export default function CartaScreen() {
       })
       .catch(() => {
         if (!vivo) return;
-        Alert.alert('Carta', 'Não foi possível abrir a carta agora. Tente de novo em instantes.');
+        Alert.alert(t('Carta'), t('Não foi possível abrir a carta agora. Tente de novo em instantes.'));
         fechar();
       });
     return () => { vivo = false; };
@@ -414,10 +415,10 @@ export default function CartaScreen() {
   const idadePele = cartaOb?.tipo === 'idade' ? cartaOb.idadePele : null;
   const idadeReal = Number(birthdayOb) || null;
   const [numOb, setNumOb] = useState<number | null>(null);
-  const chipOb = idadePele == null || idadeReal == null ? 'Análise da sua foto'
-    : idadePele < idadeReal ? `${idadeReal - idadePele} ${idadeReal - idadePele === 1 ? 'ano' : 'anos'} mais jovem que você`
-    : idadePele > idadeReal ? `${idadePele - idadeReal} ${idadePele - idadeReal === 1 ? 'ano' : 'anos'} acima da sua idade`
-    : 'A mesma idade que você';
+  const chipOb = idadePele == null || idadeReal == null ? t('Análise da sua foto')
+    : idadePele < idadeReal ? (idadeReal - idadePele === 1 ? t('{{n}} ano mais jovem que você', { n: 1 }) : t('{{n}} anos mais jovem que você', { n: idadeReal - idadePele }))
+    : idadePele > idadeReal ? (idadePele - idadeReal === 1 ? t('{{n}} ano acima da sua idade', { n: 1 }) : t('{{n}} anos acima da sua idade', { n: idadePele - idadeReal }))
+    : t('A mesma idade que você');
   // A carta de alerta ("Você tem 40% mais [problema] do que a usuária padrão."): a escolha
   // do problema e o número moram em `lib/cartaOnboarding.ts` (o "Seu caminho" e a tela final
   // leem os mesmos dados).
@@ -463,14 +464,14 @@ export default function CartaScreen() {
   // semana leva o nome do grupo e "Você foi a mais constante da semana" (80h).
   const campea = srv?.carta.origem === 'campea';
   const grupoCampea = String((srv?.carta.conteudo as any)?.grupo ?? '');
-  const origemLabel = !srv ? 'Carta do dia'
-    : srv.carta.origem === 'checkin_grupo' ? 'Check-in feito'
-    : campea && grupoCampea ? `Campeã da semana · ${grupoCampea}`
+  const origemLabel = !srv ? t('Carta do dia')
+    : srv.carta.origem === 'checkin_grupo' ? t('Check-in feito')
+    : campea && grupoCampea ? t('Campeã da semana · {{grupo}}', { grupo: grupoCampea })
     : etiquetaCarta('x', srv.carta.origem);
-  const headLabel = srvMode ? (revelada && isPower ? 'Carta de poder' : origemLabel) : c.label;
+  const headLabel = srvMode ? (revelada && isPower ? t('Carta de poder') : origemLabel) : c.label;
   const headLine = srvMode
-    ? (revelada && isPower ? 'Um poder saiu na sua carta' : campea ? 'Você foi a mais constante da semana'
-      : srv?.carta.origem === 'missoes' ? 'Você completou as missões!' : 'Sua carta de hoje chegou')
+    ? (revelada && isPower ? t('Um poder saiu na sua carta') : campea ? t('Você foi a mais constante da semana')
+      : srv?.carta.origem === 'missoes' ? t('Você completou as missões!') : t('Sua carta de hoje chegou'))
     : c.headline;
   // Reflexo perolado: .5 na carta comum, .85 no poder (sHolo do design); antes de raspar, o de hoje.
   const holoK = !srvMode ? c.holo : !revelada ? 1 : isPower ? 0.85 / 0.55 : 0.5 / 0.55;
@@ -1327,13 +1328,13 @@ export default function CartaScreen() {
       {obMode && (
         <>
           <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 40, left: 32, right: 32 }, txt1Style]}>
-            {nome ? `Espera, ${nome}...` : 'Espera...'}
+            {nome ? t('Espera, {{nome}}...', { nome }) : t('Espera...')}
           </Animated.Text>
           <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 40, left: 32, right: 32 }, txt2Style]}>
-            Encontramos algo bom na sua análise.
+            {t('Encontramos algo bom na sua análise.')}
           </Animated.Text>
           <Animated.Text pointerEvents="none" style={[styles.obText, { top: H / 2 - 48, left: 32, right: 32 }, txt3Style]}>
-            {nome ? `${nome}, encontramos algo sério na sua análise.` : 'Encontramos algo sério na sua análise.'}
+            {nome ? t('{{nome}}, encontramos algo sério na sua análise.', { nome }) : t('Encontramos algo sério na sua análise.')}
           </Animated.Text>
           <Animated.View pointerEvents="none" style={[styles.luz, { left: stageX + CW / 2 - LUZ / 2, top: stageY + CH / 2 - LUZ / 2 }, luzStyle]} />
         </>
@@ -1358,7 +1359,7 @@ export default function CartaScreen() {
       {!obMode && <Pressable
         onPress={() => { haptics.tap(); fechar(); }}
         style={[styles.close, { top: oy + 58, right: ox + 16 }]}
-        accessibilityLabel="Fechar"
+        accessibilityLabel={t('Fechar')}
         hitSlop={6}
       >
         <Icon d={['M18 6 6 18', 'm6 6 12 12']} size={18} color={INK} sw={2} />
@@ -1369,13 +1370,13 @@ export default function CartaScreen() {
         {obMode ? (
           <>
             <Text style={[styles.headline, { color: '#FFFFFF', marginTop: 0 }]} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
-              {tituloIdade && naBoa ? 'O ponto forte da sua pele'
-                : tituloIdade && cartaAlerta ? `Seu maior desafio: ${cartaAlerta.nome}`
-                : tituloIdade && idadePele != null ? `Sua pele aparenta ${idadePele} anos`
-                : nome ? `${nome}, você precisa ver isso.` : 'Você precisa ver isso.'}
+              {tituloIdade && naBoa ? t('O ponto forte da sua pele')
+                : tituloIdade && cartaAlerta ? t('Seu maior desafio: {{nome}}', { nome: cartaAlerta.nome })
+                : tituloIdade && idadePele != null ? t('Sua pele aparenta {{idade}} anos', { idade: idadePele })
+                : nome ? t('{{nome}}, você precisa ver isso.', { nome }) : t('Você precisa ver isso.')}
             </Text>
             <Text style={[styles.obSub, { opacity: phase === 'revealed' ? 0 : 1, transitionProperty: 'opacity', transitionDuration: 220 } as any]}>
-              Raspe para revelar
+              {t('Raspe para revelar')}
             </Text>
           </>
         ) : (
@@ -1387,7 +1388,7 @@ export default function CartaScreen() {
         {!srvMode && c.timer && (
           <View style={styles.timer}>
             <Icon d={['M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z', 'M12 6v6l4 2']} size={15} color={PINK} sw={2} />
-            <Text style={styles.timerText}>some em {hh}h {mm}min</Text>
+            <Text style={styles.timerText}>{t('some em {{hh}}h {{mm}}min', { hh, mm })}</Text>
             <View style={styles.drainTrack}><Animated.View style={[styles.drainFill, drainStyle]} /></View>
           </View>
         )}
@@ -1520,7 +1521,7 @@ export default function CartaScreen() {
               } as any]}
             >
               <Icon d={HAND} size={17} color={PINK} sw={1.9} />
-              <Text style={styles.hintText}>Raspe para ver</Text>
+              <Text style={styles.hintText}>{t('Raspe para ver')}</Text>
             </Animated.View>
             {/* Reflexo e brilho do 67a só nas cartas de exemplo: as da rodada 84 têm o próprio. */}
             {!cartaNova && <Animated.View style={[styles.holo, holo]} />}
@@ -1570,7 +1571,7 @@ export default function CartaScreen() {
           transitionProperty: 'opacity', transitionDuration: 220,
         }]}
       >
-        Toque na carta para começar
+        {t('Toque na carta para começar')}
       </Animated.Text>
 
       {/* 7. Recomendações */}
@@ -1613,7 +1614,7 @@ export default function CartaScreen() {
         >
           <Animated.View style={[styles.btnFill, fillSt]} />
           <Animated.Text style={[styles.btnText, { color: obMode ? (naAlerta ? VERMELHO_ALERTA : PINK) : unlocked ? '#FFFFFF' : '#B5B5B5', transitionProperty: 'color', transitionDuration: 240 }, obMode && { fontWeight: '700' }]}>
-            {obMode ? (naBoa ? 'Continuar' : 'Quero resolver isso') : 'Continuar'}
+            {obMode ? (naBoa ? t('Continuar') : t('Quero resolver isso')) : t('Continuar')}
           </Animated.Text>
         </Animated.View>
       </Pressable>

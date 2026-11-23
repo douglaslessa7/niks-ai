@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { dateKey, sessionDate, type RoutinePeriod, type StepKey } from './routineProgress';
 import type { TipoPasso } from './tipoPasso';
 import type { RefProduto } from './minhaRotina';
+import { t } from './i18n';
 
 export type PassoSessao = {
   id: StepKey;
@@ -114,7 +115,7 @@ export function formatarCronometro(ms: number): string {
 /** "12 min", "1 h 05 min"; abaixo de 1 minuto, "menos de 1 min". */
 export function duracaoPorExtenso(ms: number): string {
   const min = Math.round(Math.max(0, ms) / 60000);
-  if (min < 1) return 'menos de 1 min';
+  if (min < 1) return t('menos de 1 min');
   if (min < 60) return `${min} min`;
   return `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min`;
 }
@@ -128,11 +129,12 @@ const LIMITE_DESCRICAO = 280; // o mesmo do campo e do servidor (`grupos`, açã
  * inteiro e termina em "…".
  */
 export function descricaoDoCheckin(s: Sessao, duracaoMs: number): string {
-  const cabeca = `${s.periodo === 'am' ? 'Skincare matinal' : 'Skincare noturno'} em ${duracaoPorExtenso(duracaoMs)}`;
+  const duracao = duracaoPorExtenso(duracaoMs);
+  const cabeca = s.periodo === 'am' ? t('Skincare matinal em {{duracao}}', { duracao }) : t('Skincare noturno em {{duracao}}', { duracao });
   const partes = s.passos.map((p, i) => {
     const nome = p.nome?.trim() || '';
     const prod = produtoPorExtenso(p);
-    const corpo = nome && prod ? `${nome}: ${prod}` : nome || prod || 'Passo';
+    const corpo = nome && prod ? `${nome}: ${prod}` : nome || prod || t('Passo');
     return `${i + 1}. ${corpo}`;
   });
   let texto = cabeca;

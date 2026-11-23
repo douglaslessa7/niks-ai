@@ -13,6 +13,7 @@ import Svg, { Path } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, Easing, ReduceMotion } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -52,7 +53,7 @@ export default function AvisoSequencia({ antes, agora, rm, onFechar }: Props) {
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <Pressable style={StyleSheet.absoluteFill} onPress={entendi} accessibilityLabel="Fechar aviso">
+      <Pressable style={StyleSheet.absoluteFill} onPress={entendi} accessibilityLabel={t('Fechar aviso')}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimSt]} />
       </Pressable>
       <Animated.View style={[styles.sheet, { paddingBottom: 44 + insets.bottom - 34 }, sheetSt]}>
@@ -60,8 +61,8 @@ export default function AvisoSequencia({ antes, agora, rm, onFechar }: Props) {
         <View style={styles.icon}>
           <Svg width={30} height={30} viewBox="0 0 24 24"><Path d={FLAME} fill={PINK} /></Svg>
         </View>
-        <Text style={styles.title} lineBreakStrategyIOS="standard">Sua sequência agora conta dias</Text>
-        <Text style={styles.body} lineBreakStrategyIOS="standard">Cada dia com skincare vale 1. Seu número foi atualizado.</Text>
+        <Text style={styles.title} lineBreakStrategyIOS="standard">{t('Sua sequência agora conta dias')}</Text>
+        <Text style={styles.body} lineBreakStrategyIOS="standard">{t('Cada dia com skincare vale 1. Seu número foi atualizado.')}</Text>
         <View style={styles.compare}>
           {/* Número antigo riscado: a linha de 2 pt do design (text-decoration-thickness) */}
           <View>
@@ -74,14 +75,14 @@ export default function AvisoSequencia({ antes, agora, rm, onFechar }: Props) {
           </Svg>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Svg width={22} height={22} viewBox="0 0 24 24"><Path d={FLAME} fill={PINK} /></Svg>
-            <Text style={styles.now}>{agora === 1 ? '1 dia' : `${agora} dias`}</Text>
+            <Text style={styles.now}>{agora === 1 ? t('1 dia') : t('{{n}} dias', { n: agora })}</Text>
           </View>
-          <Text style={styles.before}>antes contava rotinas</Text>
+          <Text style={styles.before}>{t('antes contava rotinas')}</Text>
         </View>
         {/* Estilo fixo: o NativeWind (cssInterop no Pressable) descarta `style` em forma de
             função — o botão ficava sem fundo e sem altura, invisível (bug de 11/nov/2026). */}
         <Pressable onPress={entendi} style={styles.btn} accessibilityRole="button">
-          <Text style={styles.btnText}>Entendi</Text>
+          <Text style={styles.btnText}>{t('Entendi')}</Text>
         </Pressable>
       </Animated.View>
     </View>

@@ -29,15 +29,15 @@ async function sha256Hex(dados: ArrayBuffer): Promise<string> {
   return Array.from(h, (b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
 }
 
-/** Devolve a transação validada ou `null`. Nunca lança. */
-export async function validarJws(
-  jws: string,
-  bundleId: string,
-  agora = new Date(),
-  raizSha256 = APPLE_ROOT_G3_SHA256,
-): Promise<TransacaoApple | null> {
+/**
+ * Qualquer JWS assinado pela Apple (transação, renovação ou notificação do servidor V2):
+ * cadeia x5c até a raiz (pela impressão digital), extensões da Apple, assinatura ES256 e
+ * certificados válidos na data em que a Apple assinou (`signedDate`). Devolve o conteúdo
+ * ou `null`. Nunca lança. (19/nov/2026: separada da `validarJws` para as notificações.)
+ */
+export async function lerJwsApple(jws: string, raizSha256 = APPLE_ROOT_G3_SHA256): Promise<Record<string, any> | null> {
   try {
-    const partes = jws.split('.')
+    const partes = String(jws ?? '').split('.')
     if (partes.length !== 3) return null
     const [h, p, s] = partes
     const header = JSON.parse(texto(b64urlBytes(h)))
@@ -58,6 +58,24 @@ export async function validarJws(
     const t = JSON.parse(texto(b64urlBytes(p)))
     const assinadoEm = new Date(Number(t.signedDate))
     if (!dentroDaValidade(folha, assinadoEm) || !dentroDaValidade(intermediario, assinadoEm)) return null
+    return t
+  } catch (e) {
+    console.error('[appleJws]', (e as Error).message)
+    return null
+  }
+}
+
+/** Devolve a transação validada ou `null`. Nunca lança. */
+export async function validarJws(
+  jws: string,
+  bundleId: string,
+  agora = new Date(),
+  raizSha256 = APPLE_ROOT_G3_SHA256,
+): Promise<TransacaoApple | null> {
+  try {
+    const t = await lerJwsApple(jws, raizSha256)
+    if (!t) return null
+    const assinadoEm = new Date(Number(t.signedDate))
     if (t.bundleId !== bundleId || t.type !== 'Auto-Renewable Subscription' || t.revocationDate) return null
     if (typeof t.originalTransactionId !== 'string' || typeof t.productId !== 'string') return null
     if (t.environment !== 'Production' && t.environment !== 'Sandbox') return null

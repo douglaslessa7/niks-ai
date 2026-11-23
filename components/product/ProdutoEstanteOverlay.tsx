@@ -33,6 +33,7 @@ import {
 import type { Aviso } from '../../lib/avisoProduto';
 import { fonteImagem } from '../../lib/produtosTela';
 import { analiseDoItem, itemNaRotina, type AnaliseEstante, type VereditoEstante } from '../../lib/analiseEstante';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tela do produto da estante (08/nov/2026). O próprio produto sai da prateleira e cresce até
@@ -58,9 +59,9 @@ const TILT_MAX = 12;         // o que o dedo acrescenta, no máximo
 const TILT_POR_PT = 0.09;
 
 const VEREDITO: Record<VereditoEstante, { rotulo: string; cor: string; fundo: string }> = {
-  pode_usar:    { rotulo: 'Pode usar',        cor: '#1E9E63', fundo: 'rgba(30,158,99,0.12)' },
-  com_ressalva: { rotulo: 'Use com ressalva', cor: '#C67C1E', fundo: 'rgba(232,161,60,0.15)' },
-  evitaria:     { rotulo: 'Eu evitaria',      cor: '#D8483F', fundo: 'rgba(216,72,63,0.12)' },
+  pode_usar:    { rotulo: t('Pode usar'),        cor: '#1E9E63', fundo: 'rgba(30,158,99,0.12)' },
+  com_ressalva: { rotulo: t('Use com ressalva'), cor: '#C67C1E', fundo: 'rgba(232,161,60,0.15)' },
+  evitaria:     { rotulo: t('Eu evitaria'),      cor: '#D8483F', fundo: 'rgba(216,72,63,0.12)' },
 };
 
 const PERSPECTIVA = 900;
@@ -110,7 +111,7 @@ function PilulaStatus({ status, ativo, seta, onPress }: { status: ColecaoStatus;
   return (
     <Pressable
       onPress={onPress} hitSlop={6} accessibilityRole="button" accessibilityState={{ selected: ativo }}
-      accessibilityLabel={seta ? `Status: ${info.rotulo}. Tocar para trocar` : info.rotulo}
+      accessibilityLabel={seta ? t('Status: {{status}}. Tocar para trocar', { status: info.rotulo }) : info.rotulo}
       style={[s.pilula, { backgroundColor: ativo ? info.fundo : 'rgba(255,255,255,0.72)' }]}
     >
       <View style={[s.ponto, { backgroundColor: info.cor }]} />
@@ -271,7 +272,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
       haptics.error();
       setStatus(antes);
       onStatus(item.id, antes);
-      Alert.alert('Não deu para salvar', 'Tente de novo em instantes.');
+      Alert.alert(t('Não deu para salvar'), t('Tente de novo em instantes.'));
     }
   };
 
@@ -285,7 +286,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
     } catch (e) {
       console.warn('[estante] falha ao colocar na rotina', e);
       haptics.error();
-      Alert.alert('Não deu para colocar na rotina', 'Verifique sua conexão e tente de novo.');
+      Alert.alert(t('Não deu para colocar na rotina'), t('Verifique sua conexão e tente de novo.'));
     } finally {
       setOcupado(false);
     }
@@ -327,9 +328,9 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
     }
     if (aviso.nivel === 'forte') {
       haptics.warning();
-      Alert.alert('Atenção', aviso.texto ?? 'Esse produto pede cuidado na sua pele.', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Adicionar mesmo assim', style: 'destructive', onPress: () => { void seguirParaRotina(aviso); } },
+      Alert.alert(t('Atenção'), aviso.texto ? t(aviso.texto) : t('Esse produto pede cuidado na sua pele.'), [
+        { text: t('Cancelar'), style: 'cancel' },
+        { text: t('Adicionar mesmo assim'), style: 'destructive', onPress: () => { void seguirParaRotina(aviso); } },
       ]);
     } else {
       await seguirParaRotina(aviso);
@@ -347,7 +348,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
     }
     await definirProdutoDoPasso(passo.id, { origem: 'estante', id: item.id }, avisoPasso);
     if (recomendado && (!passo.produto || passo.produto.origem === 'estante')) {
-      entrouNaRotina(uid, `Adicionado ao passo ${passo.nome?.trim() || 'da sua rotina'}`, {
+      entrouNaRotina(uid, passo.nome?.trim() ? t('Adicionado ao passo {{passo}}', { passo: passo.nome.trim() }) : t('Adicionado ao passo da sua rotina'), {
         criados: [], estanteNova: null,
         trocados: [{ id: passo.id, colecao: passo.produto?.id ?? null, aviso_nivel: passo.aviso.nivel, aviso_texto: passo.aviso.texto }],
       });
@@ -378,12 +379,12 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
   });
 
   const principal = status === 'quero_comprar'
-    ? { rotulo: 'Já comprei', onPress: () => { void mudarStatus('tenho'); }, pronto: true }
+    ? { rotulo: t('Já comprei'), onPress: () => { void mudarStatus('tenho'); }, pronto: true }
     : status === 'acabou'
-      ? { rotulo: 'Comprei de novo', onPress: () => { void mudarStatus('tenho'); }, pronto: true }
+      ? { rotulo: t('Comprei de novo'), onPress: () => { void mudarStatus('tenho'); }, pronto: true }
       : naRotina
-        ? { rotulo: 'Ver na rotina', onPress: () => fechar(() => irPara('/protocolo')), pronto: true }
-        : { rotulo: 'Colocar na rotina', onPress: () => { void colocarNaRotina(); }, pronto: naRotina !== null };
+        ? { rotulo: t('Ver na rotina'), onPress: () => fechar(() => irPara('/protocolo')), pronto: true }
+        : { rotulo: t('Colocar na rotina'), onPress: () => { void colocarNaRotina(); }, pronto: naRotina !== null };
 
   const remover = () => {
     confirmShelfRemove(item.nome, async () => {
@@ -394,7 +395,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
       } catch (e) {
         console.warn('[estante] falha ao remover', e);
         haptics.error();
-        Alert.alert('Não deu pra remover da sua estante', 'Tente de novo em instantes.');
+        Alert.alert(t('Não deu pra remover da sua estante'), t('Tente de novo em instantes.'));
       }
     });
   };
@@ -404,7 +405,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
     setCompartilhando(true);
     try {
       const res = await compartilharProduto(item.productScanId, grupos);
-      if (!res.ok) { Alert.alert(res.motivo === 'filtro' ? 'Essa foto não pode ser publicada no grupo. Tente outra.' : 'Não deu para compartilhar agora', res.motivo === 'filtro' ? undefined : 'Tente de novo em instantes.'); return; }
+      if (!res.ok) { Alert.alert(res.motivo === 'filtro' ? t('Essa foto não pode ser publicada no grupo. Tente outra.') : t('Não deu para compartilhar agora'), res.motivo === 'filtro' ? undefined : t('Tente de novo em instantes.')); return; }
       trackFora('compartilhado', { origem: 'estante', grupos: res.grupos.length, carta: Boolean(res.carta_id) });
       await Promise.all(res.grupos.map((g) => invalidarGrupos(g)));
       haptics.success();
@@ -414,7 +415,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
         else ganhouPontos(res.pontos ?? null);
       });
     } catch {
-      Alert.alert('Não deu para compartilhar agora', 'Confira a internet e tente de novo.');
+      Alert.alert(t('Não deu para compartilhar agora'), t('Confira a internet e tente de novo.'));
     } finally {
       setCompartilhando(false);
     }
@@ -432,13 +433,13 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
           <Animated.View style={[StyleSheet.absoluteFill, fundoSt]}>
             <BlurView intensity={36} tint="light" style={StyleSheet.absoluteFill} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(252,234,242,0.58)' }]} />
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => fechar()} accessibilityLabel="Fechar" />
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => fechar()} accessibilityLabel={t('Fechar')} />
           </Animated.View>
 
           {/* O produto */}
           <GestureDetector gesture={inclinar}>
             <Animated.View
-              accessible accessibilityRole="image" accessibilityLabel={item.nome ?? 'Produto'}
+              accessible accessibilityRole="image" accessibilityLabel={item.nome ?? t('Produto')}
               style={[s.hero, { left: heroLeft, top: heroTop, width: heroW, height: heroH }, heroSt]}
             >
               {uri ? (
@@ -451,7 +452,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
           </GestureDetector>
 
           <Animated.View style={[StyleSheet.absoluteFill, conteudoSt]} pointerEvents="box-none">
-            <Pressable onPress={() => { haptics.tap(); fechar(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Fechar" style={[s.fechar, { top: insets.top + 8 }]}>
+            <Pressable onPress={() => { haptics.tap(); fechar(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('Fechar')} style={[s.fechar, { top: insets.top + 8 }]}>
               <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.6} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
             </Pressable>
 
@@ -472,7 +473,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
               )}
 
               {!!item.marca && <Text style={s.marca} numberOfLines={1}>{item.marca}</Text>}
-              <Text style={[s.nome, !item.marca && { marginTop: 14 }]} numberOfLines={2}>{item.nome ?? 'Produto'}</Text>
+              <Text style={[s.nome, !item.marca && { marginTop: 14 }]} numberOfLines={2}>{item.nome ?? t('Produto')}</Text>
 
               <View style={s.analise}>
                 {analise === null ? (
@@ -480,7 +481,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
                 ) : analise.temAnalise ? (
                   <Animated.View entering={rm ? undefined : FadeIn.duration(180)} style={{ alignItems: 'center' }}>
                     <View style={s.linhaCompat}>
-                      {analise.compat != null && <Text style={s.compat}>{analise.compat}% compatível</Text>}
+                      {analise.compat != null && <Text style={s.compat}>{t('{{compat}}% compatível', { compat: analise.compat })}</Text>}
                       {!!veredito && (
                         <View style={[s.chip, { backgroundColor: veredito.fundo }]}>
                           <Text style={[s.chipTxt, { color: veredito.cor }]}>{veredito.rotulo}</Text>
@@ -491,12 +492,12 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
                   </Animated.View>
                 ) : (
                   <Animated.View entering={rm ? undefined : FadeIn.duration(180)} style={{ alignItems: 'center' }}>
-                    <Text style={s.semAnaliseTit}>Ainda não analisado</Text>
+                    <Text style={s.semAnaliseTit}>{t('Ainda não analisado')}</Text>
                     <Pressable
                       onPress={() => { haptics.action(); fechar(() => router.push('/(scan)/product-camera' as any)); }}
                       hitSlop={10} accessibilityRole="button" style={{ marginTop: 4 }}
                     >
-                      <Text style={s.semAnaliseLink}>Analisar produto</Text>
+                      <Text style={s.semAnaliseLink}>{t('Analisar produto')}</Text>
                     </Pressable>
                   </Animated.View>
                 )}
@@ -517,15 +518,15 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
 
             {/* Base */}
             <View style={[s.linhaBase, { bottom: Math.max(insets.bottom, 14) }]}>
-              <BotaoBase rotulo="Detalhes" onPress={() => { haptics.tap(); fechar(() => onDetalhes(item)); }}>
+              <BotaoBase rotulo={t('Detalhes')} onPress={() => { haptics.tap(); fechar(() => onDetalhes(item)); }}>
                 <Icone d="M12 11v5M12 8h.01" extra={<Circle cx={12} cy={12} r={9} />} />
               </BotaoBase>
               {podeCompartilhar && (
-                <BotaoBase rotulo="Compartilhar" onPress={() => { haptics.tap(); setFolhaGrupo(true); }}>
+                <BotaoBase rotulo={t('Compartilhar')} onPress={() => { haptics.tap(); setFolhaGrupo(true); }}>
                   <Icone d="M12 15V4M8 7.5L12 3.5l4 4M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13" />
                 </BotaoBase>
               )}
-              <BotaoBase rotulo="Remover" cor="#D8483F" onPress={remover}>
+              <BotaoBase rotulo={t('Remover')} cor="#D8483F" onPress={remover}>
                 <Icone cor="#D8483F" d="M4.5 7h15M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2M6.5 7l.8 12a1 1 0 0 0 1 1h7.4a1 1 0 0 0 1-1l.8-12M10 11v5M14 11v5" />
               </BotaoBase>
             </View>
@@ -534,7 +535,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
               <View style={[s.aviso, { bottom: baseAltura + 4 }]}>
                 <Text style={s.avisoTxt}>{desfazer.texto}</Text>
                 <Pressable onPress={() => { void voltarAtras(); }} hitSlop={10} accessibilityRole="button">
-                  <Text style={s.avisoAcao}>Desfazer</Text>
+                  <Text style={s.avisoAcao}>{t('Desfazer')}</Text>
                 </Pressable>
               </View>
             )}

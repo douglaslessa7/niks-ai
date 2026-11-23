@@ -20,6 +20,7 @@ import Medalha from '../../components/medalhas/Medalha';
 import { usePulsoMedalha } from '../../components/medalhas/usePulsoMedalha';
 import FotoComMoldura from '../../components/medalhas/FotoComMoldura';
 import { voltar as voltarOu } from '../../lib/navegar';
+import { t, localeDatas } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Jornada do grupo — réplica de 81o do Claude Design ("NIKS home redesign",
@@ -51,7 +52,7 @@ const CONTENT_H = PAD + N * ROW + 60;
 
 const rowTop = (L: number) => PAD + (N - L) * ROW;
 const dotY = (L: number) => rowTop(L) + ROW;
-const fmt = (n: number) => Math.round(n).toLocaleString('pt-BR');
+const fmt = (n: number) => Math.round(n).toLocaleString(localeDatas);
 const mola = (z: number, r: number) => ({ stiffness: (2 * Math.PI / r) ** 2, damping: (4 * Math.PI * z) / r, mass: 1 });
 
 /** Y de um total de pontos na trilha (do último nível em diante, no ponto dele). */
@@ -96,7 +97,7 @@ function Integrante({ m, ordem, y, rm, run }: { m: LinhaJornada; ordem: number; 
         <FotoComMoldura nivel={m.nivel} foto={m.foto} nome={m.nome} tamanho={AV} pequena vazio="#FCE3EE" />
       </Animated.View>
       <Animated.View style={[styles.pill, { top: y - 14, backgroundColor: m.voce ? PINK : '#fff' }, st]}>
-        <Text style={[styles.pillNome, { color: m.voce ? '#fff' : INK }]} numberOfLines={1}>{m.voce ? 'Você' : m.nome}</Text>
+        <Text style={[styles.pillNome, { color: m.voce ? '#fff' : INK }]} numberOfLines={1}>{m.voce ? t('Você') : m.nome}</Text>
         <Text style={[styles.pillPts, { color: m.voce ? '#fff' : INK }]}>{fmt(m.pontos)}</Text>
       </Animated.View>
     </>
@@ -189,11 +190,11 @@ export default function GrupoJornada() {
         activeOpacity={0.7}
         onPress={() => { haptics.tap(); voltarOu({ pathname: '/grupo', params: { id: gid } }); }}
         style={[styles.back, { top: y(54) }]}
-        accessibilityLabel="Voltar"
+        accessibilityLabel={t('Voltar')}
       >
         <Svg width={26} height={26} viewBox="0 0 24 24"><Path d="m15 18-6-6 6-6" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
       </TouchableOpacity>
-      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>Jornada</Text></View>
+      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>{t('Jornada')}</Text></View>
 
       {/* Seu nível (individual) */}
       <View style={[styles.hdr, { top: y(104), opacity: pronto ? 1 : 0 }]}>
@@ -202,12 +203,12 @@ export default function GrupoJornada() {
             <Medalha nivel={L} tamanho={56} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.hdrLvl}>{`Nível ${L}`}</Text>
-            <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{nivel?.titulo ?? ' '}</Text>
+            <Text style={styles.hdrLvl}>{t('Nível {{n}}', { n: L })}</Text>
+            <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{nivel?.titulo != null ? t(nivel.titulo) : ' '}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={styles.hdrXp}>{nivel ? (nivel.teto <= nivel.piso ? fmt(pts) : `${fmt(pts)} / ${fmt(nivel.teto)}`) : ' '}</Text>
-            <Text style={styles.hdrFalta}>{nivel ? (nivel.teto <= nivel.piso ? 'Nível máximo' : `faltam ${fmt(Math.max(0, nivel.teto - pts))} NIKS Points`) : ' '}</Text>
+            <Text style={styles.hdrFalta}>{nivel ? (nivel.teto <= nivel.piso ? t('Nível máximo') : t('faltam {{pts}} NIKS Points', { pts: fmt(Math.max(0, nivel.teto - pts)) })) : ' '}</Text>
           </View>
         </View>
         <View style={styles.barTrack}><View style={[styles.barFill, { width: `${barK * 100}%` }]} /></View>
@@ -228,15 +229,15 @@ export default function GrupoJornada() {
                 return (
                   <View key={lv.n} pointerEvents="none" style={StyleSheet.absoluteFill}>
                     <View style={[styles.ponto, { top: dotY(lv.n) - 5.5, backgroundColor: passou ? PINK : '#fff', borderColor: passou ? '#fff' : 'rgba(255,94,168,0.45)' }]} />
-                    <Text style={[styles.pontoT, { top: dotY(lv.n) - 7, color: passou ? INK : MUTE }]}>{`${fmt(lv.pontos)} NIKS Points`}</Text>
+                    <Text style={[styles.pontoT, { top: dotY(lv.n) - 7, color: passou ? INK : MUTE }]}>{t('{{pts}} NIKS Points', { pts: fmt(lv.pontos) })}</Text>
                     {(todas || Math.abs(lv.n - Math.min(L, N)) <= 2) && (
                       <View style={{ position: 'absolute', left: 214, top: rowTop(lv.n) + 14 }}>
                         <MedalhaNivel n={lv.n} reached={reached} atual={lv.n === Math.min(L, N)} />
                       </View>
                     )}
                     <View style={[styles.nomeBloco, { top: rowTop(lv.n) + 206 }]}>
-                      <Text style={[styles.nomeNivel, { color: reached ? INK : MUTE }]}>{lv.titulo}</Text>
-                      <Text style={styles.nomeSub}>{`Nível ${lv.n}`}</Text>
+                      <Text style={[styles.nomeNivel, { color: reached ? INK : MUTE }]}>{t(lv.titulo)}</Text>
+                      <Text style={styles.nomeSub}>{t('Nível {{n}}', { n: lv.n })}</Text>
                     </View>
                   </View>
                 );
@@ -253,10 +254,10 @@ export default function GrupoJornada() {
 
       {/* Como ganhar */}
       <View style={[styles.footer, { height: footerH }]}>
-        <Text style={styles.footT}>Como ganhar NIKS Points</Text>
+        <Text style={styles.footT}>{t('Como ganhar NIKS Points')}</Text>
         <View style={{ marginTop: 8, gap: 4 }}>
-          <Text style={styles.footL}><Text style={styles.footB}>{`+${rot.min} a ${rot.max}`}</Text> por rotina concluída</Text>
-          <Text style={styles.footL}><Text style={styles.footB}>{`+${scan.min} a ${scan.max}`}</Text> por scan de rosto, 1 por semana</Text>
+          <Text style={styles.footL}><Text style={styles.footB}>{t('+{{min}} a {{max}}', { min: rot.min, max: rot.max })}</Text>{' '}{t('por rotina concluída')}</Text>
+          <Text style={styles.footL}><Text style={styles.footB}>{t('+{{min}} a {{max}}', { min: scan.min, max: scan.max })}</Text>{' '}{t('por scan de rosto, 1 por semana')}</Text>
         </View>
       </View>
     </View>

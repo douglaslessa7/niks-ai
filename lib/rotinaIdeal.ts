@@ -32,6 +32,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { emIngles } from './i18n';
 import { temRetinoide } from './avisoProduto';
 import { tipoDoPasso, tipoPorTexto, normTexto, type TipoPasso } from './tipoPasso';
 import { reordenarPassos, type Periodo, type PassoRotina } from './minhaRotina';
@@ -125,7 +126,18 @@ const ATIVOS = [
   'hialuron', 'ceramid', 'peptid', 'centella', 'bakuchiol', 'retin', 'adapalen', 'tranexam',
   'arbutin', 'pantenol', 'zinco', 'acido kojic', 'resveratrol',
 ];
-const ativosDe = (texto: string) => { const t = norm(texto); return ATIVOS.filter((a) => t.includes(a)); };
+// Nomes em inglês (etapa 3) → o mesmo ativo da lista acima. Só com o celular em inglês: em
+// português a cobertura é exatamente a de antes.
+const ATIVOS_EN: Record<string, string> = {
+  'vitamin c': 'vitamina c', salicyl: 'salicil', glycol: 'glicol', hyaluron: 'hialuron',
+  panthenol: 'pantenol', zinc: 'zinco', 'kojic': 'acido kojic',
+};
+const ativosDe = (texto: string) => {
+  const t = norm(texto);
+  const achados = ATIVOS.filter((a) => t.includes(a));
+  if (emIngles) for (const [en, a] of Object.entries(ATIVOS_EN)) if (t.includes(en) && !achados.includes(a)) achados.push(a);
+  return achados;
+};
 
 function textoDoPasso(p: PassoRotina): string {
   return [p.nome, p.passoIdealNome, p.ingrediente, p.produto?.marca, p.produto?.nome].filter(Boolean).join(' ');

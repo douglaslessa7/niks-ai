@@ -1,0 +1,6 @@
+{
+  "NSCameraUsageDescription": "NIKS AI uses your camera to analyze your skin and your meals.",
+  "NSPhotoLibraryUsageDescription": "NIKS AI needs access to your photos.",
+  "NSPhotoLibraryAddUsageDescription": "Allow NIKS to save your collage to your photo library.",
+  "NSUserTrackingUsageDescription": "This helps us show you more relevant ads and measure how our campaigns perform."
+}

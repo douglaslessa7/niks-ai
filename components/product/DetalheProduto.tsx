@@ -18,6 +18,7 @@ import { ShelfAddButton, ShelfRemoveLink } from './ShelfStatus';
 import FaixaPreco from './FaixaPreco';
 import { faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../lib/faixaPreco';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 
@@ -88,7 +89,7 @@ export default function DetalheProduto({ item, onClose, faixa, onColecaoMudou }:
                     <View style={s.badgeDot}>
                       <Svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
                     </View>
-                    <Text style={s.badgeText}>{`${d.compat}% compatível com sua pele`}</Text>
+                    <Text style={s.badgeText}>{t('{{compat}}% compatível com sua pele', { compat: d.compat })}</Text>
                   </View>
                 )}
                 {!!d.brand && <Text style={s.brand}>{d.brand}</Text>}
@@ -105,7 +106,7 @@ export default function DetalheProduto({ item, onClose, faixa, onColecaoMudou }:
               </View>
             </ScrollView>
 
-            <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); onClose(); }} style={[s.close, { top: 15 }]} accessibilityLabel="Fechar" hitSlop={8}>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); onClose(); }} style={[s.close, { top: 15 }]} accessibilityLabel={t('Fechar')} hitSlop={8}>
               <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
             </TouchableOpacity>
 

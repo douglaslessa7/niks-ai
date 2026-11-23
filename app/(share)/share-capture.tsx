@@ -20,6 +20,7 @@ import {
   COLLAGE_GRIDS, CollageGridId, DEFAULT_GRID_ID, getGrid, cellRects,
   COLLAGE_GAP_FRACTION,
 } from '../../lib/collageGrid';
+import { t } from '../../lib/i18n';
 
 // ── Compartilhar Niks score — captura da colagem ──────────────────────────────
 // Réplica da tela "Layout" da câmera de Stories do Instagram (referência dada pelo
@@ -194,7 +195,7 @@ export default function ShareCapture() {
       fill(target, uri);
     } catch (e) {
       console.error('Erro ao capturar:', e);
-      Alert.alert('Erro', 'Não foi possível tirar a foto. Tente novamente.');
+      Alert.alert(t('Erro'), t('Não foi possível tirar a foto. Tente novamente.'));
     } finally {
       capturingRef.current = false;
       setBusy(false);
@@ -220,7 +221,7 @@ export default function ShareCapture() {
       fill(index, uri);
     } catch (e) {
       console.error('Erro ao selecionar imagem:', e);
-      Alert.alert('Erro', 'Não foi possível selecionar a imagem.');
+      Alert.alert(t('Erro'), t('Não foi possível selecionar a imagem.'));
     } finally {
       capturingRef.current = false;
       setBusy(false);
@@ -451,7 +452,7 @@ export default function ShareCapture() {
           onPress={() => { haptics.tap(); setSheetOpen((v) => !v); }}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Alterar grade — atual: ${grid.label}`}
+          accessibilityLabel={t('Alterar grade — atual: {{grade}}', { grade: grid.label })}
           style={{
             position: 'absolute', left: 10 * S, top: gridBtnTop,
             height: GRID_BTN_H,
@@ -470,7 +471,7 @@ export default function ShareCapture() {
               letterSpacing: -0.2 * S,
             }}
           >
-            Alterar grade
+            {t('Alterar grade')}
           </Text>
         </TouchableOpacity>
 
@@ -567,7 +568,7 @@ export default function ShareCapture() {
           disabled={busy}
           activeOpacity={0.9}
           accessibilityRole="button"
-          accessibilityLabel={isFull ? 'Continuar' : 'Tirar foto'}
+          accessibilityLabel={isFull ? t('Continuar') : t('Tirar foto')}
           style={{
             width: SHUTTER, height: SHUTTER, borderRadius: SHUTTER / 2,
             borderWidth: 3, borderColor: WHITE,
@@ -603,7 +604,7 @@ export default function ShareCapture() {
             disabled={busy}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Virar a câmera"
+            accessibilityLabel={t('Virar a câmera')}
             style={{
               // Sem `top`/`bottom`: dentro da linha, o `alignItems: 'center'` do pai
               // dá a altura — é isso que garante o alinhamento com o disparo.
@@ -640,7 +641,7 @@ export default function ShareCapture() {
               overflow: 'hidden',
             }}
           >
-            Sem acesso à câmera — o botão abre a galeria.
+            {t('Sem acesso à câmera — o botão abre a galeria.')}
           </Text>
         </View>
       )}

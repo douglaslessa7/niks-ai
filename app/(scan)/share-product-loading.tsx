@@ -28,6 +28,7 @@ import { useScanConsentGate } from '../../hooks/useScanConsentGate';
 import { ScanLoadingView } from '../../components/scan/ScanLoadingView';
 import { useProductAnalysis } from '../../hooks/useProductAnalysis';
 import { getScoreTheme } from '../../lib/scoreTheme';
+import { t } from '../../lib/i18n';
 
 // Tela de carregamento EXCLUSIVA da feature "Compartilhar com o NIKS".
 //
@@ -493,7 +494,7 @@ export default function ShareProductLoading() {
               onPress={handleClose}
               hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel="Fechar"
+              accessibilityLabel={t('Fechar')}
               style={{
                 width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF',
                 alignItems: 'center', justifyContent: 'center',
@@ -516,7 +517,7 @@ export default function ShareProductLoading() {
                   {compat != null ? `${compat}%` : '—'}
                 </Text>
                 <Text style={{ fontSize: 20, fontWeight: '700', letterSpacing: -0.4, color: INK, marginTop: -14 }}>
-                  Compatibilidade de pele
+                  {t('Compatibilidade de pele')}
                 </Text>
               </Reanimated.View>
 
@@ -556,7 +557,7 @@ export default function ShareProductLoading() {
                   entering={FadeInDown.delay(160).duration(420)}
                   style={{ width: '100%', paddingHorizontal: 24, marginTop: 48 }}
                 >
-                  {pillButton('Ver análise completa', openFullAnalysis)}
+                  {pillButton(t('Ver análise completa'), openFullAnalysis)}
                 </Reanimated.View>
               </View>
             </>
@@ -574,14 +575,14 @@ export default function ShareProductLoading() {
                 </Svg>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
-                    {stage === 'no_image' ? 'Não conseguimos pegar a foto desse link' : 'Não conseguimos analisar agora'}
+                    {stage === 'no_image' ? t('Não conseguimos pegar a foto desse link') : t('Não conseguimos analisar agora')}
                   </Text>
                   <Text style={{ fontSize: 12, lineHeight: 18, color: '#FFFFFF' }}>
                     {stage === 'no_image'
-                      ? 'Tente compartilhar a imagem ou tirar uma foto do produto.'
+                      ? t('Tente compartilhar a imagem ou tirar uma foto do produto.')
                       : stage === 'extract_error'
-                        ? 'Verifique sua conexão e tente de novo.'
-                        : 'Estamos com alta demanda no momento. Tente novamente em instantes.'}
+                        ? t('Verifique sua conexão e tente de novo.')
+                        : t('Estamos com alta demanda no momento. Tente novamente em instantes.')}
                   </Text>
                 </View>
               </View>
@@ -594,20 +595,20 @@ export default function ShareProductLoading() {
               </Svg>
 
               <Text style={{ fontSize: 20, fontWeight: '600', lineHeight: 24, letterSpacing: -0.5, color: INK, textAlign: 'center', marginBottom: 8 }}>
-                Algo deu errado por aqui...
+                {t('Algo deu errado por aqui...')}
               </Text>
               <Text style={{ fontSize: 15, lineHeight: 20, letterSpacing: -0.2, color: MUTED, textAlign: 'center', marginBottom: 32 }}>
                 {stage === 'no_image'
-                  ? 'Você pode tirar uma foto do produto agora'
-                  : 'Toque para tentar novamente'}
+                  ? t('Você pode tirar uma foto do produto agora')
+                  : t('Toque para tentar novamente')}
               </Text>
 
               <View style={{ width: '100%' }}>
-                {pillButton(stage === 'no_image' ? 'Tirar foto' : 'Tentar novamente', stage === 'no_image' ? handleTakePhoto : handleRetry)}
+                {pillButton(stage === 'no_image' ? t('Tirar foto') : t('Tentar novamente'), stage === 'no_image' ? handleTakePhoto : handleRetry)}
               </View>
 
               <TouchableOpacity onPress={handleClose} style={{ paddingVertical: 14, marginTop: 6 }}>
-                <Text style={{ fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: MUTED }}>Voltar</Text>
+                <Text style={{ fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: MUTED }}>{t('Voltar')}</Text>
               </TouchableOpacity>
             </View>
           )}

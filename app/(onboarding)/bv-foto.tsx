@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Svg, { Ellipse, Path, Rect } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { useOnMount } from '../../components/onboarding/kit';
 import { registrarFotoPartida } from '../../lib/boasVindas';
 import {
@@ -22,8 +23,8 @@ import {
 // do produto) — dentro do card fica só a moldura oval.
 // Sem câmera (simulador) ou sem permissão: o card mostra a foto de exemplo do design e o
 // disparo segue sem foto (em dev no simulador, abre a galeria).
-// ⚠️ PROVISÓRIO (copiado do design): o selo "+50 pontos" (o que ela ganha de verdade são os
-// +100 da tela 6, todos juntos).
+// 23/nov/2026: o selo "+50 pontos" do design saiu (o número não era real: ela ganha os +100 da
+// tela 6, todos juntos) — o selo diz "Vale NIKS Points".
 const EXEMPLO = require('../../assets/home-grupo/model-face-3.png');
 
 export default function BvFoto() {
@@ -88,19 +89,19 @@ export default function BvFoto() {
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: topo, paddingHorizontal: 20 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <BvEtiqueta>MISSÃO DO DIA 1</BvEtiqueta>
+          <BvEtiqueta>{t('MISSÃO DO DIA 1')}</BvEtiqueta>
           <View style={{
             height: 26, paddingHorizontal: 11, borderRadius: 13, backgroundColor: '#FFFFFF', justifyContent: 'center',
             shadowColor: BV.pink, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 5,
           }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: BV.pink }}>+50 pontos</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: BV.pink }}>{t('Vale NIKS Points')}</Text>
           </View>
         </View>
-        <BvTitulo style={{ marginTop: 10 }}>Sua foto de ponto de partida</BvTitulo>
+        <BvTitulo style={{ marginTop: 10 }}>{t('Sua foto de ponto de partida')}</BvTitulo>
         <View style={{ marginTop: 14, flexDirection: 'row', gap: 6 }}>
-          {['Luz natural de frente', 'Sem maquiagem'].map((t) => (
-            <View key={t} style={{ height: 28, paddingHorizontal: 12, borderRadius: 14, backgroundColor: BV.card, justifyContent: 'center' }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: BV.ink }}>{t}</Text>
+          {['Luz natural de frente', 'Sem maquiagem'].map((dica) => (
+            <View key={dica} style={{ height: 28, paddingHorizontal: 12, borderRadius: 14, backgroundColor: BV.card, justifyContent: 'center' }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: BV.ink }}>{t(dica)}</Text>
             </View>
           ))}
         </View>
@@ -132,7 +133,7 @@ export default function BvFoto() {
           activeOpacity={0.85}
           onPress={disparar}
           accessibilityRole="button"
-          accessibilityLabel="Tirar a foto de partida"
+          accessibilityLabel={t('Tirar a foto de partida')}
           style={{ width: 78, height: 78, borderRadius: 39, borderWidth: 4, borderColor: BV.pink, alignItems: 'center', justifyContent: 'center' }}
         >
           <View style={{
@@ -146,7 +147,7 @@ export default function BvFoto() {
           <Rect x={4} y={11} width={16} height={10} rx={2.5} fill="none" stroke={BV.sub} strokeWidth={2.2} />
           <Path d="M8 11V7a4 4 0 0 1 8 0v4" fill="none" stroke={BV.sub} strokeWidth={2.2} strokeLinecap="round" />
         </Svg>
-        <Text style={{ fontSize: 13, color: BV.sub }}>Só você vê. Fica guardada no seu perfil.</Text>
+        <Text style={{ fontSize: 13, color: BV.sub }}>{t('Só você vê. Fica guardada no seu perfil.')}</Text>
       </View>
     </BvScreen>
   );

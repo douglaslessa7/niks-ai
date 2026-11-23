@@ -1,10 +1,12 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { supabase } from '../../lib/supabase';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Keyboard, Pressable, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { convidadaLigada } from '../../lib/gruposServidor';
+import { t } from '../../lib/i18n';
 import {
   OB, OB_STEPS, ObScreen, ObTitle, ObSubtitle, ObPillButton,
   useObFrame, obStep, useOnMount,
@@ -37,6 +39,14 @@ export default function Nome() {
   const ligada = useRef<Promise<boolean> | null>(null);
   if (ligada.current === null) ligada.current = convidadaLigada();
 
+  // Já logada? (onboarding obrigatório do "Entrar", 1.64 — `lib/onboardingObrigatorio.ts`)
+  const [logada, setLogada] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    supabase.auth.getSession().then(({ data: { session } }) => { if (vivo) setLogada(!!session); }).catch(() => {});
+    return () => { vivo = false; };
+  }, []);
+
   const trimmed = nome.trim();
 
   const handleContinue = async () => {
@@ -62,8 +72,8 @@ export default function Nome() {
         {/* Bloco com os espaçamentos do design: título → 40 → subtítulo → 24 →
             campo (57) → 128 → botão → 14 → "Já tem conta?". */}
         <View>
-          <ObTitle>Como você quer ser chamada?</ObTitle>
-          <ObSubtitle style={{ marginTop: 40, marginHorizontal: 30 }}>Esse é o nome que aparecerá na tela inicial do app.</ObSubtitle>
+          <ObTitle>{t('Como você quer ser chamada?')}</ObTitle>
+          <ObSubtitle style={{ marginTop: 40, marginHorizontal: 30 }}>{t('Esse é o nome que aparecerá na tela inicial do app.')}</ObSubtitle>
           <View style={{
             marginTop: 24, marginHorizontal: 17, height: 57, borderRadius: 12,
             backgroundColor: OB.option, justifyContent: 'center',
@@ -71,7 +81,7 @@ export default function Nome() {
             <TextInput
               value={nome}
               onChangeText={setNome}
-              placeholder="Seu nome"
+              placeholder={t('Seu nome')}
               placeholderTextColor="rgba(18,18,18,0.25)"
               autoCapitalize="words"
               autoCorrect={false}
@@ -86,13 +96,16 @@ export default function Nome() {
             />
           </View>
           <ObPillButton onPress={handleContinue} disabled={!trimmed} style={{ marginTop: 128 }} />
-          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 14 }}>
-            <Text style={{ fontSize: 17, lineHeight: 23, color: OB.sub }}>Já tem conta? </Text>
+          {/* 1.64: já logada (onboarding obrigatório da conta do "Entrar") não vê o "Entrar" —
+              entrar de novo recomeçaria o ciclo. O espaço fica, para o bloco não pular. */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 14, opacity: logada ? 0 : 1 }}
+            pointerEvents={logada ? 'none' : 'auto'}>
+            <Text style={{ fontSize: 17, lineHeight: 23, color: OB.sub }}>{t('Já tem conta? ')}</Text>
             <TouchableOpacity
               hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
               onPress={() => { haptics.tap(); router.push('/(onboarding)/login'); }}
             >
-              <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: '600', color: OB.ink }}>Entrar</Text>
+              <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: '600', color: OB.ink }}>{t('Entrar')}</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -7,6 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { haptics } from '../../lib/haptics';
 import { useMeusGrupos, type GrupoResumo } from '../../lib/gruposServidor';
 import { BANNERS_GRUPO } from '../../app/(app)/seus-grupos';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Compartilhar com o grupo?" — 81t (com grupo) e 81u (sem grupo) do Claude Design (rodada
@@ -97,13 +98,13 @@ export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onC
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 90 }]} pointerEvents={aberta ? 'auto' : 'none'}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.veu, veuSt]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} accessibilityLabel="Fechar" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} accessibilityLabel={t('Fechar')} />
       </Animated.View>
       <View style={styles.centro} pointerEvents="box-none">
         <Animated.View style={[styles.card, { width: Math.min(W - 40, 360), maxHeight: H * 0.8 }, cardSt]}>
           {tem ? (
             <>
-              <Text style={styles.titulo}>Compartilhar com o grupo?</Text>
+              <Text style={styles.titulo}>{t('Compartilhar com o grupo?')}</Text>
               {semEscolha ? (
                 <View style={styles.bannersSem}>
                   {lista.slice(0, 4).map((g, i) => <MiniBanner key={g.id} g={g} tamanho={52} redondo style={[styles.bannerSem, i > 0 && { marginLeft: -14 }]} />)}
@@ -118,7 +119,7 @@ export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onC
                       <View style={[styles.linhaTexto, { borderBottomColor: i < lista.length - 1 ? 'rgba(18,18,18,0.07)' : 'transparent' }]}>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={styles.gNome} numberOfLines={1}>{g.nome}</Text>
-                          <Text style={styles.gHoje}>{g.total <= 1 ? 'Só você' : `${g.feitos_hoje} de ${g.total} fizeram hoje`}</Text>
+                          <Text style={styles.gHoje}>{g.total <= 1 ? t('Só você') : t('{{feitos}} de {{total}} fizeram hoje', { feitos: g.feitos_hoje, total: g.total })}</Text>
                         </View>
                         {/* Caixa do tamanho do Switch do iOS: sem ela, na nova arquitetura ele
                             fica preso no topo da linha em vez de centrado. */}
@@ -129,7 +130,7 @@ export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onC
                             disabled={ocupadoAgora}
                             trackColor={{ false: '#E5DEE2', true: PINK }}
                             ios_backgroundColor="#E5DEE2"
-                            accessibilityLabel={`Compartilhar em ${g.nome}`}
+                            accessibilityLabel={t('Compartilhar em {{nome}}', { nome: g.nome })}
                           />
                         </View>
                       </View>
@@ -145,7 +146,7 @@ export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onC
                 style={[styles.criar, !pode && !ocupadoAgora && { opacity: 0.4 }]}
                 accessibilityState={{ disabled: !pode }}
               >
-                {ocupadoAgora ? <ActivityIndicator color="#fff" /> : <Text style={styles.criarT}>{semEscolha ? 'Compartilhar com o grupo' : 'Compartilhar'}</Text>}
+                {ocupadoAgora ? <ActivityIndicator color="#fff" /> : <Text style={styles.criarT}>{semEscolha ? t('Compartilhar com o grupo') : t('Compartilhar')}</Text>}
               </TouchableOpacity>
             </>
           ) : (
@@ -153,14 +154,14 @@ export default function FolhaCompartilhar({ aberta, ocupado, onCompartilhar, onC
               <View style={styles.fotos}>
                 {FOTOS.map((f, i) => <Image key={i} source={f} style={styles.foto} />)}
               </View>
-              <Text style={[styles.titulo, { marginTop: 16 }]}>Faça skincare com suas amigas</Text>
+              <Text style={[styles.titulo, { marginTop: 16 }]}>{t('Faça skincare com suas amigas')}</Text>
               <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.action(); onCriarGrupo(); }} style={styles.criar}>
-                <Text style={styles.criarT}>Criar grupo</Text>
+                <Text style={styles.criarT}>{t('Criar grupo')}</Text>
               </TouchableOpacity>
             </>
           )}
           <TouchableOpacity activeOpacity={0.7} disabled={ocupadoAgora} onPress={() => { haptics.tap(); onFechar(); }} style={styles.agoraNao}>
-            <Text style={styles.agoraNaoT}>Agora não</Text>
+            <Text style={styles.agoraNaoT}>{t('Agora não')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>

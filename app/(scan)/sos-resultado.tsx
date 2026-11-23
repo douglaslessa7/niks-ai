@@ -11,19 +11,20 @@ import { supabase } from '../../lib/supabase';
 import { listColecao } from '../../lib/colecao';
 import { TEXTO_BALAO_DUVIDA, useBalaoEspinha } from '../../lib/espinhaAcompanhamento';
 import { lerUltimaAnalise, type AnaliseSos, type DermatologistaSos, type QuandoSos } from '../../lib/sosEspinha';
+import { t } from '../../lib/i18n';
 
 // Resultado do SOS espinha. Lê sempre a análise guardada no aparelho (a que acabou de chegar ou
 // a das últimas 24 h). As fotos dos produtos vêm da própria coleção dela.
 
-const QUANDO: Record<QuandoSos, string> = { agora: 'Agora', manha: 'Hoje de manhã', noite: 'Hoje à noite' };
+const QUANDO: Record<QuandoSos, string> = { agora: t('Agora'), manha: t('Hoje de manhã'), noite: t('Hoje à noite') };
 
 // Desligado a pedido do produto (08/nov/2026); vale também para análises já salvas no aparelho.
 const MOSTRAR_AVISO_DERMATOLOGISTA = false;
 
 const AVISOS: Record<DermatologistaSos, { titulo: string; texto: string }> = {
-  inflamada: { titulo: 'Vale procurar um dermatologista', texto: 'Esta espinha parece mais inflamada que o normal. Um dermatologista pode avaliar e tratar com segurança.' },
-  infeccao: { titulo: 'Procure um dermatologista logo', texto: 'A foto sugere sinais que precisam de avaliação. Se tiver febre ou se a vermelhidão estiver aumentando, procure atendimento hoje.' },
-  varias: { titulo: 'Vale procurar um dermatologista', texto: 'A foto mostra várias espinhas juntas. Um dermatologista pode ver o que está causando isso.' },
+  inflamada: { titulo: t('Vale procurar um dermatologista'), texto: t('Esta espinha parece mais inflamada que o normal. Um dermatologista pode avaliar e tratar com segurança.') },
+  infeccao: { titulo: t('Procure um dermatologista logo'), texto: t('A foto sugere sinais que precisam de avaliação. Se tiver febre ou se a vermelhidão estiver aumentando, procure atendimento hoje.') },
+  varias: { titulo: t('Vale procurar um dermatologista'), texto: t('A foto mostra várias espinhas juntas. Um dermatologista pode ver o que está causando isso.') },
 };
 
 function Lista({ itens, icone }: { itens: string[]; icone: 'check' | 'x' }) {
@@ -76,7 +77,7 @@ export default function SosResultado() {
       <StatusBar style="dark" />
       <LinearGradient colors={['#FFE3EF', '#FCEAF2', '#F9F2F5', '#F9F2F5']} locations={[0, 0.3, 0.6, 1]} style={StyleSheet.absoluteFill} />
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + 20, paddingHorizontal: 20, paddingBottom: insets.bottom + 170 }} showsVerticalScrollIndicator={false}>
-        <Text style={styles.titulo} accessibilityRole="header">Sua análise</Text>
+        <Text style={styles.titulo} accessibilityRole="header">{t('Sua análise')}</Text>
 
         {aviso && (
           <View style={[styles.aviso, urgente && styles.avisoUrgente]} accessibilityLiveRegion="polite">
@@ -88,10 +89,10 @@ export default function SosResultado() {
           </View>
         )}
 
-        <Text style={styles.secao}>Faça agora com o que você já tem</Text>
+        <Text style={styles.secao}>{t('Faça agora com o que você já tem')}</Text>
         {analise.produtos.length === 0 ? (
           <View style={styles.card}>
-            <Text style={styles.linhaTexto}>Nenhum produto da sua estante é indicado para esta espinha agora. Siga os cuidados abaixo.</Text>
+            <Text style={styles.linhaTexto}>{t('Nenhum produto da sua estante é indicado para esta espinha agora. Siga os cuidados abaixo.')}</Text>
           </View>
         ) : analise.produtos.map((p) => (
           <View key={p.colecao_id} style={[styles.card, styles.produto]}>
@@ -103,29 +104,29 @@ export default function SosResultado() {
               <Text style={styles.nome}>{p.nome}</Text>
               <View style={styles.etiquetas}>
                 <View style={styles.etiqueta}><Text style={styles.etiquetaTexto}>{QUANDO[p.quando]}</Text></View>
-                {p.na_rotina && <View style={[styles.etiqueta, styles.etiquetaNeutra]}><Text style={[styles.etiquetaTexto, { color: OB.body }]}>Na sua rotina</Text></View>}
+                {p.na_rotina && <View style={[styles.etiqueta, styles.etiquetaNeutra]}><Text style={[styles.etiquetaTexto, { color: OB.body }]}>{t('Na sua rotina')}</Text></View>}
               </View>
               <Text style={styles.comoUsar}>{p.como_usar}</Text>
             </View>
           </View>
         ))}
 
-        <Text style={styles.secao}>Cuidados sem produto</Text>
+        <Text style={styles.secao}>{t('Cuidados sem produto')}</Text>
         <Lista itens={analise.cuidados} icone="check" />
 
         {analise.evitar.length > 0 && (
           <>
-            <Text style={styles.secao}>O que evitar</Text>
+            <Text style={styles.secao}>{t('O que evitar')}</Text>
             <Lista itens={analise.evitar} icone="x" />
           </>
         )}
 
-        <Text style={styles.rodape}>Esta análise não substitui a avaliação de um dermatologista.</Text>
+        <Text style={styles.rodape}>{t('Esta análise não substitui a avaliação de um dermatologista.')}</Text>
       </ScrollView>
 
       <View style={[styles.base, { paddingBottom: insets.bottom + 12 }]}>
         <ObPillButton
-          label="Concluir"
+          label={t('Concluir')}
           width={280}
           onPress={() => {
             haptics.tap();
@@ -136,7 +137,7 @@ export default function SosResultado() {
           }}
         />
         <TouchableOpacity onPress={() => { haptics.tap(); router.replace('/(scan)/sos-camera' as any); }} style={styles.secundario} accessibilityRole="button">
-          <Text style={styles.secundarioTexto}>Analisar outra espinha</Text>
+          <Text style={styles.secundarioTexto}>{t('Analisar outra espinha')}</Text>
         </TouchableOpacity>
       </View>
     </View>

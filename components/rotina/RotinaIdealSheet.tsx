@@ -21,6 +21,7 @@ import { getUserId } from '../../lib/currentUser';
 import type { MinhaRotina, Periodo } from '../../lib/minhaRotina';
 import { adicionarPassoIdeal, calcularCobertura, type RotinaIdeal } from '../../lib/rotinaIdeal';
 import { ROTULO_TIPO } from '../../lib/tipoPasso';
+import { t } from '../../lib/i18n';
 import { haptics } from '../../lib/haptics';
 
 const INK = '#121212';
@@ -101,7 +102,7 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
       setFresco(indice);
       await onAdicionado();
     } catch {
-      Alert.alert('Não deu para adicionar', 'Verifique sua conexão e tente de novo.');
+      Alert.alert(t('Não deu para adicionar'), t('Verifique sua conexão e tente de novo.'));
     } finally {
       setAdicionando(null);
     }
@@ -111,11 +112,11 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
 
   const segOn = { backgroundColor: '#FFFFFF', shadowColor: '#783C48', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 5 };
   const resumoTitulo = nm > 0
-    ? `Você já tem ${k} dos ${n} passos`
-    : (algumAdicionado ? 'Agora sua rotina tem todos os passos ideais' : 'Sua rotina tem todos os passos ideais');
+    ? t('Você já tem {{tem}} dos {{total}} passos', { tem: k, total: n })
+    : (algumAdicionado ? t('Agora sua rotina tem todos os passos ideais') : t('Sua rotina tem todos os passos ideais'));
   const resumoSub = nm > 0
-    ? (nm === 1 ? 'O outro é uma sugestão para você adicionar no seu ritmo.' : `Os outros ${nm} são sugestões para você adicionar no seu ritmo.`)
-    : (algumAdicionado ? 'Escolha os produtos dos passos novos na tela de Rotina.' : 'Agora é manter a constância, dia após dia.');
+    ? (nm === 1 ? t('O outro é uma sugestão para você adicionar no seu ritmo.') : t('Os outros {{faltam}} são sugestões para você adicionar no seu ritmo.', { faltam: nm }))
+    : (algumAdicionado ? t('Escolha os produtos dos passos novos na tela de Rotina.') : t('Agora é manter a constância, dia após dia.'));
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
@@ -131,10 +132,10 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
           <View style={s.handle} />
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <View style={{ gap: 2 }}>
-              <Text style={s.title}>Rotina ideal</Text>
-              <Text style={s.subtitle}>Feita pela NIKS para a sua pele</Text>
+              <Text style={s.title}>{t('Rotina ideal')}</Text>
+              <Text style={s.subtitle}>{t('Feita pela NIKS para a sua pele')}</Text>
             </View>
-            <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} activeOpacity={0.7} style={s.fechar} accessibilityLabel="Fechar">
+            <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} activeOpacity={0.7} style={s.fechar} accessibilityLabel={t('Fechar')}>
               <Svg width={14} height={14} viewBox="0 0 24 24">
                 <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={SOFT} strokeWidth={2.6} strokeLinecap="round" />
               </Svg>
@@ -151,7 +152,7 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
                   style={[s.segBtn, on && segOn]}
                 >
                   <Text style={[s.segTxt, on ? { color: INK, fontWeight: '600' } : { color: SOFT, fontWeight: '500' }]}>
-                    {p === 'am' ? 'Manhã' : 'Noite'}
+                    {p === 'am' ? t('Manhã') : t('Noite')}
                   </Text>
                 </TouchableOpacity>
               );
@@ -162,9 +163,9 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 16, paddingHorizontal: 20, paddingBottom: 34 }} showsVerticalScrollIndicator={false}>
           {mudanca && (
             <View style={s.faixa}>
-              <Text style={s.faixaTitulo}>Sua rotina ideal mudou com o novo scan</Text>
+              <Text style={s.faixaTitulo}>{t('Sua rotina ideal mudou com o novo scan')}</Text>
               <Text style={s.faixaTexto}>
-                Os passos novos estão marcados. A sua rotina não muda sozinha: adicione o que quiser.
+                {t('Os passos novos estão marcados. A sua rotina não muda sozinha: adicione o que quiser.')}
               </Text>
             </View>
           )}
@@ -172,7 +173,7 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
           {!ideal ? (
             <ActivityIndicator color={PINK} style={{ marginTop: 40 }} />
           ) : n === 0 ? (
-            <Text style={s.vazio}>Sua rotina ideal não tem passos {periodo === 'am' ? 'de manhã' : 'à noite'}.</Text>
+            <Text style={s.vazio}>{periodo === 'am' ? t('Sua rotina ideal não tem passos de manhã.') : t('Sua rotina ideal não tem passos à noite.')}</Text>
           ) : (
             <>
               {/* Resumo + barra segmentada */}
@@ -194,14 +195,14 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
               {/* Para adicionar */}
               {nm > 0 && (
                 <>
-                  <Text style={s.secao}>Para adicionar à sua rotina</Text>
+                  <Text style={s.secao}>{t('Para adicionar à sua rotina')}</Text>
                   <View style={{ marginTop: 10, gap: 8 }}>
                     {faltamLista.map((p) => (
                       <View key={`${periodo}-${p.indice}`} style={s.faltaCard}>
                         <View style={s.faltaTile}><Mais size={18} stroke={2.2} color={PINK_TEXT} /></View>
                         <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
                           <Text style={s.kicker}>
-                            {p.tipo ? `Passo ${p.indice + 1} · ${ROTULO_TIPO[p.tipo]}` : `Passo ${p.indice + 1}`}
+                            {p.tipo ? t('Passo {{n}} · {{tipo}}', { n: p.indice + 1, tipo: t(ROTULO_TIPO[p.tipo]) }) : t('Passo {{n}}', { n: p.indice + 1 })}
                           </Text>
                           <Text style={s.faltaNome}>{p.nome}</Text>
                           {!!p.ingrediente && <Text style={s.faltaPorque}>{p.ingrediente}</Text>}
@@ -216,7 +217,7 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
                             ) : (
                               <>
                                 <Mais size={15} stroke={2.6} color="#FFFFFF" />
-                                <Text style={s.addTxt}>Adicionar à rotina</Text>
+                                <Text style={s.addTxt}>{t('Adicionar à rotina')}</Text>
                               </>
                             )}
                           </TouchableOpacity>
@@ -230,7 +231,7 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
               {/* Já está na sua rotina */}
               {k > 0 && (
                 <>
-                  <Text style={s.secao}>Já está na sua rotina</Text>
+                  <Text style={s.secao}>{t('Já está na sua rotina')}</Text>
                   <View style={s.temLista}>
                     {temLista.map((p, i) => {
                       const pid = cobertura.get(p.indice);
@@ -238,8 +239,8 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
                       const prod = passo?.produto && (passo.produto.recorteUrl || passo.produto.imagemUrl) ? passo.produto : null;
                       const ehNovo = novos.includes(p.indice) || (mudanca && p.novo);
                       const linha = novos.includes(p.indice)
-                        ? 'Sem produto ainda · escolha na sua rotina'
-                        : prod ? [prod.marca, prod.nome].filter(Boolean).join(' · ') : 'Escolher produto';
+                        ? t('Sem produto ainda · escolha na sua rotina')
+                        : prod ? [prod.marca, prod.nome].filter(Boolean).join(' · ') : t('Escolher produto');
                       return (
                         <View
                           key={`${periodo}-tem-${p.indice}`}
@@ -249,7 +250,7 @@ export default function RotinaIdealSheet({ aberta, periodoInicial, ideal, minha,
                           <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 }}>
                               <Text style={s.temNome} numberOfLines={1}>{p.nome}</Text>
-                              {ehNovo && <View style={s.novo}><Text style={s.novoTxt}>Novo</Text></View>}
+                              {ehNovo && <View style={s.novo}><Text style={s.novoTxt}>{t('Novo')}</Text></View>}
                             </View>
                             <Text style={[s.temProduto, { color: prod ? MUTED : PINK_TEXT }]} numberOfLines={1}>{linha}</Text>
                           </View>

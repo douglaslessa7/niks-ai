@@ -13,6 +13,7 @@ import { useCachedQuery } from '../../lib/cache';
 import { useUserId } from '../../lib/currentUser';
 import { chavePerfilGrupos, lembrarFotoDoCheckin, perfilGrupos, preaquecerDetalhes, type PerfilGrupos } from '../../lib/gruposServidor';
 import { dateKey, sessionDate } from '../../lib/routineProgress';
+import { t, emIngles, MESES_EN, DIAS_INICIAIS_EN } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Calendário de check-ins do mês — o card da 81a (NiksGrupoFlo.dc.html). FONTE ÚNICA:
@@ -170,22 +171,24 @@ export default function CalendarioCheckins({ abertura, rm, entrada = true, style
   for (let i = 0; i < cells.length; i += 7) semanas.push(cells.slice(i, i + 7));
   const nMes = carregado ? (p.checkins_mes ?? p.dias.length) : null;
   const atual = mk === mesKey(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
-  const subMes = nMes == null ? ' ' : `${nMes} ${nMes === 1 ? 'check-in' : 'check-ins'}${atual ? ' até agora' : ''}`;
+  const subMes = nMes == null ? ' '
+    : nMes === 1 ? (atual ? t('{{n}} check-in até agora', { n: nMes }) : t('{{n}} check-in', { n: nMes }))
+    : (atual ? t('{{n}} check-ins até agora', { n: nMes }) : t('{{n}} check-ins', { n: nMes }));
   let iFoto = 0;
 
   return (
     <Animated.View style={[styles.cal, style, cardSt]}>
       <View style={styles.calHead}>
-        <Text style={styles.mesLabel}>{MESES[mes.getMonth()]}</Text>
-        <TouchableOpacity activeOpacity={0.7} disabled={!podeVoltar} onPress={() => trocar(-1)} style={styles.seta} accessibilityLabel="Mês anterior">
+        <Text style={styles.mesLabel}>{(emIngles ? MESES_EN : MESES)[mes.getMonth()]}</Text>
+        <TouchableOpacity activeOpacity={0.7} disabled={!podeVoltar} onPress={() => trocar(-1)} style={styles.seta} accessibilityLabel={t('Mês anterior')}>
           <Seta d="m15 18-6-6 6-6" color={podeVoltar ? INK : '#C9C1C5'} />
         </TouchableOpacity>
-        <TouchableOpacity activeOpacity={0.7} disabled={!podeAvancar} onPress={() => trocar(1)} style={styles.seta} accessibilityLabel="Próximo mês">
+        <TouchableOpacity activeOpacity={0.7} disabled={!podeAvancar} onPress={() => trocar(1)} style={styles.seta} accessibilityLabel={t('Próximo mês')}>
           <Seta d="m9 18 6-6-6-6" color={podeAvancar ? INK : '#C9C1C5'} />
         </TouchableOpacity>
       </View>
       <Text style={styles.mesSub}>{subMes}</Text>
-      <View style={styles.wds}>{WDS.map((w, i) => <Text key={i} style={styles.wd}>{w}</Text>)}</View>
+      <View style={styles.wds}>{(emIngles ? DIAS_INICIAIS_EN : WDS).map((w, i) => <Text key={i} style={styles.wd}>{w}</Text>)}</View>
       <Animated.View key={`${mk}:${carregado}:${abertura}`} style={[styles.grid, gridSt]}>
         {semanas.map((sem, si) => (
           <View key={si} style={[styles.semana, si > 0 && { marginTop: 6 }]}>
@@ -194,7 +197,7 @@ export default function CalendarioCheckins({ abertura, rm, entrada = true, style
               if (c.foto) {
                 const ordem = iFoto++;
                 return (
-                  <TouchableOpacity key={c.key} ref={(r) => { if (r) celulas.current.set(c.key, r); else celulas.current.delete(c.key); }} activeOpacity={0.75} disabled={!doDia.get(c.key)?.length} onPress={() => abrirDia(c.key)} style={styles.cell} accessibilityLabel={`Check-in do dia ${c.n}`}>
+                  <TouchableOpacity key={c.key} ref={(r) => { if (r) celulas.current.set(c.key, r); else celulas.current.delete(c.key); }} activeOpacity={0.75} disabled={!doDia.get(c.key)?.length} onPress={() => abrirDia(c.key)} style={styles.cell} accessibilityLabel={t('Check-in do dia {{dia}}', { dia: c.n })}>
                     <Salta delay={trocou ? 60 + ordem * 18 : 260 + ordem * 22} de={trocou ? 0.85 : 0.8} rm={rm} style={[styles.fotoDia, { borderColor: c.today ? PINK : '#fff' }]}>
                       {/* Do cache pela chave estável (o link assinado muda a cada leitura do mês, e a
                           foto era baixada de novo a cada entrada na aba) ou o arquivo local do

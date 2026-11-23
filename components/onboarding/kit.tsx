@@ -14,7 +14,7 @@
 //
 // Tipografia: SF Pro = fonte do sistema no iOS, por isso nenhum `fontFamily`.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
   View, Text, Image, TouchableOpacity, ScrollView, Animated, Easing,
   NativeSyntheticEvent, NativeScrollEvent, StyleProp, ViewStyle, TextStyle,
@@ -23,7 +23,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import Reanimated, { Easing as REasing, interpolate, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useAppStore } from '../../store/onboarding';
+import { t } from '../../lib/i18n';
 
 // ── Tokens (paleta do design) ────────────────────────────────────────────────
 export const OB = {
@@ -221,10 +223,24 @@ export function ObCheck({ size = 18, bg = OB.pink, fg = '#FFFFFF', stroke = 2.4 
 // `pointerEvents="none"`, senão o alvo do toque é o texto e a coordenada sai relativa a ele.
 // Afundar PERCEPTÍVEL e suave (pedido do produto, 13/out): desce 8% desacelerando, chega ao
 // fundo mesmo num toque rápido e sobe macio com um quique leve.
-const PRESS_SCALE = 0.92;
-const PRESS_IN_MS = 120;        // o afundar SEMPRE vai até o fim (toque rápido incluso)…
-const FILL_IN_MS = 200;         // círculo abrindo a partir do dedo
-const FILL_OUT_MS = 170;        // círculo da opção anterior fechando
+// 18/nov/2026 — tempos medidos quadro a quadro (60 fps) numa gravação do Flo enviada pelo
+// produto ("quero igual, mesma resposta e mesma suavidade"):
+//   toque → o card afunda ~4% em ~3 quadros e um PONTO rosa nasce sob o dedo;
+//   escolheu → o ponto vira círculo e cobre o card em ~6 quadros (~110 ms); o texto fica
+//   branco SÓ dentro do círculo (máscara), escuro fora; a frase abre em ~7 quadros;
+//   a opção anterior: a frase fecha junto e o rosa ENCOLHE num círculo até sumir (~150 ms,
+//   rápido no começo e devagar no fim), voltando para o ponto onde nasceu.
+const PRESS_SCALE = 0.96;
+const PRESS_IN_MS = 60;         // o afundar SEMPRE vai até o fim (toque rápido incluso)…
+const PRESS_BACK_MS = 140;      // …e volta sem quique
+const DOT_R = 9;                // ponto rosa sob o dedo enquanto encosta (pt)
+const DOT_MS = 70;
+const FILL_IN_MS = 110;         // círculo abrindo a partir do dedo
+const FILL_OUT_MS = 150;        // círculo da opção anterior encolhendo
+const FILL_H_MIN = 180;         // o círculo cheio cobre ao menos esta altura (frase abrindo)
+// 16/nov/2026: o "soltou o dedo" chega antes do "escolheu" — sem esta folga o rosa recebia
+// apaga→acende no mesmo toque e, às vezes, a opção escolhida ficava cinza com o visto rosa.
+const PRESS_OUT_FOLGA_MS = 150;
 
 type Touch = { x: number; y: number };
 
@@ -232,13 +248,10 @@ type Touch = { x: number; y: number };
  *  começa e só apaga quando o círculo da opção que sai já quase fechou — senão aparece
  *  texto preto sobre o rosa por um instante. */
 export function useObFillText(on: boolean) {
-  const [lit, setLit] = useState(on);
-  useEffect(() => {
-    if (on) { setLit(true); return; }
-    const id = setTimeout(() => setLit(false), FILL_OUT_MS * 0.7);
-    return () => clearTimeout(id);
-  }, [on]);
-  return on || lit;
+  // 16/nov/2026: ao desmarcar, o texto volta ao escuro NA HORA (o rosa agora esmaece, e texto
+  // escuro sobre rosa claro é legível). Antes ele ficava branco até o círculo fechar e, trocando
+  // rápido de opção, aparecia texto branco sobre o cinza por alguns quadros.
+  return on;
 }
 
 export function ObPress({
@@ -254,7 +267,11 @@ export function ObPress({
   const scale = useRef(new Animated.Value(1)).current;
   const downAt = useRef(0);
   const upTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (upTimer.current) clearTimeout(upTimer.current); }, []);
+  const outTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (upTimer.current) clearTimeout(upTimer.current);
+    if (outTimer.current) clearTimeout(outTimer.current);
+  }, []);
   return (
     <TouchableOpacity
       activeOpacity={1}
@@ -263,6 +280,7 @@ export function ObPress({
       onPressIn={(e) => {
         haptics.tap();
         if (upTimer.current) clearTimeout(upTimer.current);
+        if (outTimer.current) clearTimeout(outTimer.current);
         downAt.current = Date.now();
         Animated.timing(scale, { toValue: PRESS_SCALE, duration: PRESS_IN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
         onPressIn?.({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY });
@@ -272,9 +290,11 @@ export function ObPress({
         // afundar, e sem esta espera ele voltava sem ter descido (imperceptível).
         const wait = Math.max(0, PRESS_IN_MS - (Date.now() - downAt.current));
         upTimer.current = setTimeout(() => {
-          Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 8 }).start();
+          Animated.timing(scale, { toValue: 1, duration: PRESS_BACK_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
         }, wait);
-        onPressOut?.();
+        // Com folga: se o toque escolheu a opção, o rosa já está "ligado" pelo `selected`
+        // quando o "dedo saiu" chega — ele nunca apaga e reacende.
+        outTimer.current = setTimeout(() => onPressOut?.(), PRESS_OUT_FOLGA_MS);
       }}
       onPress={onPress}
     >
@@ -286,88 +306,205 @@ export function ObPress({
 /** Rosa do botão: ao ligar, um CÍRCULO abre a partir de `touch` (o ponto do dedo) até
  *  cobrir o botão; ao desligar, fecha num círculo para o meio. O pai precisa de
  *  `overflow: 'hidden'` (raio) e o conteúdo dele, de `pointerEvents="none"`. */
-export function ObFill({ on, touch, color = OB.pink }: { on: boolean; touch?: Touch | null; color?: string }) {
-  const p = useRef(new Animated.Value(on ? 1 : 0)).current;
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const [origin, setOrigin] = useState<Touch | null>(null);   // null = meio do botão
+export type ObFillHandle = {
+  /** Começa o rosa no ponto do dedo, já no toque (thread de UI, sem render do React). */
+  previa: (touch: Touch) => void;
+  /** O dedo saiu sem escolher: o rosa da prévia some. */
+  soltar: () => void;
+};
+
+/** Rosa do botão (16/nov/2026, refeito com Reanimated): tudo na thread de UI, e a prévia do
+ *  toque é IMPERATIVA (`previa`/`soltar`) — não passa pelo React. Antes o rosa só começava
+ *  depois que o JavaScript processava a escolha, e no iPhone (app de desenvolvimento, JS mais
+ *  lento) dava a sensação de tela travada. Liga: um CÍRCULO abre a partir do dedo até cobrir
+ *  o botão. Desliga: esmaece. O pai precisa de `overflow: 'hidden'`; o conteúdo dele, de
+ *  `pointerEvents="none"`. */
+export const ObFill = forwardRef<ObFillHandle, {
+  on: boolean; color?: string;
+  /** (opcional, 18/nov/2026) o conteúdo do botão na versão "acesa" (branca). Fica DENTRO do
+   *  círculo, na mesma posição do conteúdo escuro: o texto fica branco só onde o rosa já
+   *  chegou (máscara, como no Flo). Com ele, o `ObFill` vai DEPOIS do conteúdo escuro. */
+  aceso?: React.ReactNode;
+  /** Estilo do bloco do `aceso` (o mesmo padding/gap do botão), largura = a do botão. */
+  acesoStyle?: StyleProp<ViewStyle>;
+}>(function ObFill({ on, color = OB.pink, aceso, acesoStyle }, ref) {
+  const p = useSharedValue(on ? 1 : 0);   // 0 = só o ponto (ou nada) … 1 = cobre o botão
+  const dot = useSharedValue(0);          // ponto sob o dedo (0…1 de `DOT_R`)
+  const ox = useSharedValue(-1);          // origem do círculo; -1 = meio do botão
+  const oy = useSharedValue(-1);
+  const w = useSharedValue(0);
+  const h = useSharedValue(0);
+  const previaAtiva = useRef(false);
+  const ligado = useRef(on);
+  ligado.current = on;
+  useImperativeHandle(ref, () => ({
+    // Tocar de novo na opção já marcada não reinicia o rosa.
+    previa: (t) => {
+      if (ligado.current) return;
+      previaAtiva.current = true;
+      ox.value = t.x;
+      oy.value = t.y;
+      p.value = 0;
+      dot.value = withTiming(1, { duration: DOT_MS, easing: REasing.out(REasing.quad) });
+    },
+    soltar: () => {
+      if (!previaAtiva.current) return;
+      previaAtiva.current = false;
+      dot.value = withTiming(0, { duration: DOT_MS, easing: REasing.out(REasing.quad) });
+    },
+  }), []);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
-    p.stopAnimation();
     if (on) {
-      setOrigin(touch ?? null);
-      p.setValue(0);
-      Animated.timing(p, { toValue: 1, duration: FILL_IN_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      // Do ponto do dedo; marcada por fora (sem toque), nasce do meio.
+      if (!previaAtiva.current) { ox.value = -1; oy.value = -1; dot.value = 0; p.value = 0; }
+      previaAtiva.current = false;
+      p.value = withTiming(1, { duration: FILL_IN_MS, easing: REasing.out(REasing.quad) });
     } else {
-      setOrigin(null);   // com o círculo cheio, trocar o centro não aparece (cobre tudo)
-      Animated.timing(p, { toValue: 0, duration: FILL_OUT_MS, easing: Easing.in(Easing.quad), useNativeDriver: true }).start();
+      // Encolhe de volta para onde nasceu.
+      previaAtiva.current = false;
+      dot.value = 0;
+      p.value = withTiming(0, { duration: FILL_OUT_MS, easing: REasing.out(REasing.quad) });
     }
   }, [on]);
-  const o = origin ?? { x: size.w / 2, y: size.h / 2 };
-  const R = Math.hypot(Math.max(o.x, size.w - o.x), Math.max(o.y, size.h - o.y)) + 1;
+  const circulo = useAnimatedStyle(() => {
+    const cx = ox.value < 0 ? w.value / 2 : ox.value;
+    const cy = oy.value < 0 ? h.value / 2 : oy.value;
+    // Folga de altura: o card cresce (frase abrindo) depois de o círculo já cobri-lo.
+    const H = Math.max(h.value, FILL_H_MIN);
+    const R = Math.hypot(Math.max(cx, w.value - cx), Math.max(cy, H - cy)) + 1;
+    const d = DOT_R * dot.value;
+    const r = d + p.value * (R - d);
+    return {
+      left: cx - r, top: cy - r, width: 2 * r, height: 2 * r, borderRadius: r,
+      opacity: w.value > 0 && r > 0.5 ? 1 : 0,
+    };
+  });
+  // O conteúdo aceso, dentro do círculo, fica parado em relação ao BOTÃO.
+  const dentro = useAnimatedStyle(() => {
+    const cx = ox.value < 0 ? w.value / 2 : ox.value;
+    const cy = oy.value < 0 ? h.value / 2 : oy.value;
+    const H = Math.max(h.value, FILL_H_MIN);
+    const R = Math.hypot(Math.max(cx, w.value - cx), Math.max(cy, H - cy)) + 1;
+    const d = DOT_R * dot.value;
+    const r = d + p.value * (R - d);
+    return { left: r - cx, top: r - cy, width: w.value };
+  });
   return (
     <View
       pointerEvents="none"
       style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-      onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+      onLayout={(e) => {
+        const { width: lw, height: lh } = e.nativeEvent.layout;
+        w.value = lw;
+        h.value = lh;
+      }}
     >
-      {size.w > 0 && (
-        <Animated.View
-          style={{
-            position: 'absolute', left: o.x - R, top: o.y - R, width: 2 * R, height: 2 * R, borderRadius: R,
-            backgroundColor: color,
-            opacity: p.interpolate({ inputRange: [0, 0.01, 1], outputRange: [0, 1, 1] }),
-            transform: [{ scale: p }],
-          }}
-        />
-      )}
+      <Reanimated.View style={[{ position: 'absolute', backgroundColor: color, overflow: 'hidden' }, circulo]}>
+        {aceso != null && (
+          <Reanimated.View style={[{ position: 'absolute' }, acesoStyle, dentro]}>{aceso}</Reanimated.View>
+        )}
+      </Reanimated.View>
     </View>
   );
-}
+});
 
 export function ObOptionCard({
   label, sub, strong, selected, reveal, onPress, disabled,
 }: { label: string; sub?: string; strong?: boolean; selected: boolean; reveal?: string; onPress: () => void; disabled?: boolean }) {
-  // O rosa abre a partir do dedo já no toque; se o dedo sair sem escolher (rolou a tela),
-  // fecha de novo.
-  const [pressing, setPressing] = useState(false);
-  const [touch, setTouch] = useState<Touch | null>(null);
-  // Texto e check ficam brancos JUNTO com o rosa (no toque), não só ao soltar, e voltam ao
-  // preto só quando o rosa já fechou — nunca texto preto sobre rosa.
-  const fillOn = selected || pressing;
-  const on = useObFillText(fillOn);
+  // 16/nov/2026: o rosa segue SÓ a opção marcada (um sinal só). Antes ele ligava também com
+  // o dedo encostado e depois passava a seguir a marcação — os dois sinais disputavam a mesma
+  // animação e, trocando rápido, a opção travava cinza com o visto rosa. O círculo continua
+  // nascendo do ponto do dedo (guardado no toque); o afundar e a vibração seguem no toque.
+  const fill = useRef<ObFillHandle>(null);
+  const marcada = useRef(selected);
+  marcada.current = selected;
+  const fillOn = selected;
+  // 18/nov/2026 (réplica do Flo): o conteúdo existe nas DUAS cores. O escuro fica no card; o
+  // branco vai DENTRO do círculo rosa (`ObFill aceso`), na mesma posição — o texto fica branco
+  // só onde o rosa chegou. Antes a cor trocava no render, antes de o rosa chegar.
+  const linha = (aceso: boolean) => (
+    <View style={LINHA}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: strong ? '600' : '400', color: aceso ? '#FFFFFF' : OB.ink }}>
+          {label}
+        </Text>
+        {!!sub && (
+          <Text style={{ fontSize: 14, lineHeight: 19, color: aceso ? 'rgba(255,255,255,0.85)' : OB.sub }}>{sub}</Text>
+        )}
+      </View>
+      {aceso ? (
+        <ObCheck size={20} bg="#FFFFFF" fg={OB.pink} stroke={2.4} />
+      ) : (
+        <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: OB.radio }} />
+      )}
+    </View>
+  );
   return (
     <ObPress
       onPress={onPress}
-      onPressIn={(t) => { setTouch(t); setPressing(true); }}
-      onPressOut={() => setPressing(false)}
+      onPressIn={(t) => fill.current?.previa(t)}
+      onPressOut={() => { if (!marcada.current) fill.current?.soltar(); }}
       disabled={disabled}
-      style={{
-        backgroundColor: OB.option, borderRadius: 12, minHeight: 65, overflow: 'hidden',
-        paddingHorizontal: 19, paddingVertical: 21, justifyContent: 'center', gap: 12,
-        opacity: disabled ? 0.5 : 1,
-      }}
+      style={[OPCAO_CARD, { opacity: disabled ? 0.5 : 1 }]}
     >
-      <ObFill on={fillOn} touch={touch} />
-      <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ fontSize: 17, lineHeight: 23, fontWeight: strong ? '600' : '400', color: on ? '#FFFFFF' : OB.ink }}>
-            {label}
-          </Text>
-          {!!sub && (
-            <Text style={{ fontSize: 14, lineHeight: 19, color: on ? 'rgba(255,255,255,0.85)' : OB.sub }}>{sub}</Text>
-          )}
-        </View>
-        {on ? (
-          <ObCheck size={20} bg="#FFFFFF" fg={OB.pink} stroke={2.4} />
-        ) : (
-          <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: OB.radio }} />
-        )}
-      </View>
-      {on && !!reveal && (
-        <Text pointerEvents="none" style={{ fontSize: 15, lineHeight: 21, color: '#FFFFFF', paddingRight: 36 }}>{reveal}</Text>
-      )}
+      <View pointerEvents="none">{linha(false)}</View>
+      {!!reveal && <ObReveal text={reveal} open={selected} color={OB.sub} />}
+      {/* Depois do conteúdo escuro: o círculo rosa (com o conteúdo branco dentro) fica por cima. */}
+      <ObFill
+        ref={fill}
+        on={fillOn}
+        acesoStyle={OPCAO_CONTEUDO}
+        aceso={<>{linha(true)}{!!reveal && <ObReveal text={reveal} open={selected} color="#FFFFFF" />}</>}
+      />
     </ObPress>
+  );
+}
+const LINHA: ViewStyle = { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 };
+// Padding/gap do card — o bloco branco dentro do círculo usa os MESMOS, para cair em cima do escuro.
+const OPCAO_CONTEUDO: ViewStyle = { paddingHorizontal: 19, paddingVertical: 21, gap: 12 };
+const OPCAO_CARD: ViewStyle = {
+  ...OPCAO_CONTEUDO, backgroundColor: OB.option, borderRadius: 12, minHeight: 65, overflow: 'hidden', justifyContent: 'center',
+};
+
+// Frase revelada da opção marcada: o cartão ABRE e FECHA a altura (sem pular) e a frase
+// esmaece junto (16/nov/2026, pedido do produto — antes ela aparecia/sumia de uma vez e,
+// ao trocar de opção, o cartão encolhia num salto depois que o rosa fechava). Segue o
+// `selected` (não o rosa do toque): abre ao escolher, fecha ao escolher outra.
+// 18/nov/2026: tempos do Flo (abre/fecha em ~7 quadros a 60 fps).
+const REVEAL_ABRE_MS = 120;
+const REVEAL_FECHA_MS = 110;
+const REVEAL_GAP = 12; // o mesmo `gap` do cartão
+function ObReveal({ text, open, color = '#FFFFFF' }: { text: string; open: boolean; color?: string }) {
+  // 16/nov/2026: Reanimated (thread de UI). Antes a altura animava pelo JS (`useNativeDriver:
+  // false`) e travava/caía de FPS ao trocar de opção, principalmente no app de desenvolvimento.
+  const h = useSharedValue(0);
+  const a = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    a.value = withTiming(open ? 1 : 0, {
+      duration: open ? REVEAL_ABRE_MS : REVEAL_FECHA_MS,
+      easing: open ? REasing.out(REasing.cubic) : REasing.inOut(REasing.cubic),
+    });
+  }, [open]);
+  const caixa = useAnimatedStyle(() => ({ height: a.value * (h.value + REVEAL_GAP) }));
+  const frase = useAnimatedStyle(() => ({
+    opacity: interpolate(a.value, [0, 0.45, 1], [0, 0.15, 1]),
+    transform: [{ translateY: (1 - a.value) * -4 }],
+  }));
+  return (
+    // marginTop negativo anula o `gap` do cartão enquanto fechada (o espaço entra na animação).
+    <Reanimated.View pointerEvents="none" style={[{ marginTop: -REVEAL_GAP, overflow: 'hidden' }, caixa]}>
+      <Reanimated.Text
+        onLayout={(e) => { h.value = e.nativeEvent.layout.height; }}
+        style={[{
+          position: 'absolute', top: REVEAL_GAP, left: 0, right: 36,
+          fontSize: 15, lineHeight: 21, color,
+        }, frase]}
+      >
+        {text}
+      </Reanimated.Text>
+    </Reanimated.View>
   );
 }
 
@@ -381,7 +518,7 @@ export function ObOptionCard({
 export const OB_BOTAO_H = 56;
 
 export function ObPillButton({
-  label = 'Continuar', onPress, disabled, bottom, width = 220, style,
+  label = t('Continuar'), onPress, disabled, bottom, width = 220, style,
 }: { label?: string; onPress: () => void; disabled?: boolean; bottom?: number; width?: number; style?: StyleProp<ViewStyle> }) {
   const positioned: ViewStyle = bottom != null
     ? { position: 'absolute', bottom, alignSelf: 'center' }
@@ -539,7 +676,6 @@ export function ObChoiceScreen<V extends string>({
   // uma opção com frase, o cartão cresce para baixo em vez de o bloco inteiro subir.
   const [livreH, setLivreH] = useState(0);
   const [blocoH, setBlocoH] = useState(0);
-  const revelando = options.some((o) => o.value === selected && !!o.reveal);
   const medido = livreH > 0 && blocoH > 0;
   const cards = options.map((opt) => (
     <ObOptionCard
@@ -567,7 +703,9 @@ export function ObChoiceScreen<V extends string>({
           >
             <View
               style={{ marginHorizontal: 17, gap: 8, marginTop: medido ? Math.max(0, (livreH - blocoH) / 2) : 0 }}
-              onLayout={(e) => { if (!revelando) setBlocoH(e.nativeEvent.layout.height); }}
+              // Mede UMA vez, sem a frase (que nasce com altura 0 e abre animada): medindo a cada
+              // quadro da animação, o bloco inteiro andaria enquanto o cartão abre/fecha.
+              onLayout={(e) => { const hh = e.nativeEvent.layout.height; setBlocoH((v) => (v > 0 ? v : hh)); }}
             >
               {cards}
             </View>

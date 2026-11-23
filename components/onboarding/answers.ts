@@ -2,8 +2,10 @@
 // incomoda" (tela 4 do fluxo completo), os benefícios e etiquetas da tela 5
 // ("Entendi"), as frases do loading da rotina (23) e a do compromisso (28).
 import type { OnboardingData } from '../../store/onboarding';
+import { t } from '../../lib/i18n';
 
-// Rótulos = valores gravados em `onboarding.concerns` (inalterados).
+// Rótulos = valores gravados em `onboarding.concerns` (inalterados, sempre em português).
+// Na tela, mostrar `t(rótulo)`; gravar o rótulo como está.
 export const CONCERN_LABELS = [
   'Acne/espinhas', 'Manchas', 'Cravos', 'Oleosidade', 'Rugas', 'Poros dilatados',
   'Olheiras', 'Ressecamento', 'Textura irregular', 'Outro',
@@ -12,38 +14,38 @@ export const CONCERN_LABELS = [
 // Frase revelada embaixo da opção marcada (modelo do Flo, a pedido do produto) —
 // as mesmas do quadro "Frases reveladas · tela 5" do design anterior.
 export const CONCERN_REVEAL: Record<string, string> = {
-  'Acne/espinhas': 'Vamos priorizar ativos que acalmam e desobstruem, sem ressecar.',
-  Manchas: 'Sua rotina vai focar em uniformizar o tom e proteger do sol todos os dias.',
-  Cravos: 'Vamos incluir uma limpeza que ajuda a manter os poros livres.',
-  Oleosidade: 'Vamos equilibrar o brilho sem tirar a hidratação que sua pele precisa.',
-  Rugas: 'Vamos trazer ativos que estimulam firmeza e cuidam da pele a longo prazo.',
-  'Poros dilatados': 'Vamos cuidar da textura e da oleosidade para os poros ficarem mais discretos.',
-  Olheiras: 'Vamos incluir um cuidado específico para a área dos olhos.',
-  Ressecamento: 'Vamos reforçar a hidratação e proteger a barreira da sua pele.',
-  'Textura irregular': 'Vamos incluir uma renovação suave para a pele ficar mais lisa ao toque.',
-  Outro: 'Tudo bem. A análise da sua foto vai mostrar o que priorizar.',
+  'Acne/espinhas': t('Vamos priorizar ativos que acalmam e desobstruem, sem ressecar.'),
+  Manchas: t('Sua rotina vai focar em uniformizar o tom e proteger do sol todos os dias.'),
+  Cravos: t('Vamos incluir uma limpeza que ajuda a manter os poros livres.'),
+  Oleosidade: t('Vamos equilibrar o brilho sem tirar a hidratação que sua pele precisa.'),
+  Rugas: t('Vamos trazer ativos que estimulam firmeza e cuidam da pele a longo prazo.'),
+  'Poros dilatados': t('Vamos cuidar da textura e da oleosidade para os poros ficarem mais discretos.'),
+  Olheiras: t('Vamos incluir um cuidado específico para a área dos olhos.'),
+  Ressecamento: t('Vamos reforçar a hidratação e proteger a barreira da sua pele.'),
+  'Textura irregular': t('Vamos incluir uma renovação suave para a pele ficar mais lisa ao toque.'),
+  Outro: t('Tudo bem. A análise da sua foto vai mostrar o que priorizar.'),
 };
 
 // Etiqueta curta de cada preocupação (etiquetas em volta da logo na tela 5 e
 // chips do loading antigo). Mapa do design: o resto já é curto.
 const CONCERN_CHIP: Record<string, string> = {
-  'Acne/espinhas': 'Acne', 'Poros dilatados': 'Poros', 'Textura irregular': 'Textura',
+  'Acne/espinhas': t('Acne'), 'Poros dilatados': t('Poros'), 'Textura irregular': t('Textura'),
 };
 
 // Valores gravados pelas telas de tipo de pele / sol / hidratação e sono →
 // rótulo do chip, no formato dos exemplos do design ("Pele mista", "1–3 h de sol",
 // "1–2 L de água", "7 h de sono").
 const SKIN_CHIP: Record<string, string> = {
-  Oleosa: 'Pele oleosa', Seca: 'Pele seca', Mista: 'Pele mista', Normal: 'Pele normal',
+  Oleosa: t('Pele oleosa'), Seca: t('Pele seca'), Mista: t('Pele mista'), Normal: t('Pele normal'),
 };
 const SUN_CHIP: Record<string, string> = {
-  'Quase nenhum': 'Quase sem sol',
-  'Menos de 1 hora por dia': '< 1 h de sol',
-  'Entre 1 a 3 horas por dia': '1–3 h de sol',
-  'Mais de 3 horas por dia': '3+ h de sol',
+  'Quase nenhum': t('Quase sem sol'),
+  'Menos de 1 hora por dia': t('< 1 h de sol'),
+  'Entre 1 a 3 horas por dia': t('1–3 h de sol'),
+  'Mais de 3 horas por dia': t('3+ h de sol'),
 };
 const WATER_CHIP: Record<string, string> = {
-  'Menos de 1L': '< 1 L de água', '1–2L': '1–2 L de água', '2–3L': '2–3 L de água', '3L+': '3+ L de água',
+  'Menos de 1L': t('< 1 L de água'), '1–2L': t('1–2 L de água'), '2–3L': t('2–3 L de água'), '3L+': t('3+ L de água'),
 };
 
 /** Chips da tela de loading: o que ela respondeu, na ordem do design. */
@@ -51,30 +53,30 @@ export function answerChips(o: OnboardingData): string[] {
   const chips: string[] = [];
   for (const c of o.concerns) {
     if (c === 'Outro') continue;
-    chips.push(CONCERN_CHIP[c] ?? c);
+    chips.push(CONCERN_CHIP[c] ?? t(c));
   }
   if (o.skin_type && SKIN_CHIP[o.skin_type]) chips.push(SKIN_CHIP[o.skin_type]);
   if (o.sun_exposure && SUN_CHIP[o.sun_exposure]) chips.push(SUN_CHIP[o.sun_exposure]);
   if (o.hydration && WATER_CHIP[o.hydration]) chips.push(WATER_CHIP[o.hydration]);
-  if (o.sleep) chips.push(`${o.sleep} h de sono`);
+  if (o.sleep) chips.push(t('{{horas}} h de sono', { horas: o.sleep }));
   return chips;
 }
 
 // Tela 5 ("Entendi! Vamos te ajudar a:"), logo depois da tela 4. Texto do design
 // (mapa `BEN` do fluxo completo), um por preocupação.
 const CONCERN_BENEFIT: Record<string, string> = {
-  'Acne/espinhas': 'Acalmar a acne sem ressecar a pele',
-  Manchas: 'Clarear manchas e uniformizar o tom',
-  Cravos: 'Desobstruir os poros e reduzir cravos',
-  Oleosidade: 'Controlar o brilho sem agredir a pele',
-  Rugas: 'Suavizar linhas finas e firmar a pele',
-  'Poros dilatados': 'Refinar a aparência dos poros',
-  Olheiras: 'Clarear e desinchar a área dos olhos',
-  Ressecamento: 'Recuperar a hidratação da pele',
-  'Textura irregular': 'Deixar a textura mais lisa',
-  Outro: 'Montar uma rotina feita para você',
+  'Acne/espinhas': t('Acalmar a acne sem ressecar a pele'),
+  Manchas: t('Clarear manchas e uniformizar o tom'),
+  Cravos: t('Desobstruir os poros e reduzir cravos'),
+  Oleosidade: t('Controlar o brilho sem agredir a pele'),
+  Rugas: t('Suavizar linhas finas e firmar a pele'),
+  'Poros dilatados': t('Refinar a aparência dos poros'),
+  Olheiras: t('Clarear e desinchar a área dos olhos'),
+  Ressecamento: t('Recuperar a hidratação da pele'),
+  'Textura irregular': t('Deixar a textura mais lisa'),
+  Outro: t('Montar uma rotina feita para você'),
 };
-const GENERIC_BENEFIT = 'Seguir uma rotina simples que cabe no seu dia';
+const GENERIC_BENEFIT = t('Seguir uma rotina simples que cabe no seu dia');
 
 /**
  * Benefícios da tela 5: um por preocupação marcada, na ordem em que ela marcou;
@@ -88,7 +90,7 @@ export function concernBenefits(concerns: string[]): string[] {
 
 /** Etiquetas em volta da logo na tela 5: uma por escolha (até 3, como a pergunta). */
 export function concernTags(concerns: string[]): string[] {
-  return concerns.map((c) => CONCERN_CHIP[c] ?? c).slice(0, 3);
+  return concerns.map((c) => CONCERN_CHIP[c] ?? t(c)).slice(0, 3);
 }
 
 // Loading da rotina (tela 23): a frase troca a cada terço — "Escolhendo ativos
@@ -97,32 +99,36 @@ export function concernTags(concerns: string[]): string[] {
 // scan (`skin_type_detected`: seca/oleosa/mista/normal), já que o fluxo completo
 // não pergunta mais o tipo de pele.
 const CONCERN_LOADING: Record<string, string> = {
-  'Acne/espinhas': 'acne', Manchas: 'manchas', Cravos: 'cravos', Oleosidade: 'oleosidade',
-  Rugas: 'rugas', 'Poros dilatados': 'poros dilatados', Olheiras: 'olheiras',
-  Ressecamento: 'ressecamento', 'Textura irregular': 'textura irregular',
+  'Acne/espinhas': t('acne'), Manchas: t('manchas'), Cravos: t('cravos'), Oleosidade: t('oleosidade'),
+  Rugas: t('rugas'), 'Poros dilatados': t('poros dilatados'), Olheiras: t('olheiras'),
+  Ressecamento: t('ressecamento'), 'Textura irregular': t('textura irregular'),
 };
 
 export function routineLoadingLines(o: OnboardingData, skinType: string | null | undefined): string[] {
   const concern = o.concerns.map((c) => CONCERN_LOADING[c]).find(Boolean);
-  const lines = [concern ? `Escolhendo ativos para ${concern}…` : 'Escolhendo os ativos certos…'];
+  const lines = [concern ? t('Escolhendo ativos para {{concern}}…', { concern }) : t('Escolhendo os ativos certos…')];
   const tipo = (skinType ?? '').toLowerCase();
-  lines.push(['seca', 'oleosa', 'mista', 'normal'].includes(tipo) ? `Ajustando para pele ${tipo}…` : 'Ajustando para a sua pele…');
+  const AJUSTE: Record<string, string> = {
+    seca: t('Ajustando para pele seca…'), oleosa: t('Ajustando para pele oleosa…'),
+    mista: t('Ajustando para pele mista…'), normal: t('Ajustando para pele normal…'),
+  };
+  lines.push(['seca', 'oleosa', 'mista', 'normal'].includes(tipo) ? AJUSTE[tipo] : t('Ajustando para a sua pele…'));
   const reacao = o.allergy_description?.trim();
-  if (reacao) lines.push(`Deixando ${reacao.length > 32 ? `${reacao.slice(0, 32).trim()}…` : reacao} de fora…`);
+  if (reacao) lines.push(t('Deixando {{reacao}} de fora…', { reacao: reacao.length > 32 ? `${reacao.slice(0, 32).trim()}…` : reacao }));
   return lines;
 }
 
 // Compromisso (tela 28): o que ela quer resolver, a partir de "o que te incomoda".
 const CONCERN_GOAL: Record<string, string> = {
-  'Acne/espinhas': 'acalmar a acne',
-  Manchas: 'clarear as manchas',
-  Cravos: 'diminuir os cravos',
-  Oleosidade: 'controlar a oleosidade',
-  Rugas: 'suavizar as rugas',
-  'Poros dilatados': 'deixar os poros mais discretos',
-  Olheiras: 'suavizar as olheiras',
-  Ressecamento: 'hidratar a pele ressecada',
-  'Textura irregular': 'deixar a pele mais lisa',
+  'Acne/espinhas': t('acalmar a acne'),
+  Manchas: t('clarear as manchas'),
+  Cravos: t('diminuir os cravos'),
+  Oleosidade: t('controlar a oleosidade'),
+  Rugas: t('suavizar as rugas'),
+  'Poros dilatados': t('deixar os poros mais discretos'),
+  Olheiras: t('suavizar as olheiras'),
+  Ressecamento: t('hidratar a pele ressecada'),
+  'Textura irregular': t('deixar a pele mais lisa'),
 };
 
 /**
@@ -131,11 +137,11 @@ const CONCERN_GOAL: Record<string, string> = {
  */
 export function commitmentPhrase(concerns: string[]): string {
   const goals = concerns.map((c) => CONCERN_GOAL[c]).filter(Boolean) as string[];
-  if (goals.length === 0) return 'cuidar da minha pele todos os dias e conquistar a pele que eu quero.';
+  if (goals.length === 0) return t('cuidar da minha pele todos os dias e conquistar a pele que eu quero.');
   const list = goals.length === 1
     ? goals[0]
-    : `${goals.slice(0, -1).join(', ')} e ${goals[goals.length - 1]}`;
-  return `cuidar da minha pele todos os dias, ${list}.`;
+    : t('{{lista}} e {{ultimo}}', { lista: goals.slice(0, -1).join(', '), ultimo: goals[goals.length - 1] });
+  return t('cuidar da minha pele todos os dias, {{lista}}.', { lista: list });
 }
 
 // ── "Qual a pele dos seus sonhos?" (objetivo, 03/nov/2026; título trocado em 06/nov/2026) ──
@@ -144,6 +150,7 @@ export function commitmentPhrase(concerns: string[]): string {
 // (só vive no store em memória durante o onboarding), então não há resposta antiga
 // gravada; mesmo assim, valor desconhecido → `objetivoPele` devolve null e cada tela usa
 // o seu texto neutro, nunca uma frase pela metade.
+// `nome`/`desc`/`pele` ficam em português (formam o valor gravado); na tela, `t(...)`.
 export type ObjetivoPele = {
   nome: string;      // destaque da opção
   desc: string;      // linha menor embaixo

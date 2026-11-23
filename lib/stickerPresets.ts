@@ -10,6 +10,7 @@
 import { StickerSpec, StickerShape, normalizeSpec, specId, sortKeys } from './stickerSpec';
 import { MetricKey } from './metricColor';
 import { Metricas, availableKeys, METRIC_BY_KEY } from './metricDefs';
+import { t } from './i18n';
 
 export type StickerPreset = {
   id: string;
@@ -32,23 +33,23 @@ const mk = (
 
 export const STICKER_PRESETS: StickerPreset[] = [
   // ── Círculo: o score e UMA métrica isolada cada (número gigante, estilo do score) ─
-  mk('score',            'Niks score',            true,  []),
-  mk('m-qual',           'Qualidade da pele',     false, ['qualidade_pele']),
-  mk('m-atrat',          'Atratividade',          false, ['atratividade']),
-  mk('m-juv',            'Juventude',             false, ['juventude']),
-  mk('m-oleo',           'Oleosidade',            false, ['oleosidade']),
-  mk('m-acne',           'Acne',                  false, ['acne']),
-  mk('m-linhas',         'Linhas de expressão',   false, ['linhas_expressao']),
+  mk('score',            t('Niks score'),            true,  []),
+  mk('m-qual',           t('Qualidade da pele'),     false, ['qualidade_pele']),
+  mk('m-atrat',          t('Atratividade'),          false, ['atratividade']),
+  mk('m-juv',            t('Juventude'),             false, ['juventude']),
+  mk('m-oleo',           t('Oleosidade'),            false, ['oleosidade']),
+  mk('m-acne',           t('Acne'),                  false, ['acne']),
+  mk('m-linhas',         t('Linhas de expressão'),   false, ['linhas_expressao']),
   // ── Círculo: score + métricas ──────────────────────────────────────────────
-  mk('score-qual',       'Score + Qualidade',     true,  ['qualidade_pele']),
-  mk('score-atrat',      'Score + Atratividade',  true,  ['atratividade']),
-  mk('score-juv',        'Score + Juventude',     true,  ['juventude']),
-  mk('score-positivas',  'Score + destaques',     true,  POSITIVAS),
-  mk('score-negativas',  'Score + a cuidar',      true,  NEGATIVAS),
+  mk('score-qual',       t('Score + Qualidade'),     true,  ['qualidade_pele']),
+  mk('score-atrat',      t('Score + Atratividade'),  true,  ['atratividade']),
+  mk('score-juv',        t('Score + Juventude'),     true,  ['juventude']),
+  mk('score-positivas',  t('Score + destaques'),     true,  POSITIVAS),
+  mk('score-negativas',  t('Score + a cuidar'),      true,  NEGATIVAS),
   // ── Card ───────────────────────────────────────────────────────────────────
-  mk('card4',            'Score + 4 métricas',    true,  TODAS.slice(0, 4), 'card'),
-  mk('card-full-score',  'Card completo',         true,  TODAS,             'card'),
-  mk('card-full',        'Card sem o score',      false, TODAS,             'card'),
+  mk('card4',            t('Score + 4 métricas'),    true,  TODAS.slice(0, 4), 'card'),
+  mk('card-full-score',  t('Card completo'),         true,  TODAS,             'card'),
+  mk('card-full',        t('Card sem o score'),      false, TODAS,             'card'),
 ];
 
 /**
@@ -78,11 +79,11 @@ export function usablePresets(metricas: Metricas): StickerPreset[] {
 /** Rótulo honesto derivado do próprio spec, para quando a poda altera um preset. */
 function describeSpec(spec: StickerSpec): string {
   const n = spec.keys.length;
-  if (n === 0) return 'Niks score';
+  if (n === 0) return t('Niks score');
   if (n === 1) {
     const only = METRIC_BY_KEY[spec.keys[0]].label.replace('\n', ' ');
-    return spec.showScore ? `Score + ${only}` : only;
+    return spec.showScore ? t('Score + {{metrica}}', { metrica: only }) : only;
   }
-  const plural = `${n} métricas`;
-  return spec.showScore ? `Score + ${plural}` : plural;
+  const plural = t('{{n}} métricas', { n });
+  return spec.showScore ? t('Score + {{metrica}}', { metrica: plural }) : plural;
 }

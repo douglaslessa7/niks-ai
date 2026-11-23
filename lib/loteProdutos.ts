@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Scan em lote dos produtos de casa (plano da Rotina, Fase 5 — decisão 4).
 //
-// Para cada produto: foto da FRENTE e, depois, foto do RÓTULO de ingredientes (ela
-// pode pular o rótulo). O app junta as duas numa imagem só, no formato que a função
-// `montar-rotina-com-produtos` espera (testado na Fase 0):
+// Para cada produto: só a foto da FRENTE (decisão de 18/nov/2026 — a câmera não pede mais
+// o rótulo; o caminho "com rótulo" abaixo ficou só para lotes antigos/compatibilidade).
+// Formato que a função `montar-rotina-com-produtos` espera (testado na Fase 0):
 //   · com rótulo: 1024×1536 — frente no terço de cima (1024×512), rótulo nos dois
 //     terços de baixo (1024×1024), cada uma INTEIRA ("contain") sobre branco;
 //   · sem rótulo: só a frente, 1024×1024 (vira "Precisão baixa" na análise).

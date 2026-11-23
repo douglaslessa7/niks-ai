@@ -23,13 +23,15 @@ import { pwDecisao } from '../../lib/paywallDebug';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { OB, ObPillButton } from '../../components/onboarding/kit';
 import { iniciarAnaliseCompleta } from '../../lib/onboardingPrefetch';
-import { registrarCompraPendente } from '../../lib/compraPendente';
+import { atualizarCompraPendente, registrarCompraPendente } from '../../lib/compraPendente';
 import { lerCodigoGrupo } from '../../lib/convidada';
 import { assinaturaDoAppleId } from '../../lib/assinaturaServidor';
 import { deveriaPerguntar } from '../../lib/regraCompra';
 import { marcarCompraNestaSessao } from '../../lib/sinalCompra';
+import { registrarAceiteNaCompra } from '../../lib/aceiteTermos';
 import PerguntaAssinatura, { PERGUNTA_ASSINATURA_LIGADA } from '../../components/assinatura/PerguntaAssinatura';
 
 // Compra confirmada (06/nov/2026): a análise completa e a rotina só rodam a partir daqui.
@@ -120,6 +122,8 @@ export default function PaywallSoft() {
     }
     // Sinal explícito para o cadastro e as boas-vindas: SÓ aqui (purchased/restored confirmado).
     await marcarCompraNestaSessao(tipo === 'restored' ? 'restaurar' : 'compra');
+    // 1.64: o paywall mostra a frase dos Termos — compra com conta logada registra o aceite.
+    if (tipo === 'purchased') await registrarAceiteNaCompra();
     const comOnboarding = await liberarAnaliseCompleta();
     const { data: { session } } = await supabase.auth.getSession();
     await pwDecisao(`onDismiss(${tipo})`, session?.user ? 'HOME (já tinha conta)' : 'CADASTRO', session?.user ? 'home' : 'cadastro',
@@ -132,8 +136,17 @@ export default function PaywallSoft() {
       // a confirmação vale para ela. Não passa pelo signup → atribui o cupom aqui.
       setSubscriptionVerified(true);
       attributeCouponIfAny(session.user.id);
-      // Refez o onboarding já logada: a tela de espera salva o scan e a rotina nesta conta.
-      router.replace(comOnboarding ? '/(onboarding)/loading-rotina' as any : '/(app)/home');
+      if (comOnboarding) {
+        // 1.64: fez o onboarding já logada (conta do "Entrar", `lib/onboardingObrigatorio.ts`):
+        // as boas-vindas, como quem começou do zero; no fim, em vez do cadastro, a tela de
+        // espera grava perfil, scan e rotina NESTA conta (`concluirComContaLogada`, bv-nivel).
+        // O registro da compra já leva o user_id: se o app fechar nas boas-vindas, a retomada
+        // (app/index.tsx) reconhece a compra desta conta (criada ANTES da compra).
+        await atualizarCompraPendente({ userId: session.user.id });
+        router.replace('/(onboarding)/bv-entrou' as any);
+        return;
+      }
+      router.replace('/(app)/home');
     } else {
       // Nova usuária. O `subscriptionVerified` NÃO é marcado aqui: a identidade
       // muda no cadastro (Purchases.logIn), e é o signup que confere de novo e marca.
@@ -328,12 +341,12 @@ export default function PaywallSoft() {
       ) : semPaywall ? (
         <>
           <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '700', color: OB.ink, textAlign: 'center' }}>
-            Não conseguimos carregar agora
+            {t('Não conseguimos carregar agora')}
           </Text>
           <Text style={{ marginTop: 8, marginBottom: 28, fontSize: 16, lineHeight: 22, color: OB.sub, textAlign: 'center' }}>
-            Confira sua conexão e tente de novo.
+            {t('Confira sua conexão e tente de novo.')}
           </Text>
-          <ObPillButton label="Tentar de novo" onPress={tentarDeNovo} />
+          <ObPillButton label={t('Tentar de novo')} onPress={tentarDeNovo} />
         </>
       ) : (
         <ActivityIndicator color={OB.pink} />

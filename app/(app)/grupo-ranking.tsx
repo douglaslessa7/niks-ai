@@ -14,6 +14,7 @@ import { useUserId } from '../../lib/currentUser';
 import { grupoDetalhe, rankingGrupo, type LinhaRanking, type Periodo } from '../../lib/gruposServidor';
 import { sessionDate } from '../../lib/routineProgress';
 import { voltar as voltarOu } from '../../lib/navegar';
+import { t, emIngles, MESES_EN, MESES_CURTOS_EN } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ranking do grupo — réplica de 81l (Semana) e 81m (Geral) do Claude Design
@@ -46,36 +47,35 @@ export async function carregar(gid: string): Promise<Dados> {
   return { listas: { semana, mes, ano, geral }, criado_em: g.criado_em };
 }
 
-const curta = (d: Date) => `${d.getDate()} de ${MESES_C[d.getMonth()]}`;
-const plural = (n: number, um: string, varios: string) => (n === 1 ? `1 ${um}` : `${n} ${varios}`);
+const curta = (d: Date) => (emIngles ? `${MESES_CURTOS_EN[d.getMonth()]} ${d.getDate()}` : `${d.getDate()} de ${MESES_C[d.getMonth()]}`);
 
 function secao(p: Periodo, criadoEm: string | null): string {
   const hoje = sessionDate();
   if (p === 'semana') {
     const seg = new Date(hoje); seg.setDate(hoje.getDate() - ((hoje.getDay() + 6) % 7));
     const dom = new Date(seg); dom.setDate(seg.getDate() + 6);
-    return `Semana de ${curta(seg)} a ${curta(dom)}`;
+    return t('Semana de {{de}} a {{ate}}', { de: curta(seg), ate: curta(dom) });
   }
-  if (p === 'mes') return MESES[hoje.getMonth()];
+  if (p === 'mes') return (emIngles ? MESES_EN : MESES)[hoje.getMonth()];
   if (p === 'ano') return String(hoje.getFullYear());
   const c = criadoEm ? new Date(`${criadoEm.slice(0, 10)}T12:00:00`) : null;
-  return c ? `Desde ${curta(c)}, quando o grupo foi criado` : 'Desde que o grupo foi criado';
+  return c ? t('Desde {{data}}, quando o grupo foi criado', { data: curta(c) }) : t('Desde que o grupo foi criado');
 }
 
 function rodape(p: Periodo, lista: LinhaRanking[]): string {
-  if (p === 'semana') return 'Até 2 check-ins por dia: manhã e noite.';
-  if (p === 'ano') return 'Conta desde 1 de janeiro.';
-  if (p === 'geral') return 'Todos os check-ins desde a criação do grupo.';
+  if (p === 'semana') return t('Até 2 check-ins por dia: manhã e noite.');
+  if (p === 'ano') return t('Conta desde 1 de janeiro.');
+  if (p === 'geral') return t('Todos os check-ins desde a criação do grupo.');
   const i = lista.findIndex((r) => r.voce);
   const v = lista[i];
-  if (!v || v.checkins === 0) return 'Conta desde o dia 1.';
+  if (!v || v.checkins === 0) return t('Conta desde o dia 1.');
   if (i === 0) {
-    if (!lista[1]) return 'Conta desde o dia 1.';
+    if (!lista[1]) return t('Conta desde o dia 1.');
     const dif = v.checkins - lista[1].checkins;
-    return dif > 0 ? `Você está na frente por ${plural(dif, 'check-in', 'check-ins')}.` : 'Você está empatada na frente.';
+    return dif > 0 ? (dif === 1 ? t('Você está na frente por 1 check-in.') : t('Você está na frente por {{n}} check-ins.', { n: dif })) : t('Você está empatada na frente.');
   }
   const dif = lista[i - 1].checkins - v.checkins;
-  return dif > 0 ? `Você está a ${plural(dif, 'check-in', 'check-ins')} de ${lista[i - 1].nome}.` : 'Você está empatada.';
+  return dif > 0 ? (dif === 1 ? t('Você está a 1 check-in de {{nome}}.', { nome: lista[i - 1].nome }) : t('Você está a {{n}} check-ins de {{nome}}.', { n: dif, nome: lista[i - 1].nome })) : t('Você está empatada.');
 }
 
 function Linha({ r, i, ultima, rm }: { r: LinhaRanking; i: number; ultima: boolean; rm: boolean }) {
@@ -101,18 +101,18 @@ function Linha({ r, i, ultima, rm }: { r: LinhaRanking; i: number; ultima: boole
       </View>
       <View style={[styles.rowBody, { borderBottomColor: ultima ? 'transparent' : 'rgba(18,18,18,0.07)' }]}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[styles.nome, { fontWeight: r.voce ? '700' : '400' }]} numberOfLines={1}>{r.voce ? 'Você' : r.nome}</Text>
-          <Text style={styles.nivel} numberOfLines={1}>{r.titulo}</Text>
+          <Text style={[styles.nome, { fontWeight: r.voce ? '700' : '400' }]} numberOfLines={1}>{r.voce ? t('Você') : r.nome}</Text>
+          <Text style={styles.nivel} numberOfLines={1}>{t(r.titulo)}</Text>
           <View style={styles.winsRow}>
             <Svg width={13} height={13} viewBox="0 0 24 24">
               {TROFEU.map((d, k) => <Path key={k} d={d} fill="none" stroke={MUTE} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />)}
             </Svg>
-            <Text style={styles.wins} numberOfLines={1}>{w === 0 ? 'Nenhuma semana vencida' : plural(w, 'semana vencida', 'semanas vencidas')}</Text>
+            <Text style={styles.wins} numberOfLines={1}>{w === 0 ? t('Nenhuma semana vencida') : w === 1 ? t('1 semana vencida') : t('{{n}} semanas vencidas', { n: w })}</Text>
           </View>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={styles.n}>{r.checkins}</Text>
-          <Text style={styles.nL}>check-ins</Text>
+          <Text style={styles.nL}>{t('check-ins')}</Text>
         </View>
       </View>
     </Animated.View>
@@ -158,12 +158,12 @@ export default function GrupoRanking() {
     <View style={{ flex: 1 }}>
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>Ranking</Text></View>
+      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>{t('Ranking')}</Text></View>
       <TouchableOpacity
         activeOpacity={0.7}
         onPress={() => { haptics.tap(); voltarOu({ pathname: '/grupo', params: { id: gid } }); }}
         style={[styles.back, { top: y(54) }]}
-        accessibilityLabel="Voltar"
+        accessibilityLabel={t('Voltar')}
       >
         <Svg width={26} height={26} viewBox="0 0 24 24"><Path d="m15 18-6-6 6-6" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
       </TouchableOpacity>
@@ -180,7 +180,7 @@ export default function GrupoRanking() {
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
             >
-              <Text style={[styles.tabT, { color: on ? '#fff' : INK }]}>{label}</Text>
+              <Text style={[styles.tabT, { color: on ? '#fff' : INK }]}>{t(label)}</Text>
             </TouchableOpacity>
           );
         })}

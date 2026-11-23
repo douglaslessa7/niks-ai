@@ -17,6 +17,7 @@ import { Linking, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View 
 import * as Application from 'expo-application';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { haptics } from '../lib/haptics';
+import { t } from '../lib/i18n';
 import { trackFora } from '../lib/mixpanel/MixpanelProvider';
 
 const BUNDLE = 'br.com.niksai.app';
@@ -120,14 +121,14 @@ export default function AvisoAtualizacao({ liberado }: { liberado: boolean }) {
       </Animated.View>
       <View style={styles.centro} pointerEvents="box-none">
         <Animated.View style={[styles.card, cardSt]}>
-          <Text style={styles.titulo}>Nova versão do NIKS</Text>
-          <Text style={styles.texto}>Atualize o app para ter as novidades e as últimas melhorias.</Text>
+          <Text style={styles.titulo}>{t('Nova versão do NIKS')}</Text>
+          <Text style={styles.texto}>{t('Atualize o app para ter as novidades e as últimas melhorias.')}</Text>
           <View style={styles.botoes}>
             <TouchableOpacity activeOpacity={0.85} onPress={atualizar} style={[styles.btn, styles.btnPrincipal]} accessibilityRole="button" accessibilityLabel="Atualizar">
-              <Text style={styles.btnT}>Atualizar</Text>
+              <Text style={styles.btnT}>{t('Atualizar')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.7} onPress={agoraNao} style={[styles.btn, { backgroundColor: '#F4F4F4' }]} accessibilityRole="button" accessibilityLabel="Agora não">
-              <Text style={styles.btn2T}>Agora não</Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={agoraNao} style={[styles.btn, { backgroundColor: '#F4F4F4' }]} accessibilityRole="button" accessibilityLabel={t('Agora não')}>
+              <Text style={styles.btn2T}>{t('Agora não')}</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>

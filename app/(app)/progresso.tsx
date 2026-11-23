@@ -41,6 +41,7 @@ import { useEstadoCartas } from '../../lib/cartasServidor';
 import InicialAvatar from '../../components/InicialAvatar';
 import { voltar as voltarOu } from '../../lib/navegar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
+import { t, emIngles, MESES_CURTOS_EN } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -58,15 +59,15 @@ const SCAN_INTERVAL_DAYS = 7;
 // Quebras de linha dos nomes no card de métricas: "da pele" fica junto na 2ª linha
 // (pedido do produto). Os outros usam o nome de `METRIC_DEFS` (que já quebra
 // "Linhas de / expressão").
-const CARD_LABEL: Partial<Record<MetricKey, string>> = { qualidade_pele: 'Qualidade\nda pele' };
+const CARD_LABEL: Partial<Record<MetricKey, string>> = { qualidade_pele: t('Qualidade\nda pele') };
 
 // Abas de "Sua evolução" (SERIES do design, nesta ordem).
 const SERIES: { key: 'score' | MetricKey; label: string; better: 'up' | 'down' }[] = [
-  { key: 'score', label: 'Score', better: 'up' },
-  { key: 'qualidade_pele', label: 'Qualidade da pele', better: 'up' },
-  { key: 'acne', label: 'Acne', better: 'down' },
-  { key: 'oleosidade', label: 'Oleosidade', better: 'down' },
-  { key: 'linhas_expressao', label: 'Linhas de expressão', better: 'down' },
+  { key: 'score', label: t('Score'), better: 'up' },
+  { key: 'qualidade_pele', label: t('Qualidade da pele'), better: 'up' },
+  { key: 'acne', label: t('Acne'), better: 'down' },
+  { key: 'oleosidade', label: t('Oleosidade'), better: 'down' },
+  { key: 'linhas_expressao', label: t('Linhas de expressão'), better: 'down' },
 ];
 
 // Ícones do design (viewBox 24).
@@ -87,7 +88,7 @@ function dayLabel(iso: string, now: Date, hojeLabel: string): string {
   const d = new Date(iso);
   if (dateKey(sessionDate(d)) === dateKey(sessionDate(now))) return hojeLabel;
   const s = sessionDate(d);
-  return `${s.getDate()} ${MONTHS[s.getMonth()]}`;
+  return emIngles ? `${MESES_CURTOS_EN[s.getMonth()]} ${s.getDate()}` : `${s.getDate()} ${MONTHS[s.getMonth()]}`;
 }
 
 function signed(n: number): string {
@@ -150,15 +151,17 @@ export default function Progresso() {
   // Só com 2+ scans: "+N desde o último scan". (A frase "Seu primeiro scan" saiu.)
   const deltaT = first || score == null || prev?.skin_score == null
     ? ''
-    : `${signed(score - prev.skin_score)} desde o último scan`;
+    : t('{{delta}} desde o último scan', { delta: signed(score - prev.skin_score) });
 
   // ── Próximo scan (de 7 em 7 dias a partir do último) ──
   // Poder "Scan antecipado" armado: o próximo scan já está liberado.
   const daysLeft = estadoCartas?.poderes.scan_antecipado || ehContaTeste() || !last ? 0 : Math.max(0, SCAN_INTERVAL_DAYS - daysBetween(new Date(last.created_at), now));
-  const nextT = daysLeft === 0 ? 'liberado' : daysLeft === 1 ? 'amanhã' : `em ${daysLeft} dias`;
+  const nextT = daysLeft === 0 ? t('liberado') : daysLeft === 1 ? t('amanhã') : t('em {{n}} dias', { n: daysLeft });
   const lockedT = daysLeft === 0
-    ? 'Seu gráfico começa no segundo scan.'
-    : `Seu gráfico começa no segundo scan, daqui a ${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'}.`;
+    ? t('Seu gráfico começa no segundo scan.')
+    : daysLeft === 1
+      ? t('Seu gráfico começa no segundo scan, daqui a {{n}} dia.', { n: daysLeft })
+      : t('Seu gráfico começa no segundo scan, daqui a {{n}} dias.', { n: daysLeft });
 
   // ── Card de métricas (grade 3 × 2) ──
   const metricas: Metricas = last?.full_result?.metricas ?? null;
@@ -168,7 +171,7 @@ export default function Progresso() {
   // ── Sua evolução (2+ scans): até 6 scans, do mais antigo ao mais novo ──
   const S = SERIES.find((s) => s.key === tab)!;
   const pts = scans.slice(0, 6).reverse()
-    .map((s) => ({ v: metricOf(s, S.key), d: dayLabel(s.created_at, now, 'Hoje'), at: s.created_at }))
+    .map((s) => ({ v: metricOf(s, S.key), d: dayLabel(s.created_at, now, t('Hoje')), at: s.created_at }))
     .filter((p): p is { v: number; d: string; at: string } => p.v != null);
   const CW = 323, top = 34, bot = 128, n = pts.length;
   const vals = pts.map((p) => p.v);
@@ -182,7 +185,10 @@ export default function Progresso() {
   const diff = n ? vals[n - 1] - vals[0] : 0;
   const improved = S.better === 'up' ? diff > 0 : diff < 0;
   const weeks = n > 1 ? Math.max(1, Math.round(daysBetween(new Date(pts[0].at), new Date(pts[n - 1].at)) / 7)) : 0;
-  const evoSub = `${S.label}: ${improved ? (S.better === 'up' ? '+' : '−') + Math.abs(diff) : diff} em ${weeks} ${weeks === 1 ? 'semana' : 'semanas'}`;
+  const evoDelta = `${improved ? (S.better === 'up' ? '+' : '−') + Math.abs(diff) : diff}`;
+  const evoSub = weeks === 1
+    ? t('{{metrica}}: {{delta}} em {{n}} semana', { metrica: S.label, delta: evoDelta, n: weeks })
+    : t('{{metrica}}: {{delta}} em {{n}} semanas', { metrica: S.label, delta: evoDelta, n: weeks });
   const chartW = width - 36 - 34; // card (18 + 18 de margem) − 17 + 17 de respiro
   const sx = chartW / CW;
 
@@ -219,7 +225,7 @@ export default function Progresso() {
             ocupa os mesmos 168 pt de antes, para o resto da tela não se mover. */}
         <View style={{ marginTop: 22, height: 168, alignItems: 'center', justifyContent: 'center' }}>
           {/* Tocar na foto = trocar pela galeria e enquadrar no círculo (como na home antiga). */}
-          <TouchableOpacity activeOpacity={0.85} onPress={pickPhoto} style={styles.photoRing} accessibilityLabel="Trocar foto de perfil">
+          <TouchableOpacity activeOpacity={0.85} onPress={pickPhoto} style={styles.photoRing} accessibilityLabel={t('Trocar foto de perfil')}>
             <LinearGradient
               colors={[scoreColor, ringLight]}
               start={{ x: 0.33, y: 0 }}
@@ -236,7 +242,7 @@ export default function Progresso() {
         </View>
         {/* Número primeiro e "Niks score" embaixo dele (referência do produto, out/2026). */}
         <Text style={[styles.center, { marginTop: 22, height: 70, fontSize: 64, fontWeight: '800', lineHeight: 70, letterSpacing: -1.8, color: scoreColor }]}>{score ?? '—'}</Text>
-        <Text style={[styles.center, { marginTop: 2, height: 25, fontSize: 20, fontWeight: '700', lineHeight: 25, letterSpacing: -0.4 }]}>Niks score</Text>
+        <Text style={[styles.center, { marginTop: 2, height: 25, fontSize: 20, fontWeight: '700', lineHeight: 25, letterSpacing: -0.4 }]}>{t('Niks score')}</Text>
         {/* Linha ondulada sob "Niks score" — cópia da tela 43g (Claude Design, NiksProgressScore
             v="home2"): 150 × 12, traço 3 na cor da faixa do score. */}
         <View style={{ marginTop: 4, alignItems: 'center' }}>
@@ -260,7 +266,7 @@ export default function Progresso() {
           activeOpacity={0.85}
           disabled={score == null}
           accessibilityRole="button"
-          accessibilityLabel="Compartilhar minhas métricas"
+          accessibilityLabel={t('Compartilhar minhas métricas')}
           style={styles.metricsCardTouch}
           onPress={() => { haptics.tap(); router.push('/(share)/share-capture' as any); }}
         >
@@ -291,10 +297,10 @@ export default function Progresso() {
             {legacyScan && (
               <View style={styles.metricsLock} pointerEvents="none">
                 <Text style={{ color: INK, textAlign: 'center', letterSpacing: -0.3, fontWeight: '800', fontSize: 15 }}>
-                  Aprimoramos a análise de pele.
+                  {t('Aprimoramos a análise de pele.')}
                 </Text>
                 <Text style={{ color: '#818181', textAlign: 'center', fontWeight: '600', fontSize: 12.5, lineHeight: 17, marginTop: 6 }}>
-                  Faça um novo scan para desbloquear suas 6 novas métricas e ter uma análise mais precisa.
+                  {t('Faça um novo scan para desbloquear suas 6 novas métricas e ter uma análise mais precisa.')}
                 </Text>
               </View>
             )}
@@ -302,7 +308,7 @@ export default function Progresso() {
         </TouchableOpacity>
 
         {/* Sua evolução */}
-        <SectionHead style={{ marginTop: 30 }} title="Sua evolução" />
+        <SectionHead style={{ marginTop: 30 }} title={t('Sua evolução')} />
         <View style={styles.card}>
           {first ? (
             <View style={{ paddingTop: 16, paddingHorizontal: 17, paddingBottom: 17, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -376,7 +382,7 @@ export default function Progresso() {
         </View>
 
         {/* Seus scans */}
-        <SectionHead style={{ marginTop: 30 }} title="Seus scans" right={`${scans.length} ${scans.length === 1 ? 'scan' : 'scans'}`} />
+        <SectionHead style={{ marginTop: 30 }} title={t('Seus scans')} right={scans.length === 1 ? t('{{n}} scan', { n: scans.length }) : t('{{n}} scans', { n: scans.length })} />
         <ScrollView
           horizontal showsHorizontalScrollIndicator={false}
           style={{ marginTop: 9 }}
@@ -385,7 +391,7 @@ export default function Progresso() {
           <View style={[styles.scanCard, { paddingTop: 14, paddingHorizontal: 13, paddingBottom: 13, justifyContent: 'space-between' }]}>
             <LockBadge size={38} icon={19} />
             <View style={{ gap: 2 }}>
-              <Text style={{ fontSize: 16, fontWeight: '600', lineHeight: 19, letterSpacing: -0.4, color: INK }}>Próximo scan</Text>
+              <Text style={{ fontSize: 16, fontWeight: '600', lineHeight: 19, letterSpacing: -0.4, color: INK }}>{t('Próximo scan')}</Text>
               <Text style={{ fontSize: 15, letterSpacing: -0.2, color: SOFT }}>{nextT}</Text>
             </View>
           </View>
@@ -400,7 +406,7 @@ export default function Progresso() {
                   colors={['rgba(18,18,18,0)', 'rgba(18,18,18,0.55)']}
                   style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 22, paddingHorizontal: 9, paddingBottom: 8 }}
                 >
-                  <Text style={{ fontSize: 14, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF' }}>{dayLabel(s.created_at, now, 'Hoje')}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', letterSpacing: -0.2, color: '#FFFFFF' }}>{dayLabel(s.created_at, now, t('Hoje'))}</Text>
                 </LinearGradient>
               </View>
             </View>
@@ -423,12 +429,12 @@ export default function Progresso() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.header }]} />
           </>
         )}
-        <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); voltarOu('/protocolo'); }} style={styles.hdrBtn} accessibilityLabel="Voltar">
+        <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); voltarOu('/protocolo'); }} style={styles.hdrBtn} accessibilityLabel={t('Voltar')}>
           <Svg width={18} height={18} viewBox="0 0 24 24">
             <Path d={BACK_PATH} fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
         </TouchableOpacity>
-        <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK }}>Seu progresso</Text>
+        <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK }}>{t('Seu progresso')}</Text>
         <TouchableOpacity
           activeOpacity={0.85}
           disabled={!last}

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Image, View, type ViewStyle, type StyleProp } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { type AnimatedStyle } from 'react-native-reanimated';
+import { t } from '../../lib/i18n';
 
 // FONTE ÚNICA do rosto 3D com as regiões das telas "NF 5 Mapa do rosto" e
 // "NF 6 Reação · foco" do Claude Design ("NIKS Onboarding - novo fluxo.dc.html").
@@ -37,27 +38,27 @@ export const ORDEM: Regiao[] = ['testa', 'nariz', 'bochechas', 'queixo'];
 // que fica depois do corte de 256 KB da leitura do arquivo — não foram lidos. Só o
 // exemplo da persona ("foco na testa") é do design. Confirmar com o produto.
 const NOME: Record<Regiao, string> = {
-  testa: 'testa', nariz: 'nariz', bochechas: 'bochechas', queixo: 'queixo',
+  testa: t('testa'), nariz: t('nariz'), bochechas: t('bochechas'), queixo: t('queixo'),
 };
 const NA: Record<Regiao, string> = {
-  testa: 'na testa', nariz: 'no nariz', bochechas: 'nas bochechas', queixo: 'no queixo',
+  testa: t('na testa'), nariz: t('no nariz'), bochechas: t('nas bochechas'), queixo: t('no queixo'),
 };
 
 /** "a" · "a e b" · "a, b e c". */
 function lista(itens: string[]) {
-  return itens.length < 2 ? itens.join('') : `${itens.slice(0, -1).join(', ')} e ${itens[itens.length - 1]}`;
+  return itens.length < 2 ? itens.join('') : t('{{lista}} e {{ultimo}}', { lista: itens.slice(0, -1).join(', '), ultimo: itens[itens.length - 1] });
 }
 const TODAS = (focos: Regiao[]) => ORDEM.every((r) => focos.includes(r));
 
 /** "testa" · "testa e nariz" · "testa, nariz e queixo"; com as 4, "o rosto todo"
  *  (título da tela 6: "Seu foco: …."). */
 export function focoNome(focos: Regiao[]) {
-  return TODAS(focos) ? 'o rosto todo' : lista(focos.map((f) => NOME[f]));
+  return TODAS(focos) ? t('o rosto todo') : lista(focos.map((f) => NOME[f]));
 }
 /** "na testa" · "na testa e no nariz"; com as 4, "em todo o rosto"
  *  (subtítulo: "Sua rotina terá um cuidado maior …."). */
 export function focoSub(focos: Regiao[]) {
-  return TODAS(focos) ? 'em todo o rosto' : lista(focos.map((f) => NA[f]));
+  return TODAS(focos) ? t('em todo o rosto') : lista(focos.map((f) => NA[f]));
 }
 
 // Brilho rosa das regiões acesas (`drop-shadow(0 0 14px rgba(255,94,168,.45))` no design):

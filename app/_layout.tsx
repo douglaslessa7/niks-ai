@@ -5,6 +5,7 @@ import { AppState, Platform, Pressable, StyleSheet, Text, View } from 'react-nat
 import { Stack } from 'expo-router';
 import { store } from 'expo-router/build/global-state/router-store';
 import { vigiarPilha } from '../lib/navegar';
+import { emIngles, t } from '../lib/i18n';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaywalloProvider } from '@virex-tech/paywallo-sdk';
 import * as Application from 'expo-application';
@@ -262,9 +263,9 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Pro
 
   return (
     <View style={erroStyles.tela}>
-      <Text style={erroStyles.titulo} accessibilityRole="header">Algo deu errado</Text>
-      <Pressable onPress={() => { void retry(); }} style={erroStyles.botao} accessibilityRole="button" accessibilityLabel="Tentar de novo">
-        <Text style={erroStyles.botaoTexto}>Tentar de novo</Text>
+      <Text style={erroStyles.titulo} accessibilityRole="header">{t('Algo deu errado')}</Text>
+      <Pressable onPress={() => { void retry(); }} style={erroStyles.botao} accessibilityRole="button" accessibilityLabel={t('Tentar de novo')}>
+        <Text style={erroStyles.botaoTexto}>{t('Tentar de novo')}</Text>
       </Pressable>
     </View>
   );
@@ -386,7 +387,10 @@ export default function RootLayout() {
       <MixpanelProvider>
         <SuperwallProvider
           apiKeys={SUPERWALL_API_KEYS}
-          options={{ manualPurchaseManagement: true }}
+          // Idioma do paywall (nov/2026): mesma regra do app — português = como sempre (sem
+          // `localeIdentifier`, o SDK usa o do aparelho); qualquer outro idioma = inglês dos EUA,
+          // para o celular em espanhol/francês também cair no "en" do Localization do Superwall.
+          options={{ manualPurchaseManagement: true, ...(emIngles ? { localeIdentifier: 'en_US' } : {}) }}
         >
           <CustomPurchaseControllerProvider controller={superwallPurchaseController}>
             <GestureHandlerRootView style={{ flex: 1 }}>

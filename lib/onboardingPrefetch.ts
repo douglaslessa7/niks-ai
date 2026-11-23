@@ -1,7 +1,9 @@
 import { useAppStore, ScanResult, ProtocolResult, OnboardingData } from '../store/onboarding';
 import { fetchProtocol, saveProtocol, generateAndSaveProtocol } from './generateProtocol';
+import { idioma } from './i18n';
 import { chamarAnaliseRapida, escolherPontoForte, escolherProblema, ultimoErroAnaliseRapida, type AnaliseRapida } from './analiseRapida';
 import { atualizarCompraPendente } from './compraPendente';
+import { fetchComTeto } from './esperaDaRotina';
 
 // Chamadas de IA do ONBOARDING (06/nov/2026 — a análise completa só depois da compra):
 //   • ANTES da compra, só a ANÁLISE RÁPIDA (`analise-rapida`, `lib/analiseRapida.ts`) →
@@ -124,7 +126,9 @@ function ancoraDaCarta() {
 // `analyze-skin` antiga (sem suporte a lados) analisa só a frente, como antes.
 async function callAnalyzeSkin(base64: string, lados: string[], o: OnboardingData, ancora: ReturnType<typeof ancoraDaCarta>, retry = 0): Promise<ScanResult | null> {
   try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/analyze-skin`, {
+    // Limite de 120 s (18/nov/2026; o pior caso medido foi 115 s, em 16/out): uma chamada
+    // pendurada vira erro, e o retry abaixo (ou a tela de espera) tenta de novo.
+    const response = await fetchComTeto(`${SUPABASE_URL}/functions/v1/analyze-skin`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -132,12 +136,13 @@ async function callAnalyzeSkin(base64: string, lados: string[], o: OnboardingDat
         'apikey': SUPABASE_ANON_KEY,
       },
       body: JSON.stringify({
+        idioma,
         imageBase64: base64,
         ...(lados.length ? { imagesBase64: [base64, ...lados.slice(0, 2)], scanLayout: 'turns_v1' } : {}),
         skinProfile: skinProfileOf(o),
         ...(ancora ? { analiseRapida: ancora } : {}),
       }),
-    });
+    }, 120_000);
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}));
       throw new Error(JSON.stringify(errBody));
@@ -346,6 +351,7 @@ export async function saveOnboardingProtocol({
   skinScanId,
   onSuccess,
   onFinally,
+  aoGravar,
 }: {
   scanResult: ScanResult;
   onboardingData: OnboardingData;
@@ -353,6 +359,8 @@ export async function saveOnboardingProtocol({
   skinScanId: string | null;
   onSuccess: (result: ProtocolResult) => void;
   onFinally: () => void;
+  /** Rotina gravada em `protocolos` (antes da recomendação). */
+  aoGravar?: () => unknown;
 }) {
   const key = protocolKeyOf(scanResult, onboardingData);
   let ready: ProtocolResult | null = null;
@@ -375,7 +383,7 @@ export async function saveOnboardingProtocol({
   if (!ready) {
     let gerada = null as ProtocolResult | null;
     const salvou = await generateAndSaveProtocol({
-      scanResult, onboardingData, skinScanId, userId, onFinally,
+      scanResult, onboardingData, skinScanId, userId, onFinally, aoGravar,
       onSuccess: (r) => { gerada = r; onSuccess(r); },
     });
     if (!salvou) {
@@ -386,7 +394,7 @@ export async function saveOnboardingProtocol({
   }
   try {
     onSuccess(ready);
-    await saveProtocol({ data: ready, userId, skinScanId });
+    await saveProtocol({ data: ready, userId, skinScanId, aoGravar });
   } catch (err) {
     console.error('[onboardingPrefetch] falha ao gravar a rotina pré-gerada:', err);
     guardar(ready);

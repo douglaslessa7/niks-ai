@@ -17,6 +17,7 @@ import { findInColecao, removeFromColecao } from './colecao';
 import { tipoPorTexto, normTexto, type TipoPasso } from './tipoPasso';
 import { avisoDoProduto, paraEstante, reordenarPassos, type Periodo } from './minhaRotina';
 import type { Aviso } from './avisoProduto';
+import { t, emIngles } from './i18n';
 
 // Leitura ENXUTA dos passos (sem as fotos assinadas da estante, que a tela usa e aqui
 // só atrasariam o toque): o bastante para achar a posição, o passo trocado e o aviso.
@@ -77,16 +78,20 @@ function posicao(lista: PassoLeve[], tipoNovo: TipoPasso | null, depoisId: strin
 
 /** O texto do aviso: "Adicionado à sua rotina da manhã, depois do sérum". */
 function textoAviso(tipo: string, periodos: Periodo[], depois: PassoLeve | null, trocado: PassoLeve | null): string {
-  const quando = periodos.length === 2 ? 'da manhã e da noite' : periodos[0] === 'am' ? 'da manhã' : 'da noite';
-  if (tipo === 'substituir' && trocado) return `Trocado na sua rotina ${quando}: ${nomeDoPasso(trocado)}`;
+  const quando = periodos.length === 2 ? t('da manhã e da noite') : periodos[0] === 'am' ? t('da manhã') : t('da noite');
+  if (tipo === 'substituir' && trocado) return t('Trocado na sua rotina {{quando}}: {{passo}}', { quando, passo: nomeDoPasso(trocado) });
   if (depois && periodos.length === 1) {
-    const t = tipoDela(depois);
-    const nome = t === 'serum' ? 'o sérum' : t === 'limpeza' ? 'a limpeza' : t === 'hidratante' ? 'o hidratante'
-      : t === 'tonico' ? 'o tônico' : t === 'protetor' ? 'o protetor' : nomeDoPasso(depois).toLowerCase();
-    const depoisDe = nome.startsWith('o ') ? `do ${nome.slice(2)}` : nome.startsWith('a ') ? `da ${nome.slice(2)}` : `de ${nome}`;
-    return `Adicionado à sua rotina ${quando}, depois ${depoisDe}`;
+    const tp = tipoDela(depois);
+    const nome = tp === 'serum' ? 'o sérum' : tp === 'limpeza' ? 'a limpeza' : tp === 'hidratante' ? 'o hidratante'
+      : tp === 'tonico' ? 'o tônico' : tp === 'protetor' ? 'o protetor' : nomeDoPasso(depois).toLowerCase();
+    // Inglês: "after your serum" (o português segue o "do sérum" / "da limpeza" de sempre).
+    const depoisDe = emIngles
+      ? (tp === 'serum' ? 'your serum' : tp === 'limpeza' ? 'your cleanser' : tp === 'hidratante' ? 'your moisturizer'
+        : tp === 'tonico' ? 'your toner' : tp === 'protetor' ? 'your sunscreen' : nomeDoPasso(depois).toLowerCase())
+      : nome.startsWith('o ') ? `do ${nome.slice(2)}` : nome.startsWith('a ') ? `da ${nome.slice(2)}` : `de ${nome}`;
+    return t('Adicionado à sua rotina {{quando}}, depois {{depoisDe}}', { quando, depoisDe });
   }
-  return `Adicionado à sua rotina ${quando}`;
+  return t('Adicionado à sua rotina {{quando}}', { quando });
 }
 
 /** Cria o passo já com o produto, na posição certa, e renumera o período. */

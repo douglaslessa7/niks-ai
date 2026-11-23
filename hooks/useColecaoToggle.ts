@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import { getUserId } from '../lib/currentUser';
 import { addToColecao, findInColecao, removeFromColecao } from '../lib/colecao';
 import { haptics } from '../lib/haptics';
+import { t } from '../lib/i18n';
 
 // Estado do botão "Tenho em casa" (Minha coleção) para UM produto — de um scan
 // (`productScanId` + dados do resultado) ou do catálogo (`produtoId`). `owned` começa
@@ -60,8 +61,8 @@ export function useColecaoToggle(src: Source | null, onChange?: () => void) {
       haptics.error();
       // Antes a falha era silenciosa (só vibrava) e o produto simplesmente não aparecia.
       Alert.alert(
-        owned ? 'Não deu pra remover da sua estante' : 'Não deu pra adicionar à sua estante',
-        'Tente de novo em instantes.',
+        owned ? t('Não deu pra remover da sua estante') : t('Não deu pra adicionar à sua estante'),
+        t('Tente de novo em instantes.'),
       );
     } finally {
       setBusy(false);

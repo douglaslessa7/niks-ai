@@ -12,6 +12,7 @@
 // Teto: 1 lote por dia (fuso de Brasília); lote com erro não conta.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
+import { idioma } from './i18n';
 import { getScanCutouts } from './scanCutouts';
 
 export type StatusLote = 'processando' | 'pronto' | 'erro';
@@ -31,13 +32,19 @@ export type ProdutoResultado = {
   avisos: string[];
   uso: { diario: boolean; dias: string[] | null } | null;
   colecao_item_id?: string | null;
+  /** Motor novo (19/nov/2026): a lista de ingredientes dele foi achada (tabela/busca). */
+  lista_ingredientes?: boolean;
 };
 export type PassoResultado = { produto_indice: number; passo: string; instrucao: string; dias: string[] | null };
+/** Produto do catálogo sugerido para um passo que nenhum produto dela cobriu (motor novo). */
+export type ProdutoSugerido = { id: string; marca: string; nome: string; categoria: string; imagem_url?: string | null };
 export type ResultadoLote = {
+  /** 'v2' = lote do motor novo (a IA só identifica, o código decide). */
+  motor?: 'v2';
   produtos: ProdutoResultado[];
   rotina: { am: PassoResultado[]; pm: PassoResultado[] };
   fora_da_rotina: { produto_indice: number; motivo: string }[];
-  faltam: { passo_ideal: string; periodo: 'am' | 'pm'; por_que: string }[];
+  faltam: { passo_ideal: string; periodo: 'am' | 'pm'; por_que: string; produto?: ProdutoSugerido | null }[];
   cobre_tudo: boolean;
 };
 
@@ -93,7 +100,7 @@ export class TetoDoDiaError extends Error {}
 /** Começa a montagem no servidor. Devolve o código do lote. */
 export async function iniciarLote(caminhos: string[], temRotulo: boolean[]): Promise<string> {
   const { data, error } = await supabase.functions.invoke('montar-rotina-com-produtos', {
-    body: { caminhos, tem_rotulo: temRotulo },
+    body: { caminhos, tem_rotulo: temRotulo, idioma },
   });
   if (error) {
     const status = (error as any)?.context?.status;

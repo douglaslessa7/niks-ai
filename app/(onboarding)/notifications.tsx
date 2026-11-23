@@ -10,6 +10,7 @@ import { routineReminderContent } from '../../lib/routineReminders';
 import { getUserId } from '../../lib/currentUser';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t, emIngles } from '../../lib/i18n';
 import {
   OB, OB_STEPS, ObScreen, ObHeader, ObPillButton, NIKS_LOGO,
   useObFrame, obStep, useOnMount,
@@ -49,6 +50,14 @@ const STEP_NAME = 'Notificações';
 function hourLabel(hhmm: string) {
   const [h, m] = hhmm.split(':');
   return `${Number(h)}h${m === '00' ? '' : m}`;
+}
+
+/** Inglês: '21:00' → '9 PM' · '07:30' → '7:30 AM'. */
+function hourLabelEn(hhmm: string) {
+  const [h, m] = hhmm.split(':');
+  const hora = Number(h);
+  const h12 = hora % 12 === 0 ? 12 : hora % 12;
+  return `${h12}${m === '00' ? '' : `:${m}`} ${hora < 12 ? 'AM' : 'PM'}`;
 }
 
 /** A próxima rotina a partir de agora, com os horários escolhidos na tela anterior. */
@@ -183,7 +192,7 @@ export default function Notifications() {
             <Image source={NIKS_LOGO} style={{ width: 15, height: 15, tintColor: '#FFFFFF' }} />
           </View>
           <Text style={{ fontSize: 13, fontWeight: '500', letterSpacing: 0.3, color: OB.sub }}>NIKS</Text>
-          <Text style={{ marginLeft: 'auto', fontSize: 13, color: '#B3ADAF' }}>agora</Text>
+          <Text style={{ marginLeft: 'auto', fontSize: 13, color: '#B3ADAF' }}>{t('agora')}</Text>
         </View>
         <View style={{ gap: 2 }}>
           <Text style={{ fontSize: 15, lineHeight: 20, fontWeight: '600', color: OB.ink }}>{lembrete.title}</Text>
@@ -195,13 +204,15 @@ export default function Notifications() {
         position: 'absolute', left: 17, right: 17, top: y(428), textAlign: 'center',
         fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.4, color: OB.ink,
       }}>
-        {`Sua próxima rotina é\n${proxima.dia} às ${hourLabel(proxima.hora)}`}
+        {proxima.dia === 'hoje'
+          ? t('Sua próxima rotina é\nhoje às {{hora}}', { hora: emIngles ? hourLabelEn(proxima.hora) : hourLabel(proxima.hora) })
+          : t('Sua próxima rotina é\namanhã às {{hora}}', { hora: emIngles ? hourLabelEn(proxima.hora) : hourLabel(proxima.hora) })}
       </Text>
       <Text style={{
         position: 'absolute', left: 28, right: 28, top: y(514), textAlign: 'center',
         fontSize: 17, lineHeight: 25, fontWeight: '400', color: OB.sub,
       }}>
-        Quer que a NIKS te lembre quando for a hora de fazer seu skincare? Toque em "Continuar" e depois em "Permitir" que ela nunca vai deixar você esquecer.
+        {t('Quer que a NIKS te lembre quando for a hora de fazer seu skincare? Toque em "Continuar" e depois em "Permitir" que ela nunca vai deixar você esquecer.')}
       </Text>
 
       {/* Voltar para o horário da rotina (agora a tela vem antes da conta). */}

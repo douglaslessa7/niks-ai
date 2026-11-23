@@ -12,22 +12,16 @@ import { useEffect, useRef } from 'react';
 import { ShieldCheck } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 import { PRIVACY_URL } from '../../lib/linksLegais';
+import { t } from '../../lib/i18n';
 
 // FONTE ÚNICA do texto legal do consentimento de IA. (Desde 03/nov/2026 a folha do
 // onboarding, `components/onboarding/ConsentSheet.tsx`, mostra o texto da "Seus dados".)
 // Desde 09/nov/2026 o texto nomeia os fornecedores de IA, como a Política de Privacidade (seção 5).
 // Trocou de fornecedor? Atualize este texto, a Política e a declaração à Apple.
-export const CONSENT_BODY =
-  'Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e ' +
-  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros (OpenAI, Anthropic e Google). ' +
-  'Esses dados são usados exclusivamente para produzir o seu resultado.';
+export const CONSENT_BODY = t('Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e preocupações do onboarding por meio de serviços de inteligência artificial de parceiros (OpenAI, Anthropic e Google). Esses dados são usados exclusivamente para produzir o seu resultado.');
 // SOS espinha (nov/2026): a foto e a análise ficam guardadas junto da conversa de acompanhamento.
-export const CONSENT_SOS_BODY =
-  'Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e ' +
-  'preocupações do onboarding por meio de serviços de inteligência artificial de parceiros (OpenAI, Anthropic e Google). ' +
-  'Esses dados são usados para produzir o seu resultado. No SOS espinha, a foto e a análise ' +
-  'ficam guardadas junto da conversa para acompanhar a sua evolução, até você apagar a sua conta.';
-export const CONSENT_AUTH_PREFIX = 'Ao continuar, você autoriza esse processamento conforme nossa ';
+export const CONSENT_SOS_BODY = t('Para gerar sua análise, o NIKS processa a foto capturada, seu perfil de pele e preocupações do onboarding por meio de serviços de inteligência artificial de parceiros (OpenAI, Anthropic e Google). Esses dados são usados para produzir o seu resultado. No SOS espinha, a foto e a análise ficam guardadas junto da conversa para acompanhar a sua evolução, até você apagar a sua conta.');
+export const CONSENT_AUTH_PREFIX = t('Ao continuar, você autoriza esse processamento conforme nossa ');
 
 interface AIConsentModalProps {
   visible: boolean;
@@ -78,7 +72,7 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
         </View>
 
         {/* Título */}
-        <Text style={styles.title}>Antes de continuar</Text>
+        <Text style={styles.title}>{t('Antes de continuar')}</Text>
 
         {/* Parágrafo principal */}
         <Text style={styles.body}>{body}</Text>
@@ -93,7 +87,7 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
               Linking.openURL(PRIVACY_URL);
             }}
           >
-            Política de Privacidade
+            {t('Política de Privacidade')}
           </Text>
           .
         </Text>
@@ -107,7 +101,7 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
           }}
           activeOpacity={0.85}
         >
-          <Text style={styles.btnPrimaryText}>Continuar</Text>
+          <Text style={styles.btnPrimaryText}>{t('Continuar')}</Text>
         </TouchableOpacity>
 
         {/* Botão Cancelar */}
@@ -119,7 +113,7 @@ export function AIConsentModal({ visible, onAccept, onDecline, presentation = 'm
           }}
           activeOpacity={0.7}
         >
-          <Text style={styles.btnSecondaryText}>Cancelar</Text>
+          <Text style={styles.btnSecondaryText}>{t('Cancelar')}</Text>
         </TouchableOpacity>
       </Animated.View>
     </>

@@ -18,6 +18,7 @@
 // nesse caso, tirar a `foto` (volta a inicial).
 
 import type { ImageSourcePropType } from 'react-native';
+import { t } from '../../lib/i18n';
 
 export type Depoimento = {
   nome: string;
@@ -34,18 +35,18 @@ export const DEPOIMENTOS: Depoimento[] = [
     nome: 'Camila Ribeiro',
     estrelas: 5,
     foto: require('../../assets/onboarding/depoimentos/camila.jpg'),
-    texto: 'Fiz a primeira análise sem esperar muito e me surpreendi. Em duas semanas seguindo a rotina, meu Skin Score subiu e a oleosidade diminuiu.',
+    texto: t('Fiz a primeira análise sem esperar muito e me surpreendi. Em duas semanas seguindo a rotina, meu Skin Score subiu e a oleosidade diminuiu.'),
   },
   {
     nome: 'Julia Santana',
     estrelas: 5,
     foto: require('../../assets/onboarding/depoimentos/julia.jpg'),
-    texto: 'O scanner de produto me salvou de comprar um sérum que não combinava com a minha pele. Agora eu checo tudo antes de ir na farmácia.',
+    texto: t('O scanner de produto me salvou de comprar um sérum que não combinava com a minha pele. Agora eu checo tudo antes de ir na farmácia.'),
   },
   {
     nome: 'Maria Clara',
     estrelas: 5,
     foto: require('../../assets/onboarding/depoimentos/maria-clara.jpg'),
-    texto: 'Gosto de ver a evolução da pele semana a semana. Dá vontade de manter a rotina porque eu vejo o resultado no próprio app.',
+    texto: t('Gosto de ver a evolução da pele semana a semana. Dá vontade de manter a rotina porque eu vejo o resultado no próprio app.'),
   },
 ];

@@ -26,6 +26,7 @@ import StepIcon from '../../components/rotina/StepIcon';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { encerrarGuia, irParaGuia, useGuia } from '../../lib/guia';
 import { voltar as voltarOu } from '../../lib/navegar';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Skincare (05/nov/2026, pedido do produto) — o que abre o "Iniciar skincare" da HOME, no
@@ -240,7 +241,7 @@ export default function Skincare() {
     });
   };
 
-  const titulo = periodo === 'am' ? 'Skincare matinal' : 'Skincare noturno';
+  const titulo = periodo === 'am' ? t('Skincare matinal') : t('Skincare noturno');
   return (
     <View style={{ flex: 1 }}>
     <View style={styles.root}>
@@ -249,7 +250,7 @@ export default function Skincare() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: insets.bottom + 140 }}>
         <View style={styles.hdrRow}>
-          <TouchableOpacity activeOpacity={0.85} onPress={voltar} style={styles.circleBtn} accessibilityLabel="Voltar">
+          <TouchableOpacity activeOpacity={0.85} onPress={voltar} style={styles.circleBtn} accessibilityLabel={t('Voltar')}>
             <Svg width={18} height={18} viewBox="0 0 24 24">
               <Path d="m15 18-6-6 6-6" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
@@ -290,7 +291,7 @@ export default function Skincare() {
             accessibilityState={{ disabled: !pode }}
             style={[styles.heroBtn, !pode && { opacity: 0.4 }]}
           >
-            <Text style={styles.heroBtnText}>Iniciar skincare</Text>
+            <Text style={styles.heroBtnText}>{t('Iniciar skincare')}</Text>
           </TouchableOpacity>
         </AlvoGuia>
       </View>

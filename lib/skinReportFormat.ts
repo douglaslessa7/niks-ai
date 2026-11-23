@@ -2,6 +2,7 @@
 // (resultado do onboarding `(scan)/resultado-scan`, resultado do app
 // `(app)/skin-result` e o relatório antigo `(scan)/results`). FONTE ÚNICA — antes
 // cada tela tinha a sua cópia.
+import { t, emIngles } from './i18n';
 
 export const formatPriority = (text: string | null | undefined): string => {
   if (!text) return '';
@@ -21,34 +22,35 @@ export const formatContraindication = (value: string): string => {
     produtos_com_alta_fragrancia: 'Produtos com fragrância',
     sabonetes_com_sulfatos_fortes: 'Sabonetes com sulfatos fortes',
   };
-  return map[value] ?? value.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return map[value] ? t(map[value]) : value.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 };
 
 export const barrierLabel = (status?: string): string => {
   switch (status) {
-    case 'integra': return 'Íntegra';
-    case 'levemente_comprometida': return 'Atenção';
-    case 'comprometida': return 'Comprometida';
-    case 'severamente_comprometida': return 'Crítica';
+    case 'integra': return t('Íntegra');
+    // "Atenção" aqui é o estado da barreira (em inglês, "Needs care"), não o título de alerta.
+    case 'levemente_comprometida': return emIngles ? 'Needs care' : 'Atenção';
+    case 'comprometida': return t('Comprometida');
+    case 'severamente_comprometida': return t('Crítica');
     default: return status ?? '—';
   }
 };
 
 export const hydrationLabel = (h?: string): string => {
   switch (h) {
-    case 'desidratada': return 'Desidratada';
-    case 'normal': return 'Normal';
-    case 'hidratada': return 'Boa';
+    case 'desidratada': return t('Desidratada');
+    case 'normal': return t('Normal');
+    case 'hidratada': return t('Boa');
     default: return h ?? '—';
   }
 };
 
 export const sebaceoLabel = (i?: string): string => {
   switch (i) {
-    case 'nenhum': return 'Nenhuma';
-    case 'leve': return 'Leve';
-    case 'moderado': return 'Moderada';
-    case 'intenso': return 'Intensa';
+    case 'nenhum': return t('Nenhuma');
+    case 'leve': return t('Leve');
+    case 'moderado': return t('Moderada');
+    case 'intenso': return t('Intensa');
     default: return i ?? '—';
   }
 };

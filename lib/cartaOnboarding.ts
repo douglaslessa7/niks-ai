@@ -1,4 +1,5 @@
 import { escolherPontoForte, escolherProblema, NOME_PROBLEMA, NOME_REGIAO, type AnaliseRapida, type ProblemaId, type RegiaoId } from './analiseRapida';
+import { t } from './i18n';
 
 // A carta da chegada no onboarding (`(carta)/carta.tsx?modo=onboarding`), a tela "Seu
 // caminho" que vem depois dela (`(scan)/seu-caminho.tsx`) e a tela final
@@ -24,12 +25,22 @@ export const CARTA_IDADE_NO_ONBOARDING = false;
 // ⚠️ PROVISÓRIO — NÃO PODE IR AO AR. O 40% é fixo só para teste (06/nov/2026); antes de publicar,
 // trocar pela comparação real com as usuárias ou tirar o número (ver README, "Análise de pele só
 // depois da compra").
-export const CARTA_ALERTA: { numero: number; real: boolean } = { numero: 40, real: false };
+// 23/nov/2026 (decisão do produto): SEM número na tela. A carta diz "Seu scan mostrou [problema]
+// acima do ideal para a sua pele." `numero` 0 só marca a carta como revelada (nada é exibido).
+export const CARTA_ALERTA: { numero: number; real: boolean } = { numero: 0, real: false };
 
 /** A Carta 1, notícia boa: "Você tem menos [problema] do que 30% das usuárias."
  *  ⚠️ PROVISÓRIO — NÃO PODE IR AO AR. O 30% é fixo só para teste (06/nov/2026, pedido do
  *  produto); não vem de dado nenhum. Antes de publicar, trocar pelo número real ou tirar. */
-export const CARTA_PONTO_FORTE: { numero: number } = { numero: 30 };
+// 23/nov/2026: SEM número. A carta diz "[ponto forte] é um dos pontos fortes da sua pele."
+export const CARTA_PONTO_FORTE: { numero: number } = { numero: 0 };
+
+/** O problema que ela quase não tem, dito como qualidade ("Tom uniforme", não "manchas"). */
+const PONTO_FORTE_NOME: Record<ProblemaId, string> = {
+  acne: 'Pele livre de acne', manchas: 'Tom uniforme', cravos: 'Poros limpos', oleosidade: 'Oleosidade equilibrada',
+  rugas: 'Pele firme', poros: 'Poros discretos', olheiras: 'Olhar descansado', ressecamento: 'Pele hidratada',
+  textura: 'Textura lisa',
+};
 
 /** A Carta 1 (o ponto forte). null = pular a Carta 1 (nenhum problema não marcado com
  *  intensidade 0 ou 1, ou a análise não avaliou os outros problemas). Nunca é um problema
@@ -41,7 +52,7 @@ export function pontoForteDoOnboarding(
 ): PontoForteOnboarding | null {
   const alerta = escolherProblema(rapida, o.concerns);
   const p = escolherPontoForte(rapida, o.concerns, alerta?.problema ?? null);
-  return p ? { problema: p.problema, nome: NOME_PROBLEMA[p.problema], numero: CARTA_PONTO_FORTE.numero } : null;
+  return p ? { problema: p.problema, nome: t(PONTO_FORTE_NOME[p.problema] ?? NOME_PROBLEMA[p.problema]), numero: CARTA_PONTO_FORTE.numero } : null;
 }
 
 /** Versão SEM número, pronta e DESLIGADA (06/nov/2026, pedido do produto, "para trocar em
@@ -75,9 +86,9 @@ export function cartaDoOnboarding(
   return {
     tipo: 'comparacao',
     problema: p.problema,
-    nome: NOME_PROBLEMA[p.problema],
+    nome: t(NOME_PROBLEMA[p.problema]),
     regiao: p.regiao,
-    regiaoTexto: p.regiao ? NOME_REGIAO[p.regiao] : null,
+    regiaoTexto: p.regiao ? t(NOME_REGIAO[p.regiao]) : null,
     numero: CARTA_ALERTA.numero,
     real: CARTA_ALERTA.real,
     semNumero: CARTA_ALERTA_SEM_NUMERO,
@@ -96,15 +107,15 @@ export type CaminhoOnboarding = {
 };
 
 // "3 semanas" com espaço que não quebra: o "3" nunca fica sozinho no fim de uma linha.
-const META_LINHA = 'sua meta em 3 semanas.';
-const SEMANA_1: PassoCaminho = { titulo: 'Semana 1: rotina montada', sub: 'focada no que sua pele precisa' };
-const SEMANA_2: PassoCaminho = { titulo: 'Semana 2: produtos certos', sub: 'compatibilidade antes de comprar' };
+const META_LINHA = t('sua meta em 3 semanas.');
+const SEMANA_1: PassoCaminho = { titulo: t('Semana 1: rotina montada'), sub: t('focada no que sua pele precisa') };
+const SEMANA_2: PassoCaminho = { titulo: t('Semana 2: produtos certos'), sub: t('compatibilidade antes de comprar') };
 
 function semNumero(problema: string): CaminhoOnboarding {
   return {
-    titulo: [`Menos sinais de ${problema}:`, META_LINHA],
-    pontos: [{ titulo: `Hoje: sinais de ${problema}`, sub: 'foi o que sua análise mostrou' }, SEMANA_1, SEMANA_2],
-    final: { titulo: 'Semana 3', sub: `Sua meta: menos sinais de ${problema}` },
+    titulo: [t('Menos sinais de {{problema}}:', { problema }), META_LINHA],
+    pontos: [{ titulo: t('Hoje: sinais de {{problema}}', { problema }), sub: t('foi o que sua análise mostrou') }, SEMANA_1, SEMANA_2],
+    final: { titulo: t('Semana 3'), sub: t('Sua meta: menos sinais de {{problema}}', { problema }) },
   };
 }
 
@@ -116,20 +127,20 @@ export function caminhoDaCarta(c: CartaOnboarding): CaminhoOnboarding {
     const { idadePele: pele, idadeReal: real } = c;
     if (real != null && pele > real) {
       return {
-        titulo: [`De ${pele} para ${real} anos de pele:`, META_LINHA],
-        pontos: [{ titulo: `Hoje: pele de ${pele} anos`, sub: 'foi o que sua análise mostrou' }, SEMANA_1, SEMANA_2],
-        final: { titulo: 'Semana 3', sub: `Sua meta: ${real} anos` },
+        titulo: [t('De {{pele}} para {{real}} anos de pele:', { pele, real }), META_LINHA],
+        pontos: [{ titulo: t('Hoje: pele de {{pele}} anos', { pele }), sub: t('foi o que sua análise mostrou') }, SEMANA_1, SEMANA_2],
+        final: { titulo: t('Semana 3'), sub: t('Sua meta: {{real}} anos', { real }) },
       };
     }
     // Pele com a MESMA idade dela (ou idade não informada): não há de onde para onde ir.
     // ⚠️ Problema "envelhecimento" provisório, a confirmar com o produto.
-    return semNumero('envelhecimento');
+    return semNumero(t('envelhecimento'));
   }
   if (c.real && !c.semNumero) {
     return {
-      titulo: [`De ${c.numero}% para 0% acima da média:`, META_LINHA],
-      pontos: [{ titulo: `Hoje: ${c.numero}% mais ${c.nome}`, sub: 'que a média da sua idade' }, SEMANA_1, SEMANA_2],
-      final: { titulo: 'Semana 3', sub: 'Sua meta: 0% acima da média' },
+      titulo: [t('De {{numero}}% para 0% acima da média:', { numero: c.numero }), META_LINHA],
+      pontos: [{ titulo: t('Hoje: {{numero}}% mais {{nome}}', { numero: c.numero, nome: c.nome }), sub: t('que a média da sua idade') }, SEMANA_1, SEMANA_2],
+      final: { titulo: t('Semana 3'), sub: t('Sua meta: 0% acima da média') },
     };
   }
   return semNumero(c.nome);

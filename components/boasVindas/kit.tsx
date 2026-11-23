@@ -22,6 +22,7 @@ import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { lerCompraNestaSessao } from '../../lib/sinalCompra';
 import { supabase } from '../../lib/supabase';
 import { escolherProblema, NOME_PROBLEMA, type ProblemaId } from '../../lib/analiseRapida';
+import { t, emIngles } from '../../lib/i18n';
 
 export const BV = {
   pink: '#FF5EA8',
@@ -213,18 +214,23 @@ export function BvCheck({ size = 18 }: { size?: number }) {
 // Todas as telas falam em 4 semanas / 30 dias. Não deixar sobrar "12 semanas", "84 dias".
 export const SEMANAS_ROTINA = 4;
 export const DIAS_ROTINA = 30;
-/** ⚠️ PROVISÓRIO — o resultado prometido: −40% da dor principal. Não vem de dado nenhum. */
-export const REDUCAO_DOR_PCT = 40;
+// 23/nov/2026 (decisão do produto): SEM porcentagem prometida. O resultado é dito como
+// "Menos [dor]" e "Semana 4 · meta: [dor] sob controle"; a Projeção só mostra o gráfico.
+// Inglês: "fewer" com o que se conta (blackheads, wrinkles…), "less" com o resto (acne,
+// oiliness…). Em português é sempre "Menos" (a chave com contexto cai em "Menos").
+const CONTAVEIS_EN = new Set(['dark spots', 'blackheads', 'wrinkles', 'large pores', 'dark circles']);
+export const menosDe = (dorNome: string) => t('Menos', CONTAVEIS_EN.has(dorNome) ? { context: 'contavel' } : undefined);
 
 /** A DOR PRINCIPAL das boas-vindas = o mesmo incômodo da carta de alerta do onboarding
  *  (`escolherProblema`: o mais forte na foto entre os que ela marcou; nenhum aparece → o 1º
- *  marcado). `nome` é o da frase da carta ("acne", "poros dilatados"…). */
+ *  marcado). `nome` é o da frase da carta ("acne", "poros dilatados"…), já na língua da tela
+ *  (`t()`): só para exibir — o que é gravado/medido é `problema`. */
 export function useDorPrincipal(): { problema: ProblemaId; nome: string; intensidade: 0 | 1 | 2 | 3 } {
   const r = useAppStore((s) => s.analiseRapida);
   const concerns = useAppStore((s) => s.onboarding.concerns);
   const p = escolherProblema(r, concerns);
-  if (!p) return { problema: 'acne', nome: NOME_PROBLEMA.acne, intensidade: 0 };
-  return { problema: p.problema, nome: NOME_PROBLEMA[p.problema], intensidade: p.intensidade };
+  if (!p) return { problema: 'acne', nome: t(NOME_PROBLEMA.acne), intensidade: 0 };
+  return { problema: p.problema, nome: t(NOME_PROBLEMA[p.problema]), intensidade: p.intensidade };
 }
 
 // ── Datas (pt-BR) ────────────────────────────────────────────────────────────
@@ -237,9 +243,19 @@ export function dataMeta(hoje = new Date()): Date {
   d.setDate(d.getDate() + DIAS_ROTINA);
   return d;
 }
+// Inglês (EUA): mês antes do dia — "January 30", "Jan 30", "SUN, NOV 8".
+const MESES_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DIAS_EN = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
 /** "30 de janeiro". */
-export const diaMesLongo = (d: Date) => `${d.getDate()} de ${MESES[d.getMonth()]}`;
+export const diaMesLongo = (d: Date) => emIngles
+  ? `${MESES_EN[d.getMonth()]} ${d.getDate()}`
+  : `${d.getDate()} de ${MESES[d.getMonth()]}`;
 /** "30 jan". */
-export const diaMesCurto = (d: Date) => `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
+export const diaMesCurto = (d: Date) => emIngles
+  ? `${MESES_EN[d.getMonth()].slice(0, 3)} ${d.getDate()}`
+  : `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)}`;
 /** "DOM, 8 NOV". */
-export const diaSemanaCurto = (d: Date) => `${DIAS[d.getDay()]}, ${d.getDate()} ${MESES[d.getMonth()].slice(0, 3).toUpperCase()}`;
+export const diaSemanaCurto = (d: Date) => emIngles
+  ? `${DIAS_EN[d.getDay()]}, ${MESES_EN[d.getMonth()].slice(0, 3).toUpperCase()} ${d.getDate()}`
+  : `${DIAS[d.getDay()]}, ${d.getDate()} ${MESES[d.getMonth()].slice(0, 3).toUpperCase()}`;

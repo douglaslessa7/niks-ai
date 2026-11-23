@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { t } from '../../lib/i18n';
 import { useFonts } from 'expo-font';
 import {
   Nunito_800ExtraBold,
@@ -95,7 +96,7 @@ export default function NameCapture({
       onSaved(trimmed);
     } catch (e) {
       console.warn('[NameCapture] Erro ao salvar nome:', e);
-      Alert.alert('Erro ao salvar', 'Não conseguimos salvar seu nome. Verifique sua conexão e tente novamente.');
+      Alert.alert(t('Erro ao salvar'), t('Não conseguimos salvar seu nome. Verifique sua conexão e tente novamente.'));
     } finally {
       setLoading(false);
     }
@@ -115,17 +116,17 @@ export default function NameCapture({
             {/* Title block */}
             <View style={{ paddingTop: 34, paddingHorizontal: 28 }}>
               <Text style={{ fontFamily: fSemi, fontSize: 10, fontWeight: '600', color: CORAL_DEEP, letterSpacing: 2.4, textTransform: 'uppercase', marginBottom: 14 }}>
-                sobre você
+                {t('sobre você')}
               </Text>
               <Text style={{ fontFamily: fXBold, fontSize: 30, fontWeight: '800', color: DEEP, letterSpacing: -0.85, lineHeight: 33.6 }}>
-                {'Como você quer ser '}
+                {t('Como você quer ser ')}
                 <Text style={{ fontFamily: fXBold, fontWeight: '800', color: CORAL, letterSpacing: -1 }}>
-                  chamada
+                  {t('chamada')}
                 </Text>
                 {'?'}
               </Text>
               <Text style={{ fontFamily: fReg, marginTop: 14, fontSize: 14.5, lineHeight: 21.75, color: DEEP_SOFT, letterSpacing: -0.1 }}>
-                Esse é o nome que aparecerá na tela inicial do app.
+                {t('Esse é o nome que aparecerá na tela inicial do app.')}
               </Text>
             </View>
 
@@ -146,7 +147,7 @@ export default function NameCapture({
                 <TextInput
                   value={nome}
                   onChangeText={setNome}
-                  placeholder="Escreva seu nome"
+                  placeholder={t('Escreva seu nome')}
                   placeholderTextColor="rgba(18,18,18,0.30)"
                   autoCapitalize="words"
                   autoCorrect={false}
@@ -186,7 +187,7 @@ export default function NameCapture({
               >
                 {loading
                   ? <ActivityIndicator color="#FFFFFF" />
-                  : <Text style={{ fontFamily: fSemi, fontSize: 17, fontWeight: '600', color: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)', letterSpacing: -0.2 }}>Continuar</Text>
+                  : <Text style={{ fontFamily: fSemi, fontSize: 17, fontWeight: '600', color: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)', letterSpacing: -0.2 }}>{t('Continuar')}</Text>
                 }
               </TouchableOpacity>
             </View>

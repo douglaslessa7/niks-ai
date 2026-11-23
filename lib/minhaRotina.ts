@@ -13,8 +13,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { t } from './i18n';
 import { normStepKey } from './savedProducts';
-import { listColecao, findInColecao, addToColecao, STATUS_COLECAO, type ColecaoStatus } from './colecao';
+import { listColecao, findInColecao, addToColecao, type ColecaoStatus } from './colecao';
 import { getUserId } from './currentUser';
 import { listarEscaneados } from './escaneados';
 import { avaliarProduto, codigoTipoPele, type Aviso, type NivelAviso, type PeleParaAviso } from './avisoProduto';
@@ -40,10 +41,8 @@ export type ProdutoDoPasso = {
   catalogoId?: string | null;
 };
 
-/** Texto que vem antes do produto no passo quando ela não o tem agora ("Acabou · "). */
-// A rotina em cache de antes do status vem sem o campo: sem status, sem prefixo.
-export const prefixoStatusProduto = (p: Pick<ProdutoDoPasso, 'status'>): string =>
-  (!p.status || p.status === 'tenho' ? '' : `${STATUS_COLECAO[p.status].rotulo} · `);
+// 16/nov/2026: o status do produto não vai mais colado no nome ("Quero comprar · …"); a
+// Rotina mostra a tag `components/rotina/TagStatusProduto`.
 
 export type PassoRotina = {
   id: string;
@@ -391,5 +390,5 @@ export async function atualizarPasso(id: string, campos: { nome?: string | null;
 
 /** Nome para mostrar um passo onde só cabe um nome: o do passo; sem ele, o do produto. */
 export function nomeDoPasso(p: Pick<PassoRotina, 'nome' | 'produto'>): string {
-  return p.nome?.trim() || p.produto?.nome?.trim() || 'Passo';
+  return p.nome?.trim() || p.produto?.nome?.trim() || t('Passo');
 }

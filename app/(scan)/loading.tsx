@@ -11,6 +11,7 @@ import {
   OB, OB_STEPS, ObScreen, ObCheck, useObFrame, useObName, obStep,
 } from '../../components/onboarding/kit';
 import { answerChips } from '../../components/onboarding/answers';
+import { t } from '../../lib/i18n';
 import { awaitSkinReport, ensureSkinPreview } from '../../lib/onboardingPrefetch';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -33,7 +34,7 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const FINISH_MS = 2500;
 
 // Frase de baixo: troca a cada 25% (texto do design).
-const PHASES = ['Analisando sua pele…', 'Cruzando com suas respostas…', 'Escolhendo os ativos certos…', 'Montando sua rotina…'];
+const PHASES = [t('Analisando sua pele…'), t('Cruzando com suas respostas…'), t('Escolhendo os ativos certos…'), t('Montando sua rotina…')];
 
 const RING = 112;
 const RING_STROKE = 8;
@@ -260,7 +261,7 @@ export default function Loading() {
             position: 'absolute', left: 17, right: 17, top: y(420), textAlign: 'center',
             fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink,
           }}>
-            {name ? `Criando uma rotina só sua, ${name}` : 'Criando uma rotina só sua'}
+            {name ? t('Criando uma rotina só sua, {{nome}}', { nome: name }) : t('Criando uma rotina só sua')}
           </Text>
 
           {/* Anel de 112 pt */}
@@ -303,15 +304,15 @@ export default function Loading() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
-                    Estamos com alta demanda agora
+                    {t('Estamos com alta demanda agora')}
                   </Text>
                   {countdownPaused ? (
                     <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF', lineHeight: 18 }}>
-                      Por favor, aguarde só mais um pouco.
+                      {t('Por favor, aguarde só mais um pouco.')}
                     </Text>
                   ) : (
                     <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF', lineHeight: 18 }}>
-                      A rotina de skincare perfeita para sua pele está sendo finalizada. Por favor, aguarde só mais{' '}
+                      {t('A rotina de skincare perfeita para sua pele está sendo finalizada. Por favor, aguarde só mais')}{' '}
                       <Text style={{ fontWeight: '700' }}>{countdown}s</Text>.
                     </Text>
                   )}
@@ -338,19 +339,19 @@ export default function Loading() {
               </Svg>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 }}>
-                  Não conseguimos analisar sua pele
+                  {t('Não conseguimos analisar sua pele')}
                 </Text>
                 <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF', lineHeight: 18 }}>
-                  Estamos com alta demanda no momento. Tente novamente em instantes.
+                  {t('Estamos com alta demanda no momento. Tente novamente em instantes.')}
                 </Text>
               </View>
             </View>
 
             <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink, textAlign: 'center', marginBottom: 11 }}>
-              Algo deu errado por aqui...
+              {t('Algo deu errado por aqui...')}
             </Text>
             <Text style={{ fontSize: 17, lineHeight: 23, color: OB.sub, textAlign: 'center', marginBottom: 32 }}>
-              Tire uma nova foto para tentar novamente
+              {t('Tire uma nova foto para tentar novamente')}
             </Text>
 
             <TouchableOpacity
@@ -365,7 +366,7 @@ export default function Loading() {
                 shadowColor: OB.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 8,
               }}
             >
-              <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>Tentar novamente</Text>
+              <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>{t('Tentar novamente')}</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>

@@ -26,6 +26,7 @@ import { useCachedQuery, invalidateCache, writeCache, peekCache } from './cache'
 import { getUserId, useUserId } from './currentUser';
 import { trackFora } from './mixpanel/MixpanelProvider';
 import { ajustarMedalhas } from './niveis';
+import { t, emIngles, horaEn, MESES_CURTOS_EN } from './i18n';
 
 const FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/cartas`;
 const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -403,57 +404,58 @@ export async function vezesRaspada(cartaId: string, excetoId: string): Promise<n
 
 // ── Poderes: textos e ícones do design (79a–79d, 79k) ───────────────────────
 export const PODER_INFO: Record<string, { nome: string; efeito: string; icone: string }> = {
-  sequencia_dobro: { nome: 'Sequência em dobro', efeito: 'Nos próximos 2 dias, cada dia vale +2', icone: 'M13 2 3 14h9l-1 8 10-12h-9l1-8z' },
-  protecao_sequencia: { nome: 'Proteção de sequência', efeito: 'Se você falhar 1 dia, sua sequência não zera', icone: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z' },
-  carta_extra: { nome: 'Carta extra', efeito: 'Amanhã você ganha 1 carta a mais', icone: 'M12 5v14M5 12h14' },
-  scan_antecipado: { nome: 'Scan antecipado', efeito: 'Seu próximo scan já está liberado', icone: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8 12h8' },
-  pontos_dobro: { nome: 'Pontos em dobro', efeito: 'Por 2 dias, todos os seus pontos valem o dobro', icone: 'M12 3l2.3 6.2L21 9.6l-5.2 4.3L17.6 21 12 17.3 6.4 21l1.8-7.1L3 9.6l6.7-.4z' },
+  sequencia_dobro: { nome: t('Sequência em dobro'), efeito: t('Nos próximos 2 dias, cada dia vale +2'), icone: 'M13 2 3 14h9l-1 8 10-12h-9l1-8z' },
+  protecao_sequencia: { nome: t('Proteção de sequência'), efeito: t('Se você falhar 1 dia, sua sequência não zera'), icone: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z' },
+  carta_extra: { nome: t('Carta extra'), efeito: t('Amanhã você ganha 1 carta a mais'), icone: 'M12 5v14M5 12h14' },
+  scan_antecipado: { nome: t('Scan antecipado'), efeito: t('Seu próximo scan já está liberado'), icone: 'M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M8 12h8' },
+  pontos_dobro: { nome: t('Pontos em dobro'), efeito: t('Por 2 dias, todos os seus pontos valem o dobro'), icone: 'M12 3l2.3 6.2L21 9.6l-5.2 4.3L17.6 21 12 17.3 6.4 21l1.8-7.1L3 9.6l6.7-.4z' },
 };
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-/** 'AAAA-MM-DD' (ou ISO) → '14 nov'. */
+/** 'AAAA-MM-DD' (ou ISO) → '14 nov' (em inglês, 'Nov 14'). */
 export function diaCurto(d: string | null | undefined): string {
   if (!d) return '';
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
-  if (m && d.length === 10) return `${Number(m[3])} ${MESES[Number(m[2]) - 1]}`;
+  if (m && d.length === 10) return emIngles ? `${MESES_CURTOS_EN[Number(m[2]) - 1]} ${Number(m[3])}` : `${Number(m[3])} ${MESES[Number(m[2]) - 1]}`;
   const dt = new Date(d);
-  return `${dt.getDate()} ${MESES[dt.getMonth()]}`;
+  return emIngles ? `${MESES_CURTOS_EN[dt.getMonth()]} ${dt.getDate()}` : `${dt.getDate()} ${MESES[dt.getMonth()]}`;
 }
-/** Hora de um ISO no fuso do aparelho: '7:42'. */
+/** Hora de um ISO no fuso do aparelho: '7:42' (em inglês, '7:42 AM'). */
 export function horaCurta(iso: string): string {
   const dt = new Date(iso);
+  if (emIngles) return horaEn(dt.getHours(), dt.getMinutes());
   return `${dt.getHours()}:${String(dt.getMinutes()).padStart(2, '0')}`;
 }
 
 export type EstadoPoder = { st: 'active' | 'armed' | 'used'; texto: string };
 /** Estado de um poder raspado (chip do detalhe 79a–79d e rodapé da revelação 79k). `hoje` = dia de sessão. */
 export function estadoPoder(p: PoderRow | null, tipo: string, hoje: string): EstadoPoder {
-  if (!p) return { st: 'active', texto: 'Ativo' };
+  if (!p) return { st: 'active', texto: t('Ativo') };
   const consumido = p.consumido_em;
   switch (tipo) {
     case 'protecao_sequencia':
-      return consumido ? { st: 'used', texto: `Usado em ${diaCurto((p.dados?.dia_coberto as string) ?? consumido)}` } : { st: 'armed', texto: 'Armado' };
+      return consumido ? { st: 'used', texto: t('Usado em {{dia}}', { dia: diaCurto((p.dados?.dia_coberto as string) ?? consumido) }) } : { st: 'armed', texto: t('Armado') };
     case 'scan_antecipado':
-      return consumido ? { st: 'used', texto: `Usado em ${diaCurto(consumido)}` } : { st: 'active', texto: 'Ativo' };
+      return consumido ? { st: 'used', texto: t('Usado em {{dia}}', { dia: diaCurto(consumido) }) } : { st: 'active', texto: t('Ativo') };
     case 'carta_extra': {
       const d = String(p.dados?.dia ?? '');
-      if (d && hoje < d) return { st: 'armed', texto: `Vale em ${diaCurto(d)}` };
-      if (d && hoje === d) return { st: 'active', texto: 'Ativo hoje' };
-      return { st: 'used', texto: `Usado em ${diaCurto(d)}` };
+      if (d && hoje < d) return { st: 'armed', texto: t('Vale em {{dia}}', { dia: diaCurto(d) }) };
+      if (d && hoje === d) return { st: 'active', texto: t('Ativo hoje') };
+      return { st: 'used', texto: t('Usado em {{dia}}', { dia: diaCurto(d) }) };
     }
     default: {
       const dias: string[] = Array.isArray(p.dados?.dias) ? [...p.dados!.dias].sort() : [];
       const fim = dias[dias.length - 1];
-      if (fim && hoje <= fim) return { st: 'active', texto: `Ativo até ${diaCurto(fim)}` };
-      return { st: 'used', texto: fim ? `Usado até ${diaCurto(fim)}` : 'Usado' };
+      if (fim && hoje <= fim) return { st: 'active', texto: t('Ativo até {{dia}}', { dia: diaCurto(fim) }) };
+      return { st: 'used', texto: fim ? t('Usado até {{dia}}', { dia: diaCurto(fim) }) : t('Usado') };
     }
   }
 }
 
 /** Etiqueta da carta (topo do verso): poder → "Carta de poder"; o resto, pela origem. */
 export function etiquetaCarta(familia: string, origem: string): string {
-  if (familia === 'poder') return 'Carta de poder';
-  return ({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo', scan_rosto: 'Carta do scan', checkin_grupo: 'Carta do grupo', produto_grupo: 'Carta do grupo', volta: 'Carta de volta', campea: 'Campeã da semana', missoes: 'Missões concluídas' } as Record<string, string>)[origem] ?? 'Carta do dia';
+  if (familia === 'poder') return t('Carta de poder');
+  return t(({ rotina: 'Carta do dia', marco: 'Carta rara', surpresa: 'Carta surpresa', sos: 'SOS espinha', grupo: 'Carta do grupo', scan_rosto: 'Carta do scan', checkin_grupo: 'Carta do grupo', produto_grupo: 'Carta do grupo', volta: 'Carta de volta', campea: 'Campeã da semana', missoes: 'Missões concluídas' } as Record<string, string>)[origem] ?? 'Carta do dia');
 }
 
 export async function cartaDetalhe(id: string): Promise<CartaGanha> {

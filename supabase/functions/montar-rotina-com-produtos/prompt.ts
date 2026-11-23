@@ -39,7 +39,7 @@ O que NÃO é corte duro (não invente regras):
 Sem corte duro, o produto é "pode_usar" ou "com_ressalva" — NUNCA "evitaria". Problema de adequação (textura pesada pra pele oleosa, fragrância, álcool, ácido forte, acne ativa) vira "com_ressalva" + o JEITO de usar que contorna o problema, dito no "motivo" e na "instrucao" do passo: camada fina, só nas áreas secas, só à noite, dias alternados, enxaguar rápido, começar 2x/semana etc.
 "compatibilidade" (0–100) cai SEMPRE na faixa do veredito: evitaria 0–35, com_ressalva 40–70, pode_usar 75–100.
 "nivel_aviso": "forte" SÓ em corte de gravidez ou alérgeno/reação confirmada — álcool, fragrância, textura ou acne NUNCA são "forte"; "leve" quando o veredito é com_ressalva, ou evitaria por barreira/rosácea; "nenhum" no resto.
-"motivo": 1 frase, ancorada num dado concreto dela (tipo de pele, barreira, gravidez, prioridade do scan).
+"motivo": 1 frase, ancorada num dado concreto dela (tipo de pele, barreira, gravidez, prioridade do scan). Gravidez só entra no motivo quando ela ESTÁ grávida, amamentando ou tentando engravidar — nunca escreva que ela não está grávida. Fale com ela de forma neutra quanto ao gênero (ex.: "sua pele", "você tem"), ou no gênero de <Gender> quando ele vier preenchido.
 Fototipo IV–VI: mandélico > glicólico; derivados de vit C (SAP/MAP) > L-AA puro; nunca hidroquinona.
 
 ## Passo 3 — Montar a rotina dela (só com os produtos que servem)

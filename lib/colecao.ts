@@ -10,6 +10,7 @@ import { supabase } from './supabase';
 import { getCutoutsByProductId } from './productCutouts';
 import { getScanCutouts, requestMissingScanCutouts } from './scanCutouts';
 import { sameProduct } from './productMatch';
+import { t } from './i18n';
 
 export type ShelfPos = { s: number; x: number }; // prateleira 0..2 + centro em pt (frame 393)
 
@@ -17,9 +18,9 @@ export type ShelfPos = { s: number; x: number }; // prateleira 0..2 + centro em 
 // casa": a folha "Escolher produto" e a IA ignoram os outros, mas ele segue na estante e no passo.
 export type ColecaoStatus = 'tenho' | 'quero_comprar' | 'acabou';
 export const STATUS_COLECAO: Record<ColecaoStatus, { rotulo: string; cor: string; fundo: string; opacidade: number }> = {
-  tenho:         { rotulo: 'Tenho em casa', cor: '#1E9E63', fundo: 'rgba(30,158,99,0.14)',   opacidade: 1 },
-  quero_comprar: { rotulo: 'Quero comprar', cor: '#E8468F', fundo: 'rgba(232,70,143,0.14)',  opacidade: 0.55 },
-  acabou:        { rotulo: 'Acabou',        cor: '#7D7478', fundo: 'rgba(125,116,120,0.16)', opacidade: 0.38 },
+  tenho:         { rotulo: t('Tenho em casa'), cor: '#1E9E63', fundo: 'rgba(30,158,99,0.14)',   opacidade: 1 },
+  quero_comprar: { rotulo: t('Quero comprar'), cor: '#E8468F', fundo: 'rgba(232,70,143,0.14)',  opacidade: 0.55 },
+  acabou:        { rotulo: t('Acabou'),        cor: '#7D7478', fundo: 'rgba(125,116,120,0.16)', opacidade: 0.38 },
 };
 export const STATUS_ORDEM: ColecaoStatus[] = ['tenho', 'quero_comprar', 'acabou'];
 const lerStatus = (v: unknown): ColecaoStatus => (v === 'quero_comprar' || v === 'acabou' ? v : 'tenho');

@@ -1,6 +1,7 @@
 import { Alert, Pressable, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Estante na página do produto (out/2026) — FONTE ÚNICA para o detalhe dos
@@ -17,9 +18,9 @@ import { haptics } from '../../lib/haptics';
 /** A confirmação de remover — a mesma do modo Editar da estante. */
 export function confirmShelfRemove(name: string | null | undefined, onConfirm: () => void) {
   haptics.warning();
-  Alert.alert(`Remover ${name?.trim() || 'este produto'} da sua estante?`, undefined, [
-    { text: 'Cancelar', style: 'cancel' },
-    { text: 'Remover', style: 'destructive', onPress: onConfirm },
+  Alert.alert(t('Remover {{nome}} da sua estante?', { nome: name?.trim() || t('este produto') }), undefined, [
+    { text: t('Cancelar'), style: 'cancel' },
+    { text: t('Remover'), style: 'destructive', onPress: onConfirm },
   ]);
 }
 
@@ -39,14 +40,14 @@ export function ShelfAddButton({ owned, busy, onAdd, style }: Props) {
     return (
       <View
         accessible
-        accessibilityLabel="Este produto está na sua estante"
+        accessibilityLabel={t('Este produto está na sua estante')}
         style={[{
           height: 50, borderRadius: 100, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center',
           backgroundColor: '#FFE3EF',
         }, style]}
       >
         <ShelfIcon color="#C0206A" />
-        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#C0206A' }}>Na sua estante</Text>
+        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#C0206A' }}>{t('Na sua estante')}</Text>
         <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="#C0206A" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
       </View>
     );
@@ -64,7 +65,7 @@ export function ShelfAddButton({ owned, busy, onAdd, style }: Props) {
       }, style]}
     >
       <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 5v14M5 12h14" /></Svg>
-      <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>Adicionar à estante</Text>
+      <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>{t('Adicionar à estante')}</Text>
     </Pressable>
   );
 }
@@ -82,7 +83,7 @@ export function ShelfRemoveLink({ owned, busy, name, onRemove, style }: {
       accessibilityRole="button"
       style={[{ alignSelf: 'center', paddingVertical: 4, opacity: busy ? 0.5 : 1 }, style]}
     >
-      <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: '#8A8385' }}>Remover da estante</Text>
+      <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: '#8A8385' }}>{t('Remover da estante')}</Text>
     </Pressable>
   );
 }

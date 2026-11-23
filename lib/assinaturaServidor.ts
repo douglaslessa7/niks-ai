@@ -144,6 +144,17 @@ async function servidorConfirma(token: string): Promise<boolean | null> {
   return typeof r?.assinante === 'boolean' ? r.assinante : null;
 }
 
+/** 1.64: o servidor diz se ESTA conta é assinante (`null` = sem sessão ou sem resposta). */
+export async function assinanteNoServidor(): Promise<boolean | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+    return await servidorConfirma(session.access_token);
+  } catch {
+    return null;
+  }
+}
+
 /** Manda a prova da Apple ao servidor. Sem comprovante ou sem resposta, tudo zero: na dúvida, sem conflito. */
 async function enviarProvaApple(token: string, transferir?: OrigemTransferencia): Promise<{ ligadas: number; conflitos: number }> {
   const nada = { ligadas: 0, conflitos: 0 };

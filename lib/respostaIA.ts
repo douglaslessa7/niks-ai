@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
+import { t } from './i18n';
 
 // Parte B, Fase 8. Cabeçalho das funções de IA que aceitam chamada sem conta: com sessão, manda
 // a dela (o servidor confere a assinatura); sem sessão, a anon key do onboarding.
@@ -13,5 +14,5 @@ let ultimoAviso = 0;
 export function avisarSeSemAssinatura(status: number) {
   if (status !== 403 || Date.now() - ultimoAviso < 30_000) return;
   ultimoAviso = Date.now();
-  Alert.alert('Não conseguimos confirmar sua assinatura. Feche e abra o NIKS, ou toque em Restaurar compra.');
+  Alert.alert(t('Não conseguimos confirmar sua assinatura. Feche e abra o NIKS, ou toque em Restaurar compra.'));
 }

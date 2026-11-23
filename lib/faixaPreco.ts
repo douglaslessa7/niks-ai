@@ -9,25 +9,26 @@
 // Só para produtos recomendados do catálogo — escaneados e estante não têm faixa.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from './supabase';
+import { t } from './i18n';
 
 export type FaixaPreco = 1 | 2 | 3;
 
 // FONTE ÚNICA dos nomes das faixas (aprovados em 10/nov/2026). O nome aparece no card do
 // passo da Rotina ("▮▯▯ Custo-benefício") e no leitor de tela (`descricaoFaixa`).
 export const FAIXA_NOME: Record<FaixaPreco, string> = {
-  1: 'Custo-benefício',
-  2: 'Médio',
-  3: 'Premium',
+  1: t('Custo-benefício'),
+  2: t('Médio'),
+  3: t('Premium'),
 };
 
 export const FAIXA_TEXTO: Record<FaixaPreco, string> = {
-  1: 'até R$ 150',
-  2: 'R$ 150 a R$ 250',
-  3: 'acima de R$ 250',
+  1: t('até R$ 150'),
+  2: t('R$ 150 a R$ 250'),
+  3: t('acima de R$ 250'),
 };
 
 /** Leitor de tela: "Faixa de preço: Custo-benefício, até R$ 150". */
-export const descricaoFaixa = (f: FaixaPreco) => `Faixa de preço: ${FAIXA_NOME[f]}, ${FAIXA_TEXTO[f]}`;
+export const descricaoFaixa = (f: FaixaPreco) => t('Faixa de preço: {{nome}}, {{texto}}', { nome: FAIXA_NOME[f], texto: FAIXA_TEXTO[f] });
 
 const memoria = new Map<string, FaixaPreco | null>();
 

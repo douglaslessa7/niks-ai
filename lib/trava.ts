@@ -1,6 +1,7 @@
 // Cadeados da convidada (Parte B, Fase 5): tocar abre o aviso com a frase da função.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
+import { t } from './i18n';
 
 export const FRASES = {
   rotina: 'Assine para ter sua rotina feita pela IA',
@@ -18,7 +19,7 @@ export const FRASES = {
 export const useTrava = create<{ frase: string | null; funcao: string | null; aposCarta: string | null; caminhadaDepois: boolean }>(() => ({ frase: null, funcao: null, aposCarta: null, caminhadaDepois: false }));
 
 export function abrirTrava(funcao: keyof typeof FRASES) {
-  useTrava.setState({ frase: FRASES[funcao], funcao });
+  useTrava.setState({ frase: t(FRASES[funcao]), funcao });
 }
 export const fecharTrava = () => useTrava.setState({ frase: null, funcao: null });
 /** Abre direto o paywall da convidada (Perfil, carta especial, subida de medalha). */

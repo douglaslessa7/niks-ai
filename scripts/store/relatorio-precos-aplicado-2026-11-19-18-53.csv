@@ -1,0 +1,4 @@
+"produto","territorio","pais","moeda","alvo","escolhido","diferenca_%","atual","status"
+"anual","USA","Estados Unidos","USD","51.99","51.99","0.0","19.99","ERRO: POST /v1/subscriptionPrices → 409 STATE_ERROR: Initial price cannot be created again after subscription is approved."
+"downsell","USA","Estados Unidos","USD","39.99","39.99","0.0","14.99","ERRO: POST /v1/subscriptionPrices → 409 STATE_ERROR: Initial price cannot be created again after subscription is approved."
+"mensal","USA","Estados Unidos","USD","14.99","14.99","0.0","5.99","ERRO: POST /v1/subscriptionPrices → 409 STATE_ERROR: Initial price cannot be created again after subscription is approved."

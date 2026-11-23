@@ -18,7 +18,7 @@ import { useAppStore } from '../../../store/onboarding';
 import { useFaceScan } from '../../../hooks/useFaceScan';
 import { supabase } from '../../../lib/supabase';
 import { haptics } from '../../../lib/haptics';
-import { useCachedQuery } from '../../../lib/cache';
+import { useCachedQuery, writeCache } from '../../../lib/cache';
 import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
 import { contarPassosMinhaRotina } from '../../../lib/minhaRotina';
 import { SKINCARE_SEMPRE_DISPONIVEL } from '../../../lib/concluirSkincare';
@@ -46,6 +46,7 @@ import AvisoSequencia from '../../../components/conquistas/AvisoSequencia';
 import { agoraSeMudou, seMudou } from '../../../lib/seMudou';
 import DetalheProduto, { type DetalheItem } from '../../../components/product/DetalheProduto';
 import { concernLabel } from '../../../lib/concernLabels';
+import { DIAS_INICIAIS_EN, emIngles, localeDatas, t } from '../../../lib/i18n';
 import {
   getRoutineHistory, routineStreak, routineDayStreak, routinesDoneOn, sessionDate, dateKey,
   RoutineHistory, RoutinePeriod,
@@ -74,7 +75,7 @@ const MUTE = '#818181';
 const EO = Easing.bezier(0.23, 1, 0.32, 1);
 const EIO = Easing.bezier(0.77, 0, 0.175, 1);
 
-const LET = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const LET = emIngles ? DIAS_INICIAIS_EN : ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
 const DEFAULT_AM = 7 * 60;
 const DEFAULT_PM = 21 * 60;
@@ -120,8 +121,8 @@ function parseTime(v: unknown, fallback: number): number {
 function fmtDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
-  if (h === 0) return `${m}min`;
-  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+  if (h === 0) return t('{{m}}min', { m });
+  return m === 0 ? t('{{h}}h', { h }) : t('{{h}}h {{m}}min', { h, m });
 }
 
 // Minutos de agora até `target` (minuto do dia), sempre no futuro.
@@ -136,27 +137,27 @@ function minutesUntil(target: number, nowMin: number): number {
 type Hero = { label: string; num: string; done: boolean; focus: RoutinePeriod; locked: boolean };
 
 function heroFor(now: Date, d: HomeData, hist: RoutineHistory): Hero {
-  const t = now.getHours() * 60 + now.getMinutes();
+  const agoraMin = now.getHours() * 60 + now.getMinutes();
   const day = hist[dateKey(sessionDate(now))] ?? {};
   const amEnd = Math.min(AM_WINDOW_END, d.pmTime);
   const dur = (n: number) => fmtDuration(Math.max(n, 1) * MIN_PER_STEP);
 
-  if (t >= d.pmTime || t < NIGHT_WINDOW_END) {
-    if (day.pm) return { label: 'Skincare noturno concluído', num: '', done: true, focus: 'pm', locked: false };
-    return { label: 'Hora do seu skincare noturno', num: dur(d.pmCount), done: false, focus: 'pm', locked: false };
+  if (agoraMin >= d.pmTime || agoraMin < NIGHT_WINDOW_END) {
+    if (day.pm) return { label: t('Skincare noturno concluído'), num: '', done: true, focus: 'pm', locked: false };
+    return { label: t('Hora do seu skincare noturno'), num: dur(d.pmCount), done: false, focus: 'pm', locked: false };
   }
-  if (t >= d.amTime && t < amEnd) {
-    if (day.am) return { label: 'Skincare matinal concluído', num: '', done: true, focus: 'am', locked: false };
-    return { label: 'Hora do seu skincare matinal', num: dur(d.amCount), done: false, focus: 'am', locked: false };
+  if (agoraMin >= d.amTime && agoraMin < amEnd) {
+    if (day.am) return { label: t('Skincare matinal concluído'), num: '', done: true, focus: 'am', locked: false };
+    return { label: t('Hora do seu skincare matinal'), num: dur(d.amCount), done: false, focus: 'am', locked: false };
   }
-  if (t < d.amTime) {
-    return { label: 'Seu skincare matinal em', num: fmtDuration(minutesUntil(d.amTime, t)), done: false, focus: 'am', locked: true };
+  if (agoraMin < d.amTime) {
+    return { label: t('Seu skincare matinal em'), num: fmtDuration(minutesUntil(d.amTime, agoraMin)), done: false, focus: 'am', locked: true };
   }
-  if (day.am && t < d.pmTime) {
+  if (day.am && agoraMin < d.pmTime) {
     // Entre o fim da janela da manhã e a noite, com a manhã feita: segue "concluído".
-    return { label: 'Skincare matinal concluído', num: '', done: true, focus: 'am', locked: false };
+    return { label: t('Skincare matinal concluído'), num: '', done: true, focus: 'am', locked: false };
   }
-  return { label: 'Seu skincare noturno em', num: fmtDuration(minutesUntil(d.pmTime, t)), done: false, focus: 'pm', locked: true };
+  return { label: t('Seu skincare noturno em'), num: fmtDuration(minutesUntil(d.pmTime, agoraMin)), done: false, focus: 'pm', locked: true };
 }
 
 // ── Semana (domingo → sábado da sessão de hoje) ─────────────────────────────
@@ -173,7 +174,7 @@ function weekFor(now: Date, hist: RoutineHistory): DayCell[] {
     d.setDate(start.getDate() + i);
     const isToday = d.getTime() === today.getTime();
     const kind = isToday ? 'today' : d.getTime() > today.getTime() ? 'future' : routinesDoneOn(hist, d) > 0 ? 'done' : 'past';
-    return { l: isToday ? 'HOJE' : L, n: d.getDate(), today: isToday, kind };
+    return { l: isToday ? t('HOJE') : L, n: d.getDate(), today: isToday, kind };
   });
 }
 
@@ -329,7 +330,7 @@ export default function Home() {
       // CONTA já viu o tutorial" (ver lib/homeTutorial.ts).
       supabase
         .from('users')
-        .select('nome, foto_home_url, home_tutorial_seen_at, rotina_manha_horario, rotina_noite_horario')
+        .select('nome, foto_home_url, home_tutorial_seen_at, rotina_manha_horario, rotina_noite_horario, rotina_intro_status')
         .eq('id', uid)
         .maybeSingle(),
       supabase
@@ -368,7 +369,7 @@ export default function Home() {
         const principal = prods.find((x: any) => x?.principal) ?? prods[0];
         if (!principal?.produto_id) return;
         raw[period].push({
-          id: principal.produto_id, step: `Passo ${i + 1} · ${p.categoria ?? ''}`,
+          id: principal.produto_id, step: t('Passo {{n}} · {{tipo}}', { n: i + 1, tipo: p.categoria ? t(p.categoria) : '' }),
           compat: typeof principal.compatibilidade === 'number' ? Math.round(principal.compatibilidade) : null,
           copy: String(principal.copy ?? '').trim(),
         });
@@ -398,6 +399,10 @@ export default function Home() {
         };
         return { id: r.id, name: p.nome, img, step: r.step, det };
       });
+
+    // Pré-aquece o status do tutorial da aba Rotina (16/nov/2026): com o cache pronto, o
+    // tutorial abre NA HORA do toque na aba (mesma chave e formato de `protocolo.tsx`).
+    if (user) void writeCache(`rotinaintro:${uid}`, { status: (user.rotina_intro_status ?? null) as string | null });
 
     const full = (scan?.full_result ?? null) as { skin_score?: number } | null;
     return {
@@ -641,7 +646,7 @@ export default function Home() {
   const onScan = () => {
     if (scanDays > 0) {
       haptics.tap();
-      Alert.alert('Analisar minha pele', scanDays === 1 ? 'Seu próximo scan libera em 1 dia.' : `Seu próximo scan libera em ${scanDays} dias.`);
+      Alert.alert(t('Analisar minha pele'), scanDays === 1 ? t('Seu próximo scan libera em 1 dia.') : t('Seu próximo scan libera em {{dias}} dias.', { dias: scanDays }));
       return;
     }
     haptics.action();
@@ -729,26 +734,26 @@ export default function Home() {
         {/* ── Cabeçalho: foto + "Olá, Nome" + grupo · sequência ───────────── */}
         <View style={styles.hdrRow}>
           <View style={styles.hdrLeft}>
-            <TouchableOpacity activeOpacity={0.7} onPress={() => go('/perfil')} style={styles.avatarWrap} accessibilityLabel="Abrir perfil">
+            <TouchableOpacity activeOpacity={0.7} onPress={() => go('/perfil')} style={styles.avatarWrap} accessibilityLabel={t('Abrir perfil')}>
               {d.fotoUrl ? (
                 <ExpoImage source={{ uri: d.fotoUrl }} cachePolicy="memory-disk" allowDownscaling={false} contentFit="cover" style={styles.avatar} />
               ) : (
                 <View style={[styles.avatar, { backgroundColor: '#F6D3E1', alignItems: 'center', justifyContent: 'center' }]}>
-                  <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: '700', color: '#E0447F' }}>{d.firstName ? Array.from(d.firstName.trim())[0]?.toLocaleUpperCase('pt-BR') : ''}</Text>
+                  <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: '700', color: '#E0447F' }}>{d.firstName ? Array.from(d.firstName.trim())[0]?.toLocaleUpperCase(localeDatas) : ''}</Text>
                 </View>
               )}
               <View style={styles.avatarDot} />
             </TouchableOpacity>
             <View style={{ gap: 1 }}>
-              <Text style={styles.greet}>{d.firstName ? `Olá, ${d.firstName}` : 'Olá'}</Text>
+              <Text style={styles.greet}>{d.firstName ? t('Olá, {{nome}}', { nome: d.firstName }) : t('Olá')}</Text>
               {/* Nível individual (NIKS Points) → "Sua caminhada". Antes de o estado chegar,
                   a linha fica vazia com a mesma altura (a tela não pula). */}
               {pontos ? (
                 <View {...tutNivel} style={{ alignSelf: 'flex-start' }}>
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => go('/caminhada?de=home')} style={styles.groupLine} accessibilityLabel={`Nível ${pontos.nivel}, ${pontos.titulo}. Abrir sua caminhada${dobroHoje ? ', pontos em dobro' : ''}`}>
+                  <TouchableOpacity activeOpacity={0.7} onPress={() => go('/caminhada?de=home')} style={styles.groupLine} accessibilityLabel={`${t('Nível {{n}}, {{titulo}}. Abrir sua caminhada', { n: pontos.nivel, titulo: t(pontos.titulo) })}${dobroHoje ? t(', pontos em dobro') : ''}`}>
                     {/* A medalha atual + o nome dela ("Prata 1"), desde 08/nov/2026. */}
                     <View style={{ width: 22, height: 22, marginVertical: -4, marginRight: -3 }}><Medalha nivel={pontos.nivel} tamanho={22} /></View>
-                    <Text style={styles.groupLineText}>{pontos.titulo}</Text>
+                    <Text style={styles.groupLineText}>{t(pontos.titulo)}</Text>
                     <View style={styles.miniTrack}>
                       <Animated.View style={[styles.miniFill, { transform: [{ scaleX: gxp }] }]} />
                     </View>
@@ -765,7 +770,7 @@ export default function Home() {
 
           {/* Sequência: círculo branco + selo rosa. Abre o hub "Suas conquistas" (77a). */}
           <View {...tutStreak}>
-            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/conquistas')} style={styles.streakBtn} accessibilityLabel="Abrir suas conquistas">
+            <TouchableOpacity activeOpacity={0.85} onPress={() => go('/conquistas')} style={styles.streakBtn} accessibilityLabel={t('Abrir suas conquistas')}>
               <Icon d={FLAME} size={20} color={INK} sw={1.7} />
               <View style={styles.streakBadge}>
                 <Text style={styles.streakBadgeText}>{streak}</Text>
@@ -833,7 +838,7 @@ export default function Home() {
                 {convidada ? <Lock size={16} color="#fff" strokeWidth={2.4} /> : <Svg width={16} height={16} viewBox="0 0 24 24">
                   <Path d="M6 3.8v16.4a1 1 0 0 0 1.5.86l13.6-8.2a1 1 0 0 0 0-1.72L7.5 2.94A1 1 0 0 0 6 3.8z" fill="#fff" />
                 </Svg>}
-                <Text style={styles.heroBtnText}>Iniciar skincare</Text>
+                <Text style={styles.heroBtnText}>{t('Iniciar skincare')}</Text>
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -844,7 +849,7 @@ export default function Home() {
             </View>
             <View style={styles.feitaNumRow}>
               <Svg width={44} height={44} viewBox="0 0 24 24"><Path d={FLAME} fill={PINK} /></Svg>
-              <Text style={styles.heroNumPlain}>{dayStreak === 1 ? '1 dia' : `${dayStreak} dias`}</Text>
+              <Text style={styles.heroNumPlain}>{dayStreak === 1 ? t('1 dia') : t('{{dias}} dias', { dias: dayStreak })}</Text>
             </View>
             {protegida && <SeloProtegida rm={rm} animar={false} style={{ marginTop: 6, alignSelf: 'center' }} />}
           </Animated.View>
@@ -857,18 +862,18 @@ export default function Home() {
           <View style={styles.cartaText}>
             {/* O desafio (sem botão e sem toque): completar o skincare libera a carta. */}
             <Animated.View style={[StyleSheet.absoluteFill, lk.style]} pointerEvents="none">
-              <Text style={styles.cartaTitle}>{modoPontos ? 'NIKS Points do dia' : 'Sua carta do dia'}</Text>
+              <Text style={styles.cartaTitle}>{modoPontos ? t('NIKS Points do dia') : t('Sua carta do dia')}</Text>
               <Text style={styles.cartaSub} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
-                {cartaLiberada ? 'Raspe sua carta' : convidada ? 'Faça o check-in do dia' : 'Complete o skincare do dia'}
+                {cartaLiberada ? t('Raspe sua carta') : convidada ? t('Faça o check-in do dia') : t('Complete o skincare do dia')}
               </Text>
-              <Text style={styles.cartaProgresso}>{modoPontos ? `até ${maxSkincare} NIKS Points` : cartaLiberada ? '1/1' : '0/1'}</Text>
+              <Text style={styles.cartaProgresso}>{modoPontos ? t('até {{pontos}} NIKS Points', { pontos: maxSkincare }) : cartaLiberada ? '1/1' : '0/1'}</Text>
             </Animated.View>
             <Animated.View style={[StyleSheet.absoluteFill, cl.style]} pointerEvents="none">
-              <Text style={styles.cartaTitle}>{modoPontos ? 'NIKS Points do dia' : 'Sua carta do dia'}</Text>
+              <Text style={styles.cartaTitle}>{modoPontos ? t('NIKS Points do dia') : t('Sua carta do dia')}</Text>
               {modoPontos ? (
-                <Text style={styles.cartaProgresso}>{`+${estado?.pontos_hoje ?? 0} NIKS Points hoje`}</Text>
+                <Text style={styles.cartaProgresso}>{t('+{{pontos}} NIKS Points hoje', { pontos: estado?.pontos_hoje ?? 0 })}</Text>
               ) : (
-                <Text style={styles.cartaSub}>Resgatada</Text>
+                <Text style={styles.cartaSub}>{t('Resgatada')}</Text>
               )}
             </Animated.View>
           </View>
@@ -922,7 +927,7 @@ export default function Home() {
         </View>
 
         {/* ── Pra você · Hoje ──────────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { marginTop: 26 }]} {...tutRowTitle}>Pra você · Hoje</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 26 }]} {...tutRowTitle}>{t('Pra você · Hoje')}</Text>
         <View {...tutRow}>
           <ScrollView
             ref={rowRef}
@@ -931,15 +936,15 @@ export default function Home() {
             contentContainerStyle={{ gap: 10, paddingTop: 16, paddingHorizontal: 18, paddingBottom: 6 }}
           >
             <CardPraVoce trancado={convidada} onPress={() => go('/(scan)/sos-camera')}>
-              <Text style={styles.forText}>{'Apareceu\numa espinha?'}</Text>
+              <Text style={styles.forText}>{t('Apareceu\numa espinha?')}</Text>
               <View style={[styles.forCircle, styles.forCirclePink]}>
                 <Icon d={['M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z', 'M12 9v4.5', 'M12 17.2h.01']} size={30} color="#fff" sw={1.9} />
               </View>
-              <View style={styles.novo}><Text style={styles.novoText}>Novo</Text></View>
+              <View style={styles.novo}><Text style={styles.novoText}>{t('Novo')}</Text></View>
             </CardPraVoce>
             <View {...tutScan}>
               <CardPraVoce trancado={convidada} onPress={() => { if (convidada) { haptics.tap(); abrirTrava('scan'); return; } onScan(); }}>
-              <Text style={styles.forText}>Analisar minha pele</Text>
+              <Text style={styles.forText}>{t('Analisar minha pele')}</Text>
                 <View style={[styles.forCircle, styles.forCircleWhite]}>
                   <Svg width={30} height={30} viewBox="0 0 24 24">
                     <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" fill="none" stroke={PINK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
@@ -957,13 +962,13 @@ export default function Home() {
             {/* Cards da home anterior no padrão do design 74 (pedido do Douglas, 01/nov/2026),
                 seguindo a alternância de círculo branco / rosa dos três primeiros. */}
             <CardPraVoce trancado={convidada} onPress={() => go('/progresso')}>
-              <Text style={styles.forText}>Progresso</Text>
+              <Text style={styles.forText}>{t('Progresso')}</Text>
               <View style={[styles.forCircle, styles.forCircleWhite]}>
                 <Icon d="M3 17l6-6 4 4 8-8M15 7h6v6" size={30} color={PINK} sw={1.9} />
               </View>
             </CardPraVoce>
             <CardPraVoce trancado={convidada} onPress={() => go('/(scan)/product-camera')}>
-              <Text style={styles.forText}>Escanear produto</Text>
+              <Text style={styles.forText}>{t('Escanear produto')}</Text>
               <View style={[styles.forCircle, styles.forCirclePink]}>
                 <Icon
                   d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M10.5 7h3M11 7v2M13 7v2M10.6 9h2.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6h-2.8a1.6 1.6 0 0 1-1.6-1.6v-4.8a1.6 1.6 0 0 1 1.6-1.6z"
@@ -973,7 +978,7 @@ export default function Home() {
             </CardPraVoce>
             {/* Suas conquistas: abre o mesmo hub da chama (canto superior direito). */}
             <TouchableOpacity activeOpacity={0.85} onPress={() => go('/conquistas')} style={styles.forCard}>
-              <Text style={styles.forText}>Suas conquistas</Text>
+              <Text style={styles.forText}>{t('Suas conquistas')}</Text>
               <View style={[styles.forCircle, styles.forCircleWhite]}>
                 <Icon
                   d={[
@@ -992,13 +997,13 @@ export default function Home() {
         {/* ── Seu grupo ───────────────────────────────────────────────── */}
         {/* Com 2+ grupos (12/nov/2026): "Seus grupos" e um card com todos, que abre a lista
             "Seus grupos" (a mesma do botão da aba Grupos). Com 1, o card do grupo, como antes. */}
-        {meusGrupos && <Text style={[styles.sectionTitle, { marginTop: 18 }]} onLayout={(e) => { grupoY.current = e.nativeEvent.layout.y; }}>{(meusGrupos?.length ?? 0) > 1 ? 'Seus grupos' : 'Seu grupo'}</Text>}
+        {meusGrupos && <Text style={[styles.sectionTitle, { marginTop: 18 }]} onLayout={(e) => { grupoY.current = e.nativeEvent.layout.y; }}>{(meusGrupos?.length ?? 0) > 1 ? t('Seus grupos') : t('Seu grupo')}</Text>}
         {!meusGrupos ? null : meusGrupos.length > 1 ? (
           <View {...tutGrupo}>
-          <TouchableOpacity activeOpacity={0.85} onPress={() => go('/seus-grupos')} style={styles.groupCard} accessibilityLabel="Ver seus grupos">
+          <TouchableOpacity activeOpacity={0.85} onPress={() => go('/seus-grupos')} style={styles.groupCard} accessibilityLabel={t('Ver seus grupos')}>
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.groupName} numberOfLines={1}>{`${meusGrupos.length} grupos`}</Text>
+                <Text style={styles.groupName} numberOfLines={1}>{t('{{n}} grupos', { n: meusGrupos.length })}</Text>
                 <Text style={styles.groupSub} numberOfLines={1}>{meusGrupos.map((x) => x.nome).join(' · ')}</Text>
               </View>
               <Icon d={CHEVRON} size={16} color={PINK} sw={2.4} />
@@ -1009,7 +1014,7 @@ export default function Home() {
                   <MiniBanner key={x.id} g={x} tamanho={40} redondo style={{ marginLeft: -10, borderWidth: 2, borderColor: '#fff' }} />
                 ))}
               </View>
-              <Text style={styles.groupCount}>Ver seus grupos</Text>
+              <Text style={styles.groupCount}>{t('Ver seus grupos')}</Text>
             </View>
           </TouchableOpacity>
           </View>
@@ -1019,7 +1024,7 @@ export default function Home() {
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.groupName} numberOfLines={2}>{grupo.nome}</Text>
-                <Text style={styles.groupSub}>{grupo.total === 1 ? 'Só você · convide amigas' : `${grupo.total} integrantes`}</Text>
+                <Text style={styles.groupSub}>{grupo.total === 1 ? t('Só você · convide amigas') : t('{{n}} integrantes', { n: grupo.total })}</Text>
               </View>
               <Icon d={CHEVRON} size={16} color={PINK} sw={2.4} />
             </View>
@@ -1029,7 +1034,7 @@ export default function Home() {
                   <Avatar key={m.user_id} img={null} uri={m.foto} done={m.fez_hoje} size={40} nivel={m.nivel} nome={m.nome} />
                 ))}
               </View>
-              <Text style={styles.groupCount}>{grupo.feitos_hoje} de {grupo.total} hoje</Text>
+              <Text style={styles.groupCount}>{t('{{feitos}} de {{total}} hoje', { feitos: grupo.feitos_hoje, total: grupo.total })}</Text>
             </View>
           </TouchableOpacity>
           </View>
@@ -1037,8 +1042,8 @@ export default function Home() {
           <View style={styles.groupCard} {...tutGrupo}>
             <View style={styles.groupHead}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.groupName}>{'Faça skincare\ncom suas amigas'}</Text>
-                <Text style={styles.groupSub}>Vocês liberam cartas juntas</Text>
+                <Text style={styles.groupName}>{t('Faça skincare\ncom suas amigas')}</Text>
+                <Text style={styles.groupSub}>{t('Vocês liberam cartas juntas')}</Text>
               </View>
               <View style={styles.inviteIcon}>
                 <Svg width={22} height={22} viewBox="0 0 24 24">
@@ -1053,7 +1058,7 @@ export default function Home() {
               <View style={{ flex: 1 }}>
                 <TouchableOpacity activeOpacity={0.85} onPress={() => go('/seus-grupos?criar=1')} style={styles.criarBtn}>
                   <Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={2.6} />
-                  <Text style={styles.criarText}>Criar grupo</Text>
+                  <Text style={styles.criarText}>{t('Criar grupo')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1066,7 +1071,7 @@ export default function Home() {
             <View style={styles.surface}>
               {convidada && <CadeadoSobre funcao="produtos" />}
               <Text style={styles.surfaceTitle}>
-                Seus produtos · Skincare {hero.focus === 'am' ? 'matinal' : 'noturno'}
+                {hero.focus === 'am' ? t('Seus produtos · Skincare matinal') : t('Seus produtos · Skincare noturno')}
               </Text>
               <View style={styles.surfaceLine} />
               <ScrollView

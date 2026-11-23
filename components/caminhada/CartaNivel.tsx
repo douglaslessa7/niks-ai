@@ -13,6 +13,7 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 import Medalha from '../medalhas/Medalha';
 import { usePulsoMedalha } from '../medalhas/usePulsoMedalha';
+import { t } from '../../lib/i18n';
 import {
   CARD_H, CARD_W, EIO, EO, ICON_GLOW, PINK,
 } from './geometria';
@@ -131,7 +132,7 @@ function CartaNivel({ n, locked, isCurrent, isIcon, left, top, rolando, vph, sha
   const pulsoSt = usePulsoMedalha(isCurrent, rm, undefined, rolando);
   return (
     <Animated.View style={[{ position: 'absolute', left, top, width: CARD_W, height: CARD_H }, cardSt]}>
-      <Pressable onPress={onTap ? () => onTap(n) : undefined} disabled={!onTap} style={StyleSheet.absoluteFill} accessibilityLabel={`Nível ${n}${locked ? ', trancado' : ''}`}>
+      <Pressable onPress={onTap ? () => onTap(n) : undefined} disabled={!onTap} style={StyleSheet.absoluteFill} accessibilityLabel={locked ? t('Nível {{n}}, trancado', { n }) : t('Nível {{n}}', { n })}>
         {isIcon && <View pointerEvents="none" style={[styles.iconGlow, { experimental_backgroundImage: ICON_GLOW }]} />}
         <View pointerEvents="none" style={styles.center}>
           <Medalha nivel={n} tamanho={MEDALHA} estilo={[pulsoSt, medalhaSt]} />

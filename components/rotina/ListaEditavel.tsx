@@ -18,6 +18,7 @@ import Animated, {
   withDelay, withRepeat, withSequence, withTiming, type SharedValue,
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK_TEXT = '#E8468F';
@@ -109,7 +110,7 @@ function Linha({ item, total, posicoes, onSoltar, onArrastando, onRemover, onAbr
 
   return (
     <Animated.View style={[s.linha, estilo]}>
-      <TouchableOpacity activeOpacity={0.85} onPress={() => onAbrir(item.id)} style={s.corpo} accessibilityLabel={`Editar ${item.nome}`}>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => onAbrir(item.id)} style={s.corpo} accessibilityLabel={t('Editar {{nome}}', { nome: item.nome })}>
         <View style={s.tile}>
           {item.img
             ? <ExpoImage source={{ uri: item.img }} style={{ width: 40, height: 40 }} contentFit="contain" />
@@ -121,11 +122,11 @@ function Linha({ item, total, posicoes, onSoltar, onArrastando, onRemover, onAbr
         </View>
       </TouchableOpacity>
       <GestureDetector gesture={pan}>
-        <View style={s.alca} accessibilityLabel={`Arrastar ${item.nome}`} hitSlop={8}>
+        <View style={s.alca} accessibilityLabel={t('Arrastar {{nome}}', { nome: item.nome })} hitSlop={8}>
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth={2} strokeLinecap="round"><Path d="M5 8h14M5 12h14M5 16h14" /></Svg>
         </View>
       </GestureDetector>
-      <TouchableOpacity onPress={() => onRemover(item.id)} hitSlop={10} style={s.x} accessibilityLabel={`Remover ${item.nome}`}>
+      <TouchableOpacity onPress={() => onRemover(item.id)} hitSlop={10} style={s.x} accessibilityLabel={t('Remover {{nome}}', { nome: item.nome })}>
         <Svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
       </TouchableOpacity>
     </Animated.View>

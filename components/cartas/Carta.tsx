@@ -7,6 +7,7 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { haptics } from '../../lib/haptics';
+import { t, emIngles } from '../../lib/i18n';
 import BalancedText from '../BalancedText';
 import type { CartaGanha, EstadoPoder } from '../../lib/cartasServidor';
 
@@ -64,11 +65,11 @@ const LOCK = ['M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0
 
 type Poder = { icone: string; cor: string; brilho: string; bg: string; titulo: string; texto: string; selo?: boolean };
 const PODERES: Record<string, Poder> = {
-  sequencia_dobro: { icone: IC.flame, cor: '#F7833A', brilho: 'rgba(247,131,58,0.30)', bg: 'linear-gradient(165deg, #FFE9DD 0%, #FFDCCF 45%, #F6DDF5 100%)', titulo: 'Sequência em dobro', texto: 'Nos próximos 2 dias, cada dia vale +2' },
-  protecao_sequencia: { icone: IC.shield, cor: '#8E6CEB', brilho: 'rgba(142,108,235,0.30)', bg: 'linear-gradient(165deg, #F3E9FF 0%, #E6DAFF 50%, #FCE0EF 100%)', titulo: 'Proteção de sequência', texto: 'Se você falhar 1 dia, sua sequência não zera', selo: true },
-  carta_extra: { icone: IC.extra, cor: '#FF5EA8', brilho: 'rgba(255,94,168,0.30)', bg: 'linear-gradient(165deg, #FFE6F1 0%, #FFD1E5 50%, #F3DDF8 100%)', titulo: 'Carta extra', texto: 'Amanhã você ganha uma carta a mais' },
-  scan_antecipado: { icone: IC.scan, cor: '#F2577A', brilho: 'rgba(242,87,122,0.28)', bg: 'linear-gradient(165deg, #FFE8EA 0%, #FFD8DE 50%, #F6DEF3 100%)', titulo: 'Scan antecipado', texto: 'Seu próximo scan de rosto já está liberado' },
-  pontos_dobro: { icone: IC.coins, cor: '#E39A12', brilho: 'rgba(233,162,30,0.30)', bg: 'linear-gradient(165deg, #FFF3DA 0%, #FFE5C4 45%, #FFDCEB 100%)', titulo: 'Pontos em dobro', texto: 'Por 2 dias, todos os seus pontos valem o dobro' },
+  sequencia_dobro: { icone: IC.flame, cor: '#F7833A', brilho: 'rgba(247,131,58,0.30)', bg: 'linear-gradient(165deg, #FFE9DD 0%, #FFDCCF 45%, #F6DDF5 100%)', titulo: t('Sequência em dobro'), texto: t('Nos próximos 2 dias, cada dia vale +2') },
+  protecao_sequencia: { icone: IC.shield, cor: '#8E6CEB', brilho: 'rgba(142,108,235,0.30)', bg: 'linear-gradient(165deg, #F3E9FF 0%, #E6DAFF 50%, #FCE0EF 100%)', titulo: t('Proteção de sequência'), texto: t('Se você falhar 1 dia, sua sequência não zera'), selo: true },
+  carta_extra: { icone: IC.extra, cor: '#FF5EA8', brilho: 'rgba(255,94,168,0.30)', bg: 'linear-gradient(165deg, #FFE6F1 0%, #FFD1E5 50%, #F3DDF8 100%)', titulo: t('Carta extra'), texto: t('Amanhã você ganha uma carta a mais') },
+  scan_antecipado: { icone: IC.scan, cor: '#F2577A', brilho: 'rgba(242,87,122,0.28)', bg: 'linear-gradient(165deg, #FFE8EA 0%, #FFD8DE 50%, #F6DEF3 100%)', titulo: t('Scan antecipado'), texto: t('Seu próximo scan de rosto já está liberado') },
+  pontos_dobro: { icone: IC.coins, cor: '#E39A12', brilho: 'rgba(233,162,30,0.30)', bg: 'linear-gradient(165deg, #FFF3DA 0%, #FFE5C4 45%, #FFDCEB 100%)', titulo: t('Pontos em dobro'), texto: t('Por 2 dias, todos os seus pontos valem o dobro') },
 };
 const MISTERIOSA: Poder = { ...PODERES.sequencia_dobro, icone: IC.help, brilho: 'rgba(169,121,240,0.32)', bg: 'linear-gradient(165deg, #FFE6F1 0%, #F1DAFA 50%, #E3D6FF 100%)' };
 
@@ -116,10 +117,11 @@ export function visualDe(c: Pick<CartaGanha, 'origem' | 'conteudo'> & { carta: C
     if (q.tipo === 'idade') return { k: 'convidada', tipo: 'idade', idade: q.idade ?? null };
     if (q.tipo === 'chat') return { k: 'convidada', tipo: 'chat' };
     if (q.tipo === 'produto2') return { k: 'convidada', tipo: 'produto2' };
-    const lista = (q.preocupacoes ?? []).slice(0, 3).map((p) => p.toLocaleLowerCase('pt-BR'));
+    // Preocupações = valores gravados (português): na tela, `t(valor)`.
+    const lista = (q.preocupacoes ?? []).slice(0, 3).map((p) => t(p).toLocaleLowerCase(emIngles ? 'en-US' : 'pt-BR'));
     return {
-      k: 'convidada', tipo: 'rotina', titulo: lista.length ? `Sua rotina para ${lista.length > 1 ? `${lista.slice(0, -1).join(', ')} e ${lista[lista.length - 1]}` : lista[0]} está pronta.` : 'Sua rotina está pronta.',
-      passos: [{ nome: 'Limpeza', sub: 'Primeiro passo' }, { nome: 'Tratamento', sub: 'Segundo passo' }, { nome: 'Proteção', sub: 'Terceiro passo' }],
+      k: 'convidada', tipo: 'rotina', titulo: lista.length ? t('Sua rotina para {{lista}} está pronta.', { lista: lista.length > 1 ? t('{{lista}} e {{ultimo}}', { lista: lista.slice(0, -1).join(', '), ultimo: lista[lista.length - 1] }) : lista[0] }) : t('Sua rotina está pronta.'),
+      passos: [{ nome: t('Limpeza'), sub: t('Primeiro passo') }, { nome: t('Tratamento'), sub: t('Segundo passo') }, { nome: t('Proteção'), sub: t('Terceiro passo') }],
     };
   }
   if (cat?.familia === 'poder') {
@@ -129,12 +131,12 @@ export function visualDe(c: Pick<CartaGanha, 'origem' | 'conteudo'> & { carta: C
   if (cat?.familia === 'conhecimento') {
     return { k: 'conhecimento', titulo: String((c.conteudo as any)?.titulo ?? cat.nome), texto: ((c.conteudo as any)?.texto ?? cat.texto ?? null) as string | null };
   }
-  if (c.origem === 'campea') return { k: 'rara', titulo: 'Campeã da semana' };
+  if (c.origem === 'campea') return { k: 'rara', titulo: t('Campeã da semana') };
   // A rara das missões do tutorial (06/nov/2026, `lib/missoes.ts`).
-  if (c.origem === 'missoes') return { k: 'rara', titulo: 'Missões concluídas' };
+  if (c.origem === 'missoes') return { k: 'rara', titulo: t('Missões concluídas') };
   if (c.origem === 'marco') {
     const n = Number((c.conteudo as any)?.marco);
-    return { k: 'rara', titulo: Number.isFinite(n) && n > 0 ? `${n} dias seguidos` : 'Carta rara', faiscas: 1 };
+    return { k: 'rara', titulo: Number.isFinite(n) && n > 0 ? t('{{n}} dias seguidos', { n }) : t('Carta rara'), faiscas: 1 };
   }
   if (cat?.raridade === 'rara') return { k: 'rara', titulo: cat.nome };
   return { k: 'colecionavel' };
@@ -380,11 +382,11 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
         <Faisca i={5} parado={parado} size={13 * s} color="#FFFFFF" style={{ right: X(24), top: Y(150) }} />
         <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.42 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,250,240,0.95), rgba(255,200,150,0.35) 60%, rgba(255,200,150,0))' }} />
         <View style={{ position: 'absolute', left: X(16), right: X(16), top: Y(18), bottom: Y(18), alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.2 * s, color: INK, textAlign: 'center' }}>Idade da sua pele</Text>
+          <Text style={{ fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.2 * s, color: INK, textAlign: 'center' }}>{t('Idade da sua pele')}</Text>
           {v.numero != null
             ? <Contador alvo={v.numero} contar={!!v.contar} style={{ marginTop: 4 * s, fontSize: 96 * s, lineHeight: 102 * s, fontWeight: '800', letterSpacing: -3 * s, color: PINK, fontVariant: ['tabular-nums'], textAlign: 'center' }} />
             : <Text style={{ marginTop: 4 * s, fontSize: 96 * s, lineHeight: 102 * s }}> </Text>}
-          <Text style={{ fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '500', letterSpacing: -0.2 * s, color: INK, textAlign: 'center' }}>anos</Text>
+          <Text style={{ fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '500', letterSpacing: -0.2 * s, color: INK, textAlign: 'center' }}>{t('anos')}</Text>
           {/* A frase de baixo em tamanho de leitura (16): cabe em 1 linha ou quebra em 2. */}
           <View style={{ marginTop: 22 * s, minHeight: 34 * s, paddingVertical: 6 * s, paddingHorizontal: 14 * s, borderRadius: 17 * s, backgroundColor: PINK, justifyContent: 'center', boxShadow: `0px ${4 * s}px ${10 * s}px rgba(240,140,100,0.25)` }}>
             <Text style={{ color: '#fff', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.2 * s, textAlign: 'center' }}>{v.chip}</Text>
@@ -393,40 +395,22 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
       </>
     );
   } else if (v.k === 'alerta') {
-    // "Você tem" · "40%" (o % menor, na mesma linha de base) · "mais [problema]" · pílula rosa
-    // "do que a usuária padrão" (06/nov/2026; era "Detectamos que você tem · 40% · mais acne ·
-    // que uma mulher comum da sua idade"). Mesmo fundo, holo e faíscas da carta da idade.
+    // Carta de alerta (sem número desde 23/nov/2026). Mesmo fundo, holo e faíscas da carta da idade.
     // `semNumero` (desligada): "Encontramos sinais de" · [problema] grande · pílula com a região.
-    const fraseBaixo = v.semNumero ? v.regiaoTexto ?? null : 'do que a usuária padrão';
+    // 23/nov/2026: sem número — "Seu scan mostrou" · [problema] grande · "acima do ideal para a sua pele".
+    const fraseBaixo = v.semNumero ? v.regiaoTexto ?? null : t('acima do ideal para a sua pele');
     const larg = wi - 2 * X(MARGEM_OB);
     corpo = (
       <>
         <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,255,255,0.95), rgba(255,190,192,0.35) 60%, rgba(255,190,192,0))' }} />
         <View style={{ position: 'absolute', left: X(MARGEM_OB), right: X(MARGEM_OB), top: Y(20), bottom: Y(20), alignItems: 'center', justifyContent: 'center' }}>
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
-            {v.semNumero ? 'Encontramos sinais de' : 'Você tem'}
+            {v.semNumero ? t('Encontramos sinais de') : t('Seu scan mostrou')}
           </Text>
-          {v.semNumero ? (
-            <View style={{ alignSelf: 'stretch', marginTop: 8 * s }}>
-              <TextoPorPalavra texto={v.problema} larg={larg} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
-                style={{ fontWeight: '800', letterSpacing: -1 * s, color: VERMELHO_ALERTA }} />
-            </View>
-          ) : (
-            <>
-              <View style={{ marginTop: 4 * s, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' }}>
-                {v.numero != null
-                  ? <Contador alvo={v.numero} contar={!!v.contar} style={{ fontSize: 96 * s, lineHeight: 102 * s, fontWeight: '800', letterSpacing: -3 * s, color: VERMELHO_ALERTA, fontVariant: ['tabular-nums'] }} />
-                  : <Text style={{ fontSize: 96 * s, lineHeight: 102 * s }}> </Text>}
-                {v.numero != null && (
-                  <Text style={{ marginLeft: 2 * s, fontSize: 40 * s, lineHeight: 44 * s, fontWeight: '800', color: VERMELHO_ALERTA }}>%</Text>
-                )}
-              </View>
-              <View style={{ alignSelf: 'stretch' }}>
-                <TextoPorPalavra texto={`mais ${v.problema}`} larg={larg} max={21 * s} K={K_BOLD} minUmaLinha={17 * s}
-                  style={{ fontWeight: '700', letterSpacing: -0.4 * s, color: INK }} />
-              </View>
-            </>
-          )}
+          <View style={{ alignSelf: 'stretch', marginTop: 8 * s }}>
+            <TextoPorPalavra texto={v.problema} larg={larg} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
+              style={{ fontWeight: '800', letterSpacing: -1 * s, color: VERMELHO_ALERTA }} />
+          </View>
           {!!fraseBaixo && (
             <View style={[pilulaOb(s), { backgroundColor: VERMELHO_ALERTA, boxShadow: `0px ${4 * s}px ${10 * s}px rgba(200,30,54,0.28)` }]}>
               <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{fraseBaixo}</Text>
@@ -436,8 +420,8 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
       </>
     );
   } else if (v.k === 'pontoForte') {
-    // "Você tem" · "menos" · [problema] grande em rosa · pílula "do que N% das usuárias". Mesmo
-    // fundo, holo e faíscas da carta de alerta (as duas cartas do onboarding são da mesma família).
+    // Carta 1, a notícia boa (sem número desde 23/nov/2026). Mesmo fundo, holo e faíscas da carta de
+    // alerta (as duas cartas do onboarding são da mesma família).
     corpo = (
       <>
         <Holo w={wi} h={hi} parado={parado} />
@@ -445,16 +429,13 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
         <Faisca i={5} parado={parado} size={13 * s} color="#FFFFFF" style={{ right: X(24), top: Y(150) }} />
         <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,250,240,0.95), rgba(255,200,150,0.35) 60%, rgba(255,200,150,0))' }} />
         <View style={{ position: 'absolute', left: X(MARGEM_OB), right: X(MARGEM_OB), top: Y(20), bottom: Y(20), alignItems: 'center', justifyContent: 'center' }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
-            Você tem
-          </Text>
-          <Text style={{ marginTop: 4 * s, fontSize: 20 * s, lineHeight: 25 * s, fontWeight: '700', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>menos</Text>
+          {/* 23/nov/2026: sem número — [ponto forte] grande · "é um dos pontos fortes da sua pele". */}
           <View style={{ alignSelf: 'stretch', marginTop: 4 * s }}>
             <TextoPorPalavra texto={v.problema} larg={wi - 2 * X(MARGEM_OB)} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
               style={{ fontWeight: '800', letterSpacing: -1 * s, color: PINK }} />
           </View>
           <View style={[pilulaOb(s), { opacity: v.numero != null ? 1 : 0, backgroundColor: PINK, boxShadow: `0px ${4 * s}px ${10 * s}px rgba(240,140,100,0.25)` }]}>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{`do que ${v.numero ?? 0}% das usuárias`}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{t('é um dos pontos fortes da sua pele')}</Text>
           </View>
         </View>
       </>
@@ -487,7 +468,7 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
             <Text style={[styles.numeroProduto, { marginTop: 12 * s, marginLeft: 2 * s, fontSize: 26 * s, lineHeight: 28 * s, textShadowOffset: { width: 0, height: 6 * s }, textShadowRadius: 16 * s }]}>%</Text>
           </View>
         )}
-        <Text style={[styles.centro, { top: Y(226), fontSize: 14 * s, lineHeight: 18 * s, fontWeight: '600', letterSpacing: -0.2 * s }]}>de compatibilidade</Text>
+        <Text style={[styles.centro, { top: Y(226), fontSize: 14 * s, lineHeight: 18 * s, fontWeight: '600', letterSpacing: -0.2 * s }]}>{t('de compatibilidade')}</Text>
         {v.resultado && (
           <View style={[styles.rodape, { bottom: Y(20) }]}>
             <Animated.View
@@ -497,7 +478,7 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
               <View style={{ width: 19 * s, height: 19 * s, borderRadius: 9.5 * s, backgroundColor: '#FD3A42', alignItems: 'center', justifyContent: 'center' }}>
                 <Svg width={9 * s} height={9 * s} viewBox="0 0 24 24"><Path d="M5 5l14 14M19 5L5 19" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" /></Svg>
               </View>
-              <Text style={{ fontSize: 13 * s, fontWeight: '700', color: INK }}>Não recomendado</Text>
+              <Text style={{ fontSize: 13 * s, fontWeight: '700', color: INK }}>{t('Não recomendado')}</Text>
             </Animated.View>
           </View>
         )}
@@ -521,7 +502,7 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
         <View style={[styles.rodape, { top: Y(20) }]}>
           <Pilula s={s}>
             <Svg width={12 * s} height={12 * s} viewBox="0 0 24 24"><Path d={STAR} fill="#F5B44A" /></Svg>
-            <Text style={{ fontSize: 12 * s, fontWeight: '600', color: INK }}>Carta rara</Text>
+            <Text style={{ fontSize: 12 * s, fontWeight: '600', color: INK }}>{t('Carta rara')}</Text>
           </Pilula>
         </View>
         <View style={{ position: 'absolute', left: (wi - 150 * s) / 2, top: hi * 0.42 - 75 * s, width: 150 * s, height: 150 * s, borderRadius: 75 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,250,240,0.95), rgba(255,200,150,0.35) 60%, rgba(255,200,150,0))' }} />
@@ -538,7 +519,7 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
         <View style={[styles.rodape, { top: Y(20) }]}>
           <Pilula s={s} style={{ gap: 6 * s }}>
             <View style={{ width: 7 * s, height: 7 * s, borderRadius: 3.5 * s, backgroundColor: poder.cor }} />
-            <Text style={{ fontSize: 12 * s, fontWeight: '600', color: INK }}>{v.misteriosa ? 'Carta misteriosa' : 'Carta de poder'}</Text>
+            <Text style={{ fontSize: 12 * s, fontWeight: '600', color: INK }}>{v.misteriosa ? t('Carta misteriosa') : t('Carta de poder')}</Text>
           </Pilula>
         </View>
         <View style={{ position: 'absolute', left: (wi - 84 * s) / 2, top: Y(104) - 42 * s, width: 84 * s, height: 84 * s, borderRadius: 42 * s, backgroundColor: '#fff', boxShadow: `0px ${8 * s}px ${20 * s}px ${poder.brilho}`, alignItems: 'center', justifyContent: 'center' }}>
@@ -579,17 +560,17 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
     if (v.tipo === 'produto') {
       corpo = (
         <>
-          <BalancedText text="Achamos o produto perfeito para sua pele." style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.4 * s }]} />
+          <BalancedText text={t('Achamos o produto perfeito para sua pele.')} style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.4 * s }]} />
           {v.foto && (
             <Image source={v.foto} resizeMode="contain" style={{ position: 'absolute', left: 0, right: 0, alignSelf: 'center', top: Y(160) - 72 * s, height: 144 * s, width: wi, opacity: 0.2, tintColor: '#000' }} />
           )}
-          {botao('Ver produto', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
+          {botao(t('Ver produto'), { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
         </>
       );
     } else if (v.tipo === 'idade') {
       corpo = (
         <>
-          <BalancedText text="Sabemos exatamente a idade da sua pele" style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s }]} />
+          <BalancedText text={t('Sabemos exatamente a idade da sua pele')} style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s }]} />
           {/* Número camuflado: dá para ver que há um número, mas não dá para ler. */}
           <View style={{ position: 'absolute', left: 0, right: 0, top: Y(92), height: Y(130), alignItems: 'center', justifyContent: 'center' }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             <View style={{ paddingHorizontal: 24 * s, borderRadius: 44 * s, overflow: 'hidden' }}>
@@ -597,13 +578,13 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
               <BlurView intensity={58} tint="light" style={[StyleSheet.absoluteFill, { margin: -12 * s }]} />
             </View>
           </View>
-          {botao('Descobrir', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
+          {botao(t('Descobrir'), { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
         </>
       );
     } else if (v.tipo === 'produto2') {
       corpo = (
         <>
-          <BalancedText text="Esse produto pode deixar sua pele com aparência mais jovem." style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }]} />
+          <BalancedText text={t('Esse produto pode deixar sua pele com aparência mais jovem.')} style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }]} />
           {/* Silhueta de um sérum com conta-gotas: outro formato, sem dar para ver qual é. */}
           <View style={{ position: 'absolute', left: 0, right: 0, top: Y(170) - 50 * s, alignItems: 'center', opacity: 0.2 }}>
             <Svg width={67 * s} height={100 * s} viewBox="0 0 100 150">
@@ -612,7 +593,7 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
               <Path d="M30 62h40c11 0 18 8 18 18v58a12 12 0 0 1-12 12H24a12 12 0 0 1-12-12V80c0-10 7-18 18-18z" fill="#000" />
             </Svg>
           </View>
-          {botao('Ver produto', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
+          {botao(t('Ver produto'), { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
         </>
       );
     } else if (v.tipo === 'chat') {
@@ -625,18 +606,18 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
       );
       corpo = (
         <>
-          <BalancedText text="O NIKS Chat quer enviar uma mensagem pra você" style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }]} />
-          {bolha('Olhei a sua pele e separei uma dica para você', 104, false)}
-          {bolha('Me conta o que você viu', 160, true)}
-          {botao('Ver mensagem', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
+          <BalancedText text={t('O NIKS Chat quer enviar uma mensagem pra você')} style={[styles.centro, { left: X(20), right: X(20), top: Y(26), fontSize: 17 * s, lineHeight: 21 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }]} />
+          {bolha(t('Olhei a sua pele e separei uma dica para você'), 104, false)}
+          {bolha(t('Me conta o que você viu'), 160, true)}
+          {botao(t('Ver mensagem'), { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
         </>
       );
     } else {
       corpo = (
         <>
           <View style={{ position: 'absolute', left: X(18), right: X(18), top: Y(24) }}>
-            <BalancedText text={v.titulo ?? 'Já temos sua rotina completa de skincare.'} style={{ textAlign: 'center', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }} />
-            <Text style={{ marginTop: 3 * s, textAlign: 'center', fontSize: 13 * s, lineHeight: 17 * s, color: '#3d3d3d' }}>Toque para ver</Text>
+            <BalancedText text={v.titulo ?? t('Já temos sua rotina completa de skincare.')} style={{ textAlign: 'center', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '700', letterSpacing: -0.3 * s, color: INK }} />
+            <Text style={{ marginTop: 3 * s, textAlign: 'center', fontSize: 13 * s, lineHeight: 17 * s, color: '#3d3d3d' }}>{t('Toque para ver')}</Text>
           </View>
           <View style={{ position: 'absolute', left: X(26), right: X(26), top: Y(106), paddingVertical: 8 * s, paddingHorizontal: 10 * s, borderRadius: 14 * s, backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)', gap: 4 * s }}>
             {v.passos.slice(0, 3).map((p, i) => (
@@ -658,7 +639,7 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
               </View>
             </View>
           </View>
-          {botao('Ver minha rotina', { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
+          {botao(t('Ver minha rotina'), { position: 'absolute', left: X(18), right: X(18), bottom: Y(20) }, 15)}
         </>
       );
     }

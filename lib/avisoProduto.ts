@@ -11,6 +11,8 @@
 // `passo_tem_retinoide` (banco): mudou lá, mude aqui.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { emIngles } from './i18n';
+
 export type NivelAviso = 'nenhum' | 'leve' | 'forte';
 export type Aviso = { nivel: NivelAviso; texto: string | null };
 
@@ -46,7 +48,16 @@ export function codigoTipoPele(
   const seb = norm(scan?.sebaceo ?? '').trim();
   if (TIPOS_PELE.includes(seb)) return seb;
   const det = norm(scan?.detectado ?? '');
-  return TIPOS_PELE.find((t) => det.includes(t)) ?? null;
+  return TIPOS_PELE.find((t) => det.includes(t)) ?? (emIngles ? tipoPeleEn(`${seb} ${det}`) : null);
+}
+
+// Relatório em inglês (etapa 3): "oily"/"dry"/"combination" → o código. Só com o celular em
+// inglês e só quando nada acima reconheceu.
+function tipoPeleEn(t: string): string | null {
+  if (t.includes('combination')) return 'mista';
+  if (t.includes('oily')) return 'oleosa';
+  if (t.includes('dry')) return 'seca';
+  return null;
 }
 
 const RETINOID_RE = /(retinol|retinal|retinaldeido|tretinoina|isotretinoina|retinoide|retinoid|retinil|retinyl|adapalen|tazaroten|trifaroten|hidroxipinacolona|hydroxypinacolone|granactive|\bhpr\b)/;
@@ -75,7 +86,7 @@ export function avaliarProduto(p: ProdutoAvaliavel, pele: PeleParaAviso): Aviso 
     return { nivel: 'forte', texto: `Não é indicado ${fase}. Confirme com seu obstetra antes de usar.` };
   }
   // FORTE — a análise do scan apontou reação/alergia.
-  if (p.veredito === 'evitaria' && (p.avisosAnalise ?? []).some((a) => /alerg|reação|reacao/i.test(a))) {
+  if (p.veredito === 'evitaria' && (p.avisosAnalise ?? []).some((a) => /alerg|reação|reacao/i.test(a) || (emIngles && /allerg|reaction/i.test(a)))) {
     return { nivel: 'forte', texto: 'A análise apontou risco de reação na sua pele.' };
   }
   // LEVE — não é o mais indicado pra pele dela.

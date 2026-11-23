@@ -19,6 +19,7 @@ import Animated, {
   Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming,
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { desafioBloqueado, proximoDesafio, quantasFeitas, textoProgressoRotina, usePulados, type DesafioId, type EstadoMissoes } from '../../lib/missoes';
 
 const INK = '#121212';
@@ -28,10 +29,10 @@ const EO = Easing.bezier(0.23, 1, 0.32, 1);
 
 export type MissaoId = DesafioId;
 const TITULOS: Record<MissaoId, string> = {
-  d1: 'Escanear um produto',
-  d2: 'Colocar na estante',
-  d3: 'Colocar os produtos na rotina',
-  d4: 'Fazer o skincare',
+  d1: t('Escanear um produto'),
+  d2: t('Colocar na estante'),
+  d3: t('Colocar os produtos na rotina'),
+  d4: t('Fazer o skincare'),
 };
 
 function Check({ feito, numero }: { feito: boolean; numero: number }) {
@@ -93,7 +94,7 @@ export default function CardMissoes({ estado, onMissao }: { estado: EstadoMissoe
     <Animated.View style={[styles.sombra, entraSt]}>
       <View style={styles.card}>
         <View style={styles.topo}>
-          <Text style={styles.titulo}>{concluidas ? 'Missões concluídas!' : 'Suas missões'}</Text>
+          <Text style={styles.titulo}>{concluidas ? t('Missões concluídas!') : t('Suas missões')}</Text>
           <Text style={styles.contagem}>{`${feitas}/4`}</Text>
         </View>
         <View style={styles.trilho}>
@@ -103,7 +104,7 @@ export default function CardMissoes({ estado, onMissao }: { estado: EstadoMissoe
           // Os pulados continuam pendentes e dá para fazê-los a qualquer momento.
           const pulado = !l.feito && pulados.includes(l.id);
           const vez = l.id === proximo || (pulado && !desafioBloqueado(estado, l.id));
-          const sub = l.sub ?? (pulado ? 'Para fazer depois' : null);
+          const sub = l.sub ?? (pulado ? t('Para fazer depois') : null);
           return (
           <TouchableOpacity
             key={l.id}
@@ -113,7 +114,7 @@ export default function CardMissoes({ estado, onMissao }: { estado: EstadoMissoe
             style={[styles.linha, i > 0 && styles.linhaFio]}
             accessibilityRole="button"
             accessibilityState={{ disabled: !vez, checked: l.feito }}
-            accessibilityLabel={`${TITULOS[l.id]}${l.feito ? ', concluída' : ''}`}
+            accessibilityLabel={`${TITULOS[l.id]}${l.feito ? t(', concluída') : ''}`}
           >
             <Check feito={l.feito} numero={i + 1} />
             <View style={{ flex: 1, minWidth: 0 }}>

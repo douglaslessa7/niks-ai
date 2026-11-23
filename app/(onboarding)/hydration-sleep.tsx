@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
@@ -6,7 +6,7 @@ import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
   OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObPillButton, OB_BOTAO_H,
-  useObFrame, useObName, withName, obStep, useOnMount, ObPress, ObFill, useObFillText
+  useObFrame, useObName, withName, obStep, useOnMount, ObPress, ObFill, useObFillText, type ObFillHandle
 } from '../../components/onboarding/kit';
 
 // ⚠️ FORA DO FLUXO desde 20/out/2026: dividida de novo em `hydration.tsx` + `sleep.tsx`
@@ -25,23 +25,25 @@ const STEP = OB_STEPS.aguaSono;
 const STEP_NAME = 'Hidratação e Sono';
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  const [pressing, setPressing] = useState(false);   // o rosa abre do dedo já no toque (ver ObOptionCard)
-  const [touch, setTouch] = useState<{ x: number; y: number } | null>(null);
-  const fillOn = selected || pressing;
+  // O rosa começa no toque, na thread de UI (16/nov/2026, ver ObOptionCard / ObFill).
+  const fill = useRef<ObFillHandle>(null);
+  const marcada = useRef(selected);
+  marcada.current = selected;
+  const fillOn = selected;
   const on = useObFillText(fillOn);   // texto branco junto com o rosa (ver ObOptionCard)
   return (
     // Toque das opções do kit: vibra, afunda e o rosa enche da direita para a esquerda.
     <View style={{ flex: 1 }}>
     <ObPress
       onPress={onPress}
-      onPressIn={(t) => { setTouch(t); setPressing(true); }}
-      onPressOut={() => setPressing(false)}
+      onPressIn={(t) => fill.current?.previa(t)}
+      onPressOut={() => { if (!marcada.current) fill.current?.soltar(); }}
       style={{
         height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
         backgroundColor: OB.option, overflow: 'hidden',
       }}
     >
-      <ObFill on={fillOn} touch={touch} />
+      <ObFill ref={fill} on={fillOn} />
       <Text
         pointerEvents="none"   // o toque cai no botão: o círculo sai do ponto certo
         numberOfLines={1}

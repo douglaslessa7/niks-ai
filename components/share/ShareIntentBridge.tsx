@@ -4,6 +4,7 @@ import { useShareIntentContext } from 'expo-share-intent';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { normalizeShareIntent, domainOf } from '../../lib/shareProduct';
+import { t } from '../../lib/i18n';
 
 /**
  * Ponte entre o `expo-share-intent` e o store (feature "Compartilhar com o NIKS").
@@ -26,7 +27,7 @@ export function ShareIntentBridge() {
     resetShareIntent();
 
     if (!share) {
-      Alert.alert('Não deu pra abrir', 'Não encontramos um link ou imagem nesse compartilhamento.');
+      Alert.alert(t('Não deu pra abrir'), t('Não encontramos um link ou imagem nesse compartilhamento.'));
       return;
     }
     setPendingShare(share);

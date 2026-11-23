@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { OB, ObScreen, ObTitle, ObPillButton } from '../../components/onboarding/kit';
 import BotaoColarCodigo from '../../components/grupos/BotaoColarCodigo';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { entrarComCodigo } from '../../lib/gruposServidor';
 import { mensagemDoCodigo } from '../../lib/codigoConvite';
 import { useAuth } from '../../hooks/useAuth';
@@ -36,12 +37,12 @@ export default function SemGrupo() {
   return (
     <ObScreen>
       <Pressable style={{ flex: 1, justifyContent: 'center' }} onPress={Keyboard.dismiss} accessible={false}>
-        <ObTitle>Você não está em nenhum grupo. Assine para continuar ou entre com um novo convite.</ObTitle>
-        <ObPillButton label="Assinar o NIKS" onPress={() => { haptics.action(); router.replace('/(onboarding)/paywall-soft'); }} style={{ marginTop: 32 }} width={260} />
+        <ObTitle>{t('Você não está em nenhum grupo. Assine para continuar ou entre com um novo convite.')}</ObTitle>
+        <ObPillButton label={t('Assinar o NIKS')} onPress={() => { haptics.action(); router.replace('/(onboarding)/paywall-soft'); }} style={{ marginTop: 32 }} width={260} />
         <View style={{ marginTop: 28, marginHorizontal: 17, height: 57, borderRadius: 12, backgroundColor: OB.option, justifyContent: 'center' }}>
           <TextInput
             value={codigo}
-            onChangeText={(t) => { setCodigo(t.toUpperCase()); setErro(''); }}
+            onChangeText={(v) => { setCodigo(v.toUpperCase()); setErro(''); }}
             placeholder="NIKS-XXXXXX"
             placeholderTextColor="rgba(18,18,18,0.25)"
             autoCapitalize="characters"
@@ -54,10 +55,10 @@ export default function SemGrupo() {
         {!!erro && <Text style={{ marginTop: 10, textAlign: 'center', fontSize: 15, fontWeight: '600', color: '#D93A6B' }}>{erro}</Text>}
         <View style={{ alignItems: 'center' }}><BotaoColarCodigo onColar={(c) => { setCodigo(c); setErro(''); }} /></View>
         <TouchableOpacity activeOpacity={0.7} onPress={entrar} disabled={ocupada} style={{ alignSelf: 'center', marginTop: 16, height: 44, justifyContent: 'center' }}>
-          {ocupada ? <ActivityIndicator color={OB.pink} /> : <Text style={{ fontSize: 17, fontWeight: '600', color: OB.pink }}>Entrar com código</Text>}
+          {ocupada ? <ActivityIndicator color={OB.pink} /> : <Text style={{ fontSize: 17, fontWeight: '600', color: OB.pink }}>{t('Entrar com código')}</Text>}
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); void signOut().then(() => router.replace('/' as any)); }} style={{ alignSelf: 'center', marginTop: 8, height: 44, justifyContent: 'center' }}>
-          <Text style={{ fontSize: 15, color: OB.sub }}>Sair da conta</Text>
+          <Text style={{ fontSize: 15, color: OB.sub }}>{t('Sair da conta')}</Text>
         </TouchableOpacity>
       </Pressable>
     </ObScreen>

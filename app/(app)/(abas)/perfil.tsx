@@ -53,6 +53,9 @@ import { haptics } from '../../../lib/haptics';
 import { usePickProfilePhoto } from '../../../lib/profilePhoto';
 import { clearHomeTutorialSeenOnServer } from '../../../lib/homeTutorial';
 import { reverTutorialGrupos } from '../../../lib/gruposTutorial';
+import { t } from '../../../lib/i18n';
+import { registrarAceiteTermosTeste } from '../../../lib/aceiteTermos';
+import { pedirReembolsoDeTeste } from '../../../lib/reembolsoTeste';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../../lib/homeTheme';
 import HorariosRotina from '../../../components/rotina/HorariosRotina';
 import { usePuxarParaAtualizar } from '../../../hooks/usePuxarParaAtualizar';
@@ -177,11 +180,11 @@ export default function Perfil() {
     if (status === 'granted') {
       // Já tem permissão — abre Ajustes para o usuário gerenciar
       Alert.alert(
-        'Notificações ativas',
-        'Suas notificações já estão ativadas. Para gerenciá-las, acesse os ajustes do seu celular.',
+        t('Notificações ativas'),
+        t('Suas notificações já estão ativadas. Para gerenciá-las, acesse os ajustes do seu celular.'),
         [
-          { text: 'Fechar', style: 'cancel' },
-          { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
+          { text: t('Fechar'), style: 'cancel' },
+          { text: t('Abrir Ajustes'), onPress: () => Linking.openSettings() },
         ]
       );
       return;
@@ -193,15 +196,15 @@ export default function Perfil() {
     if (token) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) await savePushToken(user.id, token);
-      Alert.alert('Notificações ativadas!', 'Você receberá lembretes da sua rotina de skincare.');
+      Alert.alert(t('Notificações ativadas!'), t('Você receberá lembretes da sua rotina de skincare.'));
     } else {
       // Usuário recusou — direciona para Ajustes
       Alert.alert(
-        'Permissão necessária',
-        'Para receber notificações, ative-as nos ajustes do seu celular.',
+        t('Permissão necessária'),
+        t('Para receber notificações, ative-as nos ajustes do seu celular.'),
         [
-          { text: 'Agora não', style: 'cancel' },
-          { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
+          { text: t('Agora não'), style: 'cancel' },
+          { text: t('Abrir Ajustes'), onPress: () => Linking.openSettings() },
         ]
       );
     }
@@ -210,12 +213,12 @@ export default function Perfil() {
   const handleDeleteAccount = () => {
     haptics.warning();
     Alert.alert(
-      'Apagar minha conta',
-      'Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.',
+      t('Apagar minha conta'),
+      t('Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.'),
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: t('Cancelar'), style: 'cancel' },
         {
-          text: 'Apagar conta',
+          text: t('Apagar conta'),
           style: 'destructive',
           onPress: async () => {
             // Sem try/catch, uma falha na exclusão deixava a pessoa na tela sem
@@ -227,8 +230,8 @@ export default function Perfil() {
             } catch (e) {
               console.warn('[perfil] Falha ao apagar conta:', e);
               Alert.alert(
-                'Não foi possível apagar',
-                'Sua conta NÃO foi apagada. Verifique sua conexão e tente novamente.'
+                t('Não foi possível apagar'),
+                t('Sua conta NÃO foi apagada. Verifique sua conexão e tente novamente.')
               );
             }
           },
@@ -240,12 +243,12 @@ export default function Perfil() {
   const handleSignOut = () => {
     haptics.warning();
     Alert.alert(
-      'Sair da conta',
-      'Tem certeza que deseja sair da sua conta? Para entrar novamente, será necessário fazer login com seu e-mail e senha.',
+      t('Sair da conta'),
+      t('Tem certeza que deseja sair da sua conta? Para entrar novamente, será necessário fazer login com seu e-mail e senha.'),
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: t('Cancelar'), style: 'cancel' },
         {
-          text: 'Sair',
+          text: t('Sair', { context: 'conta' }),
           style: 'destructive',
           onPress: async () => {
             await signOut();
@@ -259,11 +262,11 @@ export default function Perfil() {
   const handleSupport = () => {
     haptics.tap();
     Alert.alert(
-      'Fale conosco',
-      'Mande a sua pergunta ou feedback para o nosso e-mail support@niksaiapp.com',
+      t('Fale conosco'),
+      t('Mande a sua pergunta ou feedback para o nosso e-mail support@niksaiapp.com'),
       [
-        { text: 'Fechar', style: 'cancel' },
-        { text: 'Enviar e-mail', onPress: () => Linking.openURL('mailto:support@niksaiapp.com') },
+        { text: t('Fechar'), style: 'cancel' },
+        { text: t('Enviar e-mail'), onPress: () => Linking.openURL('mailto:support@niksaiapp.com') },
       ]
     );
   };
@@ -274,11 +277,11 @@ export default function Perfil() {
   // Tocar na foto/nome: folha de ações nativa do iOS (no Android, o alerta do sistema).
   const openEditOptions = () => {
     // Sem foto de perfil, "Adicionar"; com foto, "Mudar" (09/nov/2026).
-    const textoFoto = fotoUrl ? 'Mudar foto de perfil' : 'Adicionar foto de perfil';
+    const textoFoto = fotoUrl ? t('Mudar foto de perfil') : t('Adicionar foto de perfil');
     haptics.tap();
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
-        { options: [textoFoto, 'Mudar nome', 'Cancelar'], cancelButtonIndex: 2 },
+        { options: [textoFoto, t('Mudar nome'), t('Cancelar')], cancelButtonIndex: 2 },
         (i) => {
           if (i === 0) pickPhoto();
           else if (i === 1) editName();
@@ -286,10 +289,10 @@ export default function Perfil() {
       );
       return;
     }
-    Alert.alert('Editar perfil', undefined, [
+    Alert.alert(t('Editar perfil'), undefined, [
       { text: textoFoto, onPress: () => { pickPhoto(); } },
-      { text: 'Mudar nome', onPress: editName },
-      { text: 'Cancelar', style: 'cancel' },
+      { text: t('Mudar nome'), onPress: editName },
+      { text: t('Cancelar'), style: 'cancel' },
     ]);
   };
 
@@ -317,7 +320,7 @@ export default function Perfil() {
         contentContainerStyle={{ paddingTop: headerH, paddingBottom: 53 + insets.bottom + 32 }}
       >
         {/* ── Topo: foto + nome + Premium ─────────────────────────────────── */}
-        <TouchableOpacity activeOpacity={0.85} onPress={openEditOptions} style={styles.hero} accessibilityLabel="Editar foto ou nome">
+        <TouchableOpacity activeOpacity={0.85} onPress={openEditOptions} style={styles.hero} accessibilityLabel={t('Editar foto ou nome')}>
           {convidada ? (
             <FotoComMoldura nivel={pontosC?.nivel ?? pg?.nivel ?? 1} foto={fotoUrl} nome={nome} tamanho={132} pequena={false} vazio="#FCE3EE" />
           ) : (
@@ -335,14 +338,14 @@ export default function Perfil() {
           </View>
           )}
 
-          <Text style={styles.name} numberOfLines={1}>{nome || 'Toque para definir'}</Text>
+          <Text style={styles.name} numberOfLines={1}>{nome || t('Toque para definir')}</Text>
 
           {convidada ? (
             <>
-              {pontosC && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}><View style={{ width: 24, height: 24 }}><Medalha nivel={pontosC.nivel} tamanho={24} /></View><Text style={styles.premiumText}>{pontosC.titulo}</Text></View>}
-              <Text style={{ marginTop: 6, fontSize: 14, color: '#7A7076' }}>{pg?.checkins ?? 0} check-ins · {gruposC?.length ?? 0} grupos</Text>
+              {pontosC && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}><View style={{ width: 24, height: 24 }}><Medalha nivel={pontosC.nivel} tamanho={24} /></View><Text style={styles.premiumText}>{t(pontosC.titulo)}</Text></View>}
+              <Text style={{ marginTop: 6, fontSize: 14, color: '#7A7076' }}>{t('{{checkins}} check-ins · {{grupos}} grupos', { checkins: pg?.checkins ?? 0, grupos: gruposC?.length ?? 0 })}</Text>
               <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.action(); abrirPaywallConvidada(); }} style={{ marginTop: 12, height: 44, paddingHorizontal: 22, borderRadius: 22, backgroundColor: '#FF5EA8', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Assinar o NIKS</Text>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>{t('Assinar o NIKS')}</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -354,18 +357,18 @@ export default function Perfil() {
         </TouchableOpacity>
 
         {/* ── Horário da rotina (os mesmos cartões do Alarme) ─────────────── */}
-        <Text style={styles.sectionTitle}>Mudar o horário da minha rotina</Text>
+        <Text style={styles.sectionTitle}>{t('Mudar o horário da minha rotina')}</Text>
         <HorariosRotina />
 
         {!convidada && (
           <>
         {/* ── Assinatura ──────────────────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>Assinatura</Text>
+        <Text style={styles.sectionTitle}>{t('Assinatura')}</Text>
         <Glass style={styles.card}>
           <Row
             icon={<Crown {...ICON} />}
-            label="Gerenciar assinatura"
-            sub="Detalhes do seu plano Premium"
+            label={t('Gerenciar assinatura')}
+            sub={t('Detalhes do seu plano Premium')}
             onPress={() => { haptics.tap(); Linking.openURL(manageSubscriptionsUrl()); }}
           />
         </Glass>
@@ -373,24 +376,24 @@ export default function Perfil() {
         )}
 
         {/* ── Sua conta ───────────────────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>Sua conta</Text>
+        <Text style={styles.sectionTitle}>{t('Sua conta')}</Text>
         <Glass style={styles.card}>
-          <Row icon={<Mail {...ICON} />} label={email ?? ''} sub="Seu e-mail" line />
+          <Row icon={<Mail {...ICON} />} label={email ?? ''} sub={t('Seu e-mail')} line />
           <Row
             icon={<Bell {...ICON} />}
-            label="Notificações"
-            sub="Lembretes da sua rotina"
+            label={t('Notificações')}
+            sub={t('Lembretes da sua rotina')}
             onPress={handleNotifications}
           />
         </Glass>
 
         {/* ── Suporte ─────────────────────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>Suporte</Text>
+        <Text style={styles.sectionTitle}>{t('Suporte')}</Text>
         <Glass style={styles.card}>
-          <Row icon={<MessageCircle {...ICON} />} label="Fale conosco" onPress={handleSupport} line />
+          <Row icon={<MessageCircle {...ICON} />} label={t('Fale conosco')} onPress={handleSupport} line />
           <Row
             icon={<Star {...ICON} />}
-            label="Avaliar o app"
+            label={t('Avaliar o app')}
             onPress={() => { haptics.tap(); requestAppReview(); }}
           />
         </Glass>
@@ -428,6 +431,23 @@ export default function Perfil() {
                   router.push('/grupos' as any);
                 }}
               />
+              {/* Teste do reembolso em SANDBOX (apple-notificacoes, 19/nov/2026). */}
+              <Row
+                icon={<Sparkles {...ICON} />}
+                label="Registrar aceite dos Termos (teste)"
+                onPress={async () => {
+                  haptics.tap();
+                  Alert.alert('Aceite dos Termos', await registrarAceiteTermosTeste());
+                }}
+              />
+              <Row
+                icon={<Sparkles {...ICON} />}
+                label="Pedir reembolso (sandbox)"
+                onPress={async () => {
+                  haptics.tap();
+                  Alert.alert('Reembolso de teste', await pedirReembolsoDeTeste());
+                }}
+              />
             </Glass>
           </>
         )}
@@ -436,10 +456,10 @@ export default function Perfil() {
         <View style={styles.footer}>
           <TouchableOpacity activeOpacity={0.8} onPress={handleSignOut} style={styles.signOut}>
             <LogOut size={18} color={DANGER} strokeWidth={2} />
-            <Text style={styles.signOutText}>Sair da conta</Text>
+            <Text style={styles.signOutText}>{t('Sair da conta')}</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.6} onPress={handleDeleteAccount} style={styles.deleteBtn}>
-            <Text style={styles.deleteText}>Apagar minha conta</Text>
+            <Text style={styles.deleteText}>{t('Apagar minha conta')}</Text>
           </TouchableOpacity>
           <Text style={styles.version}>NIKS v{appVersion}</Text>
         </View>
@@ -455,7 +475,7 @@ export default function Perfil() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.header }]} />
           </>
         )}
-        <Text style={styles.headerTitle}>Perfil</Text>
+        <Text style={styles.headerTitle}>{t('Perfil')}</Text>
       </View>
     </View>
   );

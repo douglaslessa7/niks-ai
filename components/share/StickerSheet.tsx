@@ -15,6 +15,7 @@ import {
   StickerSpec, StickerShape, specEq, sortKeys, feasibleShapes, stickerShape,
 } from '../../lib/stickerSpec';
 import { usablePresets } from '../../lib/stickerPresets';
+import { t } from '../../lib/i18n';
 
 // ── Bandeja de adesivos (estilo bandeja de figurinhas do Instagram) ───────────
 // Duas abas: "Sugestões" (14 presets prontos, cada um desenhado com os NÚMEROS REAIS
@@ -179,13 +180,13 @@ export default function StickerSheet({
         {/* Cabeçalho */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
           <Text style={{ flex: 1, fontFamily: f8, fontSize: 19, color: INK, letterSpacing: -0.5 }}>
-            Escolha seu adesivo
+            {t('Escolha seu adesivo')}
           </Text>
           <TouchableOpacity
             onPress={() => { haptics.tap(); onClose(); }}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Fechar"
+            accessibilityLabel={t('Fechar')}
             style={{
               width: 32, height: 32, borderRadius: 100,
               borderWidth: 1, borderColor: CARD_BD,
@@ -221,7 +222,7 @@ export default function StickerSheet({
                 }}
               >
                 <Text style={{ fontFamily: on ? f8 : f6, fontSize: 14, color: on ? INK : INK_MUTE }}>
-                  {label}
+                  {t(label)}
                 </Text>
               </TouchableOpacity>
             );
@@ -262,10 +263,10 @@ export default function StickerSheet({
                 }}
               >
                 <Text style={{ fontFamily: f7, fontSize: 14, color: INK, marginBottom: 4 }}>
-                  Aprimoramos a análise de pele.
+                  {t('Aprimoramos a análise de pele.')}
                 </Text>
                 <Text style={{ fontFamily: f6, fontSize: 13, color: INK_MUTE, lineHeight: 18 }}>
-                  Faça um novo scan para desbloquear suas 6 métricas e todos os adesivos.
+                  {t('Faça um novo scan para desbloquear suas 6 métricas e todos os adesivos.')}
                 </Text>
               </View>
             )}
@@ -281,7 +282,7 @@ export default function StickerSheet({
                 {draftVazio ? (
                   <View style={{ height: 150, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontFamily: f6, fontSize: 13, color: INK_MUTE }}>
-                      Escolha pelo menos um item abaixo
+                      {t('Escolha pelo menos um item abaixo')}
                     </Text>
                   </View>
                 ) : (
@@ -324,7 +325,7 @@ export default function StickerSheet({
                         }}
                       >
                         <Text style={{ fontFamily: on ? f8 : f6, fontSize: 13.5, color: on ? INK : INK_MUTE }}>
-                          {label}
+                          {t(label)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -347,7 +348,7 @@ export default function StickerSheet({
 
               {!temMetricas && (
                 <Text style={{ fontFamily: f6, fontSize: 12.5, color: INK_MUTE, marginTop: 8, lineHeight: 17 }}>
-                  Faça um novo scan para desbloquear suas 6 métricas.
+                  {t('Faça um novo scan para desbloquear suas 6 métricas.')}
                 </Text>
               )}
             </ScrollView>
@@ -363,7 +364,7 @@ export default function StickerSheet({
                 marginTop: 8, opacity: draftVazio ? 0.45 : 1,
               }}
             >
-              <Text style={{ fontFamily: f8, fontSize: 16, color: WHITE }}>Usar adesivo</Text>
+              <Text style={{ fontFamily: f8, fontSize: 16, color: WHITE }}>{t('Usar adesivo')}</Text>
             </TouchableOpacity>
           </View>
         )}

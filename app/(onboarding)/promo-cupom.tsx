@@ -17,6 +17,7 @@ import { View, Text, TextInput, KeyboardAvoidingView, Platform, ActivityIndicato
 import { useRouter } from 'expo-router';
 import Purchases from 'react-native-purchases';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { useAppStore } from '../../store/onboarding';
 import { setNextPlacement } from '../../lib/paywallFlow';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -28,14 +29,14 @@ import {
 const FUNCTION_URL = 'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/validar-cupom';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI';
 
-const MSG_GENERICA = 'Não deu pra validar agora. Tenta de novo em instantes.';
+const MSG_GENERICA = t('Não deu pra validar agora. Tenta de novo em instantes.');
 
 function mensagemPorMotivo(motivo?: string): string {
   switch (motivo) {
-    case 'nao_existe':      return 'Não encontramos esse cupom. Confere as letras e tenta de novo.';
-    case 'desativado':      return 'Esse cupom não está mais ativo.';
-    case 'expirado':        return 'Esse cupom expirou.';
-    case 'limite_atingido': return 'Esse cupom já bateu o limite de usos.';
+    case 'nao_existe':      return t('Não encontramos esse cupom. Confere as letras e tenta de novo.');
+    case 'desativado':      return t('Esse cupom não está mais ativo.');
+    case 'expirado':        return t('Esse cupom expirou.');
+    case 'limite_atingido': return t('Esse cupom já bateu o limite de usos.');
     default:                return MSG_GENERICA;
   }
 }
@@ -123,11 +124,11 @@ export default function PromoCupom() {
         {/* Esqueleto do nome/detalhe: título → 9 → subtítulo → 24 → campo → 39 → botão. */}
         <View>
           <ObTitle>
-            {'Aplica o seu '}
-            <Text style={{ color: OB.pink }}>cupom</Text>
+            {t('Aplica o seu ')}
+            <Text style={{ color: OB.pink }}>{t('cupom')}</Text>
           </ObTitle>
           <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>
-            Digita o código da sua influenciadora pra liberar o plano anual com desconto.
+            {t('Digita o código da sua influenciadora pra liberar o plano anual com desconto.')}
           </ObSubtitle>
           <View style={{
             marginTop: 24, marginHorizontal: 17, height: 57, borderRadius: 12,
@@ -137,7 +138,7 @@ export default function PromoCupom() {
             <TextInput
               value={valor}
               onChangeText={(t) => { setValor(t.toUpperCase()); if (erro) setErro(null); }}
-              placeholder="SEU CUPOM"
+              placeholder={t('SEU CUPOM')}
               placeholderTextColor={OB.sub}
               autoCapitalize="characters"
               autoCorrect={false}
@@ -166,7 +167,7 @@ export default function PromoCupom() {
               <ActivityIndicator color={OB.pink} />
             </View>
           ) : (
-            <ObPillButton label="Aplicar" onPress={handleApply} disabled={!active} style={{ marginTop: 39 }} />
+            <ObPillButton label={t('Aplicar')} onPress={handleApply} disabled={!active} style={{ marginTop: 39 }} />
           )}
         </View>
       </KeyboardAvoidingView>

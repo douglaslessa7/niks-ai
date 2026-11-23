@@ -5,6 +5,7 @@ import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'reac
 import { usePathname, useRouter } from 'expo-router';
 import { usePlacement } from 'expo-superwall';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { definirAbridorPaywall, fecharTrava, pularProximoPaywallDaMedalha, useTrava } from '../../lib/trava';
 import { definirAcesso, useAcesso } from '../../lib/acesso';
 import { avisarTransferenciaFalhou, confirmPremium } from '../../lib/subscriptionGate';
@@ -12,6 +13,7 @@ import { marcarCompraNestaSessao } from '../../lib/sinalCompra';
 import { useAppStore } from '../../store/onboarding';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { getUserId } from '../../lib/currentUser';
+import { registrarAceiteNaCompra } from '../../lib/aceiteTermos';
 
 const COR_CARTA = '#FFE3EF';
 
@@ -54,6 +56,8 @@ export default function AvisoCadeado() {
       if (!ok && transferenciaFalhou) await avisarTransferenciaFalhou();
       if (ok) {
         await marcarCompraNestaSessao(origemCompra);
+        // 1.64: o paywall mostra a frase dos Termos — registra o aceite (conta logada).
+        if (origemCompra === 'compra') await registrarAceiteNaCompra();
         const uid = await getUserId();
         definirAcesso('assinante', uid ?? undefined);
         setSubscriptionVerified(true);
@@ -111,10 +115,10 @@ export default function AvisoCadeado() {
             style={styles.botao}
             onPress={() => { haptics.action(); const f = funcao ?? 'cadeado'; fecharTrava(); setTimeout(() => abrir(f), 350); }}
           >
-            <Text style={styles.botaoT}>Ver planos</Text>
+            <Text style={styles.botaoT}>{t('Ver planos')}</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.6} style={styles.agora} onPress={() => { haptics.tap(); fecharTrava(); }}>
-            <Text style={styles.agoraT}>Agora não</Text>
+            <Text style={styles.agoraT}>{t('Agora não')}</Text>
           </TouchableOpacity>
         </Pressable>
       </Pressable>

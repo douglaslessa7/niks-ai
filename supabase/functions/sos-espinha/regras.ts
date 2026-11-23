@@ -179,7 +179,8 @@ const listaDeTextos = (v: unknown): string[] =>
   (Array.isArray(v) ? v : []).map(limparTexto).map(semDermatologista).filter(Boolean).slice(0, MAX_ITENS)
 
 /** Confere a resposta da IA. Devolve null quando ela não serve e a análise deve falhar. */
-export function sanearResposta(bruta: any, permitidos: ProdutoSos[], gestacao: boolean): RespostaSos | null {
+export function sanearResposta(bruta: any, permitidos: ProdutoSos[], gestacao: boolean, idioma: 'pt' | 'en' = 'pt'): RespostaSos | null {
+  if (idioma === 'en') return sanearRespostaEn(bruta, permitidos, gestacao)
   if (bruta?.status === 'precisa_foto') return { status: 'precisa_foto' }
   if (bruta?.status !== 'ok') return null
 
@@ -233,6 +234,7 @@ export function inicioDoDiaBrasilia(agora: Date): string {
 export const LIMITE_MENSAGENS_POR_DIA = 20
 
 const QUANDO_TEXTO: Record<Quando, string> = { agora: 'Agora', manha: 'Hoje de manhã', noite: 'Hoje à noite' }
+const QUANDO_TEXTO_EN: Record<Quando, string> = { agora: 'Now', manha: 'This morning', noite: 'Tonight' }
 
 export const AVISO_DERMATOLOGISTA: Record<Dermatologista, string> = {
   inflamada: 'Esta espinha parece mais inflamada que o normal. Um dermatologista pode avaliar e tratar com segurança.',
@@ -242,8 +244,42 @@ export const AVISO_DERMATOLOGISTA: Record<Dermatologista, string> = {
 
 const SEM_PRODUTO = 'Nenhum produto da sua estante é indicado para esta espinha agora. Siga os cuidados abaixo.'
 
+// Inglês (etapa 3 da tradução): os mesmos textos, só quando o app pede `idioma: 'en'`.
+const AVISO_DERMATOLOGISTA_EN: Record<Dermatologista, string> = {
+  inflamada: 'This pimple looks more inflamed than usual. A dermatologist can check it and treat it safely.',
+  infeccao: 'The photo shows signs that need a closer look. If you have a fever or the redness is spreading, get it checked today.',
+  varias: 'The photo shows several pimples together. A dermatologist can see what\'s causing it.',
+}
+const SEM_PRODUTO_EN = "None of the products on your shelf is right for this pimple right now. Follow the care tips below."
+
+function textoDaAnaliseEn(r: Extract<RespostaSos, { status: 'ok' }>): string {
+  const blocos = ["Here's your analysis for today."]
+  if (r.dermatologista) blocos.push(AVISO_DERMATOLOGISTA_EN[r.dermatologista])
+  blocos.push(r.produtos.length
+    ? `Do this now with what you already have:\n${r.produtos.map((p) => `• ${p.nome} (${QUANDO_TEXTO_EN[p.quando]}): ${p.como_usar}`).join('\n')}`
+    : SEM_PRODUTO_EN)
+  blocos.push(`Care without products:\n${r.cuidados.map((c) => `• ${c}`).join('\n')}`)
+  if (r.evitar.length) blocos.push(`What to avoid:\n${r.evitar.map((c) => `• ${c}`).join('\n')}`)
+  blocos.push('Any questions? Ask me here and send new photos anytime.')
+  return blocos.join('\n\n')
+}
+
+// "analysis", nunca "diagnosis" (o `limparTexto` já trocou "diagnóstico" em português).
+const semDiagnosisEn = (s: string) => s.replace(/diagnos[ie]s|diagnos\w*/gi, 'analysis')
+function sanearRespostaEn(bruta: any, permitidos: ProdutoSos[], gestacao: boolean): RespostaSos | null {
+  const r = sanearResposta(bruta, permitidos, gestacao)
+  if (!r || r.status !== 'ok') return r
+  return {
+    ...r,
+    produtos: r.produtos.map((p) => ({ ...p, como_usar: semDiagnosisEn(p.como_usar) })),
+    cuidados: r.cuidados.map(semDiagnosisEn),
+    evitar: r.evitar.map(semDiagnosisEn),
+  }
+}
+
 /** A análise como 1ª mensagem da NIKS na conversa (parágrafos viram bolhas). */
-export function textoDaAnalise(r: Extract<RespostaSos, { status: 'ok' }>): string {
+export function textoDaAnalise(r: Extract<RespostaSos, { status: 'ok' }>, idioma: 'pt' | 'en' = 'pt'): string {
+  if (idioma === 'en') return textoDaAnaliseEn(r)
   const blocos = ['Esta é a sua análise de hoje.']
   if (r.dermatologista) blocos.push(AVISO_DERMATOLOGISTA[r.dermatologista])
   blocos.push(r.produtos.length
@@ -272,12 +308,24 @@ export type RespostaConversa = { texto: string; resolvida: boolean }
 export const TEXTO_SEGURO = MOSTRAR_DERMATOLOGISTA
   ? 'Para não arriscar, prefiro não indicar nenhum produto agora. Mantenha a região limpa, não esprema e, se piorar ou doer muito, procure um dermatologista.'
   : 'Para não arriscar, prefiro não indicar nenhum produto agora. Mantenha a região limpa e não esprema.'
+export const TEXTO_SEGURO_EN = MOSTRAR_DERMATOLOGISTA
+  ? "To play it safe, I'd rather not suggest any product right now. Keep the area clean, don't squeeze it, and if it gets worse or really hurts, see a dermatologist."
+  : "To play it safe, I'd rather not suggest any product right now. Keep the area clean and don't squeeze it."
 
 /**
  * Confere a resposta da conversa. `null` = refazer (ou, na 2ª vez, usar o TEXTO_SEGURO): cita
  * produto vetado, ou retinoide/hidroquinona na gestação, sem ser para mandar evitar.
  */
-export function sanearConversa(bruta: any, vetados: ProdutoSos[], gestacao: boolean): RespostaConversa | null {
+export function sanearConversa(bruta: any, vetados: ProdutoSos[], gestacao: boolean, idioma: 'pt' | 'en' = 'pt'): RespostaConversa | null {
+  if (idioma === 'en') {
+    // Mesmas travas; muda só o texto fixo do fim e a troca de "diagnosis".
+    const r = sanearConversa(bruta, vetados, gestacao)
+    if (!r) return null
+    const sufixoPt = '\n\nPelo que você me contou, vale procurar um dermatologista para avaliar de perto.'
+    let texto = r.texto.replace(/diagnos[ie]s|diagnos\w*/gi, 'analysis')
+    if (texto.endsWith(sufixoPt)) texto = texto.slice(0, -sufixoPt.length) + "\n\nFrom what you've told me, it's worth seeing a dermatologist for a closer look."
+    return { ...r, texto }
+  }
   if (bruta?.status !== 'ok') return null
   let texto = semDermatologista(String(bruta.texto ?? '').replace(/\*\*/g, '').trim().replace(/diagn[oó]stic\w*/gi, 'análise'))
   if (!texto) return null

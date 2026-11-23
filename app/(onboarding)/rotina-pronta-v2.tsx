@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { ListChecks, ScanFace, ShoppingBag, Trophy } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { CONCERN_LABELS } from '../../components/onboarding/answers';
 import { useAppStore } from '../../store/onboarding';
 import { PROBLEMA_DA_QUEIXA } from '../../lib/analiseRapida';
@@ -118,18 +119,18 @@ const QUEIXA_NA_LISTA: Record<string, string> = { 'Acne/espinhas': 'acne' };
 function textoFoco(concerns: string[]): string | null {
   const marcadas = CONCERN_LABELS.filter((c) => c !== 'Outro' && concerns.includes(c));
   if (!marcadas.length) return null;
-  if (marcadas.length === 1) return NOME_QUEIXA[marcadas[0]] ?? marcadas[0];
-  const nomes = marcadas.map((c) => (QUEIXA_NA_LISTA[c] ?? c).toLowerCase());
-  const t = `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`;
-  return t.charAt(0).toUpperCase() + t.slice(1);
+  if (marcadas.length === 1) return t(NOME_QUEIXA[marcadas[0]] ?? marcadas[0]);
+  const nomes = marcadas.map((c) => t(QUEIXA_NA_LISTA[c] ?? c).toLowerCase());
+  const txt = t('{{lista}} e {{ultimo}}', { lista: nomes.slice(0, -1).join(', '), ultimo: nomes[nomes.length - 1] });
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
 }
 
 function textoRegiao(regioes: string[]): string | null {
   const validas = regioes.filter((r): r is Regiao => ['testa', 'nariz', 'bochechas', 'queixo'].includes(r));
   if (!validas.length) return null;
-  if (validas.length === 4) return 'Rosto todo';
-  const t = focoNome(validas);
-  return t.charAt(0).toUpperCase() + t.slice(1);
+  if (validas.length === 4) return t('Rosto todo');
+  const txt = focoNome(validas);
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
 }
 
 // ── Ícones (traço 2, cantos redondos, como na v1) ───────────────────────────
@@ -184,7 +185,7 @@ const CHECK_D = (() => {
 function CheckAnel() {
   const r = (CHECK_TAM - 3.2) / 2;
   return (
-    <Svg width={CHECK_TAM} height={CHECK_TAM} accessibilityLabel="Pronto">
+    <Svg width={CHECK_TAM} height={CHECK_TAM} accessibilityLabel={t('Pronto')}>
       <Defs>
         <SvgGradient id="anelCheck" x1="0" y1="1" x2="1" y2="0">
           <Stop offset="0" stopColor={PINK} />
@@ -235,7 +236,7 @@ function Periodo({ tipo, d, periodo, n }: { tipo?: 'sol'; d?: string; periodo: s
       </View>
       <Text style={{ fontSize: 17, lineHeight: 32, color: INK }}>
         <Text style={{ fontSize: 28, fontWeight: '700', letterSpacing: -0.6, color: PINK }}>{n == null ? '…' : n}</Text>
-        {n == null ? '' : n === 1 ? ' passo' : ' passos'}
+        {n == null ? '' : n === 1 ? t(' passo') : t(' passos')}
       </Text>
     </View>
   );
@@ -250,7 +251,7 @@ function CardRotina({ foco, regiao, manha, noite }: { foco: string | null; regia
     <View style={[cartao, { paddingTop: 20, paddingBottom: 16, paddingHorizontal: PAD }]}>
       {temTopo && (
         <View style={{ alignItems: 'center' }}>
-          <Text style={rotuloPequeno}>SEU FOCO</Text>
+          <Text style={rotuloPequeno}>{t('SEU FOCO')}</Text>
           {!!foco && (
             <Text style={{ marginTop: 6, fontSize: 26, lineHeight: 31, fontWeight: '700', letterSpacing: -0.5, color: INK, textAlign: 'center' }}>{foco}</Text>
           )}
@@ -261,9 +262,9 @@ function CardRotina({ foco, regiao, manha, noite }: { foco: string | null; regia
         </View>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Periodo tipo="sol" periodo="Manhã" n={manha} />
+        <Periodo tipo="sol" periodo={t('Manhã')} n={manha} />
         <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: LINE, marginVertical: 4 }} />
-        <Periodo d={I.lua} periodo="Noite" n={noite} />
+        <Periodo d={I.lua} periodo={t('Noite')} n={noite} />
       </View>
     </View>
   );
@@ -292,7 +293,7 @@ function Slot({ foto, selo, seloRosa }: { foto: number | null; selo: string; sel
         ) : (
           <>
             <Icone d={I.foto} cor="#C9C1C4" tam={26} larg={1.8} />
-            <Text style={{ fontSize: 13, lineHeight: 17, color: SUB, textAlign: 'center' }}>{'Foto real\nautorizada'}</Text>
+            <Text style={{ fontSize: 13, lineHeight: 17, color: SUB, textAlign: 'center' }}>{t('Foto real\nautorizada')}</Text>
           </>
         )}
       </View>
@@ -592,8 +593,8 @@ export default function RotinaProntaV2() {
   // produto: com acne, manchas e cravos marcados aparecia só "Manchas", o problema da carta),
   // na ordem das opções da tela. Sem queixa marcada, o problema da carta.
   const foco = textoFoco(onboarding.concerns)
-    ?? (queixaDaCarta ? (NOME_QUEIXA[queixaDaCarta] ?? queixaDaCarta) : exemplo ? 'Acne e espinhas' : null);
-  const regiao = textoRegiao(regioesFoco) ?? (exemplo ? 'Testa e bochechas' : null);
+    ?? (queixaDaCarta ? t(NOME_QUEIXA[queixaDaCarta] ?? queixaDaCarta) : exemplo ? t('Acne e espinhas') : null);
+  const regiao = textoRegiao(regioesFoco) ?? (exemplo ? t('Testa e bochechas') : null);
   const cam = carta ? caminhoDaCarta(carta) : null;
 
   useOnMount(() => track('onboarding_step_viewed', { ...obStep(STEP, STEP_NAME), variacao: 'v2' }));
@@ -686,12 +687,14 @@ export default function RotinaProntaV2() {
             {/* Duas linhas fixas, cada uma em UMA linha que encolhe se não couber (até 72%):
                 no iPhone SE a 1ª quebrava e deixava "uma" sozinho (visto em 04/nov/2026). */}
             <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={[tituloTela, { marginTop: 20 }]}>
-              {`${nome ? `${nome}, sua` : 'Sua'} rotina ${pele ? 'para ter uma' : 'está pronta.'}`}
+              {nome
+                ? (pele ? t('{{nome}}, sua rotina para ter uma', { nome }) : t('{{nome}}, sua rotina está pronta.', { nome }))
+                : (pele ? t('Sua rotina para ter uma') : t('Sua rotina está pronta.'))}
             </Text>
             {!!pele && (
               <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={tituloTela}>
-                <Text style={{ color: PINK }}>{pele}</Text>
-                {' está pronta.'}
+                <Text style={{ color: PINK }}>{t(pele)}</Text>
+                {t(' está pronta.')}
               </Text>
             )}
           </View>
@@ -700,16 +703,16 @@ export default function RotinaProntaV2() {
         {/* A rotina: um card só (foco + região em cima; manhã | noite embaixo) */}
         {el('rotina', 28, <CardRotina foco={foco} regiao={regiao} manha={manha} noite={noite} />)}
         {el('ajustar', 10, (
-          <Text style={{ textAlign: 'center', fontSize: 14, lineHeight: 19, color: SUB }}>Você pode ajustar depois.</Text>
+          <Text style={{ textAlign: 'center', fontSize: 14, lineHeight: 19, color: SUB }}>{t('Você pode ajustar depois.')}</Text>
         ))}
 
         {/* Para onde você vai — a jornada do "Seu caminho" */}
         {!!cam && (
           <>
-            {el('cabCaminho', 32, <Cabecalho icone={<Icone d={I.subida} cor={INK} tam={20} larg={1.8} />} titulo="Para onde você vai" frase="Da sua pele hoje até a sua meta." />)}
+            {el('cabCaminho', 32, <Cabecalho icone={<Icone d={I.subida} cor={INK} tam={20} larg={1.8} />} titulo={t('Para onde você vai')} frase={t('Da sua pele hoje até a sua meta.')} />)}
             {el('jornada', 22, <Jornada cam={cam} telaW={W} modo={modoJornada} reduce={reduce} />, true)}
             {el('aviso', 6, (
-              <Text style={{ textAlign: 'center', fontSize: 13, lineHeight: 17, color: CLARO }}>Meta estimada. Os resultados podem variar.</Text>
+              <Text style={{ textAlign: 'center', fontSize: 13, lineHeight: 17, color: CLARO }}>{t('Meta estimada. Os resultados podem variar.')}</Text>
             ))}
           </>
         )}
@@ -717,16 +720,16 @@ export default function RotinaProntaV2() {
         <Divisor />
 
         {/* Resultados reais (vazio até chegarem fotos reais e autorizadas) */}
-        {el('cabResultados', 32, <Cabecalho icone={<Icone d={I.foto} cor={INK} tam={20} larg={1.8} />} titulo="Resultados reais" />)}
+        {el('cabResultados', 32, <Cabecalho icone={<Icone d={I.foto} cor={INK} tam={20} larg={1.8} />} titulo={t('Resultados reais')} />)}
         {el('resultados', 16, (
           <View style={[cartao, { padding: PAD }]}>
             <View style={{ marginTop: 11, height: slotH, flexDirection: 'row', gap: 8 }}>
-              <Slot foto={RESULTADO_REAL.antes} selo="ANTES" />
-              <Slot foto={RESULTADO_REAL.depois} selo="DEPOIS" seloRosa />
+              <Slot foto={RESULTADO_REAL.antes} selo={t('ANTES')} />
+              <Slot foto={RESULTADO_REAL.depois} selo={t('DEPOIS')} seloRosa />
             </View>
             <Text style={{ marginTop: 14, textAlign: 'center', fontSize: 17, lineHeight: 22 }}>
-              <Text style={{ fontWeight: '600', color: RESULTADO_REAL.nome ? INK : CLARO }}>{RESULTADO_REAL.nome ?? 'Nome da usuária'}</Text>
-              <Text style={{ color: RESULTADO_REAL.cidade ? SUB : CLARO }}>{`  ·  ${RESULTADO_REAL.cidade ?? 'Cidade, UF'}`}</Text>
+              <Text style={{ fontWeight: '600', color: RESULTADO_REAL.nome ? INK : CLARO }}>{RESULTADO_REAL.nome ? t(RESULTADO_REAL.nome) : t('Nome da usuária')}</Text>
+              <Text style={{ color: RESULTADO_REAL.cidade ? SUB : CLARO }}>{`  ·  ${RESULTADO_REAL.cidade ? t(RESULTADO_REAL.cidade) : t('Cidade, UF')}`}</Text>
             </Text>
           </View>
         ))}
@@ -734,11 +737,11 @@ export default function RotinaProntaV2() {
         <Divisor />
 
         {/* O que você leva */}
-        {el('cabLeva', 32, <Cabecalho icone={<Icone d={I.presente} cor={INK} tam={20} larg={1.8} />} titulo="O que você leva" frase="Tudo para cuidar da sua pele" />)}
-        {el('item1', 16, <Item icone={<Icone d={I.scan} />} titulo="Análise de pele com IA" texto="Acompanhe a evolução da sua pele." />)}
-        {el('item2', 10, <Item icone={<Icone d={I.lista} />} titulo="Rotina personalizada" texto="Passos de manhã e à noite para você." />)}
-        {el('item3', 10, <Item icone={<Icone d={I.codigo} />} titulo="Scanner de produtos" texto="Veja a compatibilidade antes de comprar." />)}
-        {el('item4', 10, <Item icone={<Icone d={I.sino} />} titulo="Lembretes e cartas" texto="Mantenha sua rotina em dia." />)}
+        {el('cabLeva', 32, <Cabecalho icone={<Icone d={I.presente} cor={INK} tam={20} larg={1.8} />} titulo={t('O que você leva')} frase={t('Tudo para cuidar da sua pele')} />)}
+        {el('item1', 16, <Item icone={<Icone d={I.scan} />} titulo={t('Análise de pele com IA')} texto={t('Acompanhe a evolução da sua pele.')} />)}
+        {el('item2', 10, <Item icone={<Icone d={I.lista} />} titulo={t('Rotina personalizada')} texto={t('Passos de manhã e à noite para você.')} />)}
+        {el('item3', 10, <Item icone={<Icone d={I.codigo} />} titulo={t('Scanner de produtos')} texto={t('Veja a compatibilidade antes de comprar.')} />)}
+        {el('item4', 10, <Item icone={<Icone d={I.sino} />} titulo={t('Lembretes e cartas')} texto={t('Mantenha sua rotina em dia.')} />)}
       </Animated.ScrollView>
 
       {/* Véu + botão fixo (os da v1: degradê de 150 pt, botão de 60 pt a 26 pt das bordas) */}
@@ -758,7 +761,7 @@ export default function RotinaProntaV2() {
             shadowColor: PINK, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.4, shadowRadius: 15,
           }}
         >
-          <Text style={{ fontSize: 21, fontWeight: '700', letterSpacing: -0.2, color: '#FFFFFF' }}>Vamos começar!</Text>
+          <Text style={{ fontSize: 21, fontWeight: '700', letterSpacing: -0.2, color: '#FFFFFF' }}>{t('Vamos começar!')}</Text>
         </TouchableOpacity>
       </View>
     </View>

@@ -9,9 +9,11 @@ import {
   OB, OB_STEPS, ObPillButton, ObScreen, useObFrame, useObName, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 import { routineLoadingLines } from '../../components/onboarding/answers';
+import { t } from '../../lib/i18n';
 import {
-  ESPERA_SEGUNDO_PLANO_MS, FALHAS_PARA_ENTRAR, adiarCompraPendente, concluirCompraPendente, tentarEmSegundoPlano,
+  ESPERA_SEGUNDO_PLANO_MS, FALHAS_PARA_ENTRAR, abandonarExecucao, adiarCompraPendente, concluirCompraPendente, tentarEmSegundoPlano,
 } from '../../lib/concluirCompra';
+import { esperarRotina } from '../../lib/esperaDaRotina';
 
 // TELA DE ESPERA depois da compra (06/nov/2026) — "Criando uma rotina só sua, <nome>". O
 // visual é o da antiga tela 23 do fluxo completo (fora do fluxo desde out/2026): anel R 122
@@ -31,6 +33,11 @@ import {
 // falhar de vez não segura a tela (a aba Rotina gera de novo, como sempre). Sem voltar.
 // Depois de 3 falhas aparece "Entrar no app" e o resto continua em segundo plano
 // (`lib/concluirCompra.ts`, 09/nov/2026).
+// ⚠️ NUNCA PARADA (18/nov/2026, caso real no TestFlight 1.63 (1)): antes ela só saía dos 95%
+// quando tudo terminava, e nenhuma etapa tinha limite — uma requisição pendurada prendia a
+// usuária para sempre. Agora cada tentativa tem teto de 75 s (`lib/esperaDaRotina.ts`; as
+// chamadas de IA também têm limite próprio): estourou ou falhou → tenta de novo sozinha; na
+// 2ª, segue para o app e a rotina termina por trás (a Rotina mostra o que já estiver pronto).
 //
 // ⚠️ A linha "43.754 mulheres com pele oleosa já seguem uma rotina NIKS" do design
 // ficou de fora: prova social não vai ao ar com número de exemplo.
@@ -59,11 +66,18 @@ export default function LoadingRotina() {
 
   const processar = async () => {
     setFalhou(false);
-    const r = await concluirCompraPendente();
-    if (r.status === 'ok') { ready.current = true; return; }
-    if (r.status === 'sem_sessao') { router.replace('/'); return; }
-    setFalhas(r.falhas);
-    setFalhou(true);
+    const r = await esperarRotina({
+      tentar: concluirCompraPendente,
+      abandonar: abandonarExecucao,
+      aoTentarDeNovo: (n, motivo) => track('rotina_tentou_de_novo', { tentativa: n, motivo }),
+    });
+    if (r.fim === 'ok') { ready.current = true; return; }
+    if (r.fim === 'sem_sessao') { router.replace('/'); return; }
+    // Não deu nas tentativas: segue para o app; o resto termina em segundo plano.
+    track('rotina_seguiu_para_o_app', { tentativas: r.tentativas, motivos: r.motivos.join(',') });
+    await adiarCompraPendente(r.tentativas);
+    tentarEmSegundoPlano(ESPERA_SEGUNDO_PLANO_MS);
+    router.replace('/(app)/home');
   };
 
   useEffect(() => {
@@ -156,7 +170,7 @@ export default function LoadingRotina() {
         position: 'absolute', left: 24, right: 24, top: y(562), textAlign: 'center',
         fontSize: 20, lineHeight: 26, fontWeight: '700', letterSpacing: -0.3, color: OB.ink,
       }}>
-        {falhou ? 'Não conseguimos terminar sua rotina agora.' : name ? `Criando uma rotina só sua, ${name}` : 'Criando uma rotina só sua'}
+        {falhou ? t('Não conseguimos terminar sua rotina agora.') : name ? t('Criando uma rotina só sua, {{name}}', { name }) : t('Criando uma rotina só sua')}
       </Text>
       {!falhou && (
         <Text style={{
@@ -181,7 +195,7 @@ export default function LoadingRotina() {
         </View>
       )}
 
-      {falhou && falhas < FALHAS_PARA_ENTRAR && <ObPillButton label="Tentar de novo" width={200} bottom={buttonBottom} onPress={tentarDeNovo} />}
+      {falhou && falhas < FALHAS_PARA_ENTRAR && <ObPillButton label={t('Tentar de novo')} width={200} bottom={buttonBottom} onPress={tentarDeNovo} />}
       {falhou && falhas >= FALHAS_PARA_ENTRAR && (
         <>
           <TouchableOpacity
@@ -189,9 +203,9 @@ export default function LoadingRotina() {
             accessibilityRole="button"
             style={{ position: 'absolute', alignSelf: 'center', bottom: buttonBottom + 66, paddingVertical: 10, paddingHorizontal: 20 }}
           >
-            <Text style={{ fontSize: 16, fontWeight: '600', color: OB.ink }}>Tentar de novo</Text>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: OB.ink }}>{t('Tentar de novo')}</Text>
           </TouchableOpacity>
-          <ObPillButton label="Entrar no app" width={220} bottom={buttonBottom} onPress={() => { void entrarNoApp(); }} />
+          <ObPillButton label={t('Entrar no app')} width={220} bottom={buttonBottom} onPress={() => { void entrarNoApp(); }} />
         </>
       )}
     </ObScreen>

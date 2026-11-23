@@ -20,6 +20,7 @@ import { conviteDoGrupo, useMeusGrupos } from '../../lib/gruposServidor';
 import { copiarTexto, mensagemConvite } from '../../lib/convite';
 import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -80,11 +81,11 @@ export default function ConvidarGrupo() {
   const integrantes = g?.integrantes ?? [];
   const total = g?.total ?? integrantes.length;
   const pronto = !!mensagem;
-  const sub = (texto: string) => (erro ? 'Não deu para gerar o convite agora' : pronto ? texto : 'Gerando o convite…');
+  const sub = (texto: string) => (erro ? t('Não deu para gerar o convite agora') : pronto ? texto : t('Gerando o convite…'));
 
   return (
     <View style={[styles.root, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
-      <TouchableOpacity activeOpacity={0.6} onPress={fechar} style={styles.fechar} accessibilityLabel="Fechar" hitSlop={8}>
+      <TouchableOpacity activeOpacity={0.6} onPress={fechar} style={styles.fechar} accessibilityLabel={t('Fechar')} hitSlop={8}>
         <Icone d={['M18 6 6 18', 'm6 6 12 12']} tam={24} />
       </TouchableOpacity>
 
@@ -97,16 +98,16 @@ export default function ConvidarGrupo() {
           {/* O lugar da próxima amiga. */}
           <View style={styles.vaga}><Icone d={['M12 5v14', 'M5 12h14']} cor="#D9A6BF" tam={16} sw={2.2} /></View>
         </View>
-        <Text style={styles.total}>{total === 1 ? '1 integrante' : `${total} integrantes`}</Text>
-        <Text style={styles.chamada}>Convide suas amigas para fazer skincare com você neste grupo.</Text>
+        <Text style={styles.total}>{total === 1 ? t('1 integrante') : t('{{n}} integrantes', { n: total })}</Text>
+        <Text style={styles.chamada}>{t('Convide suas amigas para fazer skincare com você neste grupo.')}</Text>
       </View>
 
       <View style={styles.cartao}>
         <TouchableOpacity activeOpacity={0.7} disabled={!pronto} onPress={compartilhar} style={styles.linha} accessibilityRole="button">
           <View style={styles.icone}><Icone d={ICO_ENVIAR} cor={PINK} tam={20} /></View>
           <View style={styles.textos}>
-            <Text style={styles.linhaT}>Compartilhar convite</Text>
-            <Text style={styles.linhaS} numberOfLines={2}>{sub('WhatsApp, Instagram, mensagens e onde mais quiser')}</Text>
+            <Text style={styles.linhaT}>{t('Compartilhar convite')}</Text>
+            <Text style={styles.linhaS} numberOfLines={2}>{sub(t('WhatsApp, Instagram, mensagens e onde mais quiser'))}</Text>
           </View>
           <Icone d={['m9 18 6-6-6-6']} cor="#B5B5B5" tam={16} sw={2.4} />
         </TouchableOpacity>
@@ -114,8 +115,8 @@ export default function ConvidarGrupo() {
         <TouchableOpacity activeOpacity={0.7} disabled={!pronto} onPress={copiar} style={styles.linha} accessibilityRole="button">
           <View style={styles.icone}><Icone d={copiado ? ICO_OK : ICO_LINK} cor={PINK} tam={20} /></View>
           <View style={styles.textos}>
-            <Text style={styles.linhaT}>{copiado ? 'Convite copiado' : 'Copiar convite'}</Text>
-            <Text style={styles.linhaS} numberOfLines={1}>{sub(`Link do NIKS e o código ${convite?.codigo ?? ''}`)}</Text>
+            <Text style={styles.linhaT}>{copiado ? t('Convite copiado') : t('Copiar convite')}</Text>
+            <Text style={styles.linhaS} numberOfLines={1}>{sub(t('Link do NIKS e o código {{codigo}}', { codigo: convite?.codigo ?? '' }))}</Text>
           </View>
           {!pronto && !erro ? <ActivityIndicator color={PINK} /> : <Icone d={['m9 18 6-6-6-6']} cor="#B5B5B5" tam={16} sw={2.4} />}
         </TouchableOpacity>
@@ -126,12 +127,12 @@ export default function ConvidarGrupo() {
         <TouchableOpacity
           activeOpacity={0.85}
           disabled={!pronto}
-          onPress={erro ? () => Alert.alert('Não deu para gerar o convite agora', 'Tente de novo em instantes.') : compartilhar}
+          onPress={erro ? () => Alert.alert(t('Não deu para gerar o convite agora'), t('Tente de novo em instantes.')) : compartilhar}
           style={[styles.convidar, !pronto && !erro && { opacity: 0.5 }]}
           accessibilityRole="button"
         >
           <Icone d={ICO_ENVIAR} cor="#fff" tam={19} sw={2.2} />
-          <Text style={styles.convidarT}>Convidar</Text>
+          <Text style={styles.convidarT}>{t('Convidar')}</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>

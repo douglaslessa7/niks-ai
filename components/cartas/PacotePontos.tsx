@@ -12,6 +12,15 @@ import { nivelDe } from '../../lib/niveis';
 import Medalha from '../medalhas/Medalha';
 import { fmtPontos, type NivelTabela } from '../../lib/cartasServidor';
 import { fmt as fmtW } from '../caminhada/geometria';
+import { t } from '../../lib/i18n';
+
+// Textos no módulo: dentro do componente, `t` é o relógio da animação, e as legendas do nível
+// são montadas em worklet (UI thread) — por isso modelos prontos com `{{…}}` + `replace`.
+const TXT_NIVEL = t('Nível {{n}}');
+const TXT_NIVEL_MAX = t('Nível máximo');
+const TXT_NIVEL_COMPLETO = t('nível completo');
+const TXT_FALTAM = t('faltam {{pts}} NIKS Points');
+const TXT_PULAR = t('Pular animação');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pacote de NIKS Points, depois da revelação na tela de raspar. Não há design; o visual
@@ -316,14 +325,14 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
             <Medalha nivel={nv.nivel} tamanho={56} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.hdrLvl}>{`Nível ${nv.nivel}`}</Text>
+            <Text style={styles.hdrLvl}>{TXT_NIVEL.replace('{{n}}', String(nv.nivel))}</Text>
             <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{nv.titulo}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return ultimo ? fmtW(v) : `${fmtW(Math.min(v, teto))} / ${fmtW(teto)}`; }} style={styles.hdrXp} />
             <Vivo
               xp={xp}
-              fmtFn={(v) => { 'worklet'; return ultimo ? 'Nível máximo' : v >= teto ? 'nível completo' : `faltam ${fmtW(teto - v)} NIKS Points`; }}
+              fmtFn={(v) => { 'worklet'; return ultimo ? TXT_NIVEL_MAX : v >= teto ? TXT_NIVEL_COMPLETO : TXT_FALTAM.replace('{{pts}}', fmtW(teto - v)); }}
               style={styles.hdrFalta}
             />
           </View>
@@ -344,7 +353,7 @@ export default function PacotePontos({ de, para, niveis, icone, origem, topo, rm
       </Canvas>
 
       {rodando && !rm && !semCartas && (
-        <Pressable style={StyleSheet.absoluteFill} onPress={adiantar} accessibilityLabel="Pular animação" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={adiantar} accessibilityLabel={TXT_PULAR} />
       )}
     </View>
   );

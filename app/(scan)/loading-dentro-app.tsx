@@ -8,6 +8,7 @@ import { invalidateCache, peekCache } from '../../lib/cache';
 import { chaveEstado, estadoCartas, type EstadoCartas } from '../../lib/cartasServidor';
 import { ganhouPontos } from '../../lib/pontosAnimacao';
 import { regenerateProtocolInApp } from '../../lib/regenerateProtocolInApp';
+import { idioma, t } from '../../lib/i18n';
 import { ScanLoadingView } from '../../components/scan/ScanLoadingView';
 
 // Tela de carregamento da ANÁLISE DE PELE feita DENTRO do app (scan de 6 fotos).
@@ -91,6 +92,7 @@ export default function LoadingDentroApp() {
               'apikey': SUPABASE_ANON_KEY,
             },
             body: JSON.stringify({
+              idioma,
               // Sempre preenchido com a foto NEUTRA. É o campo que a Edge Function
               // usava antes de existir o scan multi-foto — mantê-lo faz um deploy
               // fora de ordem (app novo + função velha) degradar para a análise de
@@ -257,7 +259,7 @@ export default function LoadingDentroApp() {
       countdown={countdown}
       countdownPaused={countdownPaused}
       showError={showError}
-      erroAoSalvar={erroAoSalvar ? { titulo: 'Não conseguimos salvar sua análise', botao: 'Tentar de novo' } : null}
+      erroAoSalvar={erroAoSalvar ? { titulo: t('Não conseguimos salvar sua análise'), botao: t('Tentar de novo') } : null}
       onRetry={() => {
         if (erroAoSalvar) {
           setErroAoSalvar(false);

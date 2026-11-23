@@ -3,7 +3,8 @@
 // (`NiksRoutineTutorial`, telas 54a/54b). Aparece UMA vez por conta
 // (`users.rotina_intro_status` null); quem grava a escolha é a Rotina (`escolherIntro`).
 //
-//   · Momento 1 — "Essa é a rotina ideal pra sua pele": os passos dela em cards; a
+//   · Momento 1 — "Últimos detalhes da sua rotina ideal": passos GENÉRICOS (iguais para
+//     todas, com produtos genéricos sem marca) em cards; a
 //     cada 3,2 s alternam sozinhos entre manhã e noite (como o 54a). "Continuar".
 //   · Momento 2 — os cards saem e os produtos se juntam numa moldura de scan:
 //     "Quer usar o que já tem em casa?" + Escanear meus produtos / Não tenho
@@ -12,19 +13,27 @@
 // Geometria: tudo em coordenadas do quadro do design (393×852), num "palco" escalado
 // por igual para caber na tela (min(W/393, H/852)) e centralizado — as posições ficam
 // literalmente as do design. O fundo (degradê + véu) ocupa a tela inteira.
-// Dados: os passos e produtos são os DELA (Minha rotina). Passo sem produto usa a
-// imagem ilustrativa do design para aquele tipo de passo.
+// Dados: fixos (16/nov/2026) — o tutorial não mostra a rotina nem os produtos dela.
 // Nada é clicável além dos botões (o overlay engole o resto dos toques).
+// Animação (18/nov/2026): tudo em shared values do Reanimated, na thread de UI — a troca
+// manhã ↔ noite é uma sequência repetida (sem setInterval/setState), as duas listas ficam
+// montadas e só trocam de opacidade, e o "Continuar" dispara o momento 2 de uma vez. Antes
+// a troca dependia de relógios do JS e o card ficava vazio quando o JS estava ocupado.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import Reanimated, {
+  Easing, cancelAnimation, interpolateColor, useAnimatedStyle, useSharedValue,
+  withDelay, withRepeat, withSequence, withTiming, type SharedValue,
+} from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as ExpoImage } from 'expo-image';
 import Svg, { Circle, Defs, FeGaussianBlur, Filter, G, Line, Path, Rect } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
-import type { MinhaRotina, PassoRotina, Periodo } from '../../lib/minhaRotina';
-import { ROTULO_TIPO, tipoDoPasso, type TipoPasso } from '../../lib/tipoPasso';
+import { t } from '../../lib/i18n';
+import type { Periodo } from '../../lib/minhaRotina';
+import { ROTULO_TIPO, type TipoPasso } from '../../lib/tipoPasso';
 
 export type EscolhaIntro = 'escanear' | 'sem_produtos' | 'depois';
 
@@ -72,9 +81,11 @@ const CL = [
 //   · passo que o app não reconhece → conta-gotas
 const IMG_BOMBA = require('../../assets/rotina-tutorial/cut-pump.png');
 const IMG_SERUM = require('../../assets/rotina-tutorial/cut-serum.png');
-const IMG_HIDRATANTE = require('../../assets/rotina-tutorial/hidratante.png');
-const IMG_PROTETOR = require('../../assets/rotina-tutorial/protetor.png');
-const IMG_OLHOS = require('../../assets/rotina-tutorial/olhos.png');
+// 16/nov/2026 (pedido do produto): hidratante, protetor e olhos viraram tubos GENÉRICOS, sem
+// marca (desenhados em SVG e exportados em PNG) — antes eram fotos da La Roche-Posay.
+const IMG_HIDRATANTE = require('../../assets/rotina-tutorial/hidratante_generico.png');
+const IMG_PROTETOR = require('../../assets/rotina-tutorial/protetor_generico.png');
+const IMG_OLHOS = require('../../assets/rotina-tutorial/olhos_generico.png');
 const ILUSTRACAO: Record<TipoPasso, any> = {
   limpeza: IMG_BOMBA, tonico: IMG_SERUM, serum: IMG_SERUM, hidratante: IMG_HIDRATANTE, protetor: IMG_PROTETOR, olhos: IMG_OLHOS,
 };
@@ -83,158 +94,184 @@ const ilustracao = (t: TipoPasso | null) => (t ? ILUSTRACAO[t] : IMG_SERUM);
 // `pline` null = passo sem produto: o card mostra só a categoria e o nome do passo.
 type Card = { cat: string; name: string; pline: string | null; tint: string; img: any; h: number };
 
-function cardsDe(passos: PassoRotina[], per: Periodo): Card[] {
-  return passos.slice(0, 5).map((p, i) => {
-    const tipo = tipoDoPasso(p.nome ?? '', p.ingrediente ?? '');
-    const prod = p.produto;
-    const uri = prod?.recorteUrl ?? prod?.imagemUrl ?? null;
-    const linhaProduto = prod ? [prod.marca, prod.nome].filter(Boolean).join(' · ') : '';
-    return {
-      cat: tipo ? ROTULO_TIPO[tipo] : 'Passo',
-      name: p.nome || linhaProduto || 'Passo',
-      pline: uri ? linhaProduto : null,
-      tint: TINT[per][i],
-      img: uri ? { uri } : ilustracao(tipo),
-      h: ALTURA[per][i],
-    };
-  });
+// 16/nov/2026 (pedido do produto): os passos do tutorial são FIXOS e iguais para todas — só
+// ilustram que agora ela vai montar a rotina (escolher os produtos). Nada da rotina dela aqui.
+const PASSOS_GENERICOS: Record<Periodo, { tipo: TipoPasso; nome: string }[]> = {
+  am: [
+    { tipo: 'limpeza', nome: 'Gel de limpeza' },
+    { tipo: 'serum', nome: 'Sérum' },
+    { tipo: 'hidratante', nome: 'Hidratante' },
+    { tipo: 'protetor', nome: 'Protetor solar' },
+  ],
+  pm: [
+    { tipo: 'limpeza', nome: 'Gel de limpeza' },
+    { tipo: 'serum', nome: 'Sérum de tratamento' },
+    { tipo: 'olhos', nome: 'Creme para olhos' },
+    { tipo: 'hidratante', nome: 'Hidratante' },
+  ],
+};
+
+function cardsDe(per: Periodo): Card[] {
+  return PASSOS_GENERICOS[per].map((p, i) => ({
+    cat: t(ROTULO_TIPO[p.tipo]),
+    name: t(p.nome),
+    pline: null,
+    tint: TINT[per][i],
+    img: ilustracao(p.tipo),
+    h: ALTURA[per][i],
+  }));
 }
 
-const anim = (v: Animated.Value, toValue: number, duration: number, easing = EASE, delay = 0, native = true) =>
-  Animated.timing(v, { toValue, duration, easing, delay, useNativeDriver: native });
+const T = (to: number, duration: number, easing = EASE) => withTiming(to, { duration, easing });
+const D = (delay: number, a: number) => withDelay(delay, a);
+const JA = (to: number) => withTiming(to, { duration: 0 });
 
-type Props = { minha: MinhaRotina; onEscolha: (e: EscolhaIntro) => void };
+// Troca manhã ↔ noite do momento 1 (o design faz a cada 3,2 s): tudo na thread de UI.
+// As DUAS listas ficam montadas, uma por cima da outra (`camada`); entre elas, os cards
+// esmaecem (300 ms, cascata de 40 ms), a camada troca escondida (460 ms) e voltam (520 ms).
+const CICLO = 3200;
+const visCiclo = () => withRepeat(withSequence(T(0, 300), D(220, T(1, 300)), D(CICLO - 820, JA(1))), -1);
 
-export default function RotinaTutorial({ minha, onEscolha }: Props) {
+type SV = SharedValue<number>;
+type Valores = {
+  per: SV; vis: SV; cardOp: SV[]; cardVis: SV[]; cardY: SV[]; cardS: SV[]; numOp: SV[];
+  bx: SV[]; by: SV[]; bs: SV[]; br: SV[]; bOp: SV[];
+};
+
+type Props = { onEscolha: (e: EscolhaIntro) => void };
+
+export default function RotinaTutorial({ onEscolha }: Props) {
   const { width: W, height: H } = useWindowDimensions();
   const s = Math.min(W / DW, H / DH);
-  const palco = { position: 'absolute' as const, left: (W - DW) / 2, top: (H - DH) / 2, width: DW, height: DH, transform: [{ scale: s }] };
+  const palcoBase = { position: 'absolute' as const, left: (W - DW) / 2, top: (H - DH) / 2, width: DW, height: DH };
+  const palco = { ...palcoBase, transform: [{ scale: s }] };
 
+  // Só muda UMA vez (Continuar): o resto da animação não passa pelo React.
   const [m, setM] = useState<1 | 2>(1);
-  const [per, setPer] = useState<Periodo>(minha.am.length ? 'am' : 'pm');
-  const [swap, setSwap] = useState(false);
   const one = m === 1;
+  const cardsAm = useMemo(() => cardsDe('am'), []);
+  const cardsPm = useMemo(() => cardsDe('pm'), []);
+  const n = cardsAm.length;
+  const idx = useMemo(() => cardsAm.map((_, i) => i), [cardsAm]);
 
-  // Só alterna se os dois períodos tiverem passos.
-  const temOutro = minha.am.length > 0 && minha.pm.length > 0;
-  const cards = useMemo(() => cardsDe(minha[per], per), [minha, per]);
-  const n = cards.length;
+  // ── Valores animados (thread de UI) ─────────────────────────────────────────
+  const entrada = useSharedValue(0);
+  const t1Op = useSharedValue(0), t1Y = useSharedValue(10);
+  const t2Op = useSharedValue(0), t2Y = useSharedValue(8);
+  const plateH = useSharedValue(474);
+  const m2Op = useSharedValue(0), m1Op = useSharedValue(1);
+  const pillOp = useSharedValue(0);
+  const per = useSharedValue(0);      // camada visível: 0 = manhã · 1 = noite (troca escondida)
+  const bgPer = useSharedValue(0);    // fundo e moldura (.6 s)
+  const vis = useSharedValue(1);      // selo e produtos na troca
+  const tagOp = useSharedValue(0), tagY = useSharedValue(6);
+  const dotsTop = useSharedValue(736);
+  const d = useSharedValue(0);        // 0 = momento 1 · 1 = momento 2
+  const actOp = useSharedValue(0), actY = useSharedValue(14);
+  const scan = useSharedValue(0);
+  // Por posição (até 5, como o design).
+  const cardOp = [useSharedValue(0), useSharedValue(0), useSharedValue(0), useSharedValue(0), useSharedValue(0)];
+  const cardVis = [useSharedValue(1), useSharedValue(1), useSharedValue(1), useSharedValue(1), useSharedValue(1)];
+  const cardY = [useSharedValue(16), useSharedValue(16), useSharedValue(16), useSharedValue(16), useSharedValue(16)];
+  const cardS = [useSharedValue(1), useSharedValue(1), useSharedValue(1), useSharedValue(1), useSharedValue(1)];
+  const numOp = [useSharedValue(0), useSharedValue(0), useSharedValue(0), useSharedValue(0), useSharedValue(0)];
+  const bx = [useSharedValue(68), useSharedValue(68), useSharedValue(68), useSharedValue(68), useSharedValue(68)];
+  const by = [useSharedValue(272), useSharedValue(356), useSharedValue(440), useSharedValue(524), useSharedValue(608)];
+  const bs = [useSharedValue(1), useSharedValue(1), useSharedValue(1), useSharedValue(1), useSharedValue(1)];
+  const br = [useSharedValue(GIRO[0]), useSharedValue(GIRO[1]), useSharedValue(GIRO[2]), useSharedValue(GIRO[3]), useSharedValue(GIRO[4])];
+  const bOp = [useSharedValue(0), useSharedValue(0), useSharedValue(0), useSharedValue(0), useSharedValue(0)];
+  const v: Valores = { per, vis, cardOp, cardVis, cardY, cardS, numOp, bx, by, bs, br, bOp };
 
-  // ── Momento 1: alterna manhã ↔ noite (o design faz em 3,2 s) ───────────────
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
+  // Entrada (16/nov/2026, pedido do produto): o fundo nasce sólido e o conteúdo sobe em
+  // cascata (título → selo → passos). Depois, a troca manhã ↔ noite começa sozinha.
   useEffect(() => {
-    if (m !== 1 || !temOutro) return;
-    const iv = setInterval(() => {
-      setSwap(true);
-      timers.current.push(setTimeout(() => setPer((p) => (p === 'am' ? 'pm' : 'am')), 460));
-      timers.current.push(setTimeout(() => setSwap(false), 520));
-    }, 3200);
-    return () => clearInterval(iv);
-  }, [m, temOutro]);
+    entrada.set(T(1, 380, EASE_OUT));
+    t1Op.set(D(90, T(1, 420))); t1Y.set(D(90, T(0, 560, EASE_OUT)));
+    pillOp.set(D(180, T(1, 380)));
+    for (let i = 0; i < 5; i++) {
+      const dl = 230 + i * 70;
+      cardOp[i].set(D(dl, T(1, 380))); cardY[i].set(D(dl, T(0, 600, EASE_OUT)));
+      bOp[i].set(D(dl, T(1, 380))); numOp[i].set(D(dl, T(1, 380)));
+      cardVis[i].set(D(CICLO + i * 40, visCiclo()));
+    }
+    vis.set(D(CICLO, visCiclo()));
+    per.set(D(CICLO + 460, withRepeat(withSequence(JA(1), D(CICLO, JA(0)), D(CICLO, JA(0))), -1)));
+    bgPer.set(D(CICLO + 460, withRepeat(withSequence(T(1, 600), D(CICLO - 600, T(0, 600)), D(CICLO - 600, JA(0))), -1)));
+    scan.set(withRepeat(withTiming(300, { duration: 2600, easing: Easing.inOut(Easing.ease) }), -1, true));
+    return () => { [entrada, per, bgPer, vis, scan, ...cardVis].forEach((x) => cancelAnimation(x)); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Valores animados ────────────────────────────────────────────────────────
-  const cinco = [0, 1, 2, 3, 4];
-  const perV = useRef(new Animated.Value(per === 'pm' ? 1 : 0)).current; // fundo e moldura
-  const t1Op = useRef(new Animated.Value(1)).current;
-  const t1Y = useRef(new Animated.Value(0)).current;
-  const t2Op = useRef(new Animated.Value(0)).current;
-  const t2Y = useRef(new Animated.Value(8)).current;
-  const plateH = useRef(new Animated.Value(474)).current;
-  const m2Op = useRef(new Animated.Value(0)).current;
-  const pillOp = useRef(new Animated.Value(1)).current;
-  const m1Op = useRef(new Animated.Value(1)).current;
-  const numOp = useRef(cinco.map(() => new Animated.Value(1))).current;
-  const cardOp = useRef(cinco.map(() => new Animated.Value(1))).current;
-  const cardY = useRef(cinco.map(() => new Animated.Value(0))).current;
-  const cardS = useRef(cinco.map(() => new Animated.Value(1))).current;
-  const bx = useRef(cinco.map(() => new Animated.Value(68))).current;
-  const by = useRef(cinco.map((i) => new Animated.Value(272 + i * 84))).current;
-  const bs = useRef(cinco.map(() => new Animated.Value(1))).current;
-  const br = useRef(GIRO.map((r) => new Animated.Value(r))).current;
-  const bOp = useRef(cinco.map(() => new Animated.Value(1))).current;
-  const tagOp = useRef(new Animated.Value(0)).current;
-  const tagY = useRef(new Animated.Value(6)).current;
-  const dotsTop = useRef(new Animated.Value(736)).current;
-  const d = useRef(new Animated.Value(0)).current; // 0 = momento 1 · 1 = momento 2
-  const actOp = useRef(new Animated.Value(0)).current;
-  const actY = useRef(new Animated.Value(14)).current;
-  const scan = useRef(new Animated.Value(0)).current;
-
-  // Fundo e moldura acompanham o período (.6s ease).
-  useEffect(() => { anim(perV, per === 'pm' ? 1 : 0, 600, EASE, 0, false).start(); }, [per, perV]);
-
-  // Troca de período no momento 1: cards, produtos e o selo somem e voltam.
-  useEffect(() => {
+  // Momento 1 → 2: um disparo só; tudo roda na thread de UI.
+  const continuar = () => {
     if (!one) return;
-    const vis = swap ? 0 : 1;
-    anim(pillOp, vis, 300).start();
-    cardOp.forEach((v, i) => anim(v, vis, 300, EASE, i * 40).start());
-    cardY.forEach((v, i) => anim(v, swap ? 6 : 0, 450, EASE_OUT, i * 40).start());
-    bOp.forEach((v) => anim(v, vis, 300).start());
-  }, [swap]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Passagem entre os momentos.
-  const primeira = useRef(true);
-  useEffect(() => {
-    if (primeira.current) { primeira.current = false; return; } // já nasce no momento 1
-    const um = m === 1;
-    Animated.parallel([
-      anim(t1Op, um ? 1 : 0, 350), anim(t1Y, um ? 0 : -8, 500, EASE_OUT),
-      anim(t2Op, um ? 0 : 1, 400, EASE, 150), anim(t2Y, um ? 8 : 0, 550, EASE_OUT, 150),
-      anim(plateH, um ? 474 : 386, 700, EASE_OUT, 0, false),
-      anim(m2Op, um ? 0 : 1, 400, EASE, 350),
-      anim(pillOp, um ? 1 : 0, 300),
-      anim(m1Op, um ? 1 : 0, 300),
-      ...numOp.map((v, i) => anim(v, um ? 1 : 0, 300, EASE, i * 30)),
-      ...cardOp.map((v, i) => anim(v, um ? 1 : 0, 300, EASE, i * 40)),
-      ...cardY.map((v, i) => anim(v, um ? 0 : 14, 450, EASE_OUT, i * 40)),
-      ...cardS.map((v, i) => anim(v, um ? 1 : 0.96, 450, EASE_OUT, i * 40)),
-      ...cinco.flatMap((i) => {
-        const c = CL[i];
-        const dl = um ? (4 - i) * 30 : i * 50;
-        return [
-          anim(bx[i], um ? 68 : c.cx - 26, 800, EASE_OUT, dl),
-          anim(by[i], um ? 272 + i * 84 : c.base - 52, 800, EASE_OUT, dl),
-          anim(bs[i], um ? 1 : c.s, 800, EASE_OUT, dl),
-          anim(br[i], um ? GIRO[i] : c.r, 800, EASE_OUT, dl),
-          anim(bOp[i], 1, 300),
-        ];
-      }),
-      anim(tagOp, um ? 0 : 1, 350, EASE, 750),
-      anim(tagY, um ? 6 : 0, 450, EASE_OUT, 750),
-      anim(dotsTop, um ? 736 : 640, 700, EASE_OUT, 0, false),
-      anim(d, um ? 0 : 1, 300, EASE, 0, false),
-      anim(actOp, um ? 0 : 1, 350, EASE, 450),
-      anim(actY, um ? 14 : 0, 500, EASE_OUT, 450),
-    ]).start();
-  }, [m]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Linha de scan: desce e sobe sem parar (2,6 s, ease-in-out, alternate).
-  useEffect(() => {
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(scan, { toValue: 300, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(scan, { toValue: 0, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, [scan]);
-
-  const continuar = () => { haptics.tap(); setSwap(false); setM(2); };
+    haptics.tap();
+    [vis, per, ...cardVis].forEach((x) => cancelAnimation(x));
+    cancelAnimation(bgPer);
+    bgPer.set(T(per.get(), 300));
+    vis.set(T(1, 200));
+    cardVis.forEach((x) => x.set(T(1, 200)));
+    t1Op.set(T(0, 350)); t1Y.set(T(-8, 500, EASE_OUT));
+    t2Op.set(D(150, T(1, 400))); t2Y.set(D(150, T(0, 550, EASE_OUT)));
+    plateH.set(T(386, 700, EASE_OUT));
+    m2Op.set(D(350, T(1, 400)));
+    pillOp.set(T(0, 300)); m1Op.set(T(0, 300));
+    for (let i = 0; i < 5; i++) {
+      const c = CL[i];
+      numOp[i].set(D(i * 30, T(0, 300)));
+      cardOp[i].set(D(i * 40, T(0, 300)));
+      cardY[i].set(D(i * 40, T(14, 450, EASE_OUT)));
+      cardS[i].set(D(i * 40, T(0.96, 450, EASE_OUT)));
+      const dl = i * 50;
+      bx[i].set(D(dl, T(c.cx - 26, 800, EASE_OUT)));
+      by[i].set(D(dl, T(c.base - 52, 800, EASE_OUT)));
+      bs[i].set(D(dl, T(c.s, 800, EASE_OUT)));
+      br[i].set(D(dl, T(c.r, 800, EASE_OUT)));
+      bOp[i].set(T(1, 300));
+    }
+    tagOp.set(D(750, T(1, 350))); tagY.set(D(750, T(0, 450, EASE_OUT)));
+    dotsTop.set(T(640, 700, EASE_OUT));
+    d.set(T(1, 300));
+    actOp.set(D(450, T(1, 350))); actY.set(D(450, T(0, 500, EASE_OUT)));
+    setM(2);
+  };
   const escolher = (e: EscolhaIntro) => { haptics.select(); onEscolha(e); };
 
-  const plateBg = perV.interpolate({ inputRange: [0, 1], outputRange: ['#FFD0E3', '#EBD3F0'] });
-  const am = per === 'am';
+  // ── Estilos animados ─────────────────────────────────────────────────────────
+  const conteudoSt = useAnimatedStyle(() => ({
+    opacity: entrada.get(), transform: [{ translateY: (1 - entrada.get()) * 18 }, { scale: s }],
+  }));
+  const bgPmSt = useAnimatedStyle(() => ({ opacity: bgPer.get() }));
+  const t1St = useAnimatedStyle(() => ({ opacity: t1Op.get(), transform: [{ translateY: t1Y.get() }] }));
+  const t2St = useAnimatedStyle(() => ({ opacity: t2Op.get(), transform: [{ translateY: t2Y.get() }] }));
+  const plateSt = useAnimatedStyle(() => ({
+    height: plateH.get(), backgroundColor: interpolateColor(bgPer.get(), [0, 1], ['#FFD0E3', '#EBD3F0']),
+  }));
+  const m2St = useAnimatedStyle(() => ({ opacity: m2Op.get() }));
+  const m1St = useAnimatedStyle(() => ({ opacity: m1Op.get() }));
+  const scanSt = useAnimatedStyle(() => ({ transform: [{ translateY: scan.get() }] }));
+  const pillAmSt = useAnimatedStyle(() => ({ opacity: pillOp.get() * vis.get() * (1 - per.get()) }));
+  const pillPmSt = useAnimatedStyle(() => ({ opacity: pillOp.get() * vis.get() * per.get() }));
+  const tagSt = useAnimatedStyle(() => ({ opacity: tagOp.get(), transform: [{ translateY: tagY.get() }] }));
+  const dotsSt = useAnimatedStyle(() => ({ top: dotsTop.get() }));
+  const dot1St = useAnimatedStyle(() => ({
+    width: 18 - 12 * d.get(), backgroundColor: interpolateColor(d.get(), [0, 1], [PINK, '#E9B9CE']),
+  }));
+  const dot2St = useAnimatedStyle(() => ({
+    width: 6 + 12 * d.get(), backgroundColor: interpolateColor(d.get(), [0, 1], ['#E9B9CE', PINK]),
+  }));
+  const actSt = useAnimatedStyle(() => ({ opacity: actOp.get(), transform: [{ translateY: actY.get() }] }));
+
   const linhaH = (n - 1) * 84 - 32;
 
   return (
+    // O fundo nasce SÓLIDO (nada da Rotina aparece por trás); só o conteúdo entra animado.
     <View style={StyleSheet.absoluteFill} onStartShouldSetResponder={() => true} accessibilityViewIsModal>
       <StatusBar style="dark" />
       {/* Fundo da tela inteira: degradê do período (troca em .6s) */}
       <LinearGradient colors={BG.am as any} locations={BG_STOPS as any} style={StyleSheet.absoluteFill} />
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: perV }]} pointerEvents="none">
+      <Reanimated.View style={[StyleSheet.absoluteFill, bgPmSt]} pointerEvents="none">
         <LinearGradient colors={BG.pm as any} locations={BG_STOPS as any} style={StyleSheet.absoluteFill} />
-      </Animated.View>
+      </Reanimated.View>
 
       {/* A Rotina desfocada ao fundo (blur 9px do design) */}
       <View style={palco} pointerEvents="none">
@@ -265,141 +302,157 @@ export default function RotinaTutorial({ minha, onEscolha }: Props) {
       {/* Véu claro por cima da rotina desfocada */}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,246,250,0.5)' }]} pointerEvents="none" />
 
-      <View style={palco} pointerEvents="box-none">
+      <Reanimated.View style={[palcoBase, conteudoSt]} pointerEvents="box-none">
         {/* Textos dos dois momentos */}
-        <Animated.View style={[st.textos, { opacity: t1Op, transform: [{ translateY: t1Y }] }]} pointerEvents="none">
-          <Text style={st.titulo}>{'Essa é a rotina\nideal pra sua pele'}</Text>
-          <Text style={st.sub}>Montei seus passos de manhã e de noite a partir do seu scan.</Text>
-        </Animated.View>
-        <Animated.View style={[st.textos, { opacity: t2Op, transform: [{ translateY: t2Y }] }]} pointerEvents="none">
-          <Text style={st.titulo}>{'Quer usar o que\njá tem em casa?'}</Text>
-          <Text style={st.sub}>Escaneie seus produtos e eu encaixo cada um no passo certo da sua rotina.</Text>
-        </Animated.View>
+        <Reanimated.View style={[st.textos, t1St]} pointerEvents="none">
+          <Text style={st.titulo}>{t('Últimos detalhes da\nsua rotina ideal')}</Text>
+          <Text style={st.sub}>{t('Falta só escolher os produtos de cada passo, de manhã e de noite.')}</Text>
+        </Reanimated.View>
+        <Reanimated.View style={[st.textos, t2St]} pointerEvents="none">
+          <Text style={st.titulo}>{t('Quer usar o que\njá tem em casa?')}</Text>
+          <Text style={st.sub}>{t('Escaneie seus produtos e eu encaixo cada um no passo certo da sua rotina.')}</Text>
+        </Reanimated.View>
 
         {/* Moldura (no momento 2 vira a moldura de scan) */}
-        <Animated.View style={[st.plate, { height: plateH, backgroundColor: plateBg }]} pointerEvents="none">
+        <Reanimated.View style={[st.plate, plateSt]} pointerEvents="none">
           <View style={st.plateInner}>
             <LinearGradient colors={['#FFF6FA', '#FDEAF2', '#FBF0F5']} locations={[0, 0.6, 1]} style={StyleSheet.absoluteFill} />
-            <Animated.View style={[StyleSheet.absoluteFill, { opacity: m2Op }]}>
+            <Reanimated.View style={[StyleSheet.absoluteFill, m2St]}>
               <View style={[st.canto, { left: 16, top: 16, borderLeftWidth: 3.5, borderTopWidth: 3.5, borderTopLeftRadius: 14 }]} />
               <View style={[st.canto, { right: 16, top: 16, borderRightWidth: 3.5, borderTopWidth: 3.5, borderTopRightRadius: 14 }]} />
               <View style={[st.canto, { left: 16, bottom: 16, borderLeftWidth: 3.5, borderBottomWidth: 3.5, borderBottomLeftRadius: 14 }]} />
               <View style={[st.canto, { right: 16, bottom: 16, borderRightWidth: 3.5, borderBottomWidth: 3.5, borderBottomRightRadius: 14 }]} />
-              <Animated.View style={[st.scan, { transform: [{ translateY: scan }] }]} />
-            </Animated.View>
+              <Reanimated.View style={[st.scan, scanSt]} />
+            </Reanimated.View>
           </View>
-        </Animated.View>
+        </Reanimated.View>
 
-        {/* Selo do período */}
-        <Animated.View style={[st.pillWrap, { opacity: pillOp }]} pointerEvents="none">
-          <View style={st.pill}>
-            {am ? (
-              <Svg width={16} height={16} viewBox="0 0 24 24">
-                <Circle cx={12} cy={12} r={4} fill="none" stroke={PINK_TEXT} strokeWidth={2} strokeLinecap="round" />
-                <Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke={PINK_TEXT} strokeWidth={2} strokeLinecap="round" />
-              </Svg>
-            ) : (
-              <Svg width={16} height={16} viewBox="0 0 24 24">
-                <Path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="none" stroke="#9A5BC0" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            )}
-            <Text style={st.pillTxt}>{am ? 'Manhã' : 'Noite'}</Text>
-            <Text style={st.pillN}>· {n} passos</Text>
-          </View>
-        </Animated.View>
+        {/* Selo do período (as duas camadas; a troca é só opacidade) */}
+        <Reanimated.View style={[st.pillWrap, pillAmSt]} pointerEvents="none"><Selo am n={n} /></Reanimated.View>
+        <Reanimated.View style={[st.pillWrap, pillPmSt]} pointerEvents="none"><Selo am={false} n={n} /></Reanimated.View>
 
         {/* Linha pontilhada que liga os números */}
         {linhaH > 0 && (
-          <Animated.View style={{ position: 'absolute', left: 31, top: 314, zIndex: 3, opacity: m1Op }} pointerEvents="none">
+          <Reanimated.View style={[{ position: 'absolute', left: 31, top: 314, zIndex: 3 }, m1St]} pointerEvents="none">
             <Svg width={2} height={linhaH}>
               <Line x1={1} y1={0} x2={1} y2={linhaH} stroke="rgba(192,32,106,0.35)" strokeWidth={2} strokeDasharray="2 2" />
             </Svg>
-          </Animated.View>
+          </Reanimated.View>
         )}
-        {cards.map((_, i) => (
-          <Animated.View key={`n${i}`} style={[st.num, i === 0 ? st.numOn : st.numOff, { top: 282 + i * 84, opacity: numOp[i] }]} pointerEvents="none">
-            <Text style={st.numTxt}>{i + 1}</Text>
-          </Animated.View>
-        ))}
+        {idx.map((i) => <Numero key={`n${i}`} i={i} op={numOp[i]} />)}
 
-        {/* Cards dos passos */}
-        {cards.map((c, i) => (
-          <Animated.View
-            key={`c${i}`}
-            pointerEvents="none"
-            style={[st.card, { top: 262 + i * 84, opacity: cardOp[i], transform: [{ translateY: cardY[i] }, { scale: cardS[i] }] }]}
-          >
-            <View style={[st.tile, { backgroundColor: c.tint }]} />
-            <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
-              <Text style={st.cat}>{c.cat}</Text>
-              <Text style={st.nome} numberOfLines={1}>{c.name}</Text>
-              {c.pline !== null && <Text style={st.pline} numberOfLines={1}>{c.pline}</Text>}
-            </View>
-          </Animated.View>
-        ))}
+        {/* Cards dos passos: manhã e noite montados, um por cima do outro */}
+        {cardsAm.map((c, i) => <CardPasso key={`ca${i}`} c={c} i={i} camada={0} v={v} />)}
+        {cardsPm.map((c, i) => <CardPasso key={`cp${i}`} c={c} i={i} camada={1} v={v} />)}
 
         {/* Produtos: no quadradinho do card (momento 1) → juntos na moldura (momento 2) */}
-        {cards.map((c, i) => (
-          <Animated.View
-            key={`b${i}`}
-            pointerEvents="none"
-            style={[st.garrafa, {
-              zIndex: one ? 4 : CL[i].z,
-              opacity: bOp[i],
-              transform: [{ translateX: bx[i] }, { translateY: by[i] }, { scale: bs[i] },
-                { rotate: br[i].interpolate({ inputRange: [-360, 360], outputRange: ['-360deg', '360deg'] }) }],
-            }]}
-          >
-            <View style={[st.sombra, { height: c.h }]}>
-              <ExpoImage source={c.img} style={{ width: 50, height: c.h }} contentFit="contain" contentPosition="bottom" />
-            </View>
-          </Animated.View>
-        ))}
+        {cardsAm.map((c, i) => <Garrafa key={`ba${i}`} c={c} i={i} camada={0} v={v} z={one ? 4 : CL[i].z} />)}
+        {cardsPm.map((c, i) => <Garrafa key={`bp${i}`} c={c} i={i} camada={1} v={v} z={one ? 4 : CL[i].z} />)}
 
         {/* Etiquetas do momento 2 */}
-        <Animated.View style={[st.tag, { left: 74, top: 374, opacity: tagOp, transform: [{ translateY: tagY }] }]} pointerEvents="none">
-          <TagCheck /><Text style={st.tagTxt}>Limpeza</Text>
-        </Animated.View>
-        <Animated.View style={[st.tag, { left: 226, top: 474, opacity: tagOp, transform: [{ translateY: tagY }] }]} pointerEvents="none">
-          <TagCheck /><Text style={st.tagTxt}>Hidratação</Text>
-        </Animated.View>
+        <Reanimated.View style={[st.tag, { left: 74, top: 374 }, tagSt]} pointerEvents="none">
+          <TagCheck /><Text style={st.tagTxt}>{t('Limpeza')}</Text>
+        </Reanimated.View>
+        <Reanimated.View style={[st.tag, { left: 226, top: 474 }, tagSt]} pointerEvents="none">
+          <TagCheck /><Text style={st.tagTxt}>{t('Hidratação')}</Text>
+        </Reanimated.View>
 
         {/* Pontinhos de progresso */}
-        <Animated.View style={[st.dots, { top: dotsTop }]} pointerEvents="none">
-          <Animated.View style={[st.dot, {
-            width: d.interpolate({ inputRange: [0, 1], outputRange: [18, 6] }),
-            backgroundColor: d.interpolate({ inputRange: [0, 1], outputRange: [PINK, '#E9B9CE'] }),
-          }]} />
-          <Animated.View style={[st.dot, {
-            width: d.interpolate({ inputRange: [0, 1], outputRange: [6, 18] }),
-            backgroundColor: d.interpolate({ inputRange: [0, 1], outputRange: ['#E9B9CE', PINK] }),
-          }]} />
-        </Animated.View>
+        <Reanimated.View style={[st.dots, dotsSt]} pointerEvents="none">
+          <Reanimated.View style={[st.dot, dot1St]} />
+          <Reanimated.View style={[st.dot, dot2St]} />
+        </Reanimated.View>
 
         {/* Momento 1: Continuar */}
-        <Animated.View style={[st.continuarWrap, { opacity: m1Op }]} pointerEvents={one ? 'auto' : 'none'}>
+        <Reanimated.View style={[st.continuarWrap, m1St]} pointerEvents={one ? 'auto' : 'none'}>
           <TouchableOpacity activeOpacity={0.85} onPress={continuar} style={st.continuar}>
-            <Text style={st.btnTxt}>Continuar</Text>
+            <Text style={st.btnTxt}>{t('Continuar')}</Text>
           </TouchableOpacity>
-        </Animated.View>
+        </Reanimated.View>
 
         {/* Momento 2: as três opções */}
-        <Animated.View style={[st.acoes, { opacity: actOp, transform: [{ translateY: actY }] }]} pointerEvents={one ? 'none' : 'auto'}>
+        <Reanimated.View style={[st.acoes, actSt]} pointerEvents={one ? 'none' : 'auto'}>
           <TouchableOpacity activeOpacity={0.85} onPress={() => escolher('escanear')} style={st.escanear}>
             <Svg width={20} height={20} viewBox="0 0 24 24">
               <Path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10" fill="none" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
-            <Text style={st.btnTxt}>Escanear meus produtos</Text>
+            <Text style={st.btnTxt}>{t('Escanear meus produtos')}</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.85} onPress={() => escolher('sem_produtos')} style={st.semProdutos}>
-            <Text style={[st.btnTxt, { color: INK }]}>Não tenho produtos</Text>
+            <Text style={[st.btnTxt, { color: INK }]}>{t('Não tenho produtos')}</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.85} onPress={() => escolher('depois')} style={st.depois}>
-            <Text style={st.depoisTxt}>Fazer isso depois</Text>
+            <Text style={st.depoisTxt}>{t('Fazer isso depois')}</Text>
           </TouchableOpacity>
-        </Animated.View>
-      </View>
+        </Reanimated.View>
+      </Reanimated.View>
     </View>
+  );
+}
+
+function Selo({ am, n }: { am: boolean; n: number }) {
+  return (
+    <View style={st.pill}>
+      {am ? (
+        <Svg width={16} height={16} viewBox="0 0 24 24">
+          <Circle cx={12} cy={12} r={4} fill="none" stroke={PINK_TEXT} strokeWidth={2} strokeLinecap="round" />
+          <Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke={PINK_TEXT} strokeWidth={2} strokeLinecap="round" />
+        </Svg>
+      ) : (
+        <Svg width={16} height={16} viewBox="0 0 24 24">
+          <Path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="none" stroke="#9A5BC0" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      )}
+      <Text style={st.pillTxt}>{am ? t('Manhã') : t('Noite')}</Text>
+      <Text style={st.pillN}>{t('· {{n}} passos', { n })}</Text>
+    </View>
+  );
+}
+
+function Numero({ i, op }: { i: number; op: SV }) {
+  const sty = useAnimatedStyle(() => ({ opacity: op.get() }));
+  return (
+    <Reanimated.View style={[st.num, i === 0 ? st.numOn : st.numOff, { top: 282 + i * 84 }, sty]} pointerEvents="none">
+      <Text style={st.numTxt}>{i + 1}</Text>
+    </Reanimated.View>
+  );
+}
+
+function CardPasso({ c, i, camada, v }: { c: Card; i: number; camada: 0 | 1; v: Valores }) {
+  const sty = useAnimatedStyle(() => {
+    const cam = camada === 1 ? v.per.get() : 1 - v.per.get();
+    const vis = v.cardVis[i].get();
+    return {
+      opacity: v.cardOp[i].get() * vis * cam,
+      transform: [{ translateY: v.cardY[i].get() + (1 - vis) * 6 }, { scale: v.cardS[i].get() }],
+    };
+  });
+  return (
+    <Reanimated.View pointerEvents="none" style={[st.card, { top: 262 + i * 84 }, sty]}>
+      <View style={[st.tile, { backgroundColor: c.tint }]} />
+      <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
+        <Text style={st.cat}>{c.cat}</Text>
+        <Text style={st.nome} numberOfLines={1}>{c.name}</Text>
+        {c.pline !== null && <Text style={st.pline} numberOfLines={1}>{c.pline}</Text>}
+      </View>
+    </Reanimated.View>
+  );
+}
+
+function Garrafa({ c, i, camada, v, z }: { c: Card; i: number; camada: 0 | 1; v: Valores; z: number }) {
+  const sty = useAnimatedStyle(() => {
+    const cam = camada === 1 ? v.per.get() : 1 - v.per.get();
+    return {
+      opacity: v.bOp[i].get() * v.vis.get() * cam,
+      transform: [{ translateX: v.bx[i].get() }, { translateY: v.by[i].get() }, { scale: v.bs[i].get() }, { rotate: `${v.br[i].get()}deg` }],
+    };
+  });
+  return (
+    <Reanimated.View pointerEvents="none" style={[st.garrafa, { zIndex: z }, sty]}>
+      <View style={[st.sombra, { height: c.h }]}>
+        <ExpoImage source={c.img} style={{ width: 50, height: c.h }} contentFit="contain" contentPosition="bottom" />
+      </View>
+    </Reanimated.View>
   );
 }
 

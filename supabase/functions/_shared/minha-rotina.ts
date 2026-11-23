@@ -77,13 +77,13 @@ function diasApp(v: unknown): string[] | null {
 // Passo novo equivale a um antigo? Mesma categoria E (mesmo ativo conhecido, ou mesmo
 // nome). Usado só na troca do período inteiro, para não perder o produto escolhido.
 const normNome = (x: unknown) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
-function equivalente(novo: any, velho: PassoMinha): boolean {
+function equivalente(novo: any, velho: PassoMinha, en = false): boolean {
   if (normNome(novo.name) === normNome(velho.name)) return true
-  const cn = classifyStep(String(novo.name ?? ''), String(novo._raw?.ingredient ?? novo.ingredient ?? '')).category
-  const cv = classifyStep(String(velho.name ?? ''), String(velho.ingredient ?? '')).category
+  const cn = classifyStep(String(novo.name ?? ''), String(novo._raw?.ingredient ?? novo.ingredient ?? ''), en).category
+  const cv = classifyStep(String(velho.name ?? ''), String(velho.ingredient ?? ''), en).category
   if (cn !== cv || cn === 'Cuidado') return false
-  const an = detectTargetActive(String(novo.name ?? ''), String(novo._raw?.ingredient ?? novo.ingredient ?? ''))
-  const av = detectTargetActive(String(velho.name ?? ''), String(velho.ingredient ?? ''))
+  const an = detectTargetActive(String(novo.name ?? ''), String(novo._raw?.ingredient ?? novo.ingredient ?? ''), en)
+  const av = detectTargetActive(String(velho.name ?? ''), String(velho.ingredient ?? ''), en)
   if (an.kind === 'known' || av.kind === 'known') return an.kind === 'known' && av.kind === 'known' && an.label === av.label
   return true // limpeza/hidratante/protetor sem ativo: mesma categoria basta
 }
@@ -99,6 +99,7 @@ export async function gravarMudanca(
   antes: { rotina_am: PassoMinha[]; rotina_pm: PassoMinha[] },
   depois: { rotina_am: any[]; rotina_pm: any[] },
   changes: { period: 'am' | 'pm'; action?: string; ingredient: string; schedule_days?: string[] | null },
+  en = false,
 ): Promise<void> {
   const per = changes.period
   const velhos = per === 'am' ? antes.rotina_am : antes.rotina_pm
@@ -119,7 +120,7 @@ export async function gravarMudanca(
       const { error } = await supabase.from('minha_rotina_passos').update({ ordem: i + 1, updated_at: agora }).eq('id', s._rowId).eq('user_id', userId)
       if (error) throw error
     } else {
-      const k = herdaveis.findIndex((v) => v._colecao && equivalente(s, v))
+      const k = herdaveis.findIndex((v) => v._colecao && equivalente(s, v, en))
       const herda = k >= 0 ? herdaveis.splice(k, 1)[0] : null
       const aviso = herda?._aviso as { nivel: string; texto: string | null } | undefined
       const { error } = await supabase.from('minha_rotina_passos').insert({

@@ -23,6 +23,7 @@ import { BG_DAY, BG_STOPS } from '../../lib/homeTheme';
 import { getDicaDoDia } from '../../lib/dicas/dicaDoDia';
 import { dicaParaTela, DicaTela } from '../../lib/dicas/apresentacao';
 import { voltar as voltarOu } from '../../lib/navegar';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -91,14 +92,14 @@ export default function DicaDoDia() {
                     <Path d={BULB} fill="none" stroke="#B9761A" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </View>
-                <Text style={styles.kickerText}>{rec ? 'Dica do dia · Receita' : 'Dica do dia'}</Text>
+                <Text style={styles.kickerText}>{rec ? t('Dica do dia · Receita') : t('Dica do dia')}</Text>
               </View>
               <Text style={styles.title} lineBreakStrategyIOS="push-out">{dica.titulo}</Text>
             </View>
 
             {rec && (
               <>
-                <Text style={[styles.section, { marginTop: 28 }]}>Ingredientes</Text>
+                <Text style={[styles.section, { marginTop: 28 }]}>{t('Ingredientes')}</Text>
                 <View style={styles.ingCard}>
                   {dica.ingredientes.map((g, i) => (
                     <View key={i} style={[styles.ingRow, i > 0 && styles.ingRowLine]}>
@@ -111,9 +112,9 @@ export default function DicaDoDia() {
                   ))}
                 </View>
 
-                <Text style={[styles.section, { marginTop: 30 }]}>Preparo</Text>
+                <Text style={[styles.section, { marginTop: 30 }]}>{t('Preparo')}</Text>
                 <View style={styles.steps}>
-                  {dica.preparo.map((t, i) => (
+                  {dica.preparo.map((passo, i) => (
                     <View key={i} style={styles.stepRow}>
                       <View style={styles.stepLeft}>
                         <View style={[styles.stepNum, i === 0 ? styles.stepNumFirst : styles.stepNumRest]}>
@@ -121,21 +122,21 @@ export default function DicaDoDia() {
                         </View>
                         <Dotted visible={i < dica.preparo.length - 1} />
                       </View>
-                      <Text style={styles.stepText} lineBreakStrategyIOS="push-out">{t}</Text>
+                      <Text style={styles.stepText} lineBreakStrategyIOS="push-out">{passo}</Text>
                     </View>
                   ))}
                 </View>
               </>
             )}
 
-            <Text style={[styles.section, { marginTop: rec ? 14 : 28 }]}>Por que fazer</Text>
+            <Text style={[styles.section, { marginTop: rec ? 14 : 28 }]}>{t('Por que fazer')}</Text>
             <View style={styles.whyCard}>
               {dica.porque.map((p, i) => (
                 <Text key={i} style={styles.whyText} lineBreakStrategyIOS="push-out">{p}</Text>
               ))}
               {!!dica.atencao && (
                 <View style={styles.callout}>
-                  <Text style={styles.calloutLabel}>ATENÇÃO</Text>
+                  <Text style={styles.calloutLabel}>{t('ATENÇÃO')}</Text>
                   <Text style={styles.calloutText} lineBreakStrategyIOS="push-out">{dica.atencao}</Text>
                 </View>
               )}
@@ -144,7 +145,7 @@ export default function DicaDoDia() {
 
             <View style={{ marginTop: 28, alignItems: 'center' }}>
               <TouchableOpacity activeOpacity={0.85} onPress={back} style={styles.cta}>
-                <Text style={styles.ctaText}>Voltar para a home</Text>
+                <Text style={styles.ctaText}>{t('Voltar para a home')}</Text>
               </TouchableOpacity>
             </View>
           </>
@@ -157,7 +158,7 @@ export default function DicaDoDia() {
           <BlurView intensity={30} tint="light" style={StyleSheet.absoluteFill} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,214,231,0.94)' }]} />
         </Animated.View>
-        <TouchableOpacity onPress={back} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel="Voltar">
+        <TouchableOpacity onPress={back} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel={t('Voltar')}>
           <Svg width={18} height={18} viewBox="0 0 24 24">
             <Path d="M15 5l-7 7 7 7" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>

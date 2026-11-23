@@ -17,8 +17,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { getUserId } from '../../lib/currentUser';
-import { DIAS_SEMANA, atualizarPasso, criarPasso, definirProdutoDoPasso, prefixoStatusProduto, type PassoRotina, type Periodo } from '../../lib/minhaRotina';
+import { TagStatusProduto } from './TagStatusProduto';
+import { DIAS_SEMANA, atualizarPasso, criarPasso, definirProdutoDoPasso, type PassoRotina, type Periodo } from '../../lib/minhaRotina';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
+import { diaCurto } from '../../lib/frequencia';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -86,7 +89,7 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
     } catch (e) {
       console.warn('[passo] salvar falhou:', e);
       haptics.error();
-      Alert.alert('Não deu pra salvar o passo', 'Tente de novo em instantes.');
+      Alert.alert(t('Não deu pra salvar o passo'), t('Tente de novo em instantes.'));
       return null;
     } finally {
       setSalvando(false);
@@ -98,7 +101,7 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
     if (!editando) return;
     if (!temNome) {
       haptics.warning();
-      Alert.alert('Dê um nome ao passo', 'Sem produto, o passo precisa de um nome para continuar na sua rotina.');
+      Alert.alert(t('Dê um nome ao passo'), t('Sem produto, o passo precisa de um nome para continuar na sua rotina.'));
       return;
     }
     const p = await gravar();
@@ -111,7 +114,7 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
     } catch (e) {
       console.warn('[passo] remover produto falhou:', e);
       haptics.error();
-      Alert.alert('Não deu pra remover o produto', 'Tente de novo em instantes.');
+      Alert.alert(t('Não deu pra remover o produto'), t('Tente de novo em instantes.'));
     }
   };
 
@@ -137,17 +140,17 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
           <View style={s.handle} />
           <View style={s.head}>
             <View style={s.headBtn} />
-            <Text style={s.title}>{editando ? 'Editar passo' : 'Novo passo'}</Text>
-            <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={10} style={s.headBtn} accessibilityLabel="Fechar">
+            <Text style={s.title}>{editando ? t('Editar passo') : t('Novo passo')}</Text>
+            <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={10} style={s.headBtn} accessibilityLabel={t('Fechar')}>
               <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
             </TouchableOpacity>
           </View>
 
-          <Text style={s.label}>Nome do passo <Text style={{ fontWeight: '400', color: MUTED }}>(opcional)</Text></Text>
+          <Text style={s.label}>{t('Nome do passo')} <Text style={{ fontWeight: '400', color: MUTED }}>{t('(opcional)')}</Text></Text>
           <TextInput
             value={nome}
             onChangeText={setNome}
-            placeholder="Ex.: Máscara de LED vermelho"
+            placeholder={t('Ex.: Máscara de LED vermelho')}
             placeholderTextColor="#B5ABB0"
             style={s.input}
             autoFocus={!editando}
@@ -155,57 +158,58 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
             returnKeyType="done"
           />
 
-          <Text style={[s.label, { marginTop: 20 }]}>Dias da semana</Text>
+          <Text style={[s.label, { marginTop: 20 }]}>{t('Dias da semana')}</Text>
           <View style={s.diasRow}>
             <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.select(); setDias([]); }} style={[s.diaTodo, !dias.length && s.diaOn]}>
-              <Text style={[s.diaTxt, !dias.length && s.diaTxtOn]}>Todo dia</Text>
+              <Text style={[s.diaTxt, !dias.length && s.diaTxtOn]}>{t('Todo dia')}</Text>
             </TouchableOpacity>
           </View>
           <View style={[s.diasRow, { marginTop: 8 }]}>
             {DIAS_SEMANA.map((d) => {
               const on = dias.includes(d);
               return (
-                <TouchableOpacity key={d} activeOpacity={0.85} onPress={() => alternarDia(d)} style={[s.dia, on && s.diaOn]} accessibilityLabel={d}>
-                  <Text style={[s.diaTxt, on && s.diaTxtOn]}>{d}</Text>
+                <TouchableOpacity key={d} activeOpacity={0.85} onPress={() => alternarDia(d)} style={[s.dia, on && s.diaOn]} accessibilityLabel={diaCurto(d)}>
+                  <Text style={[s.diaTxt, on && s.diaTxtOn]}>{diaCurto(d)}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-          <Text style={s.ajuda}>{dias.length ? 'Nos outros dias, este passo some do checklist.' : 'Este passo aparece em todos os dias.'}</Text>
+          <Text style={s.ajuda}>{dias.length ? t('Nos outros dias, este passo some do checklist.') : t('Este passo aparece em todos os dias.')}</Text>
 
           {editando && (
             <>
-              <Text style={[s.label, { marginTop: 20 }]}>Produto</Text>
+              <Text style={[s.label, { marginTop: 20 }]}>{t('Produto')}</Text>
               <View style={s.prodRow}>
                 <Text style={s.prodNome} numberOfLines={1}>
-                  {editando.produto ? prefixoStatusProduto(editando.produto) + [editando.produto.marca, editando.produto.nome].filter(Boolean).join(' · ') : 'Sem produto'}
+                  {editando.produto ? [editando.produto.marca, editando.produto.nome].filter(Boolean).join(' · ') : t('Sem produto')}
                 </Text>
+                <TagStatusProduto status={editando.produto?.status} />
                 <TouchableOpacity onPress={() => { haptics.tap(); onClose(); setTimeout(() => onEscolherProduto(editando), 350); }} hitSlop={8}>
-                  <Text style={s.link}>{editando.produto ? 'Trocar' : 'Escolher'}</Text>
+                  <Text style={s.link}>{editando.produto ? t('Trocar') : t('Escolher')}</Text>
                 </TouchableOpacity>
                 {!!editando.produto && (
-                  <TouchableOpacity onPress={() => { haptics.tap(); void removerProduto(); }} hitSlop={8} accessibilityLabel="Remover produto do passo">
-                    <Text style={[s.link, { color: MUTED }]}>Remover produto</Text>
+                  <TouchableOpacity onPress={() => { haptics.tap(); void removerProduto(); }} hitSlop={8} accessibilityLabel={t('Remover produto do passo')}>
+                    <Text style={[s.link, { color: MUTED }]}>{t('Remover produto')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
             </>
           )}
 
-          {editando && !podeSalvar && <Text style={[s.ajuda, { marginTop: 14 }]}>Dê um nome ao passo ou escolha um produto.</Text>}
+          {editando && !podeSalvar && <Text style={[s.ajuda, { marginTop: 14 }]}>{t('Dê um nome ao passo ou escolha um produto.')}</Text>}
           <View style={{ marginTop: 24, gap: 10 }}>
             {editando ? (
               <TouchableOpacity activeOpacity={0.85} disabled={!podeSalvar || salvando} onPress={() => { void salvar(false); }} style={[s.bigBtn, (!podeSalvar || salvando) && { opacity: 0.5 }]}>
-                <Text style={s.bigBtnTxt}>Salvar</Text>
+                <Text style={s.bigBtnTxt}>{t('Salvar')}</Text>
               </TouchableOpacity>
             ) : (
               <>
                 <TouchableOpacity activeOpacity={0.85} disabled={salvando} onPress={() => { void salvar(true); }} style={[s.bigBtn, salvando && { opacity: 0.5 }]}>
-                  <Text style={s.bigBtnTxt}>Criar e escolher produto</Text>
+                  <Text style={s.bigBtnTxt}>{t('Criar e escolher produto')}</Text>
                 </TouchableOpacity>
                 {/* Sem produto, o passo precisa de nome. */}
                 <TouchableOpacity activeOpacity={0.85} disabled={!temNome || salvando} onPress={() => { void salvar(false); }} style={[s.softBtn, (!temNome || salvando) && { opacity: 0.5 }]}>
-                  <Text style={[s.bigBtnTxt, { color: PINK_TEXT }]}>Criar sem produto</Text>
+                  <Text style={[s.bigBtnTxt, { color: PINK_TEXT }]}>{t('Criar sem produto')}</Text>
                 </TouchableOpacity>
               </>
             )}

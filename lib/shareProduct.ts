@@ -1,4 +1,5 @@
 import * as ImageManipulator from 'expo-image-manipulator';
+import { idioma } from './i18n';
 import { File, Paths } from 'expo-file-system';
 import { Skia, ImageFormat } from '@shopify/react-native-skia';
 import type { PendingShare } from '../store/onboarding';
@@ -194,7 +195,7 @@ export async function extractProductImage(sourceUrl: string, accessToken: string
       'Authorization': `Bearer ${accessToken}`,
       'apikey': SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ sourceUrl }),
+    body: JSON.stringify({ sourceUrl, idioma }),
   });
   // URL que a função recusou (ex.: não é http/https) → mesmo desfecho de "sem imagem".
   if (response.status === 400) return { status: 'sem_imagem', titulo: null, motivo: 'url_invalida' };

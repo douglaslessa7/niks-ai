@@ -21,6 +21,7 @@ import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import HorariosRotina, { fmtHorario as fmt } from '../../components/rotina/HorariosRotina';
 import { voltar as voltarOu } from '../../lib/navegar';
@@ -29,7 +30,7 @@ const INK = '#121212';
 const PINK = '#FF5EA8';
 const PINK_TEXT = '#E8468F';
 const BELL = 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0M2 4l2-2M22 4l-2-2';
-const HOW = ['O alarme toca alto no seu horário', 'Você tira uma foto passando um produto no rosto', 'A NIKS confirma e o alarme para'];
+const HOW = [t('O alarme toca alto no seu horário'), t('Você tira uma foto passando um produto no rosto'), t('A NIKS confirma e o alarme para')];
 const SUPER_KEY = 'alarme_niks_on';
 
 // Cartão de vidro do design: branco 58% + desfoque + contorno rosa + sombra rosada.
@@ -116,12 +117,12 @@ export default function Alarme() {
         contentContainerStyle={{ paddingTop: headerH, paddingBottom: 112 }}
       >
         {/* ── Seus horários ─────────────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { marginTop: 26 }]}>Seus horários</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 26 }]}>{t('Seus horários')}</Text>
         <HorariosRotina onHorarios={(a) => setAm(a)} />
 
         {/* ── Alarme Niks ───────────────────────────────────────────────── */}
         <View style={styles.superRow}>
-          <Text style={styles.sectionTitleBare}>Alarme Niks</Text>
+          <Text style={styles.sectionTitleBare}>{t('Alarme Niks')}</Text>
           <TouchableOpacity
             activeOpacity={0.9}
             onPress={toggleSuper}
@@ -140,25 +141,25 @@ export default function Alarme() {
               </Svg>
             </View>
             <Text style={styles.superText} lineBreakStrategyIOS="push-out">
-              Toca alto e só para quando você manda uma foto passando um produto no rosto.
+              {t('Toca alto e só para quando você manda uma foto passando um produto no rosto.')}
             </Text>
           </View>
           <View style={{ paddingTop: 8, paddingHorizontal: 14, paddingBottom: 4 }}>
-            {HOW.map((t, i) => (
-              <View key={t} style={{ flexDirection: 'row', gap: 12 }}>
+            {HOW.map((passo, i) => (
+              <View key={passo} style={{ flexDirection: 'row', gap: 12 }}>
                 <View style={{ width: 38, alignItems: 'center' }}>
                   <View style={styles.howNum}>
                     <Text style={{ fontSize: 13, fontWeight: '600', color: PINK_TEXT }}>{i + 1}</Text>
                   </View>
                   <HowLine hidden={i === HOW.length - 1} />
                 </View>
-                <Text style={styles.howText}>{t}</Text>
+                <Text style={styles.howText}>{passo}</Text>
               </View>
             ))}
           </View>
           <View style={styles.testRow}>
             <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.action(); setRinging(true); }} style={{ height: 48, justifyContent: 'center' }}>
-              <Text style={{ fontSize: 16, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Testar Alarme Niks</Text>
+              <Text style={{ fontSize: 16, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>{t('Testar Alarme Niks')}</Text>
             </TouchableOpacity>
           </View>
         </Glass>
@@ -173,12 +174,12 @@ export default function Alarme() {
             borderBottomWidth: 1, borderBottomColor: 'rgba(192,32,106,0.10)',
           }]}
         />
-        <TouchableOpacity onPress={() => { haptics.tap(); voltarOu('/home'); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel="Voltar">
+        <TouchableOpacity onPress={() => { haptics.tap(); voltarOu('/home'); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel={t('Voltar')}>
           <Svg width={18} height={18} viewBox="0 0 24 24">
             <Path d="M15 5l-7 7 7 7" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
           </Svg>
         </TouchableOpacity>
-        <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>Alarme da rotina</Text>
+        <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>{t('Alarme da rotina')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -187,9 +188,9 @@ export default function Alarme() {
         <StatusBar style="light" />
         <LinearGradient colors={['#FF8DBD', '#FF5EA8', '#E8468F']} locations={[0, 0.55, 1]} style={{ flex: 1 }}>
           <View style={{ flex: 1, alignItems: 'center', paddingTop: insets.top + 42, paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 20) + 6 }}>
-            <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: '#fff' }}>Hora da rotina da manhã</Text>
-            <Text style={{ marginTop: 6, fontSize: 76, fontWeight: '700', lineHeight: 84, letterSpacing: -2, color: '#fff' }}>{fmt(am)}</Text>
-            <Text style={{ marginTop: 6, fontSize: 17, letterSpacing: -0.3, color: '#fff', opacity: 0.92 }}>Alarme Niks</Text>
+            <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: '#fff' }}>{t('Hora da rotina da manhã')}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ marginTop: 6, fontSize: 76, fontWeight: '700', lineHeight: 84, letterSpacing: -2, color: '#fff' }}>{fmt(am)}</Text>
+            <Text style={{ marginTop: 6, fontSize: 17, letterSpacing: -0.3, color: '#fff', opacity: 0.92 }}>{t('Alarme Niks')}</Text>
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
               <View style={{ width: 150, height: 150, alignItems: 'center', justifyContent: 'center' }}>
                 <Pulse delay={0} />
@@ -203,10 +204,10 @@ export default function Alarme() {
               </View>
             </View>
             <Text style={{ fontSize: 20, fontWeight: '600', lineHeight: 25, letterSpacing: -0.5, color: '#fff', textAlign: 'center' }}>
-              Para parar, tire uma foto passando um produto no rosto
+              {t('Para parar, tire uma foto passando um produto no rosto')}
             </Text>
             <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setRinging(false); }} style={styles.ringBtn}>
-              <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: PINK_TEXT }}>Abrir câmera</Text>
+              <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: PINK_TEXT }}>{t('Abrir câmera')}</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>

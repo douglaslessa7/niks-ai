@@ -4,6 +4,7 @@ import { useNavigation, useRouter } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaRadial, BvProgresso, BvEtiqueta, BvBotao, useBvFrame,
@@ -80,7 +81,7 @@ export default function BvRecompensa() {
       <BvProgresso feitas={5} />
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(124), alignItems: 'center', paddingHorizontal: 24 }}>
-        <BvEtiqueta>PACTO SELADO · DIA 1 CONCLUÍDO</BvEtiqueta>
+        <BvEtiqueta>{t('PACTO SELADO · DIA 1 CONCLUÍDO')}</BvEtiqueta>
         <View style={{ marginTop: 6, alignSelf: 'stretch' }}>
           <Odometro
             valor={barraV}
@@ -93,7 +94,7 @@ export default function BvRecompensa() {
             }}
           />
         </View>
-        <Text style={{ fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: BV.ink }}>NIKS Points</Text>
+        <Text style={{ fontSize: 15, fontWeight: '600', letterSpacing: -0.2, color: BV.ink }}>{t('NIKS Points')}</Text>
 
         {/* A medalha que ela acabou de ganhar: Bronze 2 (12/nov/2026, pedido do produto; antes
             era o selo rosa com a flor do NIKS). Mesma entrada de antes (`selo`). */}
@@ -104,14 +105,14 @@ export default function BvRecompensa() {
           <Medalha nivel={2} tamanho={176} />
         </Animated.View>
 
-        <Text style={{ marginTop: 26, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: BV.sub }}>CONQUISTA DESBLOQUEADA</Text>
-        <Text style={{ marginTop: 6, fontSize: 30, lineHeight: 34, fontWeight: '800', letterSpacing: -1, color: BV.ink }}>Ponto de partida</Text>
+        <Text style={{ marginTop: 26, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: BV.sub }}>{t('CONQUISTA DESBLOQUEADA')}</Text>
+        <Text style={{ marginTop: 6, fontSize: 30, lineHeight: 34, fontWeight: '800', letterSpacing: -1, color: BV.ink }}>{t('Ponto de partida')}</Text>
 
         <View style={{ marginTop: 22, width: '100%' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Medalha nivel={1} tamanho={22} />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: BV.body }}>Bronze 1 → Bronze 2</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: BV.body }}>{t('Bronze 1 → Bronze 2')}</Text>
             </View>
             <View style={{ width: 90 }}>
             <Odometro valor={barraV} alvo={PONTOS} sufixo={` / ${PONTOS}`} alinhar="right" style={{ fontSize: 13, lineHeight: 18, fontWeight: '600', color: BV.body, fontVariant: ['tabular-nums'] }} />
@@ -123,7 +124,7 @@ export default function BvRecompensa() {
         </View>
       </View>
 
-      <BvBotao label="Continuar" onPress={() => router.push('/(onboarding)/bv-sequencia' as any)} />
+      <BvBotao label={t('Continuar')} onPress={() => router.push('/(onboarding)/bv-sequencia' as any)} />
       <Confete disparar={festa} />
     </BvScreen>
   );

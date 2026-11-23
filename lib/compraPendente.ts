@@ -42,6 +42,8 @@ export type CompraPendente = {
   rotina: ProtocolResult | null;
   /** A linha de `skin_scans` já gravada pela tela de espera (retomada não grava de novo). */
   skinScanId?: string | null;
+  /** A rotina já foi gravada em `protocolos` (16/nov/2026): a retomada não grava uma 2ª vez. */
+  rotinaSalva?: boolean;
   /** Boas-vindas pós-pagamento (`lib/boasVindas.ts`): foto de partida (cache do app, prefixo
    *  `scan-compra-`, apagada junto) e quando ela selou o pacto. */
   boasVindas?: { fotoUri: string | null; pactoEm: string | null } | null;
@@ -125,6 +127,7 @@ export function registrarCompraPendente(): Promise<CompraPendente | null> {
       relatorio: relatorioDaFoto ?? (mesmaFoto ? antes!.relatorio : null),
       rotina: (relatorioDaFoto ? s.prefetchedProtocol?.result : null) ?? (mesmaFoto ? antes!.rotina : null),
       skinScanId: mesmaFoto ? antes!.skinScanId ?? null : null,
+      rotinaSalva: mesmaFoto ? antes!.rotinaSalva ?? false : false,
     };
     try {
       await AsyncStorage.setItem(CHAVE, JSON.stringify(reg));

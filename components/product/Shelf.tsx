@@ -15,6 +15,7 @@ import { setShelfPos, STATUS_COLECAO, type ColecaoItem, type ColecaoStatus, type
 import type { RetanguloOrigem } from './ProdutoEstanteOverlay';
 import { haptics } from '../../lib/haptics';
 import { fonteImagem } from '../../lib/produtosTela';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Minha estante" — réplica do design 48a (Claude Design, NiksShelfFlo.dc.html),
@@ -220,7 +221,7 @@ const ShelfItem = memo(function ShelfItem({ p, cx: tcx, by: tby, nonce, k, z, ed
         ref={boxRef as any}
         collapsable={false}
         accessibilityRole="button"
-        accessibilityLabel={editing ? `Remover ${p.name}` : p.status === 'tenho' ? p.name : `${p.name}, ${STATUS_COLECAO[p.status].rotulo}`}
+        accessibilityLabel={editing ? t('Remover {{nome}}', { nome: p.name }) : p.status === 'tenho' ? p.name : `${p.name}, ${STATUS_COLECAO[p.status].rotulo}`}
         style={[{ position: 'absolute', left: tcx - p.w / 2, top: tby - p.h, width: p.w, height: p.h, zIndex: z, transformOrigin: '50% 100%', opacity: oculto ? 0 : 1 }, boxStyle]}
       >
         <Animated.View style={[{ position: 'absolute', left: -p.w * 0.25, width: p.w * 1.5, height: 10 }, groundStyle]} pointerEvents="none">
@@ -334,7 +335,7 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
     const { w, h } = sizeOf(c);
     const cut = c.cutoutStatus === 'ok' && !!c.cutoutUrl;
     return {
-      id: c.id, name: c.nome ?? 'Produto', img: cut ? c.cutoutUrl : (c.photoUrl ?? c.cutoutUrl),
+      id: c.id, name: c.nome ?? t('Produto'), img: cut ? c.cutoutUrl : (c.photoUrl ?? c.cutoutUrl),
       cut, pending: c.cutoutStatus === 'pendente', w, h, pos: pos[c.id], status: c.status,
     };
   }), [items, pos]);
@@ -448,7 +449,7 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
         }], { format: ImageManipulator.SaveFormat.PNG });
         setCapturing(false);
         if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(cropped.uri, { mimeType: 'image/png', dialogTitle: 'Minha estante', UTI: 'public.png' });
+          await Sharing.shareAsync(cropped.uri, { mimeType: 'image/png', dialogTitle: t('Minha estante'), UTI: 'public.png' });
         }
       } catch (e) {
         console.warn('[estante] falha ao compartilhar', e);
@@ -531,16 +532,16 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
                 <Path d="M7 10.5V6.5M10 10.5V5.5M14.5 20v-5M17.5 20v-3.5" />
               </Svg>
             </View>
-            <Text style={s.emptyTitle}>Sua estante está esperando</Text>
+            <Text style={s.emptyTitle}>{t('Sua estante está esperando')}</Text>
             <Text style={s.emptyText} lineBreakStrategyIOS="push-out">
-              Escaneie um produto que você tem em casa ou toque em “Adicionar à estante” num recomendado.
+              {t('Escaneie um produto que você tem em casa ou toque em “Adicionar à estante” num recomendado.')}
             </Text>
             <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.action(); onScan(); }} style={s.emptyBtn}>
               <Svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="M14.5 4.5h-5L8 6.5H5A1.5 1.5 0 0 0 3.5 8v10A1.5 1.5 0 0 0 5 19.5h14a1.5 1.5 0 0 0 1.5-1.5V8A1.5 1.5 0 0 0 19 6.5h-3z" />
                 <Circle cx={12} cy={12.75} r={3.5} />
               </Svg>
-              <Text style={s.emptyBtnText}>Escanear um produto</Text>
+              <Text style={s.emptyBtnText}>{t('Escanear um produto')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -551,7 +552,7 @@ const ShelfBase = forwardRef<ShelfHandle, Props>(function Shelf({ items, loaded,
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() => { haptics.action(); onScan(); }}
-            accessibilityLabel="Escanear um produto para a estante"
+            accessibilityLabel={t('Escanear um produto para a estante')}
             style={[s.addSlot, { left: addSlot.x - ADD_W / 2, top: shelfY(addSlot.s) - ADD_H - 2 }]}
           >
             <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#E8468F" strokeWidth={2.4} strokeLinecap="round"><Path d="M12 5v14M5 12h14" /></Svg>

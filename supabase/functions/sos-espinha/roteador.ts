@@ -56,7 +56,9 @@ async function lerConfig(supabase: Supabase): Promise<Config> {
         provedor: data.provedor === 'openai' ? 'openai' : 'anthropic',
         modelo: data.anthropic_modelo ?? PADRAO.modelo,
         esforco: data.esforco ?? PADRAO.esforco,
-        cacheTtl: data.cache_ttl === '1h' ? '1h' : '5m',
+        // Fixo em 5 min (nov/2026): a `analise_produto_config` passou a 1 h para a análise de
+        // produto, mas o SOS tem tráfego espaçado e com 1 h pagaria mais na gravação.
+        cacheTtl: '5m',
         esperaMs: Number(data.espera_ms ?? PADRAO.esperaMs),
       }
     }

@@ -3,6 +3,7 @@ import { View, Text, Image, ScrollView, useWindowDimensions } from 'react-native
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
@@ -69,7 +70,7 @@ function ZoomCard({ label, selected, width, onPress, disabled }: {
         <Image source={ZOOM[label]} style={{ width: 76, height: 76, borderRadius: 38 }} />
       </View>
       <Text style={{ paddingHorizontal: 14, textAlign: 'center', fontSize: 16, lineHeight: 21, color: OB.ink }}>
-        {label}
+        {t(label)}
       </Text>
     </ObPress>
   );
@@ -109,9 +110,9 @@ export default function Concerns() {
     <ObScreen>
       {/* Cabeçalho fixo (título a 114 pt no design); a grade rola por baixo dele. */}
       <View style={{ paddingTop: y(114), paddingBottom: 16, backgroundColor: OB.bg, zIndex: 1 }}>
-        <ObTitle>{withName(name, 'o que mais te incomoda na sua pele hoje?')}</ObTitle>
+        <ObTitle>{withName(name, t('o que mais te incomoda na sua pele hoje?'))}</ObTitle>
         <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>
-          Selecione até 3. Vamos priorizar isso na sua rotina de skincare.
+          {t('Selecione até 3. Vamos priorizar isso na sua rotina de skincare.')}
         </ObSubtitle>
       </View>
 

@@ -30,6 +30,7 @@ import { saveRoutinePhoto, temFotoDoDia } from '../../lib/routinePhotos';
 import { abrirCartasEDepois } from '../../lib/concluirSkincare';
 import { ganhouPontos } from '../../lib/pontosAnimacao';
 import { ehContaTeste } from '../../lib/contaTeste';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Check-in do grupo — câmera 81i do Claude Design (NiksGrupoFlo.dc.html, rodada 81) e, depois
@@ -271,7 +272,7 @@ export default function Checkin() {
 
   const meus = grupos ?? [];
   const escolhidos = sel ? meus.filter((g) => sel.includes(g.id)) : meus;
-  const gruposLabel = escolhidos.length === 0 ? 'Nenhum grupo' : escolhidos.length === 1 ? escolhidos[0].nome : `Em ${escolhidos.length} grupos`;
+  const gruposLabel = escolhidos.length === 0 ? t('Nenhum grupo') : escolhidos.length === 1 ? escolhidos[0].nome : t('Em {{n}} grupos', { n: escolhidos.length });
   const alternarGrupo = (id: string) => {
     haptics.select();
     const atuais = escolhidos.map((g) => g.id);
@@ -295,8 +296,8 @@ export default function Checkin() {
 
   const publicar = async () => {
     if (!foto || publicando) return;
-    if (!escolhidos.length) { Alert.alert('Escolha um grupo'); return; }
-    if (jaFeitas.includes(rotina)) { Alert.alert(`Você já fez o check-in da rotina ${rotina === 'am' ? 'matinal' : 'noturna'} hoje`); return; }
+    if (!escolhidos.length) { Alert.alert(t('Escolha um grupo')); return; }
+    if (jaFeitas.includes(rotina)) { Alert.alert(rotina === 'am' ? t('Você já fez o check-in da rotina matinal hoje') : t('Você já fez o check-in da rotina noturna hoje')); return; }
     haptics.action();
     setPublicando(true);
     try {
@@ -319,18 +320,18 @@ export default function Checkin() {
         haptics.error();
         if (r.motivo === 'filtro' || r.motivo === 'filtro_indisponivel') {
           if (r.motivo === 'filtro') fotoSubida.current = null;
-          Alert.alert(r.motivo === 'filtro' ? 'Essa foto não pode ser publicada no grupo. Tente outra.' : 'Não conseguimos conferir essa foto agora. Tente de novo.');
+          Alert.alert(r.motivo === 'filtro' ? t('Essa foto não pode ser publicada no grupo. Tente outra.') : t('Não conseguimos conferir essa foto agora. Tente de novo.'));
         } else if (r.motivo === 'foto') {
           // O arquivo não está lá (subida interrompida): a próxima tentativa sobe de novo.
           fotoSubida.current = null;
-          Alert.alert('A foto não chegou', 'Tente publicar de novo. Se continuar, tire outra foto.');
+          Alert.alert(t('A foto não chegou'), t('Tente publicar de novo. Se continuar, tire outra foto.'));
         } else if (r.motivo === 'ja_fez') {
-          Alert.alert(`Você já fez o check-in da rotina ${rotina === 'am' ? 'matinal' : 'noturna'} hoje`, 'Escolha a outra rotina ou volte amanhã.');
+          Alert.alert(rotina === 'am' ? t('Você já fez o check-in da rotina matinal hoje') : t('Você já fez o check-in da rotina noturna hoje'), t('Escolha a outra rotina ou volte amanhã.'));
         } else if (r.motivo === 'grupos') {
           await invalidarGrupos();
-          Alert.alert('Você não está mais nesse grupo', 'Escolha outro grupo para publicar.');
+          Alert.alert(t('Você não está mais nesse grupo'), t('Escolha outro grupo para publicar.'));
         } else {
-          Alert.alert('Não deu para publicar agora', 'Tente de novo em instantes.');
+          Alert.alert(t('Não deu para publicar agora'), t('Tente de novo em instantes.'));
         }
         return;
       }
@@ -380,11 +381,11 @@ export default function Checkin() {
       haptics.error();
       // Só é "internet" quando a requisição nem saiu; o resto é do servidor ou da sessão.
       if (/network request failed|failed to fetch|timed? ?out|offline/i.test(msg)) {
-        Alert.alert('Sem conexão', 'Confira a internet e tente de novo.');
+        Alert.alert(t('Sem conexão'), t('Confira a internet e tente de novo.'));
       } else if (/sem sessão|unauthorized|jwt|HTTP 401/i.test(msg)) {
-        Alert.alert('Sua sessão expirou', 'Feche e abra o NIKS de novo para publicar.');
+        Alert.alert(t('Sua sessão expirou'), t('Feche e abra o NIKS de novo para publicar.'));
       } else {
-        Alert.alert('Não deu para publicar agora', 'Tente de novo em instantes.');
+        Alert.alert(t('Não deu para publicar agora'), t('Tente de novo em instantes.'));
       }
     } finally {
       setPublicando(false);
@@ -397,7 +398,7 @@ export default function Checkin() {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <StatusBar style="light" />
-        <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); sair(); }} style={[styles.close, { top: y(56) }]} accessibilityLabel="Fechar">
+        <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); sair(); }} style={[styles.close, { top: y(56) }]} accessibilityLabel={t('Fechar')}>
           <Icon size={26} color="#fff" sw={2} d={['M18 6 6 18M6 6l12 12']} />
         </TouchableOpacity>
         <Animated.View style={[styles.vf, { top: y(108), opacity: visorO, transform: [{ perspective: 1200 }, { rotateY: rot }] }]}>
@@ -409,18 +410,18 @@ export default function Checkin() {
         </Animated.View>
         <View style={[styles.camNote, { top: y(652) }]}>
           <Cadeado color="rgba(255,255,255,0.8)" />
-          <Text style={styles.camNoteT}>Só as integrantes do grupo veem sua foto</Text>
+          <Text style={styles.camNoteT}>{t('Só as integrantes do grupo veem sua foto')}</Text>
         </View>
         <View style={[styles.controls, { top: y(692) }]}>
-          <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); setFlash((f) => !f); }} style={styles.side} accessibilityLabel={flash ? 'Desligar flash' : 'Ligar flash'}>
+          <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); setFlash((f) => !f); }} style={styles.side} accessibilityLabel={flash ? t('Desligar flash') : t('Ligar flash')}>
             {flash
               ? <Icon size={26} color="#fff" sw={1.8} d={['M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z']} />
               : <Icon size={26} color="#fff" sw={1.8} d={['M10.513 4.856 13.12 2.17a.5.5 0 0 1 .86.46l-1.377 4.317', 'M15.656 10H20a1 1 0 0 1 .78 1.63l-1.72 1.773', 'M16.273 16.273 10.88 21.83a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14H4a1 1 0 0 1-.78-1.63l4.507-4.643', 'm2 2 20 20']} />}
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.8} onPress={disparar} style={styles.shutter} accessibilityLabel="Tirar foto">
+          <TouchableOpacity activeOpacity={0.8} onPress={disparar} style={styles.shutter} accessibilityLabel={t('Tirar foto')}>
             <View style={styles.shutterIn} />
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.6} onPress={inverter} style={styles.side} accessibilityLabel="Inverter câmera">
+          <TouchableOpacity activeOpacity={0.6} onPress={inverter} style={styles.side} accessibilityLabel={t('Inverter câmera')}>
             <Animated.View style={{ transform: [{ rotate: icGiro.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}>
               <Icon size={26} color="#fff" sw={1.8} d={['M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16', 'M8 16H3v5']} />
             </Animated.View>
@@ -446,12 +447,12 @@ export default function Checkin() {
     <View style={styles.root}>
       <StatusBar style="dark" />
       <View style={[styles.topo, { top: y(54) }]}>
-        <TouchableOpacity activeOpacity={0.7} disabled={publicando} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.topoLado} accessibilityLabel="Voltar para a câmera">
+        <TouchableOpacity activeOpacity={0.7} disabled={publicando} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.topoLado} accessibilityLabel={t('Voltar para a câmera')}>
           <Icon size={26} color={INK} sw={2} d={['m15 18-6-6 6-6']} />
         </TouchableOpacity>
-        <Text style={styles.titleT}>Novo check-in</Text>
-        <TouchableOpacity activeOpacity={0.6} disabled={publicando} onPress={publicar} style={[styles.topoLado, { alignItems: 'flex-end' }]} accessibilityLabel="Publicar">
-          {publicando ? <ActivityIndicator color={PINK} /> : <Text style={styles.publicarT}>Publicar</Text>}
+        <Text style={styles.titleT}>{t('Novo check-in')}</Text>
+        <TouchableOpacity activeOpacity={0.6} disabled={publicando} onPress={publicar} style={[styles.topoLado, { alignItems: 'flex-end' }]} accessibilityLabel={t('Publicar')}>
+          {publicando ? <ActivityIndicator color={PINK} /> : <Text style={styles.publicarT}>{t('Publicar')}</Text>}
         </TouchableOpacity>
       </View>
       <ScrollView
@@ -463,7 +464,7 @@ export default function Checkin() {
       >
         {/* Grupos · foto (lápis = tirar outra) · Válido */}
         <View style={styles.heroi}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => abrirGrupos(true)} style={styles.heroiLado} accessibilityLabel={`Grupos: ${gruposLabel}. Toque para escolher`}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => abrirGrupos(true)} style={styles.heroiLado} accessibilityLabel={t('Grupos: {{grupos}}. Toque para escolher', { grupos: gruposLabel })}>
             <View style={styles.bolinhas}>
               {escolhidos.slice(0, 3).map((g, i) => <MiniBanner key={g.id} g={g} tamanho={36} redondo style={[styles.bolinha, i > 0 && { marginLeft: -10 }]} />)}
               {escolhidos.length === 0 && <View style={[styles.bolinha, styles.bolinhaVazia]}><Icon size={16} color={MUTE} sw={2.2} d={['M12 5v14M5 12h14']} /></View>}
@@ -474,25 +475,25 @@ export default function Checkin() {
             <Animated.View style={[styles.shot, { opacity: fotoIn.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] }), transform: [{ scale: fotoIn.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }]}>
               {foto && <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%' }} />}
             </Animated.View>
-            <TouchableOpacity activeOpacity={0.7} disabled={publicando} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.lapis} accessibilityLabel="Tirar outra foto">
+            <TouchableOpacity activeOpacity={0.7} disabled={publicando} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.lapis} accessibilityLabel={t('Tirar outra foto')}>
               <Icon size={18} color={INK} sw={2} d={['M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z']} />
             </TouchableOpacity>
           </View>
           <View style={styles.heroiLado}>
             <View style={styles.valido}><Icon size={14} color="#fff" sw={3.4} d={['M20 6 9 17l-5-5']} /></View>
-            <Text style={styles.heroiT}>Válido</Text>
+            <Text style={styles.heroiT}>{t('Válido')}</Text>
           </View>
         </View>
 
         <View style={[styles.cardBranco, { marginTop: 8 }]}>
-          <TextInput value={titulo} onChangeText={setTitulo} placeholder="Título" placeholderTextColor={MUTE} maxLength={60} style={styles.titleIn} returnKeyType="done" selectionColor={PINK} />
+          <TextInput value={titulo} onChangeText={setTitulo} placeholder={t('Título')} placeholderTextColor={MUTE} maxLength={60} style={styles.titleIn} returnKeyType="done" selectionColor={PINK} />
         </View>
 
         {estLocal && (
           <View style={styles.cardBranco}>
-            {minutos && <LinhaInfo icone={ICO_TEMPO} rotulo="Duração" valor={minutos} />}
-            <LinhaInfo icone={ICO_PASSOS} rotulo="Passos" valor={String(estLocal.n_passos ?? passosLista.length)} borda={!!minutos} />
-            <LinhaInfo icone={ICO_PRODUTO} rotulo="Produtos" valor={String(estLocal.n_produtos ?? 0)} borda />
+            {minutos && <LinhaInfo icone={ICO_TEMPO} rotulo={t('Duração')} valor={minutos} />}
+            <LinhaInfo icone={ICO_PASSOS} rotulo={t('Passos')} valor={String(estLocal.n_passos ?? passosLista.length)} borda={!!minutos} />
+            <LinhaInfo icone={ICO_PRODUTO} rotulo={t('Produtos')} valor={String(estLocal.n_produtos ?? 0)} borda />
           </View>
         )}
 
@@ -507,11 +508,11 @@ export default function Checkin() {
       {folhaGrupos && (
         <>
           <Animated.View style={[StyleSheet.absoluteFill, styles.veu, { opacity: folhaV }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => abrirGrupos(false)} accessibilityLabel="Fechar" />
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => abrirGrupos(false)} accessibilityLabel={t('Fechar')} />
           </Animated.View>
           <Animated.View style={[styles.folha, { paddingBottom: insets.bottom + 16, transform: [{ translateY: folhaV.interpolate({ inputRange: [0, 1], outputRange: [rm ? 0 : 520, 0] }) }], opacity: rm ? folhaV : 1 }]}>
             <View style={styles.alca} />
-            <Text style={styles.folhaTitulo}>Em quais grupos vai aparecer?</Text>
+            <Text style={styles.folhaTitulo}>{t('Em quais grupos vai aparecer?')}</Text>
             <ScrollView style={styles.folhaLista} bounces={false}>
               {meus.map((g, i) => {
                 const on = escolhidos.some((x) => x.id === g.id);
@@ -521,7 +522,7 @@ export default function Checkin() {
                     <View style={[styles.folhaLinhaTexto, i < meus.length - 1 && styles.folhaFio]}>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.folhaNome} numberOfLines={1}>{g.nome}</Text>
-                        <Text style={styles.folhaSub}>{g.total <= 1 ? 'Só você' : `${g.total} integrantes`}</Text>
+                        <Text style={styles.folhaSub}>{g.total <= 1 ? t('Só você') : t('{{n}} integrantes', { n: g.total })}</Text>
                       </View>
                       <View style={[styles.marca, on && styles.marcaOn]}>
                         {on && <Icon size={13} color="#fff" sw={3.4} d={['M20 6 9 17l-5-5']} />}
@@ -532,7 +533,7 @@ export default function Checkin() {
               })}
             </ScrollView>
             <TouchableOpacity activeOpacity={0.85} disabled={!escolhidos.length} onPress={() => { haptics.tap(); abrirGrupos(false); }} style={[styles.pronto, !escolhidos.length && { opacity: 0.4 }]}>
-              <Text style={styles.prontoT}>{escolhidos.length ? 'Pronto' : 'Escolha um grupo'}</Text>
+              <Text style={styles.prontoT}>{escolhidos.length ? t('Pronto') : t('Escolha um grupo')}</Text>
             </TouchableOpacity>
           </Animated.View>
         </>

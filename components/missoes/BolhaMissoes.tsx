@@ -7,6 +7,7 @@ import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'reac
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { ListChecks } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { quantasFeitas, type EstadoMissoes } from '../../lib/missoes';
 import CardMissoes, { type MissaoId } from './CardMissoes';
 
@@ -31,7 +32,7 @@ export default function BolhaMissoes({ estado, onMissao }: { estado: EstadoMisso
           onPress={() => { haptics.tap(); setAberto(true); }}
           style={styles.bolha}
           accessibilityRole="button"
-          accessibilityLabel={`Suas missões, ${feitas} de 4 concluídas`}
+          accessibilityLabel={t('Suas missões, {{feitas}} de 4 concluídas', { feitas })}
         >
           <ListChecks size={20} color="#FFFFFF" strokeWidth={2.2} />
           <Text style={styles.contagem}>{`${feitas}/4`}</Text>
@@ -40,7 +41,7 @@ export default function BolhaMissoes({ estado, onMissao }: { estado: EstadoMisso
 
       <Modal visible={aberto} transparent animationType="fade" onRequestClose={() => setAberto(false)}>
         <View style={styles.fundo}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAberto(false)} accessibilityLabel="Fechar missões" />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAberto(false)} accessibilityLabel={t('Fechar missões')} />
           <CardMissoes estado={estado} onMissao={escolher} />
         </View>
       </Modal>

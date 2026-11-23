@@ -5,6 +5,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Inglês (nov/2026): acrescentado ao fim do prompt de sistema SÓ quando o app manda idioma 'en'.
+// Em português o prompt é o mesmo de antes, sem nenhuma diferença.
+const INSTRUCAO_EN = `
+
+LANGUAGE OVERRIDE — AMERICAN ENGLISH (en-US):
+The user reads the app in English. This overrides the rule "Responda em português brasileiro" above for the free text: write meal_name, meal_summary, foods[].name, foods[].evidence, foods[].mechanism, foods[].relevance_to_skin, foods[].substitution, highlights, watch_out and science_note in natural American English, in NIKS's warm, light, friendly tone (not a literal translation). The disclaimer must be exactly: "This is an AI nutrition analysis, not a medical or nutritional diagnosis."
+Keep these values EXACTLY as defined above, in Portuguese, because the app reads them as codes: meal_label ("Ótimo" | "Bom" | "Moderado" | "Atenção") and foods[].impact ("positivo" | "neutro" | "negativo"). JSON keys stay the same. Never use the word "diagnosis" except in the disclaimer.`
+const DISCLAIMER_EN = 'This is an AI nutrition analysis, not a medical or nutritional diagnosis.'
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -15,7 +24,10 @@ Deno.serve(async (req) => {
   if (bloqueio) return bloqueio
 
   try {
-    const { imageBase64, skinProfile, mimeType } = await req.json()
+    const { imageBase64, skinProfile, mimeType, idioma: idiomaPedido } = await req.json()
+    // Idioma do app (nov/2026): 'en' → os textos vêm em inglês; sem o campo (app antigo) ou
+    // qualquer outro valor → português, exatamente como antes.
+    const idioma = idiomaPedido === 'en' ? 'en' : 'pt'
 
     if (!imageBase64) {
       return new Response(JSON.stringify({ error: 'imageBase64 é obrigatório' }), {
@@ -77,7 +89,7 @@ REGRAS FINAIS:
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`
 
     const geminiBody = JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
+      system_instruction: { parts: [{ text: idioma === 'en' ? systemPrompt + INSTRUCAO_EN : systemPrompt }] },
       contents: [{
         role: 'user',
         parts: [
@@ -127,6 +139,7 @@ REGRAS FINAIS:
       throw new Error('Resposta da IA não contém JSON válido');
     }
     const result = JSON.parse(jsonStr)
+    if (idioma === 'en') result.disclaimer = DISCLAIMER_EN
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

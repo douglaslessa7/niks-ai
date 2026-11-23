@@ -5,6 +5,7 @@
 // são 13 níveis-medalha (Bronze 1 … NIKS) no lugar dos 11 do design (Cara Lavada … Ícone):
 // a trilha cresceu de 2.846 para 3.346 pt. Funções marcadas com 'worklet' rodam no UI thread.
 // ─────────────────────────────────────────────────────────────────────────────
+import { emIngles } from '../../lib/i18n';
 
 export const PINK = '#FF5EA8';
 export const INK = '#121212';
@@ -78,13 +79,14 @@ export function bgT(L: number) {
   return Math.min(1, Math.max(0, (L - 1) / (NIVEIS_TRILHA - 1)));
 }
 
-/** 1234 → '1.234'. */
+/** 1234 → '1.234' (em inglês, '1,234'). */
+const SEP_MILHAR = emIngles ? ',' : '.';
 export const fmt = (n: number) => {
   'worklet';
   const d = String(Math.round(n));
   let out = '';
   for (let i = 0; i < d.length; i++) {
-    if (i > 0 && (d.length - i) % 3 === 0) out += '.';
+    if (i > 0 && (d.length - i) % 3 === 0) out += SEP_MILHAR;
     out += d[i];
   }
   return out;

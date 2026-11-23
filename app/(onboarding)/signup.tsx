@@ -22,8 +22,12 @@ import { avisarTransferenciaFalhou, comTetoRc, confirmPremium, ensureAnonymousRe
 import { entrarNoGrupoGuardado, lerCodigoGrupo } from '../../lib/convidada';
 import { convidadaLigada, validarCodigo } from '../../lib/gruposServidor';
 import { mensagemDoCodigo } from '../../lib/codigoConvite';
+import { t } from '../../lib/i18n';
 import { pwDecisao } from '../../lib/paywallDebug';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
+// Import fixo (16/nov/2026): o `await import()` carregava o RevenueCat como pacote à parte no
+// Metro e reiniciava o app logo depois do login — o cadastro não terminava (sem perfil, scan e rotina).
+import Purchases from 'react-native-purchases';
 import { haptics } from '../../lib/haptics';
 import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
 
@@ -140,7 +144,8 @@ export default function Signup() {
   // (o relatório completo só chega depois da compra). O registro da compra pendente ganha o
   // user_id — se o app fechar agora, a retomada salva nesta conta.
   const salvarConta = async (userId: string) => {
-    await saveToSupabase(userId, { scan: false });
+    // `termos`: esta tela mostra a frase dos Termos — grava o aceite (1.64).
+    await saveToSupabase(userId, { scan: false, termos: true });
     // Antes de gerar a rotina: quem acabou de pagar já fica reconhecida no servidor.
     await enviarComprovantes(transferirNoCadastro(compraNestaSessao.current));
     // Liga o cupom (se houver) ao user_id real. Não bloqueia: se falhar, a
@@ -150,7 +155,7 @@ export default function Signup() {
     // Código do onboarding: entra no grupo. Vale para convidada e para quem assinou.
     const r = await entrarNoGrupoGuardado();
     if (r && 'grupoId' in r) grupoDaConvidada.current = r.grupoId;
-    else if (r) Alert.alert(mensagemDoCodigo(r.motivo));
+    else if (r) Alert.alert(t(mensagemDoCodigo(r.motivo)));
   };
 
   // Só conta como "viu o cadastro" depois da trava liberar.
@@ -210,14 +215,13 @@ export default function Signup() {
         email, password,
         options: { emailRedirectTo: 'niks-ai://auth/confirm' },
       });
-      if (error) { Alert.alert('Erro ao criar conta', error.message ?? 'Tente novamente.'); return; }
+      if (error) { Alert.alert(t('Erro ao criar conta'), error.message ?? t('Tente novamente.')); return; }
       if (!error && data.user && !data.session) {
         setEmailSent(email);
         setWaitingConfirmation(true);
       } else if (!error && data.session) {
         if (data.session.user?.id) {
           try {
-            const Purchases = (await import('react-native-purchases')).default;
             await comTetoRc(Purchases.logIn(data.session.user.id));
             // Sincroniza o receipt da Apple com o usuário RC identificado.
             // Sem isso, a compra feita pelo usuário anônimo não é transferida
@@ -232,7 +236,7 @@ export default function Signup() {
         }
       }
     } catch (error: any) {
-      Alert.alert('Erro ao criar conta', error?.message ?? 'Tente novamente.');
+      Alert.alert(t('Erro ao criar conta'), error?.message ?? t('Tente novamente.'));
     } finally {
       setLocalLoading(false);
     }
@@ -262,7 +266,6 @@ export default function Signup() {
       if (!data) return;
       if (data.user?.id) {
         try {
-          const Purchases = (await import('react-native-purchases')).default;
           await comTetoRc(Purchases.logIn(data.user.id));
           await comTetoRc(Purchases.restorePurchases(), 30000);
         } catch (rcErr) {
@@ -274,7 +277,7 @@ export default function Signup() {
         await finishOnboarding();
       }
     } catch (error: any) {
-      Alert.alert('Erro', error?.message ?? 'Tente novamente.');
+      Alert.alert(t('Erro'), error?.message ?? t('Tente novamente.'));
     }
   };
 
@@ -284,7 +287,6 @@ export default function Signup() {
       const session = await signInWithGoogle();
       if (session?.user?.id) {
         try {
-          const Purchases = (await import('react-native-purchases')).default;
           await comTetoRc(Purchases.logIn(session.user.id));
           await comTetoRc(Purchases.restorePurchases(), 30000);
         } catch (rcErr) {
@@ -296,7 +298,7 @@ export default function Signup() {
         await finishOnboarding();
       }
     } catch (error: any) {
-      Alert.alert('Erro', JSON.stringify(error));
+      Alert.alert(t('Erro'), JSON.stringify(error));
     }
   };
 
@@ -329,24 +331,24 @@ export default function Signup() {
             <Mail size={64} color={OB.pink} />
           </View>
           <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink, textAlign: 'center', marginBottom: 12 }}>
-            Verifique seu e-mail
+            {t('Verifique seu e-mail')}
           </Text>
           <Text style={{ fontSize: 17, lineHeight: 23, color: OB.sub, textAlign: 'center', marginBottom: 8 }}>
-            {'Enviamos um link de confirmação para '}
+            {t('Enviamos um link de confirmação para ')}
             <Text style={{ fontWeight: '600', color: OB.ink }}>{emailSent}</Text>
-            {'. Clique no link para ativar sua conta.'}
+            {t('. Clique no link para ativar sua conta.')}
           </Text>
           <Text style={{ fontSize: 15, lineHeight: 20, color: OB.sub, textAlign: 'center', marginBottom: 36 }}>
-            Não se esqueça de checar a pasta de spam.
+            {t('Não se esqueça de checar a pasta de spam.')}
           </Text>
           <ObPillButton
-            label={resendCooldown > 0 ? `Reenviar em ${resendCooldown}s` : 'Reenviar e-mail'}
+            label={resendCooldown > 0 ? t('Reenviar em {{segundos}}s', { segundos: resendCooldown }) : t('Reenviar e-mail')}
             onPress={handleResend}
             disabled={resendCooldown > 0}
             style={wide}
           />
           <TouchableOpacity onPress={handleUseOtherEmail} activeOpacity={0.7} style={{ marginTop: 18 }}>
-            <Text style={{ fontSize: 17, color: OB.sub }}>Usar outro e-mail</Text>
+            <Text style={{ fontSize: 17, color: OB.sub }}>{t('Usar outro e-mail')}</Text>
           </TouchableOpacity>
         </View>
       </ObScreen>
@@ -364,12 +366,12 @@ export default function Signup() {
           {/* Título (versão B, sem a etiqueta "sua conta" e sem destaque colorido) */}
           <View style={{ paddingHorizontal: 24 }}>
             <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink }}>
-              Bem-vinda! Vamos começar personalizando a sua jornada.
+              {t('Bem-vinda! Vamos começar personalizando a sua jornada.')}
             </Text>
             <Text style={{ marginTop: 12, fontSize: 17, lineHeight: 23, color: OB.sub }}>
-              {'Crie sua conta no '}
+              {t('Crie sua conta no ')}
               <Text style={{ fontWeight: '700', color: OB.ink }}>NIKS</Text>
-              {' para começar a sua jornada.'}
+              {t(' para começar a sua jornada.')}
             </Text>
           </View>
 
@@ -394,7 +396,7 @@ export default function Signup() {
                         <Svg width={20} height={20} viewBox="0 0 24 24">
                           <Path d="M17.05 12.04c-.03-2.71 2.21-4.01 2.31-4.07-1.26-1.84-3.22-2.09-3.92-2.12-1.67-.17-3.26 1-4.11 1-.86 0-2.17-.98-3.57-.95-1.84.03-3.54 1.07-4.49 2.71-1.92 3.33-.49 8.25 1.38 10.96.91 1.32 2 2.8 3.4 2.75 1.37-.06 1.89-.88 3.54-.88 1.65 0 2.12.88 3.57.85 1.47-.03 2.4-1.35 3.3-2.68 1.04-1.54 1.47-3.04 1.49-3.12-.03-.01-2.87-1.1-2.9-4.36zM14.5 4.27c.75-.91 1.26-2.17 1.12-3.43-1.08.04-2.39.72-3.17 1.62-.7.8-1.31 2.08-1.15 3.32 1.21.09 2.45-.61 3.2-1.51z" fill="#FFFFFF" />
                         </Svg>
-                        <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>Continuar com a Apple</Text>
+                        <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>{t('Continuar com a Apple')}</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -415,7 +417,7 @@ export default function Signup() {
                         <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
                         <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
                       </Svg>
-                      <Text style={{ fontSize: 17, fontWeight: '600', color: OB.ink }}>Continuar com o Google</Text>
+                      <Text style={{ fontSize: 17, fontWeight: '600', color: OB.ink }}>{t('Continuar com o Google')}</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -424,16 +426,16 @@ export default function Signup() {
                   activeOpacity={0.7}
                   style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text style={{ fontSize: 17, fontWeight: '600', color: OB.pink }}>Continuar com e-mail</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '600', color: OB.pink }}>{t('Continuar com e-mail')}</Text>
                 </TouchableOpacity>
               </>
             ) : (
               <>
                 <View>
-                  <Text style={fieldLabel}>Endereço de e-mail</Text>
+                  <Text style={fieldLabel}>{t('Endereço de e-mail')}</Text>
                   <View style={[field(focusedField === 'email'), { justifyContent: 'center' }]}>
                     <TextInput
-                      placeholder="seuemail@exemplo.com"
+                      placeholder={t('seuemail@exemplo.com')}
                       placeholderTextColor={OB.sub}
                       value={email}
                       onChangeText={handleEmailChange}
@@ -452,10 +454,10 @@ export default function Signup() {
 
                 {step === 'password' && (
                   <View>
-                    <Text style={fieldLabel}>Defina uma senha para a sua conta</Text>
+                    <Text style={fieldLabel}>{t('Defina uma senha para a sua conta')}</Text>
                     <View style={[field(focusedField === 'password'), { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
                       <TextInput
-                        placeholder="Mínimo 8 caracteres"
+                        placeholder={t('Mínimo 8 caracteres')}
                         placeholderTextColor={OB.sub}
                         value={password}
                         onChangeText={setPassword}
@@ -486,14 +488,14 @@ export default function Signup() {
                     <ActivityIndicator color="#FFFFFF" />
                   </View>
                 ) : (
-                  <ObPillButton label="Criar minha conta" onPress={handleCreateAccount} disabled={!passwordActive} style={wide} />
+                  <ObPillButton label={t('Criar minha conta')} onPress={handleCreateAccount} disabled={!passwordActive} style={wide} />
                 )}
                 <TouchableOpacity
                   onPress={fecharEmail}
                   activeOpacity={0.7}
                   style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text style={{ fontSize: 16, color: OB.sub }}>Voltar para Apple e Google</Text>
+                  <Text style={{ fontSize: 16, color: OB.sub }}>{t('Voltar para Apple e Google')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -501,21 +503,21 @@ export default function Signup() {
 
           {/* Termos */}
           <Text style={{ marginTop: 16, paddingHorizontal: 24, textAlign: 'center', fontSize: 13, lineHeight: 18, color: OB.sub }}>
-            {'Ao criar a conta, você aceita os '}
+            {t('Ao continuar, você concorda com os ')}
             <Text
               onPress={() => { haptics.tap(); Linking.openURL(TERMOS_URL); }}
               style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
             >
-              Termos de Uso
+              {t('Termos de Uso')}
             </Text>
-            {' e '}
+            {t(' e a ')}
             <Text
               onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
               style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
             >
-              Política de Privacidade
+              {t('Política de Privacidade')}
             </Text>
-            {'. Não toleramos conteúdo ofensivo nem abuso.'}
+            {t('. Não toleramos conteúdo ofensivo nem abuso.')}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

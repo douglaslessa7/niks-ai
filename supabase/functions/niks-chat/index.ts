@@ -27,6 +27,14 @@ function markerOverlap(buf: string, marker: string): number {
   return 0
 }
 
+// Etapa 3 da tradução (nov/2026): com `idioma: 'en'` no corpo, a NIKS responde em inglês.
+// Acrescentado ao FIM do prompt de sistema só nesse caso — em português o prompt é o mesmo.
+const INSTRUCAO_EN_CHAT = `
+
+## LANGUAGE — OVERRIDES "Português brasileiro" ABOVE
+The user's phone is in English. Reply in natural American English, with the same NIKS voice (warm, light, direct, friendly), even though these instructions and the context blocks (profile, routine, scans, memories) are in Portuguese. When you mention her routine steps or products, say them in English. Only if she clearly writes to you in another language, reply in her language.
+When you call propor_mudanca_rotina, write "reason", "step_name", "ingredient", "instruction" and the steps in English (step names with the product type in English: Cleanser, Toner, Serum, Moisturizer, Sunscreen, Eye Cream), but keep "schedule_days" with the Portuguese day codes exactly as the schema says ("Seg","Ter","Qua","Qui","Sex","Sab","Dom").`
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
@@ -82,6 +90,7 @@ Deno.serve(async (req) => {
       images,
       supportsProtocolCard,
       rotinaV2,
+      idioma,
     } = body as {
       conversationId?: string
       message?: string
@@ -91,7 +100,10 @@ Deno.serve(async (req) => {
       // App novo (out/2026): recebe o id da sugestão no fim do stream, mostra o card fixo
       // e entende "trocar a rotina inteira de um período" (replace_period).
       rotinaV2?: boolean
+      // Idioma do celular (etapa 3 da tradução). Sem o campo (app antigo) → português.
+      idioma?: string
     }
+    const en = idioma === 'en'
 
     if (!conversationId || (!message && (!images || images.length === 0))) {
       return new Response(
@@ -170,7 +182,7 @@ Deno.serve(async (req) => {
     const { stream: geminiStream, ferramentas, registrarCusto } = await responder({
       supabase,
       userId,
-      systemPrompt: NIKS_SYSTEM_PROMPT,
+      systemPrompt: en ? NIKS_SYSTEM_PROMPT + INSTRUCAO_EN_CHAT : NIKS_SYSTEM_PROMPT,
       contextPack,
       images,
       tools: ferramentaProposta(v2),
@@ -292,6 +304,7 @@ Deno.serve(async (req) => {
           if (raw) {
             resultado = await registrarProposta(supabase, userId, conversationId, raw, {
               periodoInteiro: v2,
+              en,
               pregnancyStatus: ((context.profile as Record<string, unknown> | null)?.pregnancy_status as string) ?? null,
             })
           }
@@ -301,15 +314,20 @@ Deno.serve(async (req) => {
         const temTexto = !!visibleText.trim()
         const lower = visibleText.toLowerCase()
         if (resultado?.ok) {
-          const frase = resultado.action === 'remove' ? 'Posso remover isso do seu protocolo?' : 'Posso incluir isso no seu protocolo?'
+          // Inglês: as frases exatas que o app reconhece (TRIGGER_PHRASES de niks-chat.tsx).
+          const frase = en
+            ? (resultado.action === 'remove' ? 'Can I remove this from your protocol?' : 'Can I add this to your protocol?')
+            : (resultado.action === 'remove' ? 'Posso remover isso do seu protocolo?' : 'Posso incluir isso no seu protocolo?')
           // Chamou a ferramenta sem escrever nada: descreve a proposta (ela precisa saber o que aprova).
-          if (!temTexto) emit(controller, descreverProposta(propostaRaw))
+          if (!temTexto) emit(controller, descreverProposta(propostaRaw, en))
           if (!v2 && !lower.includes(frase.toLowerCase())) emit(controller, `\n\n${frase}`)
-          else if (v2 && !temTexto) emit(controller, '\n\nConfere no cartão abaixo e toca em Aprovar se estiver tudo certo.')
+          else if (v2 && !temTexto) emit(controller, en ? '\n\nCheck the card below and tap Approve if everything looks right.' : '\n\nConfere no cartão abaixo e toca em Aprovar se estiver tudo certo.')
         } else if (resultado && !resultado.ok) {
-          emit(controller, `${temTexto ? '\n\n' : ''}Não consegui preparar essa mudança: ${motivoSimples(resultado.reason, resultado.period)}. Me conta de novo o que você quer mudar?`)
+          emit(controller, en
+            ? `${temTexto ? '\n\n' : ''}I couldn't prepare that change: ${motivoSimples(resultado.reason, resultado.period, true)}. Can you tell me again what you'd like to change?`
+            : `${temTexto ? '\n\n' : ''}Não consegui preparar essa mudança: ${motivoSimples(resultado.reason, resultado.period)}. Me conta de novo o que você quer mudar?`)
         } else if (!temTexto) {
-          emit(controller, 'Me perdi aqui. Pode repetir, por favor?')
+          emit(controller, en ? 'I got a little lost here. Could you say that again, please?' : 'Me perdi aqui. Pode repetir, por favor?')
         }
         if (resultado?.ok && v2) controller.enqueue(encoder.encode(`\n[[SUGESTAO:${resultado.id}]]`))
         resolveResult({ visible: visibleText, blocks })

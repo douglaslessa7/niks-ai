@@ -9,6 +9,7 @@
 import { diasDoPasso } from './frequencia';
 import { normTexto, ROTULO_TIPO, tipoDoPasso, tipoPorTexto, type TipoPasso } from './tipoPasso';
 import type { Periodo, PassoRotina } from './minhaRotina';
+import { emIngles, t } from './i18n';
 import type { DecisaoRotina } from './adicionarDoScan';
 
 export type RecomendacaoPasso =
@@ -26,27 +27,27 @@ export type EntradaRecomendacao = {
   passos: PassoRotina[];
 };
 
-const TEXTO_JA_COBRE = 'Sua rotina já cobre isso. Se quiser, escolha um passo.';
-const TEXTO_EVITARIA = 'Não é o mais indicado pra sua pele. Se quiser, escolha um passo.';
+const TEXTO_JA_COBRE = t('Sua rotina já cobre isso. Se quiser, escolha um passo.');
+const TEXTO_EVITARIA = t('Não é o mais indicado pra sua pele. Se quiser, escolha um passo.');
 
 const norm = (s?: string | null) => normTexto(s ?? '').replace(/\s+/g, ' ').trim();
 const nomeDoPasso = (p: PassoRotina) => p.nome?.trim() || p.produto?.nome?.trim() || 'Passo';
 const periodosDe = (v: string | null | undefined): Periodo[] => (v === 'am+pm' ? ['am', 'pm'] : v === 'pm' ? ['pm'] : ['am']);
-const frequencia = (dias: string[] | null) => (dias ? `${dias.length}x por semana` : 'todo dia');
+const frequencia = (dias: string[] | null) => (dias ? t('{{n}}x por semana', { n: dias.length }) : t('todo dia'));
 
 const DEPOIS_DE: Record<TipoPasso, string> = {
-  limpeza: 'da limpeza', tonico: 'do tônico', serum: 'do sérum', olhos: 'do cuidado com os olhos',
-  hidratante: 'do hidratante', protetor: 'do protetor',
+  limpeza: t('da limpeza'), tonico: t('do tônico'), serum: t('do sérum'), olhos: t('do cuidado com os olhos'),
+  hidratante: t('do hidratante'), protetor: t('do protetor'),
 };
 
 function textoEntrada(depois: PassoRotina | undefined, dias: string[] | null): string {
-  if (!depois) return `Entra na sua rotina, ${frequencia(dias)}`;
+  if (!depois) return t('Entra na sua rotina, {{frequencia}}', { frequencia: frequencia(dias) });
   const tipo = tipoDoPasso(depois.nome ?? '', depois.ingrediente ?? '');
-  const onde = tipo ? DEPOIS_DE[tipo] : `de ${nomeDoPasso(depois)}`;
-  return `Entra depois ${onde}, ${frequencia(dias)}`;
+  if (!tipo) return t('Entra depois de {{passo}}, {{frequencia}}', { passo: nomeDoPasso(depois), frequencia: frequencia(dias) });
+  return t('Entra depois {{onde}}, {{frequencia}}', { onde: DEPOIS_DE[tipo], frequencia: frequencia(dias) });
 }
 
-const substitui = (p: PassoRotina) => `Substitui seu ${p.produto?.nome?.trim() || nomeDoPasso(p)}`;
+const substitui = (p: PassoRotina) => t('Substitui seu {{nome}}', { nome: p.produto?.nome?.trim() || nomeDoPasso(p) });
 
 function doScan(d: DecisaoRotina, e: EntradaRecomendacao): RecomendacaoPasso {
   if (d.tipo === 'manter_rotina') return { tipo: 'aviso', texto: TEXTO_JA_COBRE };
@@ -75,13 +76,13 @@ function doScan(d: DecisaoRotina, e: EntradaRecomendacao): RecomendacaoPasso {
 
 function doCatalogo(e: EntradaRecomendacao): RecomendacaoPasso {
   // "Máscara com ácidos" não é sérum, embora a palavra "ácido" levasse a isso.
-  const tipo = /m[aá]scara|esfolia|peeling/i.test(e.categoria ?? '') ? null : tipoPorTexto(e.categoria ?? '');
+  const tipo = /m[aá]scara|esfolia|peeling/i.test(e.categoria ?? '') || (emIngles && /\bmask|exfoliat/i.test(e.categoria ?? '')) ? null : tipoPorTexto(e.categoria ?? '');
   const porque: Record<string, string> = {};
   if (tipo) {
     for (const per of ['am', 'pm'] as Periodo[]) {
       const doTipo = e.passos.filter((p) => p.periodo === per && tipoDoPasso(p.nome ?? '', p.ingrediente ?? '') === tipo);
       const alvo = doTipo.find((p) => !p.produto) ?? doTipo[0];
-      if (alvo) porque[alvo.id] = alvo.produto ? substitui(alvo) : `Entra no seu passo de ${ROTULO_TIPO[tipo].toLowerCase()}`;
+      if (alvo) porque[alvo.id] = alvo.produto ? substitui(alvo) : t('Entra no seu passo de {{tipo}}', { tipo: t(ROTULO_TIPO[tipo]).toLowerCase() });
     }
   }
   if (Object.keys(porque).length) return { tipo: 'passos', porque };
@@ -90,7 +91,7 @@ function doCatalogo(e: EntradaRecomendacao): RecomendacaoPasso {
   const periodo = rec.periodo === 'am' || rec.periodo === 'pm' || rec.periodo === 'am+pm' ? rec.periodo : null;
   return {
     tipo: 'novo', nome: rec.passo, periodos: periodosDe(periodo), dias: null,
-    porque: 'Recomendado pra sua rotina, todo dia',
+    porque: t('Recomendado pra sua rotina, todo dia'),
     decisao: { tipo: 'adicionar', passo: rec.passo, periodo, dias: null },
   };
 }

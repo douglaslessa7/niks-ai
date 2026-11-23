@@ -47,15 +47,17 @@ import { requestAppReview } from '../../../lib/storeReview';
 import {
   listarMinhaRotina, garantirMinhaRotina, temProdutosNoCelular, diaDaSemana, passoValeNoDia,
   reordenarPassos, removerPasso, nomeDoPasso, type MinhaRotina, type PassoRotina,
-  prefixoStatusProduto, type ProdutoDoPasso,
+  type ProdutoDoPasso,
 } from '../../../lib/minhaRotina';
 import SeletorPeriodo from '../../../components/rotina/SeletorPeriodo';
 import EscolherProdutoSheet, { preaquecerEscolherProduto } from '../../../components/rotina/EscolherProdutoSheet';
 import StepIcon from '../../../components/rotina/StepIcon';
 import RotinaIdealSheet from '../../../components/rotina/RotinaIdealSheet';
 import RotinaTutorial, { type EscolhaIntro } from '../../../components/rotina/RotinaTutorial';
-import { tipoDoPasso, ROTULO_TIPO } from '../../../lib/tipoPasso';
-import { diasDoPasso, seloFrequencia, fraseFrequencia } from '../../../lib/frequencia';
+import { TagStatusProduto } from '../../../components/rotina/TagStatusProduto';
+import { tipoDoPasso, focoDoPeriodo, ROTULO_TIPO } from '../../../lib/tipoPasso';
+import { emIngles, horaEn, t } from '../../../lib/i18n';
+import { diasDoPasso, seloFrequencia, fraseFrequencia, diaCurto } from '../../../lib/frequencia';
 import { loteDeHoje } from '../../../lib/rotinaLotes';
 import { abrirMontarRotina } from '../../../lib/abrirMontarRotina';
 import { carregarRotinaIdeal, marcarIdealVista, calcularCobertura, type RotinaIdeal } from '../../../lib/rotinaIdeal';
@@ -98,11 +100,6 @@ const BG = {
 } as const;
 const BG_STOPS = [0, 0.28, 0.5, 0.64, 0.8, 1] as const;
 
-// Foco por período (texto do design).
-const FOCUS: Record<'am' | 'pm', string> = {
-  am: 'Proteção & antioxidação',
-  pm: 'Reparação & barreira',
-};
 
 // Fundo da foto do produto: BRANCO para todos (pedido do usuário — só o produto, sem
 // a cor por categoria do design). O quadrado "+" de quem ainda não escolheu produto
@@ -124,6 +121,14 @@ type RawStep = {
   id?: number; name?: string; ingredient?: string; instruction?: string;
   steps?: string[]; color?: string; waitTime?: string | null; product_suggestions?: string[];
 };
+
+// Leitura tolerante do que vem do banco/cache (1.64): um campo fora do formato esperado
+// não pode derrubar a tela — lista que não é lista vira vazia, item que não é objeto sai,
+// dica que não é texto vira null.
+const passosCrus = (v: unknown): RawStep[] =>
+  (Array.isArray(v) ? v.filter((s): s is RawStep => !!s && typeof s === 'object') : []);
+const dicasCruas = (v: unknown): (string | null)[] =>
+  (Array.isArray(v) ? v.map((d) => (typeof d === 'string' ? d : null)) : []);
 
 // "Como fazer": prioriza a instruction clínica; se ausente, junta os steps.
 function howOf(raw: RawStep): string {
@@ -150,14 +155,14 @@ function parseCronograma(raw?: string | null): { week: string; body: string }[] 
   if (!raw) return [];
   const re = /(?:(?:Nas\s+)?Semanas?\s+([\d][\d\-–—]*\+?(?:\s+em diante)?)|A partir da semana\s+(\d+))\s*[,:]/gi;
   const matches = [...raw.matchAll(re)];
-  if (matches.length < 2) return [{ week: 'Introdução gradual', body: raw }];
+  if (matches.length < 2) return [{ week: t('Introdução gradual'), body: raw }];
   return matches.map((m, i) => {
     const start = (m.index ?? 0) + m[0].length;
     const end = matches[i + 1]?.index ?? raw.length;
     const rawLabel = (m[1] ?? m[2] ?? '').trim().replace(/\s+em diante/, '').replace('-', '–');
     const label = m[2] ? `${m[2]}+` : rawLabel;
     const plural = /[–—]/.test(label);
-    return { week: `${plural ? 'Semanas' : 'Semana'} ${label}`, body: raw.slice(start, end).trim().replace(/\.$/, '') + '.' };
+    return { week: plural ? t('Semanas {{n}}', { n: label }) : t('Semana {{n}}', { n: label }), body: raw.slice(start, end).trim().replace(/\.$/, '') + '.' };
   });
 }
 
@@ -169,8 +174,8 @@ function parseTime(v: unknown, fallback: number): number {
 function fmtDuration(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
-  if (h === 0) return `${m} min`;
-  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+  if (h === 0) return t('{{m}} min', { m });
+  return m === 0 ? t('{{h}}h', { h }) : t('{{h}}h {{m}}min', { h, m });
 }
 
 // ── Ícones ───────────────────────────────────────────────────────────────────
@@ -222,11 +227,11 @@ function FlipFront({ label }: { label: string }) {
   return (
     <>
       <View style={{ gap: 1 }}>
-        <Text style={styles.flipEm}>Em</Text>
+        <Text style={styles.flipEm}>{t('Em')}</Text>
         <Text style={styles.flipLabel}>{label}</Text>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={styles.flipEm}>Toque para ver</Text>
+        <Text style={styles.flipEm}>{t('Toque para ver')}</Text>
         <View style={styles.flipBtn}>
           <Svg width={15} height={15} viewBox="0 0 24 24">
             {['M3 12a9 9 0 0 1 15.5-6.2L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-15.5 6.2L3 16', 'M3 21v-5h5'].map((d) => (
@@ -258,7 +263,7 @@ const FLIP_FONTES = [17, 16, 15, 14, 13, 12, 11];
 function FlipBackContent({ label, body, tom, fonte }: { label: string; body: string; tom: string; fonte: number }) {
   return (
     <View style={{ paddingTop: 20, paddingHorizontal: 20, paddingBottom: 20 }}>
-      <Text style={{ fontSize: 15, fontWeight: '600', color: tom, marginRight: 44 }}>Em {label}</Text>
+      <Text style={{ fontSize: 15, fontWeight: '600', color: tom, marginRight: 44 }}>{t('Em {{label}}', { label })}</Text>
       <Text style={{ marginTop: 10, fontSize: fonte, lineHeight: Math.round(fonte * 1.4), letterSpacing: -0.3, color: INK }} lineBreakStrategyIOS="push-out">
         {body}
       </Text>
@@ -341,7 +346,7 @@ function FlipCardAberto({ origem, label, body, cores, onFechado }: {
             <TouchableOpacity
               onPress={() => fechar(true)}
               hitSlop={10}
-              accessibilityLabel="Fechar"
+              accessibilityLabel={t('Fechar')}
               style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' }}
             >
               <Svg width={14} height={14} viewBox="0 0 24 24">
@@ -520,10 +525,10 @@ export default function Protocolo() {
     if (!userId) return;
 
     // A tabela ganha quando QUALQUER período tem dado (||, não &&).
-    const amS = (saved?.rotina_am as RawStep[]) ?? [];
-    const pmS = (saved?.rotina_pm as RawStep[]) ?? [];
+    const amS = passosCrus(saved?.rotina_am);
+    const pmS = passosCrus(saved?.rotina_pm);
     if (amS.length || pmS.length) {
-      aplica(amS, pmS, Array.isArray(saved?.dicas) ? saved!.dicas : []);
+      aplica(amS, pmS, dicasCruas(saved?.dicas));
       setLoadState('ready');
       return;
     }
@@ -546,8 +551,8 @@ export default function Protocolo() {
 
   // Sincroniza o store a partir da tabela (fonte de verdade). Guard de igualdade evita laço.
   useEffect(() => {
-    const amS = (saved?.rotina_am as RawStep[]) ?? [];
-    const pmS = (saved?.rotina_pm as RawStep[]) ?? [];
+    const amS = passosCrus(saved?.rotina_am);
+    const pmS = passosCrus(saved?.rotina_pm);
     if (!amS.length && !pmS.length) return;
     const same = protocolResult
       && JSON.stringify(protocolResult.morning) === JSON.stringify(amS)
@@ -557,7 +562,7 @@ export default function Protocolo() {
       ...(protocolResult ?? ({} as ProtocolResult)),
       morning: amS as unknown as ProtocolResult['morning'],
       night: pmS as unknown as ProtocolResult['night'],
-      dicas: Array.isArray(saved?.dicas) ? saved!.dicas : [],
+      dicas: dicasCruas(saved?.dicas).map((d) => d ?? ''), // mantém as posições (dicas[4] = cronograma)
     });
   }, [saved, protocolResult, setProtocolResult]);
 
@@ -646,7 +651,7 @@ export default function Protocolo() {
     if (error) throw error;
     return { status: (data?.rotina_intro_status ?? null) as EscolhaIntro | null };
   }, []);
-  const { data: introDb, refresh: refreshIntro } = useCachedQuery(
+  const { data: introDb, state: introState, refresh: refreshIntro } = useCachedQuery(
     userId ? `rotinaintro:${userId}` : null,
     fetchIntro,
     { enabled: Boolean(userId), staleMs: 0 },
@@ -767,14 +772,24 @@ export default function Protocolo() {
   // "Custo-benefício", "Médio"…; ela continua no detalhe do produto e na folha "Escolher produto".)
 
   // ── Tutorial de primeiro acesso (réplica do Claude Design 54a/54b) ──────────
-  // Mesma regra da intro antiga: uma vez por conta (`users.rotina_intro_status` null),
-  // com a Minha rotina e a ideal carregadas. As 3 opções gravam pelo `escolherIntro`.
+  // Uma vez por conta (`users.rotina_intro_status` null). As 3 opções gravam pelo `escolherIntro`.
   // Com a dica de um desafio ativa, a intro espera (o desafio da rotina a substitui:
   // `rotina_intro_status = 'guiado'`, lib/missoes.ts).
+  // 16/nov/2026 (pedido do produto): ele abre NA HORA do toque na aba. Os passos do tutorial
+  // são genéricos, então ele não espera a Minha rotina, a ideal nem a rotina carregarem (antes
+  // esperava e levava ~3 s, com a Rotina aparecendo por trás). O status vem do cache, que a
+  // home já preenche (`rotinaintro:<uid>`); sem cache, um véu cobre a Rotina até a resposta.
   const guia = useGuia();
-  const tutorialVisivel = introDb !== undefined && introDb !== null && introStatus === null
-    && usandoMinha && !!ideal && (ideal.am.length + ideal.pm.length) > 0
-    && loadState === 'ready' && !editando && !guia;
+  const introConhecido = introEscolhida !== null || introState !== 'loading';
+  const tutorialVisivel = introEscolhida === null && introDb != null && introDb.status === null
+    && !editando && !guia;
+  const [introVenceu, setIntroVenceu] = useState(false);
+  useEffect(() => {
+    if (introConhecido) return;
+    const id = setTimeout(() => setIntroVenceu(true), 4000); // teto: se não responder, segue sem tutorial
+    return () => clearTimeout(id);
+  }, [introConhecido]);
+  const cobrirRotina = !introConhecido && !introVenceu;
   // O tutorial cobre a tela inteira; a navbar (no `_layout`) ficaria por cima: some enquanto ele está aberto.
   useFocusEffect(useCallback(() => {
     setTabBarVisible(!tutorialVisivel);
@@ -793,7 +808,7 @@ export default function Protocolo() {
   const contaTeste = useContaTeste();
   const finToday = !!finAt && !contaTeste;
   // "Feita às 7:18" (design 41f) — horário real em que a cerimônia gravou a rotina.
-  const finLabel = finAt ? `Feita às ${new Date(finAt).getHours()}:${String(new Date(finAt).getMinutes()).padStart(2, '0')}` : '';
+  const finLabel = finAt ? t('Feita às {{hora}}', { hora: emIngles ? horaEn(new Date(finAt).getHours(), new Date(finAt).getMinutes()) : `${new Date(finAt).getHours()}:${String(new Date(finAt).getMinutes()).padStart(2, '0')}` }) : '';
   // Sequência = um número só (dias ativos seguidos), do SERVIDOR. Logo depois de concluir,
   // vale o número que o servidor devolveu (seqServidor); sem rede, o do celular.
   const { data: estadoCartas, refresh: refreshEstado } = useEstadoCartas();
@@ -813,12 +828,13 @@ export default function Protocolo() {
       chosen, hasProd: !!chosen,
       img: chosen ? (chosen.recorteUrl ?? chosen.imagemUrl ?? '') : '', cut: !!chosen?.recorteUrl, // recorte sem fundo quando pronto
       tint: chosen ? PRODUCT_BG : NO_PRODUCT_BG,
-      pline: chosen ? prefixoStatusProduto(chosen) + [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Escolher produto',
+      // O status ("Quero comprar"/"Acabou") é uma TAG à parte (`TagStatusProduto`), nunca no nome.
+      pline: chosen ? [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : t('Escolher produto'),
       // Faixa de preço: só produto do catálogo (escaneado não tem `catalogoId`).
       // Ícone da categoria (sem produto) e o nome para mostrar onde cabe um só (nome
       // do passo; sem ele, o do produto) — o nome do passo é opcional (Fase 3).
       tipo: tipoDoPasso(name, ingredient),
-      titulo: name || (chosen ? [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : 'Passo'),
+      titulo: name || (chosen ? [chosen.marca, chosen.nome].filter(Boolean).join(' · ') : t('Passo')),
       // Aviso do produto pra pele dela (Fase 2): texto pequeno embaixo do produto.
       // (`?.`: o cache da tela pode trazer um passo salvo antes do campo existir.)
       aviso: usandoMinha && chosen && minhaList[i].aviso && minhaList[i].aviso.nivel !== 'nenhum' ? minhaList[i].aviso : null,
@@ -918,14 +934,14 @@ export default function Protocolo() {
   // ── Herói ──────────────────────────────────────────────────────────────────
   // Antes do horário: "Sua rotina começa em" + contagem. Na janela da rotina:
   // "Rotina da manhã" + "N passos". Concluída hoje: "… concluída" + "Concluída".
-  const t = now.getHours() * 60 + now.getMinutes();
+  const agoraMin = now.getHours() * 60 + now.getMinutes();
   const amTime = extras?.amTime ?? DEFAULT_AM;
   const pmTime = extras?.pmTime ?? DEFAULT_PM;
   const start = am ? amTime : pmTime;
   // Janela em que a rotina pode ser feita: a da manhã vai do horário dela até o
   // horário da noite (dá para fazer atrasada); a da noite vai do horário dela até as
   // 04:00 (a virada da sessão-do-dia). Fora da janela o botão fica bloqueado.
-  const windowOpen = (p: 'am' | 'pm') => (p === 'am' ? (t >= amTime && t < pmTime) : (t >= pmTime || t < 4 * 60));
+  const windowOpen = (p: 'am' | 'pm') => (p === 'am' ? (agoraMin >= amTime && agoraMin < pmTime) : (agoraMin >= pmTime || agoraMin < 4 * 60));
   const inWindow = windowOpen(period);
   // Modo de teste (`SKINCARE_SEMPRE_DISPONIVEL`, temporário): o botão funciona fora da janela.
   const canStart = (SKINCARE_SEMPRE_DISPONIVEL || contaTeste || inWindow) && !finToday;
@@ -998,18 +1014,18 @@ export default function Protocolo() {
     });
     return () => { alive = false; };
   }, [loadState]);
-  const untilStart = start - t > 0 ? start - t : start - t + 24 * 60;
+  const untilStart = start - agoraMin > 0 ? start - agoraMin : start - agoraMin + 24 * 60;
   const hero = finToday
-    ? { label: am ? 'Rotina da manhã concluída' : 'Rotina da noite concluída', big: 'Concluída' }
+    ? { label: am ? t('Rotina da manhã concluída') : t('Rotina da noite concluída'), big: t('Concluída') }
     : inWindow
-      ? { label: am ? 'Rotina da manhã' : 'Rotina da noite', big: `${n} ${n === 1 ? 'passo' : 'passos'}` }
-      : { label: 'Sua rotina começa em', big: fmtDuration(untilStart) };
+      ? { label: am ? t('Rotina da manhã') : t('Rotina da noite'), big: n === 1 ? t('{{n}} passo', { n }) : t('{{n}} passos', { n }) }
+      : { label: t('Sua rotina começa em'), big: fmtDuration(untilStart) };
 
   // ── Recomendações ──────────────────────────────────────────────────────────
   const marcos = [
-    { l: '2 semanas', b: dicas[1] },
-    { l: '1 mês', b: dicas[2] },
-    { l: '3 meses', b: dicas[3] },
+    { l: t('2 semanas'), b: dicas[1] },
+    { l: t('1 mês'), b: dicas[2] },
+    { l: t('3 meses'), b: dicas[3] },
   ].map((m, i) => ({ ...m, cores: FLIP_CORES[i] }))
     .filter((m): m is { l: string; b: string; cores: FlipCores } => !!(m.b ?? '').trim());
   const cron = parseCronograma(dicas[4]);
@@ -1044,8 +1060,8 @@ export default function Protocolo() {
     id: p.id,
     nome: nomeDoPasso(p),
     sub: [
-      p.produto ? prefixoStatusProduto(p.produto) + [p.produto.marca, p.produto.nome].filter(Boolean).join(' · ') : 'Sem produto',
-      p.dias?.length ? p.dias.join(' · ') : null,
+      p.produto ? [p.produto.marca, p.produto.nome].filter(Boolean).join(' · ') : t('Sem produto'),
+      p.dias?.length ? p.dias.map(diaCurto).join(' · ') : null,
     ].filter(Boolean).join('  ·  '),
     img: p.produto ? (p.produto.recorteUrl ?? p.produto.imagemUrl) : null,
   }));
@@ -1055,24 +1071,24 @@ export default function Protocolo() {
     } catch (e) {
       console.warn('[rotina] reordenar falhou:', e);
       haptics.error();
-      Alert.alert('Não deu pra salvar a nova ordem', 'Tente de novo em instantes.');
+      Alert.alert(t('Não deu pra salvar a nova ordem'), t('Tente de novo em instantes.'));
     } finally {
       void refreshMinha();
     }
   };
   const confirmarRemover = (id: string) => {
     haptics.warning();
-    Alert.alert('Remover esse passo da sua rotina?', undefined, [
-      { text: 'Cancelar', style: 'cancel' },
+    Alert.alert(t('Remover esse passo da sua rotina?'), undefined, [
+      { text: t('Cancelar'), style: 'cancel' },
       {
-        text: 'Remover', style: 'destructive', onPress: async () => {
+        text: t('Remover'), style: 'destructive', onPress: async () => {
           try {
             await removerPasso(id);
             haptics.success();
           } catch (e) {
             console.warn('[rotina] remover falhou:', e);
             haptics.error();
-            Alert.alert('Não deu pra remover o passo', 'Tente de novo em instantes.');
+            Alert.alert(t('Não deu pra remover o passo'), t('Tente de novo em instantes.'));
           } finally {
             void refreshMinha();
           }
@@ -1129,7 +1145,7 @@ export default function Protocolo() {
 
   const rs = flow === 'guide' ? steps[Math.min(run, n - 1)] : null;
   const modalVisible = flow != null;
-  const doneSub = photoUri ? 'Foto do dia salva' : (am ? 'Sem foto hoje' : 'Até amanhã de manhã');
+  const doneSub = photoUri ? t('Foto do dia salva') : (am ? t('Sem foto hoje') : t('Até amanhã de manhã'));
   // Linha da sequência na 45c. Qualquer rotina concluída já vale o dia, então hoje
   // sempre conta. Inclui a rotina recém-concluída mesmo antes de o histórico
   // (AsyncStorage) responder, para não piscar um número menor.
@@ -1140,7 +1156,7 @@ export default function Protocolo() {
   };
   // "N dias seguidos" conta DIAS (routineDayStreak), não os pontos do streak.
   const doneStreak = seqServidor ?? routineDayStreak(histNow, now);
-  const doneStreakLine = `${doneStreak} ${doneStreak === 1 ? 'dia seguido' : 'dias seguidos'}`;
+  const doneStreakLine = doneStreak === 1 ? t('{{n}} dia seguido', { n: doneStreak }) : t('{{n}} dias seguidos', { n: doneStreak });
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1164,7 +1180,7 @@ export default function Protocolo() {
               )}
               <View style={styles.avatarDot} />
             </View>
-            <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>Sua rotina</Text>
+            <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>{t('Sua rotina')}</Text>
           </View>
           {/* O foguinho da sequência saiu da Rotina (12/nov/2026, pedido do produto). Na home ele
               fica — lá abre as conquistas. */}
@@ -1177,7 +1193,7 @@ export default function Protocolo() {
           <View style={{ paddingTop: 64, alignItems: 'center', gap: 14 }}>
             <ActivityIndicator size="large" color={PINK} />
             <Text style={{ fontSize: 15, color: MUTED }}>
-              {loadState === 'generating' ? 'Montando seu protocolo…' : 'Carregando sua rotina…'}
+              {loadState === 'generating' ? t('Montando seu protocolo…') : t('Carregando sua rotina…')}
             </Text>
           </View>
         ) : loadState === 'ready' && n > 0 ? (
@@ -1185,7 +1201,8 @@ export default function Protocolo() {
             {/* ── Herói ─────────────────────────────────────────────────── */}
             <Text style={styles.heroLabel}>{hero.label}</Text>
             <Text style={styles.heroBig}>{hero.big}</Text>
-            <Text style={styles.heroSub}>{FOCUS[period]}</Text>
+            {/* Título do período tirado dos passos dela (não mais fixo). */}
+            <Text style={styles.heroSub}>{focoDoPeriodo(stepsAll.map((s) => s.tipo))}</Text>
             {finToday ? (
               // Concluída — "linha simples" do design 41f: check rosa + "Feita às H:MM".
               // Não é botão: a rotina não reabre no mesmo dia.
@@ -1211,17 +1228,17 @@ export default function Protocolo() {
                   <Svg width={13} height={14} viewBox="0 0 13 14">
                     <Path d="M1 1.6v10.8c0 .8.9 1.3 1.6.9l9-5.4c.6-.4.6-1.3 0-1.7l-9-5.4C1.9.4 1 .8 1 1.6z" fill="#fff" />
                   </Svg>
-                  <Text style={styles.heroBtnText}>Iniciar skincare</Text>
+                  <Text style={styles.heroBtnText}>{t('Iniciar skincare')}</Text>
                 </TouchableOpacity>
               </View>
             )}
 
             {/* ── Seus passos (linha do tempo) ─────────────────────────────── */}
             <View style={styles.listHead}>
-              <Text style={styles.sectionTitle}>{am ? 'Seus passos · Manhã' : 'Seus passos · Noite'}</Text>
+              <Text style={styles.sectionTitle}>{am ? t('Seus passos · Manhã') : t('Seus passos · Noite')}</Text>
               {editando ? (
-                <TouchableOpacity onPress={() => { haptics.select(); setEditando(false); }} hitSlop={10} accessibilityLabel="Concluir edição da rotina">
-                  <Text style={styles.okTxt}>OK</Text>
+                <TouchableOpacity onPress={() => { haptics.select(); setEditando(false); }} hitSlop={10} accessibilityLabel={t('Concluir edição da rotina')}>
+                  <Text style={styles.okTxt}>{t('OK')}</Text>
                 </TouchableOpacity>
               ) : (
                 <Text style={{ fontSize: 15, color: MUTED }}>{`${finToday ? n : k}/${n}`}</Text>
@@ -1241,10 +1258,10 @@ export default function Protocolo() {
                     activeOpacity={0.85}
                     onPress={() => { haptics.tap(); setPassoModo({ tipo: 'novo', periodo: period }); }}
                     style={styles.novoPasso}
-                    accessibilityLabel="Novo passo"
+                    accessibilityLabel={t('Novo passo')}
                   >
                     <PlusIcon size={16} />
-                    <Text style={{ fontSize: 16, fontWeight: '600', letterSpacing: -0.3, color: PINK_TEXT }}>Novo passo</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '600', letterSpacing: -0.3, color: PINK_TEXT }}>{t('Novo passo')}</Text>
                   </TouchableOpacity>
                 </>
               ) : stepsAll.map((s) => {
@@ -1283,7 +1300,7 @@ export default function Protocolo() {
                             <TouchableOpacity
                               activeOpacity={0.7}
                               onPress={() => abrirEscolher(s.i)}
-                              accessibilityLabel={`Escolher produto para ${s.titulo}`}
+                              accessibilityLabel={t('Escolher produto para {{passo}}', { passo: s.titulo })}
                               style={[styles.tile, { backgroundColor: s.tint }, finToday && { opacity: 0.55 }]}
                             >
                               <StepIcon tipo={s.tipo} size={24} />
@@ -1295,7 +1312,7 @@ export default function Protocolo() {
                           <TouchableOpacity
                             activeOpacity={0.7}
                             onPress={() => abrirEscolher(s.i)}
-                            accessibilityLabel={`Escolher produto para ${s.titulo}`}
+                            accessibilityLabel={t('Escolher produto para {{passo}}', { passo: s.titulo })}
                             style={[styles.tile, { backgroundColor: s.tint }, finToday && { opacity: 0.55 }]}
                           >
                             <StepIcon tipo={s.tipo} size={24} />
@@ -1318,10 +1335,10 @@ export default function Protocolo() {
                               activeOpacity={0.6}
                               onPress={() => abrirEscolher(s.i)}
                               hitSlop={{ top: 8, bottom: 8 }}
-                              accessibilityLabel={`Escolher produto para ${s.titulo}`}
+                              accessibilityLabel={t('Escolher produto para {{passo}}', { passo: s.titulo })}
                               style={{ alignSelf: 'flex-start' }}
                             >
-                              <Text style={[styles.stepName, { color: PINK_TEXT }]} numberOfLines={2}>Escolher produto</Text>
+                              <Text style={[styles.stepName, { color: PINK_TEXT }]} numberOfLines={2}>{t('Escolher produto')}</Text>
                             </TouchableOpacity>
                           ) : (
                             <Text
@@ -1337,12 +1354,14 @@ export default function Protocolo() {
                               activeOpacity={0.6}
                               onPress={() => abrirEscolher(s.i)}
                               hitSlop={{ top: 8, bottom: 8 }}
-                              accessibilityLabel={`Escolher produto para ${s.titulo}`}
+                              accessibilityLabel={t('Escolher produto para {{passo}}', { passo: s.titulo })}
                               style={{ alignSelf: 'flex-start' }}
                             >
-                              <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Escolher produto</Text>
+                              <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>{t('Escolher produto')}</Text>
                             </TouchableOpacity>
                           )}
+                          {/* Status do produto ("Quero comprar"): tag, como na estante. */}
+                          {s.hasProd && <TagStatusProduto status={s.chosen?.status} style={{ marginTop: 6 }} />}
                           {/* Frequência do passo não diário: selo rosa com calendário. */}
                           {!!s.dias && (
                             <View style={styles.seloDias}>
@@ -1362,7 +1381,7 @@ export default function Protocolo() {
                           {/* Observação da IA sobre o produto dela: só com o card aberto (pedido do usuário). */}
                           {!!s.aviso && (
                             <Text style={[styles.stepAviso, s.aviso.nivel === 'forte' && { color: '#B42318' }]}>
-                              {s.aviso.texto}
+                              {s.aviso.texto ? t(s.aviso.texto) : s.aviso.texto}
                             </Text>
                           )}
                           <TouchableOpacity
@@ -1371,7 +1390,7 @@ export default function Protocolo() {
                             style={{ flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' }}
                           >
                             <Text style={{ fontSize: 15, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>
-                              {s.hasProd ? 'Trocar produto' : 'Escolher produto'}
+                              {s.hasProd ? t('Trocar produto') : t('Escolher produto')}
                             </Text>
                             <Svg width={14} height={14} viewBox="0 0 24 24">
                               <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
@@ -1390,7 +1409,7 @@ export default function Protocolo() {
                 onPress={() => { haptics.select(); setOpenStep(-1); setEditando(true); }}
                 style={{ marginTop: 10, marginLeft: -14, marginRight: -18, height: 44, alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Editar rotina</Text>
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>{t('Editar rotina')}</Text>
               </TouchableOpacity>}
               {/* Scan em lote "Montar minha rotina com meus produtos": entrada permanente
                   abaixo da lista (a intro da Fase 7 é a primeira; quem escolheu "Fazer
@@ -1406,13 +1425,13 @@ export default function Protocolo() {
                 >
                   <Text style={styles.idealTitulo}>
                     {cardIdeal.mudou
-                      ? 'Sua rotina ideal mudou com o novo scan'
+                      ? t('Sua rotina ideal mudou com o novo scan')
                       : cardIdeal.faltam.length
-                        ? `Sua rotina já tem ${cardIdeal.total - cardIdeal.faltam.length} dos ${cardIdeal.total} passos ideais para você\u00A0✓`
-                        : 'Sua rotina cobre tudo que a sua pele precisa\u00A0✓'}
+                        ? t('Sua rotina já tem {{tem}} dos {{total}} passos ideais para você\u00A0✓', { tem: cardIdeal.total - cardIdeal.faltam.length, total: cardIdeal.total })
+                        : t('Sua rotina cobre tudo que a sua pele precisa\u00A0✓')}
                   </Text>
                   <View style={{ height: 24, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={styles.idealLink}>{cardIdeal.mudou ? 'Ver o que mudou' : 'Ver rotina ideal'}</Text>
+                    <Text style={styles.idealLink}>{cardIdeal.mudou ? t('Ver o que mudou') : t('Ver rotina ideal')}</Text>
                     <Svg width={13} height={13} viewBox="0 0 24 24">
                       <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK_TEXT} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
                     </Svg>
@@ -1424,7 +1443,7 @@ export default function Protocolo() {
             {/* ── O que esperar ───────────────────────────────────────────── */}
             {marcos.length > 0 && (
               <>
-                <Text style={[styles.sectionTitle, { marginTop: 30, paddingHorizontal: 18 }]}>O que esperar</Text>
+                <Text style={[styles.sectionTitle, { marginTop: 30, paddingHorizontal: 18 }]}>{t('O que esperar')}</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 9 }} contentContainerStyle={{ gap: 9, paddingHorizontal: 18 }}>
                   {marcos.map((m) => <FlipCard key={m.l} label={m.l} body={m.b} cores={m.cores} />)}
                 </ScrollView>
@@ -1445,8 +1464,8 @@ export default function Protocolo() {
                   style={[styles.cronHead, !cronOpen && { borderBottomWidth: 0 }]}
                 >
                   <View style={{ flex: 1, gap: 3 }}>
-                    <Text style={styles.sectionTitle}>Como introduzir os ativos</Text>
-                    <Text style={{ fontSize: 15, letterSpacing: -0.2, color: MUTED }}>Sem agredir a pele</Text>
+                    <Text style={styles.sectionTitle}>{t('Como introduzir os ativos')}</Text>
+                    <Text style={{ fontSize: 15, letterSpacing: -0.2, color: MUTED }}>{t('Sem agredir a pele')}</Text>
                   </View>
                   <Chevron open={cronOpen} />
                 </TouchableOpacity>
@@ -1473,12 +1492,12 @@ export default function Protocolo() {
           <View style={styles.stateBox}>
             <View style={{ gap: 8 }}>
               <Text style={styles.stateTitle}>
-                {loadState === 'error' ? 'Não conseguimos carregar sua rotina' : 'Sua rotina ainda não está pronta'}
+                {loadState === 'error' ? t('Não conseguimos carregar sua rotina') : t('Sua rotina ainda não está pronta')}
               </Text>
               <Text style={{ fontSize: 15, lineHeight: 21, letterSpacing: -0.25, color: MUTED, textAlign: 'center' }}>
                 {loadState === 'error'
-                  ? 'Verifique sua conexão e tente novamente.'
-                  : 'Faça uma análise de pele para gerar seu protocolo de skincare personalizado.'}
+                  ? t('Verifique sua conexão e tente novamente.')
+                  : t('Faça uma análise de pele para gerar seu protocolo de skincare personalizado.')}
               </Text>
             </View>
             <TouchableOpacity
@@ -1496,7 +1515,7 @@ export default function Protocolo() {
                 void refreshProtocolo();
               }}
             >
-              <Text style={styles.heroBtnText}>{loadState === 'error' ? 'Tentar novamente' : 'Escanear minha pele'}</Text>
+              <Text style={styles.heroBtnText}>{loadState === 'error' ? t('Tentar novamente') : t('Escanear minha pele')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1515,11 +1534,11 @@ export default function Protocolo() {
                     <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" />
                   </Svg>
                 </TouchableOpacity>
-                <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>{am ? 'Rotina da manhã' : 'Rotina da noite'}</Text>
+                <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>{am ? t('Rotina da manhã') : t('Rotina da noite')}</Text>
                 <View style={{ width: 36 }} />
               </View>
-              <Text style={styles.ckHint}>Toque em cada produto ao passar</Text>
-              <Text style={styles.ckCount}>{`${lit.length} de ${n}`}</Text>
+              <Text style={styles.ckHint}>{t('Toque em cada produto ao passar')}</Text>
+              <Text style={styles.ckCount}>{t('{{atual}} de {{total}}', { atual: lit.length, total: n })}</Text>
               <ScrollView style={{ marginTop: 20, flex: 1 }} contentContainerStyle={{ gap: 8, paddingVertical: 2 }} showsVerticalScrollIndicator={false}>
                 {steps.map((s) => {
                   const on = lit.includes(s.i);
@@ -1543,7 +1562,7 @@ export default function Protocolo() {
                         )}
                       </View>
                       <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>{s.tipo ? `Passo ${s.i + 1} · ${ROTULO_TIPO[s.tipo]}` : `Passo ${s.i + 1}`}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: MUTED }}>{s.tipo ? t('Passo {{n}} · {{tipo}}', { n: s.i + 1, tipo: t(ROTULO_TIPO[s.tipo]) }) : t('Passo {{n}}', { n: s.i + 1 })}</Text>
                         <Text style={styles.ckName} numberOfLines={1}>{s.titulo}</Text>
                       </View>
                       <View style={[styles.ckCheck, on ? { backgroundColor: PINK } : { borderWidth: 1.5, borderColor: '#D6CCD1', backgroundColor: '#FFFFFF' }]}>
@@ -1566,12 +1585,12 @@ export default function Protocolo() {
                     onPress={finishRoutine}
                     style={[styles.bigBtn, { marginTop: 14 }, !all && { backgroundColor: '#FFC2DB', shadowOpacity: 0 }]}
                   >
-                    <Text style={styles.heroBtnText}>{all ? 'Concluir rotina' : `Faltam ${n - lit.length} ${n - lit.length === 1 ? 'produto' : 'produtos'}`}</Text>
+                    <Text style={styles.heroBtnText}>{all ? t('Concluir rotina') : n - lit.length === 1 ? t('Faltam {{n}} produto', { n: n - lit.length }) : t('Faltam {{n}} produtos', { n: n - lit.length })}</Text>
                   </TouchableOpacity>
                 );
               })()}
               <TouchableOpacity activeOpacity={0.6} onPress={() => { haptics.tap(); setRun(0); setFlow('guide'); }} style={{ marginTop: 6, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Ver guia passo a passo</Text>
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>{t('Ver guia passo a passo')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1588,7 +1607,7 @@ export default function Protocolo() {
                     <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" />
                   </Svg>
                 </TouchableOpacity>
-                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK }}>{`Passo ${run + 1} de ${n}`}</Text>
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: INK }}>{t('Passo {{atual}} de {{total}}', { atual: run + 1, total: n })}</Text>
                 <View style={{ width: 36 }} />
               </View>
               <View style={{ marginTop: 16, flexDirection: 'row', justifyContent: 'center', gap: 4 }}>
@@ -1603,18 +1622,18 @@ export default function Protocolo() {
                   ) : (
                     <View style={{ alignItems: 'center', gap: 6 }}>
                       <StepIcon tipo={rs.tipo} size={36} />
-                      <Text style={{ color: PINK_TEXT, fontSize: 15, fontWeight: '500' }}>Escolher produto</Text>
+                      <Text style={{ color: PINK_TEXT, fontSize: 15, fontWeight: '500' }}>{t('Escolher produto')}</Text>
                     </View>
                   )}
                 </TouchableOpacity>
-                {!!rs.tipo && <Text style={{ marginTop: 24, fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: SOFT }}>{ROTULO_TIPO[rs.tipo]}</Text>}
+                {!!rs.tipo && <Text style={{ marginTop: 24, fontSize: 15, fontWeight: '500', letterSpacing: -0.2, color: SOFT }}>{t(ROTULO_TIPO[rs.tipo])}</Text>}
                 <Text style={[styles.runName, !rs.tipo && { marginTop: 24 }]}>{rs.titulo}</Text>
                 <Text style={{ marginTop: 6, fontSize: 15, letterSpacing: -0.2, color: rs.hasProd ? MUTED : PINK_TEXT, textAlign: 'center' }}>{rs.pline}</Text>
                 <Text style={styles.runInstruction} lineBreakStrategyIOS="push-out">{rs.instruction}</Text>
               </ScrollView>
               <View style={{ alignItems: 'center', gap: 6 }}>
                 <TouchableOpacity activeOpacity={0.85} onPress={nextStep} style={[styles.bigBtn, { alignSelf: 'stretch' }]}>
-                  <Text style={styles.heroBtnText}>{run === n - 1 ? 'Concluir rotina' : 'Próximo passo'}</Text>
+                  <Text style={styles.heroBtnText}>{run === n - 1 ? t('Concluir rotina') : t('Próximo passo')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.7}
@@ -1622,7 +1641,7 @@ export default function Protocolo() {
                   onPress={() => { haptics.tap(); setRun(Math.max(0, run - 1)); }}
                   style={{ height: 40, justifyContent: 'center' }}
                 >
-                  <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: run ? PINK_TEXT : 'rgba(232,70,143,0)' }}>Passo anterior</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: run ? PINK_TEXT : 'rgba(232,70,143,0)' }}>{t('Passo anterior')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1643,27 +1662,27 @@ export default function Protocolo() {
               <Ellipse cx={125} cy={165} rx={124} ry={164} fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth={2} strokeDasharray={[6, 5]} />
             </Svg>
             <View style={{ position: 'absolute', left: 0, right: 0, top: insets.top + 58, alignItems: 'center', gap: 6 }} pointerEvents="none">
-              <Text style={styles.camTitle}>Foto do dia</Text>
+              <Text style={styles.camTitle}>{t('Foto do dia')}</Text>
             </View>
             <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom, alignItems: 'center', gap: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 40 }}>
                 <View style={{ width: 48 }} />
-                <TouchableOpacity activeOpacity={0.85} onPress={shoot} style={styles.shutter} accessibilityLabel="Tirar foto">
+                <TouchableOpacity activeOpacity={0.85} onPress={shoot} style={styles.shutter} accessibilityLabel={t('Tirar foto')}>
                   <View style={styles.shutterInner} />
                 </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setFacing((f) => (f === 'front' ? 'back' : 'front')); }} style={styles.camFlipBtn} accessibilityLabel="Virar câmera">
+                <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setFacing((f) => (f === 'front' ? 'back' : 'front')); }} style={styles.camFlipBtn} accessibilityLabel={t('Virar câmera')}>
                   <Svg width={22} height={22} viewBox="0 0 24 24">
                     <Path d="M20 11a8 8 0 0 0-14.9-4M4 4v4h4M4 13a8 8 0 0 0 14.9 4M20 20v-4h-4" fill="none" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity activeOpacity={0.6} onPress={skipPhoto} style={{ height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: '#FFFFFF' }}>Pular foto hoje</Text>
+                <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: '#FFFFFF' }}>{t('Pular foto hoje')}</Text>
                 <Svg width={16} height={16} viewBox="0 0 24 24">
                   <Path d="M9 6l6 6-6 6" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
                 </Svg>
               </TouchableOpacity>
-              <Text style={{ marginTop: -12, fontSize: 13, letterSpacing: -0.1, color: '#FFFFFF', opacity: 0.85 }}>Sua sequência continua mesmo sem foto</Text>
+              <Text style={{ marginTop: -12, fontSize: 13, letterSpacing: -0.1, color: '#FFFFFF', opacity: 0.85 }}>{t('Sua sequência continua mesmo sem foto')}</Text>
             </View>
             {flash && <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF' }]} pointerEvents="none" />}
           </View>
@@ -1693,7 +1712,7 @@ export default function Protocolo() {
                     </Svg>
                   </View>
                 )}
-                <Text style={styles.doneTitle}>{am ? 'Rotina da manhã concluída' : 'Rotina da noite concluída'}</Text>
+                <Text style={styles.doneTitle}>{am ? t('Rotina da manhã concluída') : t('Rotina da noite concluída')}</Text>
                 <BalancedText text={doneSub} style={styles.doneSub} />
                 <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                   <Svg width={15} height={15} viewBox="0 0 24 24">
@@ -1705,7 +1724,7 @@ export default function Protocolo() {
                 </View>
               </View>
               <TouchableOpacity activeOpacity={0.85} onPress={() => stopRun('Voltar para a rotina')} style={styles.bigBtn}>
-                <Text style={styles.heroBtnText}>Voltar para a rotina</Text>
+                <Text style={styles.heroBtnText}>{t('Voltar para a rotina')}</Text>
               </TouchableOpacity>
             </View>
             <FolhaCompartilhar
@@ -1734,7 +1753,10 @@ export default function Protocolo() {
 
       {/* Folha "Escolher produto" (Fase 2). Ao escolher, recarrega a Minha rotina. */}
       {/* Tutorial de primeiro acesso (réplica do Claude Design 54a/54b; substitui a intro de telas). */}
-      {tutorialVisivel && !!minha && <RotinaTutorial minha={minha} onEscolha={escolherIntro} />}
+      {/* Status do tutorial ainda chegando (sem cache): véu na cor do fundo do tutorial, para a
+          Rotina não aparecer antes dele. */}
+      {cobrirRotina && <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FBEEF3' }]} />}
+      {tutorialVisivel && <RotinaTutorial onEscolha={escolherIntro} />}
       <RotinaIdealSheet
         aberta={idealAberta}
         periodoInicial={period}

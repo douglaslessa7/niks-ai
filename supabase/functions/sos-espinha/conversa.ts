@@ -4,8 +4,9 @@
 import { analisar } from './roteador.ts'
 import { montarContexto } from './context.ts'
 import { ESPINHA_CONVERSA_SYSTEM_PROMPT, montarTextoConversa, type Historico } from './prompt_conversa.ts'
+import { INSTRUCAO_EN_CONVERSA, type Idioma } from './idioma.ts'
 import {
-  emGestacao, inicioDoDiaBrasilia, LIMITE_MENSAGENS_POR_DIA, produtosPermitidos, produtosVetados, sanearConversa, TEXTO_SEGURO, type Memoria,
+  emGestacao, inicioDoDiaBrasilia, LIMITE_MENSAGENS_POR_DIA, produtosPermitidos, produtosVetados, sanearConversa, TEXTO_SEGURO, TEXTO_SEGURO_EN, type Memoria,
 } from './regras.ts'
 
 // deno-lint-ignore no-explicit-any
@@ -52,7 +53,7 @@ export type RespostaHttp = { status: number; texto?: string; json?: unknown }
 
 export async function responderConversa(supabase: Supabase, userId: string, corpo: {
   conversationId?: string; message?: string; clientMessageId?: string; images?: Array<{ base64?: string; mimeType?: string }>
-}): Promise<RespostaHttp> {
+}, idioma: Idioma = 'pt'): Promise<RespostaHttp> {
   const { conversationId } = corpo
   const mensagem = String(corpo.message ?? '').slice(0, 2000)
   const novas = (Array.isArray(corpo.images) ? corpo.images : [])
@@ -105,7 +106,7 @@ export async function responderConversa(supabase: Supabase, userId: string, corp
   const base = montarTextoConversa({
     ctx: { ...ctx, memorias }, gestacao, permitidos, vetados, analiseEm: acomp.analise_em,
     historico: todas.slice(-MAX_HISTORICO), mensagem, temFotoNova: novas.length > 0, fotosEnviadas: imagens.length, agora,
-  })
+  }) + (idioma === 'en' ? INSTRUCAO_EN_CONVERSA : '')
 
   const chamar = async (texto: string) => {
     const { result, registrarCusto } = await analisar({
@@ -117,12 +118,12 @@ export async function responderConversa(supabase: Supabase, userId: string, corp
 
   const primeira = await chamar(base)
   if (!primeira) return { status: 500, json: { error: 'Erro ao responder' } }
-  let final = sanearConversa(primeira, vetados, gestacao)
+  let final = sanearConversa(primeira, vetados, gestacao, idioma)
   if (!final) {
     const segunda = await chamar(`${base}\n\n<Correcao>Sua resposta anterior indicou algo proibido para ela. Responda de novo sem indicar produto vetado, nem retinoide ou hidroquinona se houver gestação.</Correcao>`)
-    final = segunda ? sanearConversa(segunda, vetados, gestacao) : null
+    final = segunda ? sanearConversa(segunda, vetados, gestacao, idioma) : null
   }
-  const texto = final?.texto ?? TEXTO_SEGURO
+  const texto = final?.texto ?? (idioma === 'en' ? TEXTO_SEGURO_EN : TEXTO_SEGURO)
 
   await supabase.from('coach_messages').insert({ conversation_id: conversationId, user_id: userId, role: 'assistant', content: texto })
   if (final?.resolvida) await supabase.rpc('espinha_marcar_resolvida', { p_user: userId, p_conversa: conversationId, p_agora: new Date().toISOString() })

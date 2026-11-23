@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, useWindowDimensions } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -24,6 +25,7 @@ import {
 } from '../../lib/faceScan';
 import { cameraOval } from '../../lib/faceFrame';
 import { shapeFromFrame, shapeFromOval, easeShape, type FaceShape } from '../../lib/faceGrid';
+import { t } from '../../lib/i18n';
 
 // Scan do rosto — onboarding E (desde out/2026) dentro do app (`?modo=app`; a
 // `camera-multi`, de 6 fotos com expressões, saiu do fluxo). Visual no molde do scan do
@@ -113,6 +115,12 @@ const SIDE_SHOT = 0.85;
 const SIDE_MAX_DY = 0.7;
 const SIDE_HOLD_MS = 250;
 const SIDE_FACE_TRIES = 2;      // a conferência do Vision recusou N vezes → aceita a foto
+// (modo app) Meia-abertura, em graus, do pedaço de cada lado do anel (0° direita, 180° esquerda)
+// que só acende QUANDO a foto daquele lado sai. Antes o anel inteiro acendia com a cabeça a
+// `LIGHT_MIN` (0,5) e a foto pedia `SIDE_SHOT` (0,85): o círculo fechava todo rosa, parecendo
+// pronto, e a tela ficava parada em "Agora vire devagar para a direita" (vídeo IMG_3914,
+// 18/nov/2026: ~5 s olhando de frente). Com o pedaço reservado, o anel só fecha com as fotos.
+const SIDE_ARC = 15;
 const APP_PHOTO_W = 1200;       // (modo app) as 3 fotos vão juntas à IA: reduz a 1200 de largura (só se for maior; nunca amplia)
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
@@ -121,31 +129,35 @@ const STEPS = SCAN_STEPS;
 const TICKS = ringTicks(N_TICKS);
 // Ângulo de cada traço na tela (0 = direita, 90 = baixo), para o círculo do modo com rosto.
 const TICK_DEG = TICKS.map((t) => ((Math.atan2(t.s, t.c) * 180) / Math.PI + 360) % 360);
+const degOff = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
+// (modo app) Lado reservado de cada traço (`SIDE_ARC`), ou null.
+const TICK_SIDE: (Side | null)[] = TICK_DEG.map((deg) =>
+  degOff(deg, 0) <= SIDE_ARC ? 'right' : degOff(deg, 180) <= SIDE_ARC ? 'left' : null);
 const back = ringBack;
 
 const FRONT_HINT: Record<FrontState, string> = {
-  none: 'Encaixe o rosto no círculo',
-  out: 'Encaixe o rosto no círculo',
-  far: 'Aproxime o rosto',
-  near: 'Afaste um pouco',
-  look: 'Olhe para a câmera',
-  ok: 'Segure assim…',
+  none: t('Encaixe o rosto no círculo'),
+  out: t('Encaixe o rosto no círculo'),
+  far: t('Aproxime o rosto'),
+  near: t('Afaste um pouco'),
+  look: t('Olhe para a câmera'),
+  ok: t('Segure assim…'),
 };
 
 // Acessório no rosto (foto de frente conferida pelo classificador da Apple): a foto é
 // descartada e a pílula pede para tirar, por `ACCESSORY_HINT_MS` (renovado a cada tentativa).
 const ACCESSORY_HINT: Record<FaceAccessory, string> = {
-  glasses: 'Tire os óculos para o scan',
-  hat: 'Tire o boné ou chapéu para o scan',
-  mask: 'Tire a máscara para o scan',
+  glasses: t('Tire os óculos para o scan'),
+  hat: t('Tire o boné ou chapéu para o scan'),
+  mask: t('Tire a máscara para o scan'),
 };
 const ACCESSORY_HINT_MS = 2500;
 const ACCESSORY_MIN_CONF = 0.45;   // óculos deram 0,91 × sem óculos 0,00 nos testes — calibrar no iPhone
 
 const LIGHT_UI: Record<LightLevel, { label: string; color: string }> = {
-  dark: { label: 'Escuro demais', color: '#E3A257' },
+  dark: { label: t('Escuro demais'), color: '#E3A257' },
   ok: { label: 'OK', color: '#9DBF4F' },
-  perfect: { label: 'Perfeito', color: '#5E9F5B' },
+  perfect: { label: t('Perfeito'), color: '#5E9F5B' },
 };
 
 type Sample = FaceFrame & { t: number };
@@ -160,6 +172,7 @@ export default function Camera() {
   const { consentGate, granted } = useScanConsentGate({ sheet: 'seusDados' });
   const setSkinImage = useAppStore((s) => s.setSkinImage);
   const cameraRef = useRef<CameraView>(null);
+  const focada = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
   const { track } = useMixpanel();
@@ -279,7 +292,11 @@ export default function Camera() {
   };
 
   // Relógio ÚNICO da tela (um quadro por frame): malha, luz e a etapa da vez.
+  // Só com a tela em FOCO (18/nov/2026): depois da foto ela abre "Analisando" com `push` e
+  // fica montada por baixo do onboarding — sem a pausa, o setFrame por quadro seguia rodando
+  // (aviso de CPU do iOS no TestFlight 1.63 (1)). Ao voltar o foco, recomeça do ponto onde estava.
   useEffect(() => {
+    if (!focada) return;
     let id: number;
     let last = Date.now();
     const loop = () => {
@@ -344,9 +361,14 @@ export default function Camera() {
           if (aimRef.current != null) P.ang = ang;
           const popTarget = aimRef.current != null ? clamp01((m - AIM_MIN) / (LIGHT_MIN - AIM_MIN)) : 0;
           P.s += (popTarget - P.s) * (1 - Math.exp(-dt / POP_EASE_MS));
+          // (modo app) traço de um lado cuja foto ainda não saiu: só acende com a foto (`captureSide`).
+          const held = (i: number) => {
+            const sd = TICK_SIDE[i];
+            return inApp && sd != null && !sidePhotos.current[sd];
+          };
           if (raw && m >= LIGHT_MIN) {
             TICK_DEG.forEach((deg, i) => {
-              if (litAt.current[i] >= 0) return;
+              if (litAt.current[i] >= 0 || held(i)) return;
               const off = Math.abs(((deg - ang + 540) % 360) - 180);
               // Os traços do meio do leque acendem primeiro e os das pontas logo atrás:
               // o anel "escorre" em vez de acender em bloco.
@@ -371,13 +393,15 @@ export default function Camera() {
           const lit = litAt.current.filter((t) => t >= 0).length;
           const missing: Side | null = !inApp ? null
             : !sidePhotos.current.left ? 'left' : !sidePhotos.current.right ? 'right' : null;
+          // Só faltam os pedaços reservados → a frase diz para que lado virar.
+          const onlySidesLeft = litAt.current.every((t, i) => t >= 0 || held(i));
           hintRef.current = !ok
-            ? 'Volte o rosto para o círculo'
-            : lit === N_TICKS && missing
-              ? missing === 'left' ? 'Vire o rosto devagar para a esquerda' : 'Agora vire devagar para a direita'
+            ? t('Volte o rosto para o círculo')
+            : missing && onlySidesLeft
+              ? missing === 'left' ? t('Vire o rosto devagar para a esquerda') : t('Agora vire devagar para a direita')
               : lit >= N_TICKS * 0.8 && lit < N_TICKS
-                ? 'Quase lá, complete o círculo'
-                : 'Mova a cabeça devagar para completar o círculo';
+                ? t('Quase lá, complete o círculo')
+                : t('Mova a cabeça devagar para completar o círculo');
           if (lit === N_TICKS && !missing && !sideBusy.current && now >= Math.max(...litAt.current) + GROW_MS) {
             haptics.success();
             finish();
@@ -405,7 +429,7 @@ export default function Camera() {
     };
     id = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(id);
-  }, [tracked]);
+  }, [tracked, focada]);
 
   // Tira a foto (frente ou lado) e normaliza a orientação EXIF (com base64: vai para a IA).
   // SEM SOM: ela não pode perceber que saiu uma foto — para ela, o rosto inteiro está sendo
@@ -440,7 +464,7 @@ export default function Camera() {
   const captureFailed = () => {
     holdStart.current = null;
     TICKS.forEach((t, i) => { if (t.arc === 'frente') litAt.current[i] = -1; });
-    Alert.alert('Erro', 'Não foi possível capturar a foto. Vamos tentar de novo.', [{
+    Alert.alert(t('Erro'), t('Não foi possível capturar a foto. Vamos tentar de novo.'), [{
       text: 'OK', onPress: () => { capturingRef.current = false; setStep(0); },
     }]);
   };
@@ -509,7 +533,15 @@ export default function Camera() {
       }
       sidePhotos.current[side] = photo;
       // No onboarding, sem toque: o anel já vibra, e ela não precisa saber que saiu foto.
-      if (inApp) haptics.tap();
+      if (inApp) {
+        haptics.tap();
+        // O pedaço reservado deste lado acende agora, escorrendo do meio para as pontas.
+        const now = Date.now();
+        const center = side === 'right' ? 0 : 180;
+        TICK_SIDE.forEach((sd, i) => {
+          if (sd === side && litAt.current[i] < 0) litAt.current[i] = now + degOff(TICK_DEG[i], center) * LIGHT_STAGGER_MS;
+        });
+      }
     } catch {
       // tenta de novo no próximo giro para esse lado
     } finally {
@@ -602,8 +634,8 @@ export default function Camera() {
   const showTips = () => {
     haptics.tap();
     Alert.alert(
-      'Como fazer o scan',
-      'Fique num lugar bem iluminado, com o rosto limpo, sem óculos e com o cabelo preso. Siga a instrução embaixo do círculo e mova a cabeça devagar.',
+      t('Como fazer o scan'),
+      t('Fique num lugar bem iluminado, com o rosto limpo, sem óculos e com o cabelo preso. Siga a instrução embaixo do círculo e mova a cabeça devagar.'),
     );
   };
 
@@ -621,7 +653,7 @@ export default function Camera() {
   const ovalPath = `M${cx - rx} ${cy} a${rx} ${ry} 0 1 0 ${2 * rx} 0 a${rx} ${ry} 0 1 0 ${-2 * rx} 0 Z`;
   const veil = `M0 0 H${width} V${height} H0 Z ${ovalPath}`;
   const instruction = !started || stepIdx < 0
-    ? 'Encaixe o rosto no círculo'
+    ? t('Encaixe o rosto no círculo')
     : tracked ? hintRef.current : STEPS[stepIdx].text;
   const meshT = now - mountAt.current;
 
@@ -646,13 +678,13 @@ export default function Camera() {
       <View style={[styles.container, { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }]}>
         <StatusBar style="light" />
         <Text style={{ color: '#FFFFFF', fontSize: 17, lineHeight: 23, textAlign: 'center', marginBottom: 24 }}>
-          A NIKS precisa da câmera para analisar sua pele.
+          {t('A NIKS precisa da câmera para analisar sua pele.')}
         </Text>
         <TouchableOpacity
           onPress={() => { haptics.action(); requestPermission(); }}
           style={{ backgroundColor: OB.pink, height: 48, paddingHorizontal: 28, borderRadius: 24, justifyContent: 'center' }}
         >
-          <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>Permitir câmera</Text>
+          <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>{t('Permitir câmera')}</Text>
         </TouchableOpacity>
         {consentGate}
       </View>
@@ -773,7 +805,7 @@ export default function Camera() {
             </G>
           </Svg>
           <TouchableOpacity onPress={start} activeOpacity={0.85} style={styles.startBtn}>
-            <Text style={styles.startText}>Começar</Text>
+            <Text style={styles.startText}>{t('Começar')}</Text>
           </TouchableOpacity>
         </View>
       )}

@@ -5,6 +5,7 @@ import Animated, { Easing, useAnimatedStyle, withTiming } from 'react-native-rea
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t, emIngles } from '../../lib/i18n';
 import { useOnMount } from '../../components/onboarding/kit';
 import { useAppStore } from '../../store/onboarding';
 import { sessionDate } from '../../lib/routineProgress';
@@ -18,10 +19,10 @@ import {
 // matinal de AMANHÃ, no horário que ela escolheu; o número de passos vem da rotina pré-gerada
 // (se ainda não chegou, o do design). A sequência de 1 dia é gravada DE VERDADE no servidor
 // depois do cadastro (`lib/boasVindas.ts`).
-// ⚠️ PROVISÓRIO (copiado do design): "Hoje você fez mais do que 80% de quem acabou de
-// assinar." não vem de dado nenhum; o interruptor "Me lembrar" só guarda a escolha — os
+// 23/nov/2026: sem o "80%" inventado do design — "Hoje você já começou a sua sequência."; o interruptor "Me lembrar" só guarda a escolha — os
 // lembretes locais continuam sendo agendados pela home de qualquer jeito.
-const LETRAS = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
+// Iniciais de segunda a domingo (inglês: M T W T F S S).
+const LETRAS = emIngles ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
 const PASSOS_PROVISORIO = 4;
 const MOLA = Easing.bezier(0.23, 1, 0.32, 1);
 
@@ -75,10 +76,10 @@ export default function BvSequencia() {
         </View>
 
         <Text style={{ marginTop: 26, textAlign: 'center', fontSize: 34, lineHeight: 38, fontWeight: '800', letterSpacing: -1.2, color: BV.ink }}>
-          Sequência de 1 dia
+          {t('Sequência de 1 dia')}
         </Text>
         <Text style={{ marginTop: 8, textAlign: 'center', fontSize: 16, lineHeight: 22, letterSpacing: -0.2, color: BV.body }}>
-          Hoje você fez mais do que 80% de quem acabou de assinar.
+          {t('Hoje você já começou a sua sequência.')}
         </Text>
 
         <View style={{ marginTop: 26, width: '100%', flexDirection: 'row' }}>
@@ -111,20 +112,20 @@ export default function BvSequencia() {
           paddingTop: 16, paddingHorizontal: 16, paddingBottom: 14,
           shadowColor: '#C0206A', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 12,
         }}>
-          <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 1.4, color: BV.sub }}>{`AMANHÃ · ${diaSemanaCurto(amanha)}`}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 1.4, color: BV.sub }}>{t('AMANHÃ · {{dia}}', { dia: diaSemanaCurto(amanha) })}</Text>
           <Text style={{ marginTop: 4, fontSize: 20, fontWeight: '700', letterSpacing: -0.5, color: BV.ink }}>
-            {`Skincare matinal · ${passos} ${passos === 1 ? 'passo' : 'passos'}`}
+            {passos === 1 ? t('Skincare matinal · {{passos}} passo', { passos }) : t('Skincare matinal · {{passos}} passos', { passos })}
           </Text>
           <View style={{ marginTop: 14, marginBottom: 12, height: 1, backgroundColor: BV.line }} />
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={{ fontSize: 16, letterSpacing: -0.2, color: BV.ink }}>
-              {'Me lembrar às '}<Text style={{ fontWeight: '700' }}>{manha}</Text>
+              {t('Me lembrar às ')}<Text style={{ fontWeight: '700' }}>{manha}</Text>
             </Text>
             <Pressable
               onPress={alternar}
               accessibilityRole="switch"
               accessibilityState={{ checked: lembrar }}
-              accessibilityLabel={`Me lembrar às ${manha}`}
+              accessibilityLabel={t('Me lembrar às {{hora}}', { hora: manha })}
               hitSlop={8}
               style={{ width: 51, height: 31, borderRadius: 16, backgroundColor: lembrar ? BV.pink : 'rgba(18,18,18,0.12)' }}
             >
@@ -137,7 +138,7 @@ export default function BvSequencia() {
         </View>
       </View>
 
-      <BvBotao label="Proteger minha sequência" onPress={() => router.push('/(onboarding)/bv-nivel' as any)} />
+      <BvBotao label={t('Proteger minha sequência')} onPress={() => router.push('/(onboarding)/bv-nivel' as any)} />
     </BvScreen>
   );
 }

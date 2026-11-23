@@ -5,12 +5,14 @@
 // O anel tem traços em volta de um oval; cada uma das 3 etapas (só a de frente tira foto; os lados são o giro da cabeça) é dona de um
 // terço deles: frente = traços de cima e de baixo, esquerda = arco da esquerda da tela,
 // direita = arco da direita da tela. Na etapa da vez o arco acende traço a traço.
+import { t } from '../../lib/i18n';
+
 export type ScanStepId = 'frente' | 'esquerda' | 'direita';
 
 export const SCAN_STEPS: { id: ScanStepId; text: string }[] = [
-  { id: 'frente', text: 'Olhe para a frente e fique parada' },
-  { id: 'esquerda', text: 'Vire o rosto devagar para a esquerda' },
-  { id: 'direita', text: 'Agora vire devagar para a direita' },
+  { id: 'frente', text: t('Olhe para a frente e fique parada') },
+  { id: 'esquerda', text: t('Vire o rosto devagar para a esquerda') },
+  { id: 'direita', text: t('Agora vire devagar para a direita') },
 ];
 
 // Arco de cada traço. Ângulo em graus no sentido da tela: 0 = direita, 90 = baixo,

@@ -11,6 +11,7 @@ import * as Device from 'expo-device';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
 import { haptics } from '../../lib/haptics';
 import AlvoGuia from '../../components/coach/AlvoGuia';
+import { t } from '../../lib/i18n';
 
 // Réplica da tela de câmera do scan de comida (food-camera.tsx), adaptada para o
 // scan de PRODUTO: mesma UI/animação, com o rótulo/ícone e o handoff de imagem
@@ -91,7 +92,7 @@ export default function ProductCamera() {
     const base64 = manipulated?.base64;
     if (!base64) {
       navigatingRef.current = false;
-      Alert.alert('Erro', 'Não foi possível processar a imagem.');
+      Alert.alert(t('Erro'), t('Não foi possível processar a imagem.'));
       return;
     }
 
@@ -112,7 +113,7 @@ export default function ProductCamera() {
       if (!photo?.uri) throw new Error('Falha ao capturar');
       await processAndAnalyze(photo.uri);
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível capturar a foto. Tente novamente.');
+      Alert.alert(t('Erro'), t('Não foi possível capturar a foto. Tente novamente.'));
     } finally {
       setPicking(false);
     }
@@ -137,7 +138,7 @@ export default function ProductCamera() {
       await processAndAnalyze(result.assets[0].uri);
     } catch (error) {
       console.error('Erro ao selecionar imagem:', error);
-      Alert.alert('Erro', 'Não foi possível selecionar a imagem.');
+      Alert.alert(t('Erro'), t('Não foi possível selecionar a imagem.'));
     } finally {
       setPicking(false);
     }
@@ -150,13 +151,13 @@ export default function ProductCamera() {
     return (
       <View style={{ flex: 1, backgroundColor: '#111111', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
         <Text style={{ color: 'white', fontSize: 17, textAlign: 'center', marginBottom: 24 }}>
-          O NIKS AI precisa da câmera para analisar seu produto.
+          {t('O NIKS AI precisa da câmera para analisar seu produto.')}
         </Text>
         <TouchableOpacity
           onPress={() => { haptics.tap(); requestPermission(); }}
           style={{ backgroundColor: 'white', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
         >
-          <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1A1A' }}>Permitir câmera</Text>
+          <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1A1A' }}>{t('Permitir câmera')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -277,7 +278,7 @@ export default function ProductCamera() {
           {/* Instruction text */}
           <View style={{ position: 'absolute', bottom: -36, left: 0, right: 0, alignItems: 'center' }}>
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center' }}>
-              Posicione o produto no centro
+              {t('Posicione o produto no centro')}
             </Text>
           </View>
         </View>
@@ -323,7 +324,7 @@ export default function ProductCamera() {
           >
             <ProductScanIcon size={22} color="#1A1A1A" />
             <Text style={{ fontSize: 10, fontWeight: '600', color: '#1A1A1A', textAlign: 'center' }}>
-              Escanear produto
+              {t('Escanear produto')}
             </Text>
           </View>
         </View>

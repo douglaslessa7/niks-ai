@@ -11,6 +11,7 @@ import { useScanConsentGate } from '../../hooks/useScanConsentGate';
 import { CONSENT_SOS_BODY } from '../../components/ui/AIConsentModal';
 import { haptics } from '../../lib/haptics';
 import { guardarFoto, lerUltimaAnalise } from '../../lib/sosEspinha';
+import { t } from '../../lib/i18n';
 
 // Câmera do SOS espinha: o layout de `product-camera.tsx`, com a câmera frontal. A frontal não
 // tem flash nem as lentes 0,5x e 2x, por isso esses controles não existem aqui. A foto vai em
@@ -95,7 +96,7 @@ export default function SosCamera() {
       router.push('/(scan)/sos-loading' as any);
     } catch {
       navegandoRef.current = false;
-      Alert.alert('Erro', 'Não foi possível processar a imagem.');
+      Alert.alert(t('Erro'), t('Não foi possível processar a imagem.'));
     }
   };
 
@@ -107,7 +108,7 @@ export default function SosCamera() {
       if (!foto?.uri) throw new Error('Falha ao capturar');
       await processar(foto.uri);
     } catch {
-      Alert.alert('Erro', 'Não foi possível capturar a foto. Tente novamente.');
+      Alert.alert(t('Erro'), t('Não foi possível capturar a foto. Tente novamente.'));
     } finally {
       setOcupado(false);
     }
@@ -122,7 +123,7 @@ export default function SosCamera() {
       if (r.canceled || !r.assets[0]) return;
       await processar(r.assets[0].uri);
     } catch {
-      Alert.alert('Erro', 'Não foi possível selecionar a imagem.');
+      Alert.alert(t('Erro'), t('Não foi possível selecionar a imagem.'));
     } finally {
       setOcupado(false);
     }
@@ -132,13 +133,13 @@ export default function SosCamera() {
     return (
       <View style={{ flex: 1, backgroundColor: '#111111', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
         <Text style={{ color: 'white', fontSize: 17, textAlign: 'center', marginBottom: 24 }}>
-          O NIKS precisa da câmera para analisar sua espinha.
+          {t('O NIKS precisa da câmera para analisar sua espinha.')}
         </Text>
         <TouchableOpacity
           onPress={() => { haptics.tap(); requestPermission(); }}
           style={{ backgroundColor: 'white', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
         >
-          <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1A1A' }}>Permitir câmera</Text>
+          <Text style={{ fontSize: 16, fontWeight: '600', color: '#1A1A1A' }}>{t('Permitir câmera')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -172,7 +173,7 @@ export default function SosCamera() {
           />
           <View style={{ position: 'absolute', bottom: -36, left: 0, right: 0, alignItems: 'center' }}>
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center' }}>
-              Aproxime o rosto, a um palmo da câmera, com a espinha no centro
+              {t('Aproxime o rosto, a um palmo da câmera, com a espinha no centro')}
             </Text>
           </View>
         </View>
@@ -185,14 +186,14 @@ export default function SosCamera() {
             activeOpacity={0.8}
             style={{ alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.45)', marginBottom: 16 }}
           >
-            <Text style={{ fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.85)' }}>Ver minha última análise</Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.85)' }}>{t('Ver minha última análise')}</Text>
           </TouchableOpacity>
         )}
 
         <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 24 }}>
           <View style={{ alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.95)', minWidth: 100 }}>
             <SosIcon />
-            <Text style={{ fontSize: 10, fontWeight: '600', color: '#1A1A1A', textAlign: 'center' }}>SOS espinha</Text>
+            <Text style={{ fontSize: 10, fontWeight: '600', color: '#1A1A1A', textAlign: 'center' }}>{t('SOS espinha')}</Text>
           </View>
         </View>
 
@@ -203,7 +204,7 @@ export default function SosCamera() {
             disabled={ocupado}
             activeOpacity={0.9}
             accessibilityRole="button"
-            accessibilityLabel="Tirar foto"
+            accessibilityLabel={t('Tirar foto')}
             style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: 'rgba(255,255,255,0.85)', alignItems: 'center', justifyContent: 'center', opacity: ocupado ? 0.5 : 1 }}
           >
             <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(255,255,255,0.92)' }} />
@@ -213,7 +214,7 @@ export default function SosCamera() {
             disabled={ocupado}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Escolher da galeria"
+            accessibilityLabel={t('Escolher da galeria')}
             style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', opacity: ocupado ? 0.5 : 1 }}
           >
             <ImageIcon size={20} color="rgba(255,255,255,0.8)" strokeWidth={1.8} />

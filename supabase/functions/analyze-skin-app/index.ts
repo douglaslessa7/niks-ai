@@ -21,6 +21,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Inglês (nov/2026): acrescentado ao fim do prompt de sistema SÓ quando o app manda idioma 'en'.
+// Em português o prompt é o mesmo de antes, sem nenhuma diferença.
+// ⚠️ Manter igual ao da `analyze-skin` (mesmo schema).
+const INSTRUCAO_EN = `
+
+## IDIOMA DA RESPOSTA: INGLÊS AMERICANO (en-US)
+A usuária usa o app em inglês. Escreva em inglês americano natural, no tom do NIKS (próximo, leve, acolhedor, como uma amiga que entende de pele — nunca uma tradução literal), SOMENTE os textos que ela lê:
+headline, barrier_insight, acne.insight, pigmentacao.insight, textura_poros.insight, pontos_fortes, pontos_fracos, skin_strengths (title e body), action_recommendations (category e text), region_insights (main_finding, consequence, benefit), concerns_alignment.mensagem, prioridade_clinica.justificativa, qualidade_foto.notas e disclaimer (use exatamente: "This is an AI cosmetic skin analysis and does not replace a visit to a dermatologist.").
+Todo o resto continua EXATAMENTE como definido acima, em português e com os mesmos valores, porque é lido por código: as chaves do JSON; todos os valores de lista fechada (skin_phototype, skin_type_sebaceous, skin_hydration, barrier_status, severity, nivel, icon, region, alinhamento, intensity, pore_visibility, texture, lines_type, firmness_loss, lesion_type, type, subtype, distribution, location, regioes_afetadas); e os demais campos TÉCNICOS da ETAPA 7 (area_periocular, condicoes_secundarias, prioridade_clinica.primaria, prioridade_clinica.secundaria, contraindicacoes, campos_incertos).
+As regras de linguagem leiga e de nunca dar diagnóstico como certo valem igual em inglês (ex.: "signs consistent with melasma", "dark marks where breakouts used to be").`
+const DISCLAIMER_EN = 'This is an AI cosmetic skin analysis and does not replace a visit to a dermatologist.'
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -31,7 +43,10 @@ Deno.serve(async (req) => {
   if (bloqueio) return bloqueio
 
   try {
-    const { imageBase64, imagesBase64, scanLayout, skinProfile } = await req.json()
+    const { imageBase64, imagesBase64, scanLayout, skinProfile, idioma: idiomaPedido } = await req.json()
+    // Idioma do app (nov/2026): 'en' → os textos que ela lê vêm em inglês; sem o campo (app
+    // antigo) ou qualquer outro valor → português, exatamente como antes.
+    const idioma = idiomaPedido === 'en' ? 'en' : 'pt'
 
     // Dois formatos de entrada convivem:
     // - `imageBase64` (string)  → 1 foto. É o que o ONBOARDING manda (app/(scan)/loading.tsx).
@@ -847,7 +862,7 @@ Use esta imagem para mandíbula, região pré-auricular, lateral e asa do nariz,
           messages: [
             {
               role: 'system',
-              content: systemPrompt,
+              content: idioma === 'en' ? systemPrompt + INSTRUCAO_EN : systemPrompt,
             },
             {
               role: 'user',
@@ -946,6 +961,7 @@ Use esta imagem para mandíbula, região pré-auricular, lateral e asa do nariz,
     if (!result.disclaimer) {
       result.disclaimer = 'Esta é uma análise estética por IA, não substitui consulta dermatológica.'
     }
+    if (idioma === 'en') result.disclaimer = DISCLAIMER_EN
     if (!result.pontos_fortes) result.pontos_fortes = []
     if (!result.pontos_fracos) result.pontos_fracos = []
 

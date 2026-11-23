@@ -22,12 +22,13 @@ import {
   getRoutineHistory, routineDayStreak, routinesDoneOn, sessionDate, dateKey, type RoutineHistory,
 } from '../../lib/routineProgress';
 import { voltar as voltarOu } from '../../lib/navegar';
+import { t, emIngles, MESES_EN, DIAS_INICIAIS_EN } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
 const SOFT = '#6E6468';
-const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-const LETTERS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const MONTHS = emIngles ? MESES_EN : ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const LETTERS = emIngles ? DIAS_INICIAIS_EN : ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 const MONTHS_BACK = 3;
 const FLAME = 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z';
 
@@ -119,7 +120,7 @@ export default function Calendario() {
             onPress={() => { haptics.tap(); voltarOu(de === 'conquistas' ? '/conquistas' : de === 'grupos' ? '/grupos' : '/home'); }}
             activeOpacity={0.85}
             style={styles.close}
-            accessibilityLabel="Fechar"
+            accessibilityLabel={t('Fechar')}
           >
             <Svg width={24} height={24} viewBox="0 0 24 24">
               <Path d="M5.5 5.5l13 13M18.5 5.5l-13 13" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" />
@@ -129,7 +130,7 @@ export default function Calendario() {
             <Svg width={19} height={19} viewBox="0 0 24 24">
               <Path d={FLAME} fill={PINK} stroke={PINK} strokeWidth={1.4} strokeLinejoin="round" />
             </Svg>
-            <Text style={styles.streakText}>{`${dayStreak} ${dayStreak === 1 ? 'dia seguido' : 'dias seguidos'}`}</Text>
+            <Text style={styles.streakText}>{dayStreak === 1 ? t('{{n}} dia seguido', { n: dayStreak }) : t('{{n}} dias seguidos', { n: dayStreak })}</Text>
           </View>
         </View>
         <View style={styles.letters}>
@@ -149,11 +150,11 @@ export default function Calendario() {
         <View style={styles.legend}>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: PINK }]} />
-            <Text style={styles.legendText}>Manhã e noite</Text>
+            <Text style={styles.legendText}>{t('Manhã e noite')}</Text>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { borderWidth: 2, borderColor: PINK }]} />
-            <Text style={styles.legendText}>Só uma das duas</Text>
+            <Text style={styles.legendText}>{t('Só uma das duas')}</Text>
           </View>
         </View>
 

@@ -16,6 +16,7 @@ import { useImageSize, useFaceOval, fitFace, affineFit, CAM_OVAL_W, CAM_OVAL_H, 
 import { MESH_FEATURES, faceMeshPoint } from '../../components/onboarding/FaceScanMesh';
 import type { ScanResult } from '../../store/onboarding';
 import { formatPriority, formatContraindication, barrierLabel, hydrationLabel, sebaceoLabel } from '../../lib/skinReportFormat';
+import { t, emIngles, horaEn, MESES_CURTOS_EN } from '../../lib/i18n';
 
 // Tela 8 do onboarding — RELATÓRIO do scan, réplica da tela 49d do Claude Design
 // ("NIKS home redesign", componente `NiksSkinScanFlo.dc.html`, estágio `report`). Sem a
@@ -82,6 +83,7 @@ const R = {
 function scanDateLabel(d: Date) {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
+  if (emIngles) return `${MESES_CURTOS_EN[d.getMonth()]} ${d.getDate()}, ${horaEn(d.getHours(), d.getMinutes())}`;
   return `${d.getDate()} de ${MONTHS[d.getMonth()]}, ${hh}:${mm}`;
 }
 
@@ -96,13 +98,13 @@ const STRENGTH_ICON: Record<string, string> = {
 
 // Selo + barra da "Validação do objetivo principal" por `concerns_alignment.alinhamento`.
 const ALIGN: Record<string, { label: string; pct: number }> = {
-  confirmado: { label: 'Bom alinhamento com a análise', pct: 0.78 },
-  parcial: { label: 'Alinhamento parcial com a análise', pct: 0.55 },
-  divergente: { label: 'A análise sugere outra prioridade', pct: 0.3 },
+  confirmado: { label: t('Bom alinhamento com a análise'), pct: 0.78 },
+  parcial: { label: t('Alinhamento parcial com a análise'), pct: 0.55 },
+  divergente: { label: t('A análise sugere outra prioridade'), pct: 0.3 },
 };
 
 /** ['a','b','c'] → "a, b e c" */
-const joinPt = (xs: string[]) => (xs.length <= 1 ? xs[0] ?? '' : `${xs.slice(0, -1).join(', ')} e ${xs[xs.length - 1]}`);
+const joinPt = (xs: string[]) => (xs.length <= 1 ? xs[0] ?? '' : t('{{lista}} e {{ultimo}}', { lista: xs.slice(0, -1).join(', '), ultimo: xs[xs.length - 1] }));
 const cap = (x: string) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : x);
 
 export default function ResultadoScan() {
@@ -162,13 +164,13 @@ export default function ResultadoScan() {
   const priority = scanResult?.prioridade_clinica;
   const avoid = scanResult?.contraindicacoes ?? [];
   const condition = [
-    { label: 'Barreira', value: barrierLabel(scanResult?.barrier_status) },
-    { label: 'Hidratação', value: hydrationLabel(scanResult?.skin_hydration) },
-    { label: 'Oleosidade', value: sebaceoLabel(scanResult?.brilho_sebaceo?.intensity) },
-    { label: 'Fotótipo', value: scanResult?.skin_phototype ? `Fitzpatrick ${scanResult.skin_phototype}` : '—' },
+    { label: t('Barreira'), value: barrierLabel(scanResult?.barrier_status) },
+    { label: t('Hidratação'), value: hydrationLabel(scanResult?.skin_hydration) },
+    { label: t('Oleosidade'), value: sebaceoLabel(scanResult?.brilho_sebaceo?.intensity) },
+    { label: t('Fotótipo'), value: scanResult?.skin_phototype ? `Fitzpatrick ${scanResult.skin_phototype}` : '—' },
   ];
   const goalLabels = concerns.filter((c) => c !== 'Outro');
-  const mainGoal = joinPt(goalLabels.slice(0, 2).map((c, i) => (i ? c.toLowerCase() : c)));
+  const mainGoal = joinPt(goalLabels.slice(0, 2).map((c, i) => (i ? t(c).toLowerCase() : t(c))));
   const vThumbs = layout ? [layout.anchors.nariz_zona_t[0], layout.anchors.bochechas[1] ?? layout.anchors.bochechas[0], layout.anchors.queixo_mandibula[0]] : [];
 
   const revealNext = () => {
@@ -200,9 +202,9 @@ export default function ResultadoScan() {
   const handleClose = () => {
     haptics.tap();
     if (inApp) { leaveToHome(); return; }
-    Alert.alert('Refazer o scan?', 'Você vai tirar as fotos de novo.', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Refazer', onPress: () => router.replace('/(scan)/camera?retake=1' as any) },
+    Alert.alert(t('Refazer o scan?'), t('Você vai tirar as fotos de novo.'), [
+      { text: t('Cancelar'), style: 'cancel' },
+      { text: t('Refazer'), onPress: () => router.replace('/(scan)/camera?retake=1' as any) },
     ]);
   };
 
@@ -273,15 +275,15 @@ export default function ResultadoScan() {
                     onPress={() => { haptics.select(); setFilter(c); }}
                     style={{ height: 34, paddingHorizontal: 15, borderRadius: 17, justifyContent: 'center', backgroundColor: on ? R.pillBg : R.chipOff }}
                   >
-                    <Text style={{ fontSize: 15, letterSpacing: -0.2, fontWeight: on ? '600' : '500', color: on ? R.pillInk : R.body }}>{c}</Text>
+                    <Text style={{ fontSize: 15, letterSpacing: -0.2, fontWeight: on ? '600' : '500', color: on ? R.pillInk : R.body }}>{t(c)}</Text>
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
             <View style={{ marginTop: 20, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <Text style={sectionTitle}>Análise da pele</Text>
-              <Text style={{ fontSize: 15, letterSpacing: -0.2, color: R.muted }}>{shown.length === 1 ? '1 ponto' : `${shown.length} pontos`}</Text>
+              <Text style={sectionTitle}>{t('Análise da pele')}</Text>
+              <Text style={{ fontSize: 15, letterSpacing: -0.2, color: R.muted }}>{shown.length === 1 ? t('1 ponto') : t('{{n}} pontos', { n: shown.length })}</Text>
             </View>
 
             <View style={{ marginTop: 6, paddingHorizontal: 18 }}>
@@ -292,11 +294,11 @@ export default function ResultadoScan() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: OB.pink }} />
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: R.zone }}>{f.zone}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: R.zone }}>{t(f.zone)}</Text>
                       </View>
                       {f.level && (
                         <View style={{ height: 22, paddingHorizontal: 9, borderRadius: 11, backgroundColor: R.pillBg, justifyContent: 'center' }}>
-                          <Text style={{ fontSize: 12, fontWeight: '600', color: R.pillInk }}>{f.level}</Text>
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: R.pillInk }}>{t(f.level)}</Text>
                         </View>
                       )}
                     </View>
@@ -307,7 +309,7 @@ export default function ResultadoScan() {
               ))}
               {shown.length === 0 && (
                 <Text style={{ paddingVertical: 14, fontSize: 15, lineHeight: 20, color: R.body }}>
-                  Sua pele não mostrou nenhum ponto de atenção importante nesta foto.
+                  {t('Sua pele não mostrou nenhum ponto de atenção importante nesta foto.')}
                 </Text>
               )}
             </View>
@@ -318,7 +320,7 @@ export default function ResultadoScan() {
           {/* 2. Pontos fortes */}
           {strengths.length > 0 && (
             <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingVertical: 20 }}>
-              <Text style={[sectionTitle, { paddingHorizontal: 18 }]}>Pontos fortes da pele</Text>
+              <Text style={[sectionTitle, { paddingHorizontal: 18 }]}>{t('Pontos fortes da pele')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 14 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 10 }}>
                 {strengths.map((st, i) => (
                   <View key={i} style={{ width: 262, borderRadius: 20, borderWidth: 1, borderColor: R.border, padding: 14, gap: 12 }}>
@@ -342,7 +344,7 @@ export default function ResultadoScan() {
           {/* 3. Com base no perfil de pele */}
           {goalLabels.length > 0 && (
             <>
-              <Text style={[sectionTitle, { marginTop: 28, paddingHorizontal: 18 }]}>Com base no seu perfil de pele</Text>
+              <Text style={[sectionTitle, { marginTop: 28, paddingHorizontal: 18 }]}>{t('Com base no seu perfil de pele')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 14 }} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 4, gap: 26 }}>
                 {goalLabels.map((g, i) => (
                   <View key={g} style={{ gap: 8 }}>
@@ -357,8 +359,8 @@ export default function ResultadoScan() {
                       </Svg>
                     </View>
                     <View style={{ gap: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: '600', letterSpacing: -0.3, color: OB.ink }}>{g}</Text>
-                      <Text style={{ fontSize: 14, color: R.muted }}>{i === 0 ? 'Objetivo principal' : 'Preocupação adicional'}</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '600', letterSpacing: -0.3, color: OB.ink }}>{t(g)}</Text>
+                      <Text style={{ fontSize: 14, color: R.muted }}>{i === 0 ? t('Objetivo principal') : t('Preocupação adicional')}</Text>
                     </View>
                   </View>
                 ))}
@@ -369,7 +371,7 @@ export default function ResultadoScan() {
           {/* 4. Validação do objetivo principal */}
           {align && ALIGN[align.alinhamento] && (
             <View style={{ marginTop: 26, backgroundColor: '#FFFFFF', borderRadius: 26, paddingVertical: 20, paddingHorizontal: 18 }}>
-              <Text style={sectionTitle}>Validação do objetivo principal</Text>
+              <Text style={sectionTitle}>{t('Validação do objetivo principal')}</Text>
               <View style={{ marginTop: 14, borderRadius: 20, borderWidth: 1, borderColor: R.border, paddingVertical: 18, paddingHorizontal: 16, alignItems: 'center' }}>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {vThumbs.map((p, i) => <View key={i}>{crop(p, 88, 1.16, 18)}</View>)}
@@ -400,8 +402,8 @@ export default function ResultadoScan() {
                   <View style={{ position: 'absolute', left: `${ALIGN[align.alinhamento].pct * 100}%`, top: -5, width: 4, height: 16, marginLeft: -2, borderRadius: 2, backgroundColor: R.pillInk }} />
                 </View>
                 <View style={{ marginTop: 6, alignSelf: 'stretch', flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 12, color: R.muted }}>Baixo</Text>
-                  <Text style={{ fontSize: 12, color: R.muted }}>Alto</Text>
+                  <Text style={{ fontSize: 12, color: R.muted }}>{t('Baixo')}</Text>
+                  <Text style={{ fontSize: 12, color: R.muted }}>{t('Alto')}</Text>
                 </View>
               </View>
               {!!align.mensagem && (
@@ -413,7 +415,7 @@ export default function ResultadoScan() {
           {/* 5. Recomendações */}
           {recs.length > 0 && (
             <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingTop: 20, paddingHorizontal: 18, paddingBottom: 8 }}>
-              <Text style={sectionTitle}>{mainGoal ? `Recomendações pra ${mainGoal.toLowerCase()}` : 'Recomendações pra sua pele'}</Text>
+              <Text style={sectionTitle}>{mainGoal ? t('Recomendações pra {{objetivo}}', { objetivo: mainGoal.toLowerCase() }) : t('Recomendações pra sua pele')}</Text>
               <View style={{ marginTop: 8 }}>
                 {recs.map((r, i) => (
                   <View key={i} style={{ flexDirection: 'row', gap: 14, paddingVertical: 14 }}>
@@ -433,7 +435,7 @@ export default function ResultadoScan() {
           {/* 6. Condição Geral (versão B) — grade 2 × 2 */}
           {scanResult && (
             <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingVertical: 20, paddingHorizontal: 18 }}>
-              <Text style={sectionTitle}>Condição Geral</Text>
+              <Text style={sectionTitle}>{t('Condição Geral')}</Text>
               <View style={{ marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {condition.map((c) => (
                   <View key={c.label} style={{ width: '48.5%', borderRadius: 16, backgroundColor: R.sheet, paddingVertical: 14, paddingHorizontal: 14, gap: 4 }}>
@@ -448,7 +450,7 @@ export default function ResultadoScan() {
           {/* 7. Por onde começar (versão B) */}
           {!!priority?.primaria && (
             <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingVertical: 20, paddingHorizontal: 18 }}>
-              <Text style={sectionTitle}>Por onde começar</Text>
+              <Text style={sectionTitle}>{t('Por onde começar')}</Text>
               <View style={{ marginTop: 14, gap: 12 }}>
                 {[priority.primaria, priority.secundaria].filter(Boolean).map((item, i) => (
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
@@ -468,7 +470,7 @@ export default function ResultadoScan() {
           {/* 8. Evitar para sua pele (versão B) */}
           {avoid.length > 0 && (
             <View style={{ marginTop: 10, backgroundColor: '#FFFFFF', borderRadius: 26, paddingTop: 20, paddingHorizontal: 18, paddingBottom: 8 }}>
-              <Text style={sectionTitle}>Evitar para sua pele</Text>
+              <Text style={sectionTitle}>{t('Evitar para sua pele')}</Text>
               <View style={{ marginTop: 6 }}>
                 {avoid.map((item, i) => (
                   <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i ? 1 : 0, borderColor: R.line }}>
@@ -549,7 +551,7 @@ export default function ResultadoScan() {
           shadowColor: OB.pink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
         }}
       >
-        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>{inApp ? 'Concluir' : 'Próximo'}</Text>
+        <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>{inApp ? t('Concluir') : t('Próximo')}</Text>
       </TouchableOpacity>
       </Animated.View>
 
@@ -564,17 +566,17 @@ export default function ResultadoScan() {
             shadowColor: OB.ink, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.12, shadowRadius: 24, elevation: 10,
           }}>
             <Text style={{ fontSize: 20, lineHeight: 25, fontWeight: '700', letterSpacing: -0.4, color: OB.ink, textAlign: 'center', marginBottom: 8 }}>
-              Atualizando sua rotina
+              {t('Atualizando sua rotina')}
             </Text>
             <Text style={{ fontSize: 16, lineHeight: 22, color: OB.sub, textAlign: 'center', marginBottom: 20 }}>
-              Estamos atualizando sua rotina com base neste novo scan.
+              {t('Estamos atualizando sua rotina com base neste novo scan.')}
             </Text>
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={() => { haptics.tap(); setShowRoutineCard(false); }}
               style={{ height: 50, borderRadius: 25, backgroundColor: OB.pink, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>OK</Text>
+              <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>{t('OK')}</Text>
             </TouchableOpacity>
           </View>
         </View>

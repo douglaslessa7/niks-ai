@@ -10,6 +10,8 @@ import {
   useObFrame, obStep, useOnMount,
 } from '../../components/onboarding/kit';
 import { ringTicks, ringBack } from '../../components/onboarding/scanRing';
+import { useIsFocused } from '@react-navigation/native';
+import { t } from '../../lib/i18n';
 
 // TUTORIAL do scan do onboarding (antes da câmera). Título: "Agora vamos analisar a /
 // sua pele:" — quebra fixa, tudo em preto, sem eyebrow (18/out/2026 — a versão só com "Como funciona o seu scan"
@@ -59,10 +61,15 @@ const TICKS = ringTicks(48).map((tk) => {
 const POP_CONE = 40;     // graus em volta da direção da cabeça que crescem
 
 const STEPS_INFO: { title: string; text: string }[] = [
-  { title: 'Encaixe o rosto no círculo', text: 'Olhe para a câmera, com o rosto inteiro dentro do círculo.' },
-  { title: 'Gire a cabeça devagar', text: 'Faça um círculo com a cabeça: para cima, para os lados e para baixo.' },
-  { title: 'Continue até acender o anel', text: 'Cada parte acende quando você olha para ela. Anel cheio, pronto!' },
+  { title: t('Encaixe o rosto no círculo'), text: t('Olhe para a câmera, com o rosto inteiro dentro do círculo.') },
+  { title: t('Gire a cabeça devagar'), text: t('Faça um círculo com a cabeça: para cima, para os lados e para baixo.') },
+  { title: t('Continue até acender o anel'), text: t('Cada parte acende quando você olha para ela. Anel cheio, pronto!') },
 ];
+
+// Textos da tela (no módulo: dentro do componente, `t` é o relógio da demonstração).
+const TITULO = t('Agora vamos analisar a\nsua pele:');
+const CUIDADOS = t('Para uma análise mais precisa, se certifique:');
+const ABRIR_CAMERA = t('Abrir câmera');
 
 /** Passo da vez em `t` (0–2); 3 = os três feitos (anel cheio). */
 function stepAt(t: number) {
@@ -74,22 +81,27 @@ function stepAt(t: number) {
 
 const ICON = { fill: 'none', stroke: '#FFFFFF', strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 const TIPS: { label: string; icon: React.ReactNode }[] = [
-  { label: 'Boa\niluminação', icon: (<><Circle cx={12} cy={12} r={4} {...ICON} /><Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" {...ICON} /></>) },
-  { label: 'Sem\nmaquiagem', icon: (<><Path d="M11 3l1.8 4.9L17.7 9.7l-4.9 1.8L11 16.4l-1.8-4.9L4.3 9.7l4.9-1.8z" {...ICON} /></>) },
-  { label: 'Cabelo\npreso', icon: (<><Circle cx={12} cy={8} r={4} {...ICON} /><Path d="M4.5 20.5c0-3.9 3.4-6.3 7.5-6.3s7.5 2.4 7.5 6.3" {...ICON} /></>) },
-  { label: 'Sem\nóculos', icon: (<><Circle cx={6.5} cy={14.5} r={3.5} {...ICON} /><Circle cx={17.5} cy={14.5} r={3.5} {...ICON} /><Path d="M10 14.5c1.3-1 2.7-1 4 0" {...ICON} /></>) },
+  { label: t('Boa\niluminação'), icon: (<><Circle cx={12} cy={12} r={4} {...ICON} /><Path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" {...ICON} /></>) },
+  { label: t('Sem\nmaquiagem'), icon: (<><Path d="M11 3l1.8 4.9L17.7 9.7l-4.9 1.8L11 16.4l-1.8-4.9L4.3 9.7l4.9-1.8z" {...ICON} /></>) },
+  { label: t('Cabelo\npreso'), icon: (<><Circle cx={12} cy={8} r={4} {...ICON} /><Path d="M4.5 20.5c0-3.9 3.4-6.3 7.5-6.3s7.5 2.4 7.5 6.3" {...ICON} /></>) },
+  { label: t('Sem\nóculos'), icon: (<><Circle cx={6.5} cy={14.5} r={3.5} {...ICON} /><Circle cx={17.5} cy={14.5} r={3.5} {...ICON} /><Path d="M10 14.5c1.3-1 2.7-1 4 0" {...ICON} /></>) },
 ];
 
-/** Relógio da demonstração (ms dentro do loop), um quadro por frame. */
+/** Relógio da demonstração (ms dentro do loop), um quadro por frame.
+ *  Só com a tela em FOCO (18/nov/2026): ela abre a câmera com `push` e continua montada por
+ *  baixo do resto do onboarding — sem a pausa, o setState por quadro seguia rodando e deixou o
+ *  JavaScript ocupado (aviso de CPU do iOS: 68% por 2 min no TestFlight 1.63 (1)). */
 function useLoopClock() {
   const [t, setT] = useState(0);
   const start = useRef(Date.now());
+  const focada = useIsFocused();
   useEffect(() => {
+    if (!focada) return;
     let id: number;
     const loop = () => { setT((Date.now() - start.current) % LOOP_MS); id = requestAnimationFrame(loop); };
     id = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [focada]);
   return t;
 }
 
@@ -170,7 +182,7 @@ export default function ScanPrep() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + OB_BOTAO_H + 32 }}
       >
-        <ObTitle>{'Agora vamos analisar a\nsua pele:'}</ObTitle>
+        <ObTitle>{TITULO}</ObTitle>
         <View style={{ alignItems: 'center', marginTop: 14 }}>
           <RingDemo t={t} />
         </View>
@@ -211,7 +223,7 @@ export default function ScanPrep() {
 
         {/* Cuidados antes da foto: a frase que explica + 4 colunas, ícone + legenda. */}
         <Text style={{ marginTop: 14, marginHorizontal: 17, textAlign: 'center', fontSize: 15, lineHeight: 20, color: OB.body }}>
-          Para uma análise mais precisa, se certifique:
+          {CUIDADOS}
         </Text>
         <View style={{ marginTop: 10, marginHorizontal: 17, flexDirection: 'row' }}>
           {TIPS.map((tip) => (
@@ -233,7 +245,7 @@ export default function ScanPrep() {
       />
       <ObHeader onBack={() => router.back()} backdrop={OB.bg} />
       <ObPillButton
-        label="Abrir câmera"
+        label={ABRIR_CAMERA}
         bottom={buttonBottom}
         onPress={() => { haptics.action(); openCamera(); }}
       />

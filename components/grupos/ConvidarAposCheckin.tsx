@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -51,20 +52,20 @@ export default function ConvidarAposCheckin({ aberto, onConvidar, onFechar }: {
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 90 }]} pointerEvents={aberto ? 'auto' : 'none'}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.veu, veuSt]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} accessibilityLabel="Fechar" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} accessibilityLabel={t('Fechar')} />
       </Animated.View>
       <View style={styles.centro} pointerEvents="box-none">
         <Animated.View style={[styles.card, { width: Math.min(W - 40, 360) }, cardSt]}>
           <View style={styles.fotos}>
             {FOTOS.map((f, i) => <Image key={i} source={f} cachePolicy="memory" transition={0} style={styles.foto} />)}
           </View>
-          <Text style={styles.titulo}>Seu check-in está no grupo!</Text>
-          <Text style={styles.texto}>Convide suas amigas para fazer skincare com você. Elas vão ver seus check-ins e vocês acompanham a constância uma da outra.</Text>
+          <Text style={styles.titulo}>{t('Seu check-in está no grupo!')}</Text>
+          <Text style={styles.texto}>{t('Convide suas amigas para fazer skincare com você. Elas vão ver seus check-ins e vocês acompanham a constância uma da outra.')}</Text>
           <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.action(); onConvidar(); }} style={styles.cta} accessibilityRole="button">
-            <Text style={styles.ctaT}>Convidar amigas</Text>
+            <Text style={styles.ctaT}>{t('Convidar amigas')}</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); onFechar(); }} style={styles.agoraNao} accessibilityRole="button">
-            <Text style={styles.agoraNaoT}>Agora não</Text>
+            <Text style={styles.agoraNaoT}>{t('Agora não')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>

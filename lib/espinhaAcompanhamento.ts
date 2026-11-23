@@ -3,12 +3,13 @@
 // 20261117120000_espinha_acompanhamento.sql); aqui só perguntamos ao abrir o app.
 import { create } from 'zustand';
 import { getAccessToken } from './sessionToken';
+import { idioma, t } from './i18n';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 export const URL_SOS_ESPINHA = `${SUPABASE_URL}/functions/v1/sos-espinha`;
 
-export const TEXTO_BALAO_DUVIDA = 'Ficou com dúvida? Continue o acompanhamento da sua espinha aqui.';
+export const TEXTO_BALAO_DUVIDA = t('Ficou com dúvida? Continue o acompanhamento da sua espinha aqui.');
 
 export type BalaoEspinha = { conversationId: string; texto: string; tipo: 'duvida' | 'retorno' };
 
@@ -29,7 +30,7 @@ async function chamar(corpo: object): Promise<any | null> {
     const r = await fetch(URL_SOS_ESPINHA, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
-      body: JSON.stringify(corpo),
+      body: JSON.stringify({ ...corpo, idioma }),
     });
     return r.ok ? await r.json() : null;
   } catch {

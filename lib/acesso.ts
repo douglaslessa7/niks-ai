@@ -2,7 +2,7 @@
 // convidada não cair no paywall quando faltar internet. Sem resposta e sem histórico, paywall.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { estadoAcesso } from './gruposServidor';
+import { estadoAcessoCompleto } from './gruposServidor';
 import { confirmPremium } from './subscriptionGate';
 import { trackFora } from './mixpanel/MixpanelProvider';
 import { getUserId } from './currentUser';
@@ -14,15 +14,52 @@ const CHAVE = (uid: string) => `acesso:estado:${uid}`;
 export const useAcesso = create<{ estado: EstadoAcesso | null; boasVindasEx: boolean }>(() => ({ estado: null, boasVindasEx: false }));
 export const useEhConvidada = () => useAcesso((s) => s.estado === 'convidada');
 
+// 1.64: "já foi convidada" — fica no aparelho mesmo depois que o estado vira 'sem_acesso'.
+// Só quem foi convidada de verdade e perdeu o acesso vê a tela "sem grupo"
+// (`lib/onboardingObrigatorio.ts`, `decidirSemAssinatura`).
+const CHAVE_FOI = (uid: string) => `acesso:foi_convidada:${uid}`;
+
+/**
+ * Grava o estado; se for (ou tiver sido) 'convidada', marca "já foi convidada". `foiServidor`:
+ * a resposta do servidor (migration 20261220120000) — quando vem, ela manda: `true` marca,
+ * `false` desmarca (vale em qualquer celular). Sem resposta (`null`/`undefined`), só o aparelho.
+ */
+async function guardarEstado(uid: string, estado: EstadoAcesso, foiServidor?: boolean | null): Promise<void> {
+  try {
+    const antes = await AsyncStorage.getItem(CHAVE(uid));
+    if (foiServidor === true || (foiServidor == null && (estado === 'convidada' || antes === 'convidada'))) {
+      await AsyncStorage.setItem(CHAVE_FOI(uid), '1');
+    } else if (foiServidor === false && estado !== 'convidada') {
+      await AsyncStorage.removeItem(CHAVE_FOI(uid));
+    }
+    await AsyncStorage.setItem(CHAVE(uid), estado);
+  } catch {
+    // sem gravar, a próxima resposta do servidor grava
+  }
+}
+
+/** Esta conta já foi convidada de grupo? (o que o servidor disse por último, ou o aparelho) */
+export async function foiConvidada(uid: string): Promise<boolean> {
+  try {
+    const [foi, estado] = await Promise.all([AsyncStorage.getItem(CHAVE_FOI(uid)), AsyncStorage.getItem(CHAVE(uid))]);
+    return foi === '1' || estado === 'convidada';
+  } catch {
+    return false;
+  }
+}
+
 export function definirAcesso(estado: EstadoAcesso | null, uid?: string) {
   useAcesso.setState({ estado });
-  if (uid && estado) void AsyncStorage.setItem(CHAVE(uid), estado).catch(() => {});
+  if (uid && estado) void guardarEstado(uid, estado);
 }
 
 export async function carregarAcesso(uid: string): Promise<EstadoAcesso> {
   let estado: EstadoAcesso | null = null;
+  let foi: boolean | null | undefined;
   try {
-    estado = await Promise.race([estadoAcesso(), new Promise<null>((r) => setTimeout(() => r(null), 8000))]);
+    const r = await Promise.race([estadoAcessoCompleto(), new Promise<null>((res) => setTimeout(() => res(null), 8000))]);
+    estado = r?.estado ?? null;
+    foi = r?.foi_convidada;
   } catch {
     estado = null;
   }
@@ -30,7 +67,8 @@ export async function carregarAcesso(uid: string): Promise<EstadoAcesso> {
     const guardado = await AsyncStorage.getItem(CHAVE(uid)).catch(() => null);
     estado = guardado === 'convidada' ? 'convidada' : 'sem_acesso';
   } else {
-    void AsyncStorage.setItem(CHAVE(uid), estado).catch(() => {});
+    // Espera gravar: quem decide a tela logo depois (`foiConvidada`) lê o que ficou aqui.
+    await guardarEstado(uid, estado, foi);
   }
   useAcesso.setState({ estado });
   return estado;
@@ -53,11 +91,13 @@ export async function reconferirAcesso(uid: string, forcar = false, motivo = 're
   }
   let estado: EstadoAcesso;
   try {
-    estado = await estadoAcesso();
+    const r = await estadoAcessoCompleto();
+    estado = r.estado;
+    useAcesso.setState({ estado });
+    await guardarEstado(uid, estado, r.foi_convidada);
   } catch {
     return null;
   }
-  definirAcesso(estado, uid);
   if (antes === 'assinante' && estado !== 'assinante') trackFora('assinante_virou_convidada', { estado });
   if (antes === 'convidada' && estado === 'sem_acesso') trackFora('convidada_perdeu_acesso', { motivo });
   return estado;

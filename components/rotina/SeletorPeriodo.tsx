@@ -1,6 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 // Seletor Manhã | Noite: o da tela Rotina e o da folha "Em qual passo?".
 
@@ -43,8 +44,8 @@ export default function SeletorPeriodo({ valor, onChange, fundo = 'rgba(255,255,
   };
   return (
     <View style={[s.wrap, { backgroundColor: fundo }, style]}>
-      {botao('am', 'Manhã')}
-      {botao('pm', 'Noite')}
+      {botao('am', t('Manhã'))}
+      {botao('pm', t('Noite'))}
     </View>
   );
 }

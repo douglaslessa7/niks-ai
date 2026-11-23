@@ -1,9 +1,10 @@
 import { View, Text, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { useObName, useOnMount } from '../../components/onboarding/kit';
 import {
-  BV, BvScreen, BolhaBranca, BolhaRadial, SEMANAS_ROTINA, BvEtiqueta, BvTitulo, BvBotao, LOGO_ROSA, useBvFrame,
+  BV, BvScreen, BolhaBranca, BolhaRadial, SEMANAS_ROTINA, diaMesCurto, BvEtiqueta, BvTitulo, BvBotao, LOGO_ROSA, useBvFrame,
 } from '../../components/boasVindas/kit';
 
 // Boas-vindas pós-pagamento · tela 1 "Você entrou" (design NiksBoasVindas, frame "01").
@@ -12,8 +13,8 @@ import {
 // ⚠️ PROVISÓRIO (decisão do produto, 07/nov/2026: copiar o design): "Membro nº 12.408" e
 // "Anual · Rotina de 4 semanas" são FIXOS — não vêm de dado nenhum (o plano pode ter sido o
 // mensal). Não pode ir ao ar assim.
-const MEMBRO_PROVISORIO = '225.931'; // pedido do produto, 07/nov/2026 (era 12.408 no design)
-const PLANO_PROVISORIO = `Anual · Rotina de ${SEMANAS_ROTINA} semanas`; // plano de 1 mês (07/nov/2026)
+// 23/nov/2026 (decisão do produto): sem número de membro inventado — "Membro desde <hoje>".
+const PLANO_PROVISORIO = t('Anual · Rotina de {{semanas}} semanas', { semanas: SEMANAS_ROTINA }); // plano de 1 mês (07/nov/2026)
 
 export default function BvEntrou() {
   const router = useRouter();
@@ -46,9 +47,9 @@ export default function BvEntrou() {
           </View>
         </View>
 
-        <BvEtiqueta ponto style={{ marginTop: 58 }}>ACESSO PREMIUM LIBERADO</BvEtiqueta>
+        <BvEtiqueta ponto style={{ marginTop: 58 }}>{t('ACESSO PREMIUM LIBERADO')}</BvEtiqueta>
         <BvTitulo center style={{ marginTop: 12 }}>
-          {name ? `Você entrou pro time NIKS, ${name}.` : 'Você entrou pro time NIKS.'}
+          {name ? t('Você entrou pro time NIKS, {{name}}.', { name }) : t('Você entrou pro time NIKS.')}
         </BvTitulo>
 
         <View style={{
@@ -58,18 +59,18 @@ export default function BvEntrou() {
           shadowColor: BV.pink, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 11,
         }}>
           <View>
-            <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: BV.sub }}>MEMBRO Nº</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: BV.sub }}>{t('MEMBRO DESDE')}</Text>
             {/* 20 pt (o design tem 24; com 225.931 ficava grande no card — pedido do produto, 07/nov/2026) */}
-            <Text style={{ marginTop: 4, fontSize: 20, fontWeight: '700', letterSpacing: -0.5, color: BV.ink, fontVariant: ['tabular-nums'] }}>{MEMBRO_PROVISORIO}</Text>
+            <Text style={{ marginTop: 4, fontSize: 20, fontWeight: '700', letterSpacing: -0.5, color: BV.ink, fontVariant: ['tabular-nums'] }}>{diaMesCurto(new Date())}</Text>
           </View>
           <View style={{ alignItems: 'flex-end', flexShrink: 1, marginLeft: 12 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: BV.sub }}>PLANO</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: BV.sub }}>{t('PLANO')}</Text>
             <Text numberOfLines={1} adjustsFontSizeToFit style={{ marginTop: 5, fontSize: 15, fontWeight: '600', letterSpacing: -0.3, color: BV.ink }}>{PLANO_PROVISORIO}</Text>
           </View>
         </View>
       </View>
 
-      <BvBotao label="Ativar meu plano" onPress={() => router.push('/(onboarding)/bv-rotina' as any)} />
+      <BvBotao label={t('Ativar meu plano')} onPress={() => router.push('/(onboarding)/bv-rotina' as any)} />
     </BvScreen>
   );
 }

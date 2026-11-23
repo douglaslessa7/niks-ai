@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { useAppStore } from '../../store/onboarding';
 import BalancedText from '../../components/BalancedText';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -39,10 +40,10 @@ const STEP_NAME = 'Sua evolução';
 
 // Frase da pele escolhida: "sua pele de vidro começa aqui." (`objetivoPele` em
 // `answers.ts`). ⚠️ Sem objetivo reconhecido: frase neutra, fora da lista do produto.
-const FRASE_NEUTRA = 'sua nova rotina começa aqui.';
+const FRASE_NEUTRA = t('sua nova rotina começa aqui.');
 function fraseDoObjetivo(goal: string | null | undefined) {
   const o = objetivoPele(goal);
-  return o ? `sua ${o.pele} começa aqui.` : FRASE_NEUTRA;
+  return o ? t('sua {{pele}} começa aqui.', { pele: t(o.pele) }) : FRASE_NEUTRA;
 }
 
 // Curvas ilustrativas: x de 0 a 1 (Hoje → Sua meta), y de 0 (base) a 1 (topo).
@@ -198,7 +199,7 @@ export default function Evolucao() {
 
   // 07/nov/2026 (pedido do produto): título "<nome>, o espelho vai mudar." e, no subtítulo, a
   // frase da pele escolhida ("Sua pele radiante começa aqui."), que antes era o título.
-  const destaque = name ? 'o espelho vai mudar.' : 'O espelho vai mudar.';
+  const destaque = name ? t('o espelho vai mudar.') : t('O espelho vai mudar.');
   const frase = fraseDoObjetivo(goal);
   const subtitulo = frase.charAt(0).toUpperCase() + frase.slice(1);
 
@@ -214,7 +215,7 @@ export default function Evolucao() {
     <ObScreen>
       <ObHeader onBack={() => router.back()} />
       <Text style={{ position: 'absolute', left: 0, right: 0, top: y(74), textAlign: 'center', fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 1.4, color: OB.sub }}>
-        SUA EVOLUÇÃO
+        {t('SUA EVOLUÇÃO')}
       </Text>
 
       <View style={{ flex: 1, paddingTop: y(136), paddingHorizontal: 24, paddingBottom: buttonBottom + OB_BOTAO_H + 24 }}>
@@ -232,8 +233,8 @@ export default function Evolucao() {
         </Animated.Text>
 
         <Animated.View style={[{ marginTop: 26, flexDirection: 'row', justifyContent: 'space-between' }, eixosStyle]}>
-          <Text style={rotulo}>HOJE</Text>
-          <Text style={rotulo}>SUA META</Text>
+          <Text style={rotulo}>{t('HOJE')}</Text>
+          <Text style={rotulo}>{t('SUA META')}</Text>
         </Animated.View>
 
         {/* O gráfico ocupa o espaço que sobra (encolhe em tela baixa). */}
@@ -253,7 +254,7 @@ export default function Evolucao() {
                 <Text style={[rotulo, {
                   position: 'absolute', left: -28, top: py(0.5) - 7, width: 80, textAlign: 'center',
                   transform: [{ rotate: '-90deg' }],
-                }]}>EVOLUÇÃO</Text>
+                }]}>{t('EVOLUÇÃO')}</Text>
               </Animated.View>
 
               {/* Linhas + preenchimento, revelados juntos pela máscara */}
@@ -313,20 +314,20 @@ export default function Evolucao() {
         <Animated.View style={[{ marginTop: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, legendaStyle]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <View style={{ width: 22, height: 5, borderRadius: 2.5, backgroundColor: OB.pink }} />
-            <Text style={[rotulo, { color: OB.ink }]}>COM NIKS</Text>
+            <Text style={[rotulo, { color: OB.ink }]}>{t('COM NIKS')}</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Svg width={22} height={4}><Line x1={1} x2={21} y1={2} y2={2} stroke={CINZA} strokeWidth={2.5} strokeDasharray="5 5" strokeLinecap="round" /></Svg>
-            <Text style={[rotulo, { color: CINZA }]}>SEM ROTINA</Text>
+            <Text style={[rotulo, { color: CINZA }]}>{t('SEM ROTINA')}</Text>
           </View>
         </Animated.View>
         {/* Como no Tapfit, a nota entra com os eixos, antes das linhas. */}
         <Animated.Text style={[{ marginTop: 12, textAlign: 'center', fontSize: 13, lineHeight: 17, color: '#B5AEB1' }, eixosStyle]}>
-          Comparação ilustrativa.
+          {t('Comparação ilustrativa.')}
         </Animated.Text>
       </View>
 
-      <ObPillButton label="Quero começar" width={220} onPress={handleContinue} bottom={buttonBottom} />
+      <ObPillButton label={t('Quero começar')} width={220} onPress={handleContinue} bottom={buttonBottom} />
     </ObScreen>
   );
 }

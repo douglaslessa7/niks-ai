@@ -6,15 +6,16 @@ import { Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import Animated, { FadeIn, FadeInDown, useReducedMotion } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { NIKS_LOGO_PINK, OB, ObPillButton } from '../onboarding/kit';
 
 export const PERGUNTA_ASSINATURA_LIGADA = true;
 
 export const TEXTOS_PERGUNTA = {
-  titulo: 'Você já tem uma assinatura do NIKS',
-  texto: 'Esta Apple ID já tem uma assinatura ativa do NIKS. Quer usar essa assinatura nesta conta? Se ela estiver em outra conta, aquela conta perde o acesso.',
-  usar: 'Usar nesta conta',
-  agoraNao: 'Agora não',
+  titulo: t('Você já tem uma assinatura do NIKS'),
+  texto: t('Esta Apple ID já tem uma assinatura ativa do NIKS. Quer usar essa assinatura nesta conta? Se ela estiver em outra conta, aquela conta perde o acesso.'),
+  usar: t('Usar nesta conta'),
+  agoraNao: t('Agora não'),
 };
 
 export default function PerguntaAssinatura({ onUsar, onAgoraNao, ocupado }: {

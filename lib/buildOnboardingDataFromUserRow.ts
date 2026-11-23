@@ -24,5 +24,9 @@ export function buildOnboardingDataFromUserRow(urow: any, scanResult: ScanResult
     makeup: urow?.makeup ?? null,
     sunscreen: urow?.sunscreen ?? null,
     frequency: urow?.frequency ?? null,
+    // 1.63 (motor da rotina v2).
+    isotretinoina: urow?.isotretinoina === true ? 'sim' : urow?.isotretinoina === false ? 'nao' : null,
+    orcamento: urow?.orcamento_faixa != null ? String(urow.orcamento_faixa) : null,
+    dor_principal: urow?.dor_principal ?? null,
   };
 }

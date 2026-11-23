@@ -4,7 +4,11 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
 import type { StickerSpec } from '../lib/stickerSpec'
-import type { AnaliseRapida } from '../lib/analiseRapida'
+import { escolherProblema, type AnaliseRapida } from '../lib/analiseRapida'
+// Import fixo (16/nov/2026): o `await import()` carregava as cartas como pacote à parte no Metro
+// e REINICIAVA o app no meio do cadastro — a retomada gravava a rotina uma segunda vez.
+import { marcarRegrasCartas } from '../lib/cartasServidor'
+import { camposAceiteTermos } from '../lib/aceiteTermos'
 
 /**
  * Sobe um JPEG (base64) para o bucket privado `scans` e devolve uma signed URL de 1 ano.
@@ -224,6 +228,14 @@ export type OnboardingData = {
   // `makeup`: 'Quase todo dia' | 'Às vezes' | 'Não'. ⚠️ NÃO tem coluna em `users`: vai só para
   // a rotina gerada no onboarding (o JSON inteiro chega à IA); regenerações depois não o têm.
   makeup?: string | null
+  // 1.63 (motor da rotina v2): "Você está tomando isotretinoína?" ('sim' | 'nao' → users.isotretinoina;
+  // 'sim' = nenhum ativo forte) e "Como você quer montar sua rotina?" ('1' | '2' | '3' = faixa
+  // do catálogo → users.orcamento_faixa; preferência, nunca filtro).
+  isotretinoina?: string | null
+  orcamento?: string | null
+  // A dor principal que ela VIU (carta de alerta / "DOR PRINCIPAL" das boas-vindas,
+  // `escolherProblema`). Preenchida na hora de gerar a rotina; → users.dor_principal.
+  dor_principal?: string | null
   // Tela 13 do onboarding novo: horários da rotina ('HH:MM') + fuso IANA do aparelho.
   // Gravados em `users.rotina_*` no `saveToSupabase`. O agendamento das notificações
   // do servidor ainda NÃO os lê (pg_cron segue em 7h/21h fixos).
@@ -461,7 +473,7 @@ type AppStore = {
    *  cartas); `scan` = a foto no bucket `scans` + a linha de `skin_scans` (só com relatório).
    *  Padrão: os dois. Desde 06/nov/2026 o signup grava só o perfil (o relatório completo só
    *  chega depois da compra) e a tela de espera (`loading-rotina`) grava os dois. */
-  saveToSupabase: (userId: string, opts?: { perfil?: boolean; scan?: boolean }) => Promise<void>
+  saveToSupabase: (userId: string, opts?: { perfil?: boolean; scan?: boolean; termos?: boolean }) => Promise<void>
   reset: () => void
 }
 
@@ -483,6 +495,9 @@ const initialOnboarding: OnboardingData = {
   sunscreen: null,
   frequency: null,
   makeup: null,
+  isotretinoina: null,
+  orcamento: null,
+  dor_principal: null,
   rotina_manha_horario: null,
   rotina_noite_horario: null,
   rotina_fuso: null,
@@ -628,7 +643,7 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
   skinPreviewUrl: null,
   setSkinPreviewUrl: (url) => set({ skinPreviewUrl: url }),
 
-  saveToSupabase: async (userId: string, opts?: { perfil?: boolean; scan?: boolean }) => {
+  saveToSupabase: async (userId: string, opts?: { perfil?: boolean; scan?: boolean; termos?: boolean }) => {
     const { onboarding, scanResult, scanImageUri, skinImageBase64, pendingName, pendingPushToken, regioesFoco, analiseRapida } = get()
     const salvarPerfil = opts?.perfil !== false
     const salvarScan = opts?.scan !== false
@@ -647,8 +662,10 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
       }
 
       const { data: { user } } = await supabase.auth.getUser()
+      // 1.64: aceite dos Termos — só o cadastro (que mostra a frase dos Termos) pede `termos`.
+      const aceiteTermos = opts?.termos ? camposAceiteTermos() : {}
 
-      const { error: userError } = await supabase
+      const gravarConta = (extra: Record<string, string>) => supabase
         .from('users')
         .upsert({
           id: userId,
@@ -676,6 +693,10 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
           // Parte B, Fase 4 (migration 20261123120000): só as respostas; a foto não é guardada.
           goal_desire: onboarding.goal_desire ?? null,
           makeup: onboarding.makeup ?? null,
+          // 1.63 (motor da rotina v2; migration 20261212120000).
+          isotretinoina: onboarding.isotretinoina === 'sim' ? true : onboarding.isotretinoina === 'nao' ? false : null,
+          orcamento_faixa: ['1', '2', '3'].includes(String(onboarding.orcamento)) ? Number(onboarding.orcamento) : null,
+          dor_principal: escolherProblema(analiseRapida, onboarding.concerns)?.problema ?? null,
           regioes_foco: regioesFoco,
           idade_pele_onboarding: analiseRapida?.idade_pele ?? null,
           rotina_manha_horario: onboarding.rotina_manha_horario ?? null,
@@ -684,8 +705,16 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
           // Token pedido antes do cadastro (tela 13b). Só entra quando existe — sem
           // ele, não apagamos um token que a conta já tinha.
           ...(pendingPushToken ? { push_token: pendingPushToken } : {}),
+          ...extra,
         })
 
+      let { error: userError } = await gravarConta(aceiteTermos)
+      // Banco sem as colunas do aceite (migration 20261218120000 ainda não aplicada): o
+      // cadastro não pode quebrar por isso — grava a conta sem esses campos.
+      if (userError && Object.keys(aceiteTermos).length && /termos_/.test(userError.message ?? '')) {
+        console.warn('[aceiteTermos] colunas ausentes no banco; conta gravada sem o aceite')
+        ;({ error: userError } = await gravarConta({}))
+      }
       if (userError) throw userError
 
       // Cartas — regras novas (05/nov/2026): marca a conta ANTES de salvar o scan do cadastro,
@@ -693,7 +722,6 @@ export const useAppStore = create<AppStore>()(persist((set, get) => ({
       // sem travar o cadastro; se falharem, mais tentativas em segundo plano — e, de qualquer
       // jeito, o próximo estado das cartas marca (toda chamada do app leva `regras: 2`).
       try {
-        const { marcarRegrasCartas } = await import('../lib/cartasServidor')
         const marcou = await marcarRegrasCartas(2, 2500)
         if (!marcou) void marcarRegrasCartas(3, 4000)
       } catch (e) {

@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, Animated, Easing, AccessibilityInf
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
 import BalancedText from '../../components/BalancedText';
@@ -141,11 +142,11 @@ export default function Abertura() {
 
         <Animated.View style={{ opacity: title }}>
           <BalancedText
-            text="A rotina perfeita para sua pele."
+            text={t('A rotina perfeita para sua pele.')}
             style={{ marginHorizontal: 24, textAlign: 'center', fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.5, color: OB.ink }}
           />
           <Text style={{ marginTop: 6, marginHorizontal: 30, textAlign: 'center', fontSize: 17, lineHeight: 23, color: OB.sub }}>
-            Feita especialmente para você.
+            {t('Feita especialmente para você.')}
           </Text>
         </Animated.View>
 
@@ -162,7 +163,7 @@ export default function Abertura() {
               shadowColor: '#121212', shadowOpacity: 0.07, shadowRadius: 8, shadowOffset: { width: 0, height: 6 },
             }}
           >
-            <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>Analisar minha pele</Text>
+            <Text style={{ fontSize: 18, fontWeight: '600', color: '#FFFFFF' }}>{t('Analisar minha pele')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>

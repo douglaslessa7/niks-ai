@@ -21,6 +21,7 @@ import type { CustomerInfo } from 'react-native-purchases';
 import { isSubscribed } from './revenuecat';
 import { conferirPortao, registrarDiscordanciaRc, type OrigemTransferencia } from './assinaturaServidor';
 import { supabase } from './supabase';
+import { t } from './i18n';
 
 /** Teto de espera de uma consulta ao RevenueCat. Estourou = sem premium. */
 export const RC_TIMEOUT_MS = 8000;
@@ -98,9 +99,9 @@ export async function confirmPremium({
 }
 
 const AVISO_TRANSFERENCIA = {
-  titulo: 'Não conseguimos transferir sua assinatura',
-  texto: 'Sua assinatura da Apple está ligada a outra conta do NIKS e não conseguimos trazê-la para esta conta agora. Confira sua internet e toque em "Restaurar compra". Se continuar, escreva para support@niksaiapp.com.',
-  botao: 'Entendi',
+  titulo: t('Não conseguimos transferir sua assinatura'),
+  texto: t('Sua assinatura da Apple está ligada a outra conta do NIKS e não conseguimos trazê-la para esta conta agora. Confira sua internet e toque em "Restaurar compra". Se continuar, escreva para support@niksaiapp.com.'),
+  botao: t('Entendi'),
 };
 
 /** Resolve quando ela fecha o aviso, para o paywall não abrir por cima dele. */

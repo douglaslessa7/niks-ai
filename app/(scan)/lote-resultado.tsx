@@ -23,10 +23,12 @@ import Svg, { Line, Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { invalidateCache } from '../../lib/cache';
 import { getUserId } from '../../lib/currentUser';
-import { diasDoPasso } from '../../lib/frequencia';
+import { diaCurto, diasDoPasso } from '../../lib/frequencia';
 import { ROTULO_TIPO, tipoPorTexto, type TipoPasso } from '../../lib/tipoPasso';
 import { buscarLote, fotosDoLote, marcarVisto, type Lote, type ProdutoResultado } from '../../lib/rotinaLotes';
 import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { getCutoutsByProductId } from '../../lib/productCutouts';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -44,16 +46,18 @@ const BG = {
 const BG_STOPS = [0, 0.22, 0.45, 0.7, 1];
 const ORDEM: Record<TipoPasso, number> = { limpeza: 0, tonico: 1, serum: 2, olhos: 3, hidratante: 4, protetor: 5 };
 
-const NAO_IDENTIFICADO = 'Desculpa, não consegui identificar esse produto. Tenta escanear de novo pela sua estante, com uma foto mais nítida do rótulo.';
+const NAO_IDENTIFICADO = t('Desculpa, não consegui identificar esse produto. Tenta escanear de novo pela sua estante, com uma foto mais nítida da frente do produto.');
 
 type Passo = {
   miss: boolean; kicker: string; title: string; text: string; note: string | null;
   dias: string[] | null; low: boolean; indice: number | null; tipo: TipoPasso | null;
+  /** Motor novo: produto do catálogo sugerido para o passo que falta (foto sem fundo). */
+  sugeridoId?: string | null;
 };
 
 function nomeProduto(p?: ProdutoResultado | null): string {
-  if (!p) return 'Produto';
-  return [p.marca, p.nome].filter(Boolean).join(' · ') || `Produto ${p.indice}`;
+  if (!p) return t('Produto');
+  return [p.marca, p.nome].filter(Boolean).join(' · ') || t('Produto {{n}}', { n: p.indice });
 }
 
 export default function LoteResultado() {
@@ -61,6 +65,8 @@ export default function LoteResultado() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [lote, setLote] = useState<Lote | null>(null);
   const [fotos, setFotos] = useState<Record<number, string>>({});
+  // Recortes sem fundo dos produtos do catálogo sugeridos (só o recorte: regra do catálogo).
+  const [recortes, setRecortes] = useState<Record<string, string>>({});
   const [per, setPer] = useState<'am' | 'pm'>('am');
   const perV = useRef(new Animated.Value(0)).current;
 
@@ -76,6 +82,11 @@ export default function LoteResultado() {
       const uid = await getUserId();
       if (uid) { invalidateCache(`minharotina:${uid}`); invalidateCache(`lotehoje:${uid}`); }
       setFotos(await fotosDoLote(l).catch(() => ({})));
+      const ids = (l.resultado?.faltam ?? []).map((f) => f.produto?.id).filter((x): x is string => !!x);
+      if (ids.length) {
+        const c = await getCutoutsByProductId(ids).catch(() => ({} as Record<string, { url: string }>));
+        setRecortes(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v.url])));
+      }
     })();
   }, [id]);
 
@@ -108,9 +119,13 @@ export default function LoteResultado() {
     });
     r.faltam.filter((f) => f.periodo === per).forEach((f) => {
       const tipo = tipoPorTexto(f.passo_ideal);
+      // Motor novo: o passo vem com o produto do catálogo ("Quero comprar" na estante).
+      const sug = f.produto ?? null;
       const novo: Passo = {
-        miss: true, kicker: `Para completar · ${tipo ? ROTULO_TIPO[tipo] : 'Passo'}`, title: f.passo_ideal, text: f.por_que,
-        note: null, dias: null, low: false, indice: null, tipo,
+        miss: true, kicker: t('Para completar · {{tipo}}', { tipo: tipo ? t(ROTULO_TIPO[tipo]) : t('Passo') }),
+        title: sug ? [sug.marca, sug.nome].filter(Boolean).join(' · ') : f.passo_ideal,
+        text: sug ? f.passo_ideal : f.por_que,
+        note: null, dias: null, low: false, indice: null, tipo, sugeridoId: sug?.id ?? null,
       };
       const k = tipo === null ? -1 : lista.findIndex((x) => x.tipo !== null && ORDEM[x.tipo] > ORDEM[tipo]);
       if (k < 0) lista.push(novo); else lista.splice(k, 0, novo);
@@ -132,8 +147,8 @@ export default function LoteResultado() {
       out.push({
         indice: f.produto_indice,
         brand: naoId ? '' : (p?.marca ?? ''),
-        name: naoId ? `Produto ${f.produto_indice}` : (p?.nome || nomeProduto(p)),
-        chip: naoId ? 'Não identificado' : p?.veredito === 'evitaria' ? 'Não indicado pra você' : null,
+        name: naoId ? t('Produto {{n}}', { n: f.produto_indice }) : (p?.nome || nomeProduto(p)),
+        chip: naoId ? t('Não identificado') : p?.veredito === 'evitaria' ? t('Não indicado pra você') : null,
         chipBg: naoId ? '#F1ECEF' : '#FDE8E8',
         chipInk: naoId ? SOFT : '#B3261E',
         why: naoId ? NAO_IDENTIFICADO : (f.motivo || p?.motivo || ''),
@@ -141,7 +156,7 @@ export default function LoteResultado() {
       });
     });
     (r.produtos ?? []).filter((p) => !p.identificado && !vistos.has(p.indice)).forEach((p) => {
-      out.push({ indice: p.indice, brand: '', name: `Produto ${p.indice}`, chip: 'Não identificado', chipBg: '#F1ECEF', chipInk: SOFT, why: NAO_IDENTIFICADO, low: false });
+      out.push({ indice: p.indice, brand: '', name: t('Produto {{n}}', { n: p.indice }), chip: t('Não identificado'), chipBg: '#F1ECEF', chipInk: SOFT, why: NAO_IDENTIFICADO, low: false });
     });
     return out;
   }, [r, porIndice]);
@@ -152,7 +167,7 @@ export default function LoteResultado() {
     return (
       <View style={{ flex: 1, backgroundColor: '#F9F3F6', alignItems: 'center', justifyContent: 'center' }}>
         {lote && !r
-          ? <Text style={{ fontSize: 16, color: SOFT }}>Essa rotina ainda não está pronta.</Text>
+          ? <Text style={{ fontSize: 16, color: SOFT }}>{t('Essa rotina ainda não está pronta.')}</Text>
           : <ActivityIndicator color={PINK} />}
       </View>
     );
@@ -172,11 +187,11 @@ export default function LoteResultado() {
       <ScrollView contentContainerStyle={{ paddingTop: 54, paddingBottom: 124 }} showsVerticalScrollIndicator={false}>
         <View style={{ height: 44 }} />
         <View style={{ marginTop: 12, paddingHorizontal: 20, gap: 6 }}>
-          <Text style={st.titulo}>{totalNaRotina ? 'Sua rotina está pronta' : 'Não deu para montar uma rotina'}</Text>
+          <Text style={st.titulo}>{totalNaRotina ? t('Sua rotina está pronta') : t('Não deu para montar uma rotina')}</Text>
           <Text style={st.sub}>
             {totalNaRotina
-              ? `Montei com ${totalNaRotina} dos seus ${total} produtos. Ela já é a sua rotina, e você pode mudar quando quiser.`
-              : 'Nenhum dos produtos serviu para a sua pele agora, então sua rotina continua como estava. Veja o motivo de cada um abaixo.'}
+              ? t('Montei com {{usados}} dos seus {{total}} produtos. Ela já é a sua rotina, e você pode mudar quando quiser.', { usados: totalNaRotina, total })
+              : t('Nenhum dos produtos serviu para a sua pele agora, então sua rotina continua como estava. Veja o motivo de cada um abaixo.')}
           </Text>
         </View>
 
@@ -186,20 +201,22 @@ export default function LoteResultado() {
             const on = per === p;
             return (
               <TouchableOpacity key={p} activeOpacity={0.85} onPress={() => { haptics.select(); setPer(p); }} style={[st.segBtn, on && segOn]}>
-                <Text style={[st.segTxt, on ? { fontWeight: '600', color: INK } : { fontWeight: '500', color: SOFT }]}>{p === 'am' ? 'Manhã' : 'Noite'}</Text>
+                <Text style={[st.segTxt, on ? { fontWeight: '600', color: INK } : { fontWeight: '500', color: SOFT }]}>{p === 'am' ? t('Manhã') : t('Noite')}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
         <View style={{ marginTop: 26, paddingHorizontal: 18, gap: 3 }}>
-          <Text style={st.secao}>{`${per === 'am' ? 'Manhã' : 'Noite'} · ${passos.length} ${passos.length === 1 ? 'passo' : 'passos'}`}</Text>
+          <Text style={st.secao}>{passos.length === 1
+            ? t('{{periodo}} · 1 passo', { periodo: per === 'am' ? t('Manhã') : t('Noite') })
+            : t('{{periodo}} · {{n}} passos', { periodo: per === 'am' ? t('Manhã') : t('Noite'), n: passos.length })}</Text>
           <Text style={st.secaoSub}>
             {nm === 0
-              ? (nh ? 'Todos os passos com os seus produtos.' : 'Nenhum passo neste período.')
+              ? (nh ? t('Todos os passos com os seus produtos.') : t('Nenhum passo neste período.'))
               : nh === 0
-                ? `${nm} ${nm === 1 ? 'sugestão' : 'sugestões'} pra chegar na sua rotina ideal.`
-                : `${nh} com seus produtos e ${nm} ${nm === 1 ? 'sugestão' : 'sugestões'} pra chegar na sua rotina ideal.`}
+                ? (nm === 1 ? t('1 sugestão pra chegar na sua rotina ideal.') : t('{{nm}} sugestões pra chegar na sua rotina ideal.', { nm }))
+                : (nm === 1 ? t('{{nh}} com seus produtos e 1 sugestão pra chegar na sua rotina ideal.', { nh }) : t('{{nh}} com seus produtos e {{nm}} sugestões pra chegar na sua rotina ideal.', { nh, nm }))}
           </Text>
         </View>
 
@@ -221,18 +238,20 @@ export default function LoteResultado() {
                 <View style={[st.card, s.miss ? st.cardMiss : st.cardHave]}>
                   <View style={[st.tile, s.miss ? st.tileMiss : { backgroundColor: TINT[((s.indice ?? 1) - 1) % TINT.length] }]}>
                     {s.miss
-                      ? <Svg width={18} height={18} viewBox="0 0 24 24"><Path d="M12 5v14M5 12h14" fill="none" stroke={PINK_TEXT} strokeWidth={2.2} strokeLinecap="round" /></Svg>
+                      ? (s.sugeridoId && recortes[s.sugeridoId]
+                        ? <ExpoImage source={{ uri: recortes[s.sugeridoId] }} style={{ width: 42, height: 42 }} contentFit="contain" />
+                        : <Svg width={18} height={18} viewBox="0 0 24 24"><Path d="M12 5v14M5 12h14" fill="none" stroke={PINK_TEXT} strokeWidth={2.2} strokeLinecap="round" /></Svg>)
                       : !!fotos[s.indice!] && <ExpoImage source={{ uri: fotos[s.indice!] }} style={{ width: 42, height: 42 }} contentFit="contain" />}
                   </View>
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                     <Text style={[st.kicker, { color: s.miss ? PINK_TEXT : MUTED }]}>{s.kicker}</Text>
                     <Text style={st.passoTitulo}>{s.title}</Text>
                     {!!s.text && <Text style={st.passoTexto}>{s.text}</Text>}
-                    {!!s.dias && <Text style={st.dias}>{`${s.dias.length}x por semana · ${s.dias.join(', ')}`}</Text>}
+                    {!!s.dias && <Text style={st.dias}>{t('{{n}}x por semana · {{dias}}', { n: s.dias.length, dias: s.dias.map(diaCurto).join(', ') })}</Text>}
                     {s.low && <Baixa />}
                     {!!s.note && (
                       <View style={st.nota}>
-                        <Text style={st.notaTitulo}>BOM SABER</Text>
+                        <Text style={st.notaTitulo}>{t('BOM SABER')}</Text>
                         <Text style={st.notaTexto}>{s.note}</Text>
                       </View>
                     )}
@@ -247,8 +266,8 @@ export default function LoteResultado() {
         {fora.length > 0 && (
           <>
             <View style={{ marginTop: 22, paddingHorizontal: 18, gap: 3 }}>
-              <Text style={st.secao}>Ficaram de fora</Text>
-              <Text style={st.secaoSub}>Eles continuam na sua estante.</Text>
+              <Text style={st.secao}>{t('Ficaram de fora')}</Text>
+              <Text style={st.secaoSub}>{t('Eles continuam na sua estante.')}</Text>
             </View>
             <View style={{ marginTop: 12, paddingHorizontal: 18, gap: 10 }}>
               {fora.map((o) => (
@@ -272,12 +291,12 @@ export default function LoteResultado() {
         )}
       </ScrollView>
 
-      <TouchableOpacity onPress={() => { haptics.tap(); sair(); }} activeOpacity={0.85} accessibilityLabel="Fechar" style={st.fechar}>
+      <TouchableOpacity onPress={() => { haptics.tap(); sair(); }} activeOpacity={0.85} accessibilityLabel={t('Fechar')} style={st.fechar}>
         <Svg width={14} height={14} viewBox="0 0 24 24"><Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={INK} strokeWidth={2.6} strokeLinecap="round" /></Svg>
       </TouchableOpacity>
       <LinearGradient pointerEvents="none" colors={['rgba(249,243,246,0)', '#F9F3F6']} locations={[0, 0.38]} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 124 }} />
       <TouchableOpacity onPress={() => { haptics.action(); sair(); }} activeOpacity={0.85} style={st.ir}>
-        <Text style={st.irTxt}>Ir para minha rotina</Text>
+        <Text style={st.irTxt}>{t('Ir para minha rotina')}</Text>
       </TouchableOpacity>
     </View>
     </VoltarPelaBorda>
@@ -289,7 +308,7 @@ function Baixa() {
   return (
     <View style={{ marginTop: 4, flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
       <View style={{ width: 6, height: 6, marginTop: 5, borderRadius: 3, backgroundColor: '#F0A43A' }} />
-      <Text style={{ flex: 1, fontSize: 13, lineHeight: 17, color: '#9A5300' }}>Sem a foto do rótulo, essa análise é menos exata.</Text>
+      <Text style={{ flex: 1, fontSize: 13, lineHeight: 17, color: '#9A5300' }}>{t('Não achamos a lista de ingredientes dele, então essa análise é menos exata.')}</Text>
     </View>
   );
 }

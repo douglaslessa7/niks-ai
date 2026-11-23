@@ -7,6 +7,7 @@ import { dateKey, getRoutineHistory, sessionDate, type RoutineHistory, type Rout
 import { chaveEstado, type EstadoCartas } from './cartasServidor';
 import { readCache } from './cache';
 import { peekUserId } from './currentUser';
+import { t } from './i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lembretes da rotina — notificações LOCAIS, agendadas no próprio aparelho a partir
@@ -62,17 +63,17 @@ const LEGACY_IDS = [`${ID_PREFIX}manha-antes`, `${ID_PREFIX}noite-antes`];
 export function routineReminderContent(period: RoutinePeriod, kind: Kind = 'hora', sequencia = 0) {
   if (kind === 'depois') {
     return sequencia >= 2
-      ? { title: `Sua sequência de ${sequencia} dias acaba hoje 🔥`, body: 'Faça seu skincare antes de dormir.' }
-      : { title: 'Ainda dá tempo! 🔥', body: 'Faça seu skincare antes de dormir 🌙' };
+      ? { title: t('Sua sequência de {{dias}} dias acaba hoje 🔥', { dias: sequencia }), body: t('Faça seu skincare antes de dormir.') }
+      : { title: t('Ainda dá tempo! 🔥'), body: t('Faça seu skincare antes de dormir 🌙') };
   }
   // Textos do antigo push do servidor (`send-notifications`, 7h/21h fixos — desligado
   // em out/2026), agora no horário DELA (pedido do produto).
   return period === 'am'
-    ? { title: '☀️ Bom dia!', body: 'Hora da sua rotina de skincare matinal.' }
-    : { title: '🌙 Boa noite!', body: 'Não esqueça sua rotina de skincare noturna antes de dormir.' };
+    ? { title: t('☀️ Bom dia!'), body: t('Hora da sua rotina de skincare matinal.') }
+    : { title: t('🌙 Boa noite!'), body: t('Não esqueça sua rotina de skincare noturna antes de dormir.') };
 }
 
-const LEMBRETE_CONVIDADA = { title: 'Hora do skincare!', body: 'Faça seu check-in no grupo.' };
+const LEMBRETE_CONVIDADA = { title: t('Hora do skincare!'), body: t('Faça seu check-in no grupo.') };
 
 
 type Slot = { minutes: number };

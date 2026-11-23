@@ -17,6 +17,7 @@ import { useCachedQuery, invalidateCache, peekCache, writeCache } from './cache'
 import { getUserId, useUserId } from './currentUser';
 import { chamarCartas, type CartaGanha } from './cartasServidor';
 import { supabase } from './supabase';
+import { t } from './i18n';
 import { encerrarGuia, iniciarGuia, pedirProximoDesafio } from './guia';
 import { ganhouPontos } from './pontosAnimacao';
 
@@ -185,7 +186,9 @@ export function periodoDaRotina(e: EstadoMissoes | null | undefined): { periodo:
 export function textoProgressoRotina(e: EstadoMissoes | null | undefined): string | null {
   const p = periodoDaRotina(e);
   if (!p || e?.d3) return null;
-  return `${p.com} de ${p.passos} passos da ${p.periodo === 'am' ? 'manhã' : 'noite'}`;
+  return p.periodo === 'am'
+    ? t('{{feitos}} de {{total}} passos da manhã', { feitos: p.com, total: p.passos })
+    : t('{{feitos}} de {{total}} passos da noite', { feitos: p.com, total: p.passos });
 }
 
 /**

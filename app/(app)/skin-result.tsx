@@ -9,6 +9,7 @@ import { useAppStore, ScanResult } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
 import { requestAppReview } from '../../lib/storeReview';
 import { formatPriority, formatContraindication, barrierLabel, hydrationLabel, sebaceoLabel } from '../../lib/skinReportFormat';
+import { t, emIngles, MESES_CURTOS_EN, horaEn } from '../../lib/i18n';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -30,14 +31,15 @@ const formatDate = (date: Date): string => {
   const month = months[date.getMonth()];
   const h = date.getHours().toString().padStart(2, '0');
   const m = date.getMinutes().toString().padStart(2, '0');
+  if (emIngles) return `${MESES_CURTOS_EN[date.getMonth()]} ${day} at ${horaEn(date.getHours(), date.getMinutes())}`;
   return `${day} de ${month} às ${h}:${m}`;
 };
 
 const qualidadeLabel = (n?: string): string => {
   switch (n) {
-    case 'alta': return 'Alta';
-    case 'media': return 'Média';
-    case 'baixa': return 'Baixa';
+    case 'alta': return t('Alta');
+    case 'media': return t('Média');
+    case 'baixa': return t('Baixa');
     default: return '—';
   }
 };
@@ -53,12 +55,12 @@ const qualidadeColor = (n?: string): string => {
 
 const pigmentacaoTypeLabel = (type?: string | null): string => {
   switch (type) {
-    case 'melasma': return 'Melasma';
-    case 'HPI': return 'Hiperpigmentação pós-inflamatória';
-    case 'PIE': return 'PIE vascular';
-    case 'lentigos_solares': return 'Manchas solares';
-    case 'efelides': return 'Efélides';
-    case 'misto': return 'Misto';
+    case 'melasma': return t('Melasma');
+    case 'HPI': return t('Hiperpigmentação pós-inflamatória');
+    case 'PIE': return t('PIE vascular');
+    case 'lentigos_solares': return t('Manchas solares');
+    case 'efelides': return t('Efélides');
+    case 'misto': return t('Misto');
     default: return type ?? '—';
   }
 };
@@ -66,11 +68,11 @@ const pigmentacaoTypeLabel = (type?: string | null): string => {
 const fototipoText = (ph?: string): string => {
   switch (ph) {
     case 'I':
-    case 'II': return 'Pele muito clara, alta sensibilidade ao sol';
-    case 'III': return 'Pele oliva, bronzeia com facilidade';
-    case 'IV': return 'Pele morena, risco moderado de manchas';
-    case 'V': return 'Pele escura, alto risco de hiperpigmentação pós-inflamatória';
-    case 'VI': return 'Pele muito escura, máxima atenção a manchas e retinoides';
+    case 'II': return t('Pele muito clara, alta sensibilidade ao sol');
+    case 'III': return t('Pele oliva, bronzeia com facilidade');
+    case 'IV': return t('Pele morena, risco moderado de manchas');
+    case 'V': return t('Pele escura, alto risco de hiperpigmentação pós-inflamatória');
+    case 'VI': return t('Pele muito escura, máxima atenção a manchas e retinoides');
     default: return '';
   }
 };
@@ -229,7 +231,7 @@ export default function SkinResult() {
             {/* Ring — canto inferior esquerdo */}
             <View style={{ position: 'absolute', bottom: 18, left: 16, alignItems: 'center' }}>
               <Text style={{ fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 2, marginBottom: 5, textAlign: 'center' }}>
-                SKIN SCORE
+                {t('SKIN SCORE')}
               </Text>
               <View style={{ width: 86, height: 86 }}>
                 <Svg width={86} height={86}>
@@ -293,7 +295,7 @@ export default function SkinResult() {
             <ChevronLeft size={24} color="#FFFFFF" strokeWidth={2} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>Relatório de Pele</Text>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>{t('Relatório de Pele')}</Text>
             <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>{formatDate(today)}</Text>
           </View>
           <View style={{ width: 32 }} />
@@ -324,7 +326,7 @@ export default function SkinResult() {
             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 20 }}>
               {result.qualidade_foto ? (
                 <Text style={{ fontSize: 12, color: '#999' }}>
-                  Qualidade{' '}
+                  {t('Qualidade')}{' '}
                   <Text style={{ color: qualidadeColor(result.qualidade_foto.nivel), fontWeight: '600' }}>
                     · {qualidadeLabel(result.qualidade_foto.nivel)}
                   </Text>
@@ -332,7 +334,7 @@ export default function SkinResult() {
               ) : null}
               {result.confianca_analise ? (
                 <Text style={{ fontSize: 12, color: '#999' }}>
-                  Precisão{' '}
+                  {t('Precisão')}{' '}
                   <Text style={{ fontWeight: '600', color: '#1A1A1A' }}>
                     · {result.confianca_analise.score}%
                   </Text>
@@ -347,16 +349,16 @@ export default function SkinResult() {
           const ga = result.concerns_alignment!;
           const borderColor = ga.alinhamento === 'confirmado' ? '#10B981' : ga.alinhamento === 'parcial' ? '#F59E0B' : '#E8754A';
           const badgeStyle = ga.alinhamento === 'confirmado'
-            ? { bg: '#ECFDF5', color: '#065F46', text: '✓ Confirmado pela análise' }
+            ? { bg: '#ECFDF5', color: '#065F46', text: t('✓ Confirmado pela análise') }
             : ga.alinhamento === 'parcial'
-            ? { bg: '#FFFBEB', color: '#92400E', text: '~ Parcialmente confirmado' }
-            : { bg: '#FFF5F4', color: '#991B1B', text: '⚠ A análise sugere outra prioridade' };
+            ? { bg: '#FFFBEB', color: '#92400E', text: t('~ Parcialmente confirmado') }
+            : { bg: '#FFF5F4', color: '#991B1B', text: t('⚠ A análise sugere outra prioridade') };
           return (
             <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, marginHorizontal: 20, marginBottom: 12, marginTop: 24, padding: 20 }}>
               <View style={{ width: 3, position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: borderColor, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }} />
               <View style={{ paddingLeft: 16 }}>
                 <Text style={{ fontSize: 11, fontWeight: '600', color: '#999', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' }}>
-                  Suas preocupações
+                  {t('Suas preocupações')}
                 </Text>
                 <View style={{ backgroundColor: badgeStyle.bg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start', marginBottom: 12 }}>
                   <Text style={{ fontSize: 11, fontWeight: '600', color: badgeStyle.color }}>
@@ -375,18 +377,19 @@ export default function SkinResult() {
         {/* ── 4. Análise por Região ─────────────────────────────────── */}
         <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginBottom: 32 }}>
           <Text style={{ fontSize: 24, fontWeight: '800', color: '#FF9D9D', marginBottom: 16 }}>
-            Análise por Região
+            {t('Análise por Região')}
           </Text>
 
           {regions.length === 0 ? (
             <Text style={{ fontSize: 15, color: '#8A8A8E', lineHeight: 22 }}>
-              Nenhuma área de atenção identificada — pele com aparência uniforme.
+              {t('Nenhuma área de atenção identificada — pele com aparência uniforme.')}
             </Text>
           ) : (
             regions.map((region, i) => {
-              const displayIssues = region.issues.map((iss, idx) =>
-                idx === 0 ? iss.charAt(0).toUpperCase() + iss.slice(1) : iss
-              ).join(', ');
+              const displayIssues = region.issues.map((iss0, idx) => {
+                const iss = t(iss0);
+                return idx === 0 ? iss.charAt(0).toUpperCase() + iss.slice(1) : iss;
+              }).join(', ');
               const cropOffset = regionCropOffset[region.zone] ?? 80;
 
               return (
@@ -422,7 +425,7 @@ export default function SkinResult() {
                             marginRight: 8,
                           }}
                         >
-                          {region.zone}
+                          {t(region.zone)}
                         </Text>
                         {region.issues.length > 0 ? (
                           <View
@@ -434,7 +437,7 @@ export default function SkinResult() {
                             }}
                           >
                             <Text style={{ fontSize: 11, color: 'white', fontWeight: '600' }}>
-                              {region.issues[0]}
+                              {t(region.issues[0])}
                             </Text>
                           </View>
                         ) : null}
@@ -484,7 +487,7 @@ export default function SkinResult() {
                 marginBottom: 12,
               }}
             >
-              Pigmentação
+              {t('Pigmentação')}
             </Text>
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#1A1A1A', marginBottom: 10 }}>
               {pigmentacaoTypeLabel(pig.type)}
@@ -514,7 +517,7 @@ export default function SkinResult() {
         {result.action_recommendations?.length ? (
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 20, marginBottom: 12, padding: 20 }}>
             <Text style={{ fontSize: 24, fontWeight: '800', color: '#FF9D9D', marginBottom: 16, marginTop: 0 }}>
-              O que fazer pela sua pele
+              {t('O que fazer pela sua pele')}
             </Text>
             {result.action_recommendations.map((rec, i) => (
               <View key={i}>
@@ -540,7 +543,7 @@ export default function SkinResult() {
         {/* ── 5. Condição Geral — grid 2x2 ─────────────────────────── */}
         <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 28, marginTop: 12, marginBottom: 12 }}>
           <Text style={{ fontSize: 24, fontWeight: '800', color: '#FF9D9D', marginBottom: 16 }}>
-            Condição Geral
+            {t('Condição Geral')}
           </Text>
           <View
             style={{
@@ -570,7 +573,7 @@ export default function SkinResult() {
                     marginBottom: 6,
                   }}
                 >
-                  Barreira
+                  {t('Barreira')}
                 </Text>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
                   {barrierLabel(result.barrier_status)}
@@ -593,7 +596,7 @@ export default function SkinResult() {
                     marginBottom: 6,
                   }}
                 >
-                  Hidratação
+                  {t('Hidratação')}
                 </Text>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
                   {hydrationLabel(result.skin_hydration)}
@@ -619,7 +622,7 @@ export default function SkinResult() {
                     marginBottom: 6,
                   }}
                 >
-                  Oleosidade
+                  {t('Oleosidade')}
                 </Text>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
                   {sebaceoLabel(result.brilho_sebaceo?.intensity)}
@@ -635,7 +638,7 @@ export default function SkinResult() {
                     marginBottom: 6,
                   }}
                 >
-                  Fotótipo
+                  {t('Fotótipo')}
                 </Text>
                 <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1A1A' }}>
                   {result.skin_phototype ? `Fitzpatrick ${result.skin_phototype}` : '—'}
@@ -658,7 +661,7 @@ export default function SkinResult() {
             }}
           >
             <Text style={{ fontSize: 20, fontWeight: '800', color: 'white' }}>
-              Por onde começar
+              {t('Por onde começar')}
             </Text>
 
             <Text
@@ -726,7 +729,7 @@ export default function SkinResult() {
                     marginBottom: 12,
                   }}
                 >
-                  Pontos de Atenção
+                  {t('Pontos de Atenção')}
                 </Text>
                 {pontosFracosArr.map((item, i) => (
                   <View key={i}>
@@ -759,7 +762,7 @@ export default function SkinResult() {
                     marginBottom: 12,
                   }}
                 >
-                  Pontos Fortes da Pele
+                  {t('Pontos Fortes da Pele')}
                 </Text>
                 <ScrollView
                   horizontal
@@ -811,7 +814,7 @@ export default function SkinResult() {
                     marginBottom: 12,
                   }}
                 >
-                  Pontos Positivos
+                  {t('Pontos Positivos')}
                 </Text>
                 {pontosFortesArr.map((item, i) => (
                   <View key={i}>
@@ -851,7 +854,7 @@ export default function SkinResult() {
                 marginBottom: 12,
               }}
             >
-              Evitar para sua pele
+              {t('Evitar para sua pele')}
             </Text>
             {contraindicacoesArr.map((item, i) => (
               <View key={`contra-${i}`}>
@@ -890,7 +893,7 @@ export default function SkinResult() {
                 marginBottom: 8,
               }}
             >
-              Fotótipo Detectado
+              {t('Fotótipo Detectado')}
             </Text>
             <Text style={{ fontSize: 15, fontWeight: '700', color: '#1A1A1A', lineHeight: 23 }}>
               Fitzpatrick {result.skin_phototype}
@@ -942,10 +945,10 @@ export default function SkinResult() {
             elevation: 10,
           }}>
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#1A1A1A', textAlign: 'center', marginBottom: 8 }}>
-              Atualizando sua rotina
+              {t('Atualizando sua rotina')}
             </Text>
             <Text style={{ fontSize: 15, color: '#1A1A1A', lineHeight: 23, textAlign: 'center', marginBottom: 20 }}>
-              Estamos atualizando sua rotina com base neste novo scan.
+              {t('Estamos atualizando sua rotina com base neste novo scan.')}
             </Text>
             <TouchableOpacity
               onPress={() => { haptics.tap(); setShowRoutineCard(false); }}

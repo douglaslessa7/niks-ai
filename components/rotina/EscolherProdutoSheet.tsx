@@ -41,6 +41,7 @@ import { avaliarProduto, type PeleParaAviso, type ProdutoAvaliavel } from '../..
 import { definirProdutoDoPasso, nomeDoPasso, peleParaAviso, type PassoRotina, type RefProduto } from '../../lib/minhaRotina';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { descricaoFaixa, faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../lib/faixaPreco';
 import FaixaPreco from '../product/FaixaPreco';
 
@@ -74,11 +75,11 @@ type Dados = {
 
 // Título da seção do topo, pela categoria do passo.
 const TITULO_DO_PASSO: Record<string, string> = {
-  'Limpeza': 'Limpezas pra você',
-  'Tônico': 'Tônicos pra você',
-  'Sérum': 'Séruns pra você',
-  'Hidratante': 'Hidratantes pra você',
-  'Protetor solar': 'Protetores solares pra você',
+  'Limpeza': t('Limpezas pra você'),
+  'Tônico': t('Tônicos pra você'),
+  'Sérum': t('Séruns pra você'),
+  'Hidratante': t('Hidratantes pra você'),
+  'Protetor solar': t('Protetores solares pra você'),
 };
 
 // Abrir a folha na hora (12/nov/2026, pedido do produto: "demora e não é agradável"): a parte
@@ -337,7 +338,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
           console.warn('[escolher produto] falhou:', e);
           haptics.error();
           onFalhou?.();
-          Alert.alert('Não deu pra salvar no passo', 'Tente de novo em instantes.');
+          Alert.alert(t('Não deu pra salvar no passo'), t('Tente de novo em instantes.'));
         }
         return;
       }
@@ -351,16 +352,16 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
       } catch (e) {
         console.warn('[escolher produto] falhou:', e);
         haptics.error();
-        Alert.alert('Não deu pra salvar no passo', 'Tente de novo em instantes.');
+        Alert.alert(t('Não deu pra salvar no passo'), t('Tente de novo em instantes.'));
       } finally {
         setSalvando(false);
       }
     };
     if (aviso.nivel === 'forte') {
       haptics.warning();
-      Alert.alert('Atenção', aviso.texto ?? 'Esse produto pede cuidado na sua pele.', [
-        { text: 'Escolher outro', style: 'cancel' },
-        { text: 'Usar mesmo assim', style: 'destructive', onPress: () => { void salvar(); } },
+      Alert.alert(t('Atenção'), aviso.texto ? t(aviso.texto) : t('Esse produto pede cuidado na sua pele.'), [
+        { text: t('Escolher outro'), style: 'cancel' },
+        { text: t('Usar mesmo assim'), style: 'destructive', onPress: () => { void salvar(); } },
       ]);
       return;
     }
@@ -397,11 +398,11 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
   // Filtros de categoria em cima de uma fileira (só com 2+ categorias presentes).
   const filtros = (lista: string[], atualCat: string, setAtual: (t: string) => void) => (lista.length > 2 ? (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, marginHorizontal: -20, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 6 }}>
-      {lista.map((t) => {
-        const on = t === atualCat;
+      {lista.map((c) => {
+        const on = c === atualCat;
         return (
-          <TouchableOpacity key={t} activeOpacity={0.85} onPress={() => { haptics.select(); setAtual(t); }} style={[s.chip, on ? s.chipOn : s.chipOff]}>
-            <Text style={[s.chipTxt, { fontWeight: on ? '600' : '500', color: on ? INK : SOFT }]}>{t}</Text>
+          <TouchableOpacity key={c} activeOpacity={0.85} onPress={() => { haptics.select(); setAtual(c); }} style={[s.chip, on ? s.chipOn : s.chipOff]}>
+            <Text style={[s.chipTxt, { fontWeight: on ? '600' : '500', color: on ? INK : SOFT }]}>{t(c)}</Text>
           </TouchableOpacity>
         );
       })}
@@ -410,20 +411,20 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
   const cabecalho = (titulo: string, lista: 'estante' | 'escaneados' | 'recomendados', top: number) => (
     <View style={[s.secRow, { marginTop: top }]}>
       <Text style={[s.secTitle, { marginTop: 0 }]}>{titulo}</Text>
-      <TouchableOpacity onPress={() => verTodos(lista)} hitSlop={10} accessibilityLabel={`Ver todos: ${titulo}`}>
-        <Text style={s.verTodos}>Ver todos</Text>
+      <TouchableOpacity onPress={() => verTodos(lista)} hitSlop={10} accessibilityLabel={t('Ver todos: {{titulo}}', { titulo })}>
+        <Text style={s.verTodos}>{t('Ver todos')}</Text>
       </TouchableOpacity>
     </View>
   );
   const card = (c: Candidato) => {
     const on = c.key === atualKey;
     return (
-      <TouchableOpacity key={c.key} activeOpacity={0.85} onPress={() => escolher(c)} style={{ width: CARD, gap: 6 }} accessibilityLabel={`Usar ${c.nome ?? 'produto'} neste passo${c.faixa ? `. ${descricaoFaixa(c.faixa)}` : ''}`}>
+      <TouchableOpacity key={c.key} activeOpacity={0.85} onPress={() => escolher(c)} style={{ width: CARD, gap: 6 }} accessibilityLabel={`${t('Usar {{nome}} neste passo', { nome: c.nome ?? t('produto') })}${c.faixa ? `. ${descricaoFaixa(c.faixa)}` : ''}`}>
         <View style={[s.cardImg, { height: CARD }, on && s.cardOn]}>
           {c.img
             ? <ExpoImage source={{ uri: c.img }} cachePolicy="memory-disk" style={{ width: CARD - 18, height: CARD - 18 }} contentFit={c.cut ? 'contain' : 'cover'} />
             : <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#F3ECEF' }} />}
-          <TouchableOpacity onPress={() => { haptics.tap(); setDetalhe(c); }} hitSlop={8} style={s.info} accessibilityLabel={`Detalhes de ${c.nome ?? 'produto'}`}>
+          <TouchableOpacity onPress={() => { haptics.tap(); setDetalhe(c); }} hitSlop={8} style={s.info} accessibilityLabel={t('Detalhes de {{nome}}', { nome: c.nome ?? t('produto') })}>
             <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={SOFT} strokeWidth={2.4} strokeLinecap="round"><Path d="M12 11v6M12 7.5v.01" /></Svg>
           </TouchableOpacity>
           {c.faixa && <FaixaPreco faixa={c.faixa} />}
@@ -433,8 +434,8 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
             </View>
           )}
         </View>
-        <Text style={s.cardNome} numberOfLines={2}>{c.nome || 'Produto'}</Text>
-        {c.compat != null && <Text style={s.cardCompat}>{`${c.compat}% compatível`}</Text>}
+        <Text style={s.cardNome} numberOfLines={2}>{c.nome || t('Produto')}</Text>
+        {c.compat != null && <Text style={s.cardCompat}>{t('{{compat}}% compatível', { compat: c.compat })}</Text>}
       </TouchableOpacity>
     );
   };
@@ -459,15 +460,15 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
         <View style={s.handle} />
         <View style={s.head}>
           {detalhe ? (
-            <TouchableOpacity onPress={() => { haptics.tap(); setDetalhe(null); }} hitSlop={10} style={s.headBtn} accessibilityLabel="Voltar">
+            <TouchableOpacity onPress={() => { haptics.tap(); setDetalhe(null); }} hitSlop={10} style={s.headBtn} accessibilityLabel={t('Voltar')}>
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><Path d="M15 6l-6 6 6 6" /></Svg>
             </TouchableOpacity>
           ) : <View style={s.headBtn} />}
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={s.title}>{detalhe ? 'Detalhes do produto' : 'Escolher produto'}</Text>
+            <Text style={s.title}>{detalhe ? t('Detalhes do produto') : t('Escolher produto')}</Text>
             {!!atual && <Text style={s.subtitle} numberOfLines={1}>{nomeDoPasso(atual)}</Text>}
           </View>
-          <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={10} style={s.headBtn} accessibilityLabel="Fechar">
+          <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={10} style={s.headBtn} accessibilityLabel={t('Fechar')}>
             <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
           </TouchableOpacity>
         </View>
@@ -479,13 +480,13 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
               {detalhe.img ? <ExpoImage source={{ uri: detalhe.img }} style={{ width: 150, height: 170 }} contentFit={detalhe.cut ? 'contain' : 'cover'} /> : null}
             </View>
             {!!detalhe.marca && <Text style={s.detMarca}>{detalhe.marca}</Text>}
-            <Text style={s.detNome}>{detalhe.nome || 'Produto'}</Text>
+            <Text style={s.detNome}>{detalhe.nome || t('Produto')}</Text>
             {/* Faixa de preço: só recomendados do catálogo (escaneados e estante não têm `faixa`) */}
             {!!detalhe.faixa && <FaixaPreco faixa={detalhe.faixa} linha style={{ marginTop: 10 }} />}
-            {detalhe.compat != null && <Text style={[s.cardCompat, { marginTop: 8, fontSize: 14 }]}>{`${detalhe.compat}% compatível com sua pele`}</Text>}
+            {detalhe.compat != null && <Text style={[s.cardCompat, { marginTop: 8, fontSize: 14 }]}>{t('{{compat}}% compatível com sua pele', { compat: detalhe.compat })}</Text>}
             {!!aviso && aviso.nivel !== 'nenhum' && (
               <View style={[s.aviso, aviso.nivel === 'forte' ? s.avisoForte : s.avisoLeve]}>
-                <Text style={[s.avisoTxt, { color: aviso.nivel === 'forte' ? '#B42318' : PINK_DEEP }]}>{aviso.texto}</Text>
+                <Text style={[s.avisoTxt, { color: aviso.nivel === 'forte' ? '#B42318' : PINK_DEEP }]}>{aviso.texto ? t(aviso.texto) : aviso.texto}</Text>
               </View>
             )}
             {!!detalhe.texto && <Text style={s.detTexto}>{detalhe.texto}</Text>}
@@ -494,22 +495,22 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={PINK} /></View>
         ) : estado === 'erro' ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-            <Text style={{ fontSize: 15, color: SOFT }}>Não deu pra carregar seus produtos agora.</Text>
-            <TouchableOpacity onPress={() => { haptics.tap(); recarregar(); }} style={s.retry}><Text style={{ fontSize: 15, fontWeight: '600', color: INK }}>Tentar de novo</Text></TouchableOpacity>
+            <Text style={{ fontSize: 15, color: SOFT }}>{t('Não deu pra carregar seus produtos agora.')}</Text>
+            <TouchableOpacity onPress={() => { haptics.tap(); recarregar(); }} style={s.retry}><Text style={{ fontSize: 15, fontWeight: '600', color: INK }}>{t('Tentar de novo')}</Text></TouchableOpacity>
           </View>
         ) : (
           <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
             {dicaGuia && (
               <Reanimated.View entering={FadeIn.duration(220).delay(200)} style={s.dica} accessibilityLiveRegion="polite">
-                <Text style={s.dicaTxt}>Escolha da sua estante, dos recomendados ou escaneie o seu.</Text>
+                <Text style={s.dicaTxt}>{t('Escolha da sua estante, dos recomendados ou escaneie o seu.')}</Text>
               </Reanimated.View>
             )}
             {/* Recomendados SÓ do tipo do passo (ex.: protetores solares) — primeira seção,
                 sem filtros e sem "Ver todos" (a lista é curta). */}
             {(dados?.doPasso.length ?? 0) > 0 && (
               <>
-                <Text style={s.secTitle}>{(dados!.catPasso && TITULO_DO_PASSO[dados!.catPasso]) || 'Recomendados pra este passo'}</Text>
-                <Text style={s.secSub}>Os que a NIKS recomenda pra sua pele.</Text>
+                <Text style={s.secTitle}>{(dados!.catPasso && TITULO_DO_PASSO[dados!.catPasso]) || t('Recomendados pra este passo')}</Text>
+                <Text style={s.secSub}>{t('Os que a NIKS recomenda pra sua pele.')}</Text>
                 {fileira(dados!.doPasso)}
               </>
             )}
@@ -517,12 +518,12 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
             {/* Da sua estante — filtros em cima da fileira */}
             {(dados?.estante.length ?? 0) === 0 ? (
               <>
-                <Text style={[s.secTitle, (dados?.doPasso.length ?? 0) > 0 && { marginTop: 26 }]}>Da sua estante</Text>
-                <Text style={s.vazio}>Sua estante está vazia. Escaneie um produto que você tem em casa.</Text>
+                <Text style={[s.secTitle, (dados?.doPasso.length ?? 0) > 0 && { marginTop: 26 }]}>{t('Da sua estante')}</Text>
+                <Text style={s.vazio}>{t('Sua estante está vazia. Escaneie um produto que você tem em casa.')}</Text>
               </>
             ) : (
               <>
-                {cabecalho('Da sua estante', 'estante', (dados?.doPasso.length ?? 0) > 0 ? 26 : 8)}
+                {cabecalho(t('Da sua estante'), 'estante', (dados?.doPasso.length ?? 0) > 0 ? 26 : 8)}
                 {filtros(tags, cat, setCat)}
                 {fileira(estanteFiltrada)}
               </>
@@ -531,7 +532,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
             {/* Seus escaneados */}
             {(dados?.escaneados.length ?? 0) > 0 && (
               <>
-                {cabecalho('Seus escaneados', 'escaneados', 26)}
+                {cabecalho(t('Seus escaneados'), 'escaneados', 26)}
                 {fileira(dados!.escaneados)}
               </>
             )}
@@ -539,7 +540,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
             {/* Recomendados pra você */}
             {(dados?.recomendados.length ?? 0) > 0 && (
               <>
-                {cabecalho('Recomendados pra você', 'recomendados', 26)}
+                {cabecalho(t('Recomendados pra você'), 'recomendados', 26)}
                 {filtros(tagsRec, catRec, setCatRec)}
                 {fileira(recFiltrados)}
               </>
@@ -551,14 +552,14 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
         <View style={[s.footer, { paddingBottom: Math.max(insets.bottom, 16) }]} pointerEvents="box-none">
           {detalhe ? (
             <TouchableOpacity activeOpacity={0.85} disabled={salvando} onPress={() => escolher(detalhe)} style={[s.bigBtn, salvando && { opacity: 0.6 }]}>
-              <Text style={s.bigBtnTxt}>Usar neste passo</Text>
+              <Text style={s.bigBtnTxt}>{t('Usar neste passo')}</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity activeOpacity={0.85} onPress={escanear} style={s.scanBtn} accessibilityLabel="Escanear produto">
+            <TouchableOpacity activeOpacity={0.85} onPress={escanear} style={s.scanBtn} accessibilityLabel={t('Escanear produto')}>
               <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={PINK_TEXT} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M15.5 4H18a2 2 0 0 1 2 2v2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5M8.5 20H6a2 2 0 0 1-2-2v-2.5" />
               </Svg>
-              <Text style={[s.bigBtnTxt, { color: PINK_TEXT }]}>Escanear produto</Text>
+              <Text style={[s.bigBtnTxt, { color: PINK_TEXT }]}>{t('Escanear produto')}</Text>
             </TouchableOpacity>
           )}
         </View>

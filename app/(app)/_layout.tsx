@@ -24,12 +24,14 @@ import AvisoCadeado from '../../components/trava/AvisoCadeado';
 import { Lock } from 'lucide-react-native';
 import { vincularAssinatura } from '../../lib/assinaturaServidor';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
+import { assinaturaDeOutraConta, decidirSemAssinatura } from '../../lib/onboardingObrigatorio';
 import { useAppStore } from '../../store/onboarding';
 import NameCapture from '../../components/onboarding/NameCapture';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { isNativePresentationOpen, waitForNativePresentationToClose } from '../../lib/nativePresentation';
 import { useCoachStageReady } from '../../lib/coachMarks';
 import { preaquecerApp } from '../../lib/preaquecer';
+import { gravarIdiomaNaConta } from '../../lib/idiomaConta';
 import { getUserId } from '../../lib/currentUser';
 import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
@@ -41,6 +43,7 @@ import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
 import AlvoGuia from '../../components/coach/AlvoGuia';
 import { useGuia } from '../../lib/guia';
 import { comecarDesafios } from '../../lib/missoes';
+import { t } from '../../lib/i18n';
 import TutorialOverlay, { PreaquecerVeu } from '../../components/coach/TutorialOverlay';
 import {
   avancarTutorialGrupos, registrarParada, retomarTutorialGrupos, saiuDaTelaDoTutorialGrupos, useEtapaTutorialGrupos,
@@ -231,7 +234,7 @@ function GlobalBottomBar() {
               activeOpacity={0.85}
               onPress={() => { haptics.tap(); irPara('/home'); }}
               style={styles.homeToque}
-              accessibilityLabel="Início"
+              accessibilityLabel={t('Início')}
             >
               <HouseGlyph color={homeActive ? activeColor : inactiveColor} active={homeActive} />
             </TouchableOpacity>
@@ -271,7 +274,7 @@ function GlobalBottomBar() {
           activeOpacity={0.85}
           onPress={() => { haptics.tap(); irPara('/home'); }}
           style={[styles.homeBtn, { backgroundColor: surface }]}
-          accessibilityLabel="Início"
+          accessibilityLabel={t('Início')}
         >
           <HouseGlyph color={homeActive ? activeColor : inactiveColor} active={homeActive} />
         </TouchableOpacity>
@@ -315,6 +318,7 @@ export default function AppLayout() {
   useEffect(() => {
     const t = setTimeout(() => {
       void preaquecerApp();
+      void gravarIdiomaNaConta();
     }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -378,7 +382,10 @@ export default function AppLayout() {
       // Guard de assinatura — fail closed: resposta negativa ou nenhuma confirmação vai para o
       // paywall. Se o RevenueCat falhar ou não responder, `confirmPremium` confere no Superwall
       // e no servidor antes de negar.
-      if (!(await confirmPremium({ label: 'portao' }))) {
+      // 1.64: premium só pelo aparelho (Apple ID com a assinatura de OUTRA conta, servidor diz
+      // que esta não assina, sem onboarding) segue a regra de quem não assina.
+      const premium = await confirmPremium({ label: 'portao' }) && !(await assinaturaDeOutraConta(session.user.id));
+      if (!premium) {
         // Parte B: convidada abre sempre no grupo; sem resposta e sem histórico, paywall.
         const estado = await carregarAcesso(session.user.id);
         if (estado === 'convidada') {
@@ -388,7 +395,10 @@ export default function AppLayout() {
           if (grupos?.[0]) abrirComTrilha(['/grupos', { pathname: '/grupo', params: { id: grupos[0].id } }]);
           return;
         }
-        router.replace(await convidadaLigada() ? '/(onboarding)/sem-grupo' as any : '/(onboarding)/paywall-soft');
+        // 1.64: "sem grupo" só para quem foi convidada de verdade; sem onboarding → tela rosa e
+        // onboarding completo, já logada (também ao reabrir o app no meio dele); o resto, paywall.
+        // Até a 1.63 toda conta sem assinatura ia a "sem grupo" com o modo convidada ligado.
+        await decidirSemAssinatura(session.user, router, 'abertura');
         return;
       }
       definirAcesso('assinante', session.user.id);
@@ -416,7 +426,12 @@ export default function AppLayout() {
       void (async () => {
         if (!(await convidadaLigada())) return;
         const uid = await getUserId();
-        if (uid && (await reconferirAcesso(uid)) === 'sem_acesso') router.replace('/(onboarding)/sem-grupo' as any);
+        if (!uid) return;
+        const eraConvidada = useAcesso.getState().estado === 'convidada';
+        if ((await reconferirAcesso(uid)) !== 'sem_acesso') return;
+        // 1.64: perdeu o acesso → "sem grupo" só se era convidada; senão onboarding ou paywall.
+        const { data: { session: s } } = await supabase.auth.getSession();
+        await decidirSemAssinatura(s?.user ?? { id: uid }, router, 'reconferir', eraConvidada);
       })();
     });
     return () => sub.remove();

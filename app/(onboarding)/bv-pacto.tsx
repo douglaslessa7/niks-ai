@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import Svg, { Defs, RadialGradient, Stop, Circle } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { useObName, useOnMount } from '../../components/onboarding/kit';
 import { useAppStore } from '../../store/onboarding';
 import { selarPacto } from '../../lib/boasVindas';
@@ -120,15 +121,15 @@ export default function BvPacto() {
       <BvProgresso feitas={4} />
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(104), paddingHorizontal: 20 }}>
-        <BvEtiqueta>AGORA É COM VOCÊ</BvEtiqueta>
+        <BvEtiqueta>{t('AGORA É COM VOCÊ')}</BvEtiqueta>
         <BvTitulo style={{ marginTop: 10 }}>
-          {name ? `Eu, ${name}, vou cuidar da minha pele 2× por dia.` : 'Eu vou cuidar da minha pele 2× por dia.'}
+          {name ? t('Eu, {{name}}, vou cuidar da minha pele 2× por dia.', { name }) : t('Eu vou cuidar da minha pele 2× por dia.')}
         </BvTitulo>
         <View style={{ marginTop: 18, gap: 10 }}>
-          {[`Matinal às ${manha} · Noturna às ${noite}`, 'Nos dias corridos, 1 passo de 2 minutos'].map((t) => (
-            <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {[t('Matinal às {{manha}} · Noturna às {{noite}}', { manha, noite }), t('Nos dias corridos, 1 passo de 2 minutos')].map((linha) => (
+            <View key={linha} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <BvCheck />
-              <Text style={{ flex: 1, fontSize: 16, letterSpacing: -0.2, color: BV.dark }}>{t}</Text>
+              <Text style={{ flex: 1, fontSize: 16, letterSpacing: -0.2, color: BV.dark }}>{linha}</Text>
             </View>
           ))}
         </View>
@@ -138,7 +139,7 @@ export default function BvPacto() {
         position: 'absolute', left: 30, right: 30, top: cy + CIRCLE / 2 + 23, textAlign: 'center',
         fontSize: 17, lineHeight: 21, fontWeight: '600', color: BV.pink,
       }}>
-        {'Toque e segure\npara selar o pacto.'}
+        {t('Toque e segure\npara selar o pacto.')}
       </Text>
 
       {/* Halo (o mesmo do compromisso): radial .38 → .16 → 0. */}
@@ -168,7 +169,7 @@ export default function BvPacto() {
         position: 'absolute', left: 0, right: 0, top: cy - 69, textAlign: 'center',
         fontSize: 17, lineHeight: 22, fontWeight: '600', color: '#FFFFFF', opacity: keepHolding,
       }}>
-        Continue segurando!
+        {t('Continue segurando!')}
       </Animated.Text>
 
       <Animated.View pointerEvents="none" style={{
@@ -179,8 +180,8 @@ export default function BvPacto() {
         onPressIn={onPressIn}
         onPressOut={onPressOut}
         accessibilityRole="button"
-        accessibilityLabel="Segurar para selar o pacto"
-        accessibilityActions={[{ name: 'activate', label: 'Selar o pacto' }]}
+        accessibilityLabel={t('Segurar para selar o pacto')}
+        accessibilityActions={[{ name: 'activate', label: t('Selar o pacto') }]}
         onAccessibilityAction={(e) => { if (e.nativeEvent.actionName === 'activate') complete(); }}
         pressRetentionOffset={{ top: 2000, bottom: 2000, left: 2000, right: 2000 }}
         style={{

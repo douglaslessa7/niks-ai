@@ -7,6 +7,7 @@ import Animated, {
   withDelay, withRepeat, withSequence, withTiming, type SharedValue,
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
 import BalancedText from '../../components/BalancedText';
@@ -245,10 +246,10 @@ export default function MapaRosto() {
       <Text style={{
         position: 'absolute', left: 0, right: 0, top: y(74), textAlign: 'center',
         fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 1.4, color: OB.sub,
-      }}>SUA PELE</Text>
+      }}>{t('SUA PELE')}</Text>
 
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: y(TITULO_TOP) }, mapaStyle]}>
-        <BalancedText text="Toque nas regiões do rosto que mais te incomodam" style={[obTitleStyle, { marginHorizontal: 17 }]} />
+        <BalancedText text={t('Toque nas regiões do rosto que mais te incomodam')} style={[obTitleStyle, { marginHorizontal: 17 }]} />
       </Animated.View>
 
       {/* Brilho rosa atrás do rosto (NF 6): radial-gradient(circle) num quadrado de
@@ -291,9 +292,9 @@ export default function MapaRosto() {
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: y(430) }, focoStyle]}>
         {escolha.length > 0 && (
           <>
-            <BalancedText text={`Seu foco: ${focoNome(escolha)}.`} style={[obTitleStyle, { marginHorizontal: 17 }]} />
+            <BalancedText text={t('Seu foco: {{foco}}.', { foco: focoNome(escolha) })} style={[obTitleStyle, { marginHorizontal: 17 }]} />
             <BalancedText
-              text={`Sua rotina terá um cuidado maior ${focoSub(escolha)}.`}
+              text={t('Sua rotina terá um cuidado maior {{onde}}.', { onde: focoSub(escolha) })}
               style={[obSubtitleStyle, { marginHorizontal: 30, marginTop: 25 }]}
             />
           </>
@@ -304,7 +305,7 @@ export default function MapaRosto() {
         <ObPillButton onPress={irParaFoco} disabled={!escolha.length} />
       </Animated.View>
       <Animated.View pointerEvents={noMapa ? 'none' : 'auto'} style={[{ position: 'absolute', top: btnTop, alignSelf: 'center' }, focoStyle]}>
-        <ObPillButton label="Quero ver minha pele" width={254} onPress={handleFinal} />
+        <ObPillButton label={t('Quero ver minha pele')} width={254} onPress={handleFinal} />
       </Animated.View>
     </ObScreen>
   );

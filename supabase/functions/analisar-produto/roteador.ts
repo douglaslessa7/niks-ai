@@ -65,15 +65,52 @@ async function lerConfig(supabase: Supabase): Promise<Config> {
   return valor
 }
 
-// Parse defensivo: localiza o primeiro `{` e o último `}` para tolerar qualquer
-// preâmbulo/markdown que o modelo eventualmente adicione.
-export function extractJSON(text: string): any {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('Nenhum objeto JSON encontrado na resposta do modelo')
+// Parse defensivo: tolera preâmbulo/markdown e (18/nov/2026) MAIS DE UM objeto JSON na resposta.
+// Antes cortava do primeiro `{` ao último `}`: quando o modelo mandava um 2º objeto depois do
+// principal (ex.: `{"lista_conhecida_confere": true}` sozinho), os dois iam juntos para o
+// JSON.parse, que falhava — e a análise caía para o gpt. Agora separa cada objeto de nível de
+// cima (respeitando chaves dentro de textos), usa o 1º como resposta e completa com as chaves
+// que só os seguintes trazem.
+export function objetosJSON(text: string): any[] {
+  const out: any[] = []
+  let i = 0
+  while (i < text.length) {
+    const start = text.indexOf('{', i)
+    if (start === -1) break
+    let depth = 0, inStr = false, esc = false, end = -1
+    for (let j = start; j < text.length; j++) {
+      const c = text[j]
+      if (inStr) {
+        if (esc) esc = false
+        else if (c === '\\') esc = true
+        else if (c === '"') inStr = false
+        continue
+      }
+      if (c === '"') inStr = true
+      else if (c === '{') depth++
+      else if (c === '}') { depth--; if (depth === 0) { end = j; break } }
+    }
+    if (end === -1) break
+    try { out.push(JSON.parse(text.slice(start, end + 1))) } catch { /* pedaço que não é JSON: segue */ }
+    i = end + 1
   }
-  return JSON.parse(text.slice(start, end + 1))
+  return out
+}
+
+export function extractJSON(text: string): any {
+  const objs = objetosJSON(text).filter((o) => o && typeof o === 'object' && !Array.isArray(o))
+  if (!objs.length) {
+    // Último recurso: o comportamento antigo (primeiro `{` ao último `}`).
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start === -1 || end === -1 || end < start) {
+      throw new Error('Nenhum objeto JSON encontrado na resposta do modelo')
+    }
+    return JSON.parse(text.slice(start, end + 1))
+  }
+  const [principal, ...resto] = objs
+  for (const o of resto) for (const [k, v] of Object.entries(o)) if (!(k in principal)) principal[k] = v
+  return principal
 }
 
 // Resposta aproveitável = JSON com `status` conhecido. Qualquer outra coisa → reserva.
@@ -93,13 +130,17 @@ const TIPOS_IMAGEM = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gi
 // cortado e o uso fica estimado (a API não chega a informar os tokens).
 const LIMITE_ABANDONADA_MS = 60_000
 // Estimativa só para chamada cortada: ~3 caracteres por token e ~400 tokens por foto de 512 px.
+// Contexto da usuária: cache de 5 min (os scans dela vêm em sequência). O prompt de sistema usa o
+// TTL da config; com 1 h no sistema e 5 min aqui a ordem vale (o TTL mais longo vem antes).
+const CACHE_USUARIA = { type: 'ephemeral' as const }
+
 const estimarUso = (systemPrompt: string, texto: string, imagens: Imagem[]): Uso => ({
   ...USO_ZERO,
   input: Math.ceil((systemPrompt.length + texto.length) / 3) + imagens.length * 400,
   estimado: true,
 })
 
-async function chamarClaude(cfg: Config, apiKey: string, systemPrompt: string, texto: string, imagens: Imagem[]): Promise<{ texto: string; uso: Uso }> {
+async function chamarClaude(cfg: Config, apiKey: string, systemPrompt: string, texto: string, textoExtra: string, imagens: Imagem[]): Promise<{ texto: string; uso: Uso }> {
   const cache = cfg.cacheTtl === '1h'
     ? { type: 'ephemeral' as const, ttl: '1h' as const }
     : { type: 'ephemeral' as const }
@@ -119,7 +160,8 @@ async function chamarClaude(cfg: Config, apiKey: string, systemPrompt: string, t
         messages: [{
           role: 'user',
           content: [
-            { type: 'text', text: texto },
+            { type: 'text', text: texto, cache_control: CACHE_USUARIA },
+            ...(textoExtra ? [{ type: 'text', text: textoExtra }] : []),
             ...imagens.map((img) => ({
               type: 'image',
               source: {
@@ -148,7 +190,7 @@ async function chamarClaude(cfg: Config, apiKey: string, systemPrompt: string, t
     return { texto: saida, uso }
   } catch (e) {
     if (controller.signal.aborted) {
-      throw Object.assign(new Error('cortada_no_limite'), { uso: estimarUso(systemPrompt, texto, imagens) })
+      throw Object.assign(new Error('cortada_no_limite'), { uso: estimarUso(systemPrompt, texto + textoExtra, imagens) })
     }
     throw e
   } finally {
@@ -229,9 +271,12 @@ export async function analisar(args: {
   userId: string
   systemPrompt: string
   texto: string
+  // Parte que muda a cada pedido; vai depois da marca de cache. Ausente = ''.
+  textoExtra?: string
   imagens: Imagem[]
 }): Promise<{ result: any | null; registrarCusto: () => Promise<void> }> {
   const { supabase, userId, systemPrompt, texto, imagens } = args
+  const textoExtra = args.textoExtra ?? ''
   const cfg = await lerConfig(supabase)
   const chamadas: Chamada[] = []
   let result: any = null
@@ -248,7 +293,7 @@ export async function analisar(args: {
   for (const conta of contas) {
     const inicio = Date.now()
     // A chamada segue até o fim mesmo se pararmos de esperar por ela (custo exato).
-    const promessa = chamarClaude(cfg, conta.apiKey, systemPrompt, texto, imagens)
+    const promessa = chamarClaude(cfg, conta.apiKey, systemPrompt, texto, textoExtra, imagens)
     const chamada: Chamada = {
       provedor: 'anthropic', modelo: cfg.modelo, esforco: cfg.esforco, conta: conta.id,
       uso: promessa.then((c) => c.uso, (e) => (e as { uso?: Uso })?.uso ?? { ...USO_ZERO }),
@@ -295,7 +340,7 @@ export async function analisar(args: {
     const inicio = Date.now()
     let uso: Uso = { ...USO_ZERO }
     try {
-      const o = await chamarOpenAI(systemPrompt, texto, imagens)
+      const o = await chamarOpenAI(systemPrompt, texto + textoExtra, imagens)
       uso = o.uso
       result = extractJSON(o.texto) // como antes da troca: sem conferir o `status`
     } catch (e) {

@@ -1,11 +1,14 @@
 import { useAcesso } from '../../lib/acesso';
+import { supabase } from '../../lib/supabase';
+import { concluirComContaLogada } from '../../lib/onboardingObrigatorio';
 import { useFaceScan } from '../../hooks/useFaceScan';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, AccessibilityInfo } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { useObName, useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaRadial, BvEtiqueta, BvTitulo, BvBotao, LOGO_ROSA, useBvFrame,
@@ -26,6 +29,7 @@ import { medalhaDoNivel, NIVEL_MAXIMO } from '../../lib/niveis';
 // "Entrar no app" → cadastro (tela 9, o cadastro de sempre com o fundo da home).
 const POP = Easing.bezier(0.23, 1, 0.32, 1);
 const NIVEL_AQUI = 2;   // Bronze 2
+// `quando` aparece na tela: mostrar com t().
 const TRILHA = [
   { nivel: 2, quando: 'você' },
   { nivel: 3, quando: 'sem 1' },
@@ -37,6 +41,7 @@ const TRILHA = [
 export default function BvNivel() {
   const { startFaceScan } = useFaceScan();
   const router = useRouter();
+  const saindo = useRef(false); // toque duplo no "Entrar no app" não conclui duas vezes
   const { track } = useMixpanel();
   const name = useObName();
   const { y } = useBvFrame();
@@ -64,18 +69,18 @@ export default function BvNivel() {
         stops={[{ offset: 0, color: '#FFFFFF', opacity: 0.8 }, { offset: 1, color: '#FFFFFF', opacity: 0 }]} />
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(92), alignItems: 'center', paddingHorizontal: 20 }}>
-        <BvEtiqueta>{name ? `PARABÉNS, ${name.toUpperCase()}` : 'PARABÉNS'}</BvEtiqueta>
-        <BvTitulo center style={{ marginTop: 10 }}>Você deu o primeiro passo.</BvTitulo>
+        <BvEtiqueta>{name ? t('PARABÉNS, {{nome}}', { nome: name.toUpperCase() }) : t('PARABÉNS')}</BvEtiqueta>
+        <BvTitulo center style={{ marginTop: 10 }}>{t('Você deu o primeiro passo.')}</BvTitulo>
 
         {/* A medalha Bronze 2 (o desenho tem sombra e brilho próprios). */}
         <Animated.View style={[{ marginTop: 26, width: 190, height: 190 }, carta]}>
           <Medalha nivel={NIVEL_AQUI} tamanho={190} />
         </Animated.View>
 
-        <Text style={{ marginTop: 14, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: BV.sub }}>MEDALHA DESBLOQUEADA</Text>
-        <Text style={{ marginTop: 4, fontSize: 34, lineHeight: 38, fontWeight: '800', letterSpacing: -1.2, color: aqui.cor }}>{aqui.nome}</Text>
+        <Text style={{ marginTop: 14, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: BV.sub }}>{t('MEDALHA DESBLOQUEADA')}</Text>
+        <Text style={{ marginTop: 4, fontSize: 34, lineHeight: 38, fontWeight: '800', letterSpacing: -1.2, color: aqui.cor }}>{t(aqui.nome)}</Text>
         <Text style={{ marginTop: 4, fontSize: 15, color: BV.body }}>
-          {`Nível ${NIVEL_AQUI} de ${NIVEL_MAXIMO} · próximo: `}<Text style={{ fontWeight: '700', color: BV.ink }}>{proxima.nome}</Text>
+          {t('Nível {{nivel}} de {{total}} · próximo: ', { nivel: NIVEL_AQUI, total: NIVEL_MAXIMO })}<Text style={{ fontWeight: '700', color: BV.ink }}>{t(proxima.nome)}</Text>
         </Text>
 
         <View style={{
@@ -83,7 +88,7 @@ export default function BvNivel() {
           paddingVertical: 14, paddingHorizontal: 12,
           shadowColor: '#C0206A', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 12,
         }}>
-          <Text style={{ textAlign: 'center', fontSize: 12, fontWeight: '700', letterSpacing: 1.4, color: BV.sub }}>ATÉ ONDE VOCÊ PODE CHEGAR</Text>
+          <Text style={{ textAlign: 'center', fontSize: 12, fontWeight: '700', letterSpacing: 1.4, color: BV.sub }}>{t('ATÉ ONDE VOCÊ PODE CHEGAR')}</Text>
           <View style={{ marginTop: 14, flexDirection: 'row' }}>
             <View style={{ position: 'absolute', left: `${50 / TRILHA.length}%`, right: `${50 / TRILHA.length}%`, top: 21, height: 2, backgroundColor: 'rgba(255,94,168,0.18)' }} />
             {TRILHA.map((p, i) => {
@@ -99,8 +104,8 @@ export default function BvNivel() {
                     adjustsFontSizeToFit
                     minimumFontScale={0.75}
                     style={{ alignSelf: 'stretch', paddingHorizontal: 1, fontSize: 11, lineHeight: 13, fontWeight: '700', textAlign: 'center', color: atual ? m.cor : BV.body }}
-                  >{m.nome}</Text>
-                  <Text style={{ fontSize: 10, fontWeight: '600', color: atual ? BV.pink : BV.sub }}>{p.quando}</Text>
+                  >{t(m.nome)}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '600', color: atual ? BV.pink : BV.sub }}>{t(p.quando)}</Text>
                 </View>
               );
             })}
@@ -108,7 +113,7 @@ export default function BvNivel() {
         </View>
       </View>
 
-      <BvBotao label="Entrar no app" onPress={() => {
+      <BvBotao label={t('Entrar no app')} onPress={() => {
         track('boas_vindas_concluidas');
         if (useAcesso.getState().boasVindasEx) {
           // Ex-convidada: já tem conta. Vai direto ao scan novo; a rotina sai dele.
@@ -117,7 +122,19 @@ export default function BvNivel() {
           setTimeout(startFaceScan, 400);
           return;
         }
-        router.replace('/(onboarding)/signup');
+        // 1.64: já logada (fez o onboarding pela conta do "Entrar"): sem cadastro — a compra,
+        // o perfil, o scan e a rotina vão para a conta da sessão (`lib/onboardingObrigatorio.ts`).
+        if (saindo.current) return;
+        saindo.current = true;
+        void (async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            await concluirComContaLogada(session.user.id);
+            router.replace('/(onboarding)/loading-rotina' as any);
+            return;
+          }
+          router.replace('/(onboarding)/signup');
+        })();
       }} />
     </BvScreen>
   );

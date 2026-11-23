@@ -63,7 +63,8 @@ export function ferramentaProposta(periodoInteiro: boolean) {
 const SEM_RETINOIDE = ['pregnant', 'breastfeeding', 'trying']
 
 /** Motivo técnico → frase simples para a usuária. */
-export function motivoSimples(reason: string, period: 'am' | 'pm'): string {
+export function motivoSimples(reason: string, period: 'am' | 'pm', en = false): string {
+  if (en) return motivoSimplesEn(reason, period)
   const quando = period === 'am' ? 'da manhã' : 'da noite'
   if (reason.startsWith('protected-step') || reason.startsWith('period-missing-protected')) return 'limpeza, hidratante e protetor não podem sair da rotina'
   if (reason.startsWith('protected-replace')) return 'esse passo só pode ser trocado por outro do mesmo tipo, sem ácido ou retinoide'
@@ -77,9 +78,34 @@ export function motivoSimples(reason: string, period: 'am' | 'pm'): string {
   return 'ela não passou nas checagens de segurança'
 }
 
+// Inglês (etapa 3 da tradução, nov/2026): os mesmos motivos, para quem usa o app em inglês.
+function motivoSimplesEn(reason: string, period: 'am' | 'pm'): string {
+  const quando = period === 'am' ? 'morning' : 'evening'
+  if (reason.startsWith('protected-step') || reason.startsWith('period-missing-protected')) return "cleanser, moisturizer and sunscreen can't leave your routine"
+  if (reason.startsWith('protected-replace')) return 'this step can only be swapped for another of the same type, without acids or retinoids'
+  if (reason.startsWith('clinical-am-forbidden')) return "this active can't be used in the morning"
+  if (reason.startsWith('add-duplicate') || reason.startsWith('replace-would-duplicate') || reason.startsWith('period-duplicate')) return `your ${quando} routine already has a step with this active`
+  if (reason.startsWith('target-other-period')) return `that step isn't in your ${quando} routine`
+  if (reason.startsWith('target-')) return `I couldn't find that step in your ${quando} routine`
+  if (reason.includes('multiple-products')) return 'each step needs to be a single product'
+  if (reason.startsWith('pregnancy')) return "this active isn't recommended during pregnancy, while breastfeeding or when trying to conceive"
+  if (reason.startsWith('period-only-new-app')) return 'swapping a whole routine at once only works in the new version of the app'
+  return "it didn't pass our safety checks"
+}
+
 /** Uma linha que descreve a proposta (quando a IA chama a ferramenta sem escrever texto). */
-export function descreverProposta(raw: unknown): string {
+export function descreverProposta(raw: unknown, en = false): string {
   const pc = (raw ?? {}) as Record<string, any>
+  if (en) {
+    const when = pc.period === 'am' ? 'morning' : 'evening'
+    if (pc.action === 'replace_period' && Array.isArray(pc.steps)) {
+      return `I put together your new ${when} routine, step by step: ${pc.steps.map((x: any, i: number) => `${i + 1}. ${x.step_name}`).join(' · ')}.`
+    }
+    const it = [pc.step_name, pc.ingredient && pc.ingredient !== pc.step_name ? `(${pc.ingredient})` : ''].filter(Boolean).join(' ')
+    if (pc.action === 'remove') return `Here's what I prepared: remove ${it} from your ${when} routine.`
+    if (pc.action === 'replace') return `Here's what I prepared: swap ${pc.replaces ? `${pc.replaces} for ` : ''}${it} in your ${when} routine.`
+    return `Here's what I prepared: add ${it} to your ${when} routine.`
+  }
   const quando = pc.period === 'am' ? 'da manhã' : 'da noite'
   if (pc.action === 'replace_period' && Array.isArray(pc.steps)) {
     return `Preparei sua rotina ${quando} nova, passo a passo: ${pc.steps.map((x: any, i: number) => `${i + 1}. ${x.step_name}`).join(' · ')}.`
@@ -96,10 +122,11 @@ export type ResultadoProposta =
 
 export async function registrarProposta(
   supabase: any, userId: string, conversationId: string, raw: unknown,
-  opts: { periodoInteiro: boolean; pregnancyStatus: string | null },
+  opts: { periodoInteiro: boolean; pregnancyStatus: string | null; en?: boolean },
 ): Promise<ResultadoProposta> {
+  const en = opts.en === true // rotina em inglês (etapa 3 da tradução)
   const periodoRaw = (raw as any)?.period === 'am' ? 'am' : 'pm'
-  const validation = validateProposal(raw)
+  const validation = validateProposal(raw, en)
   if (!validation.ok) {
     logRefusal('create', validation.reason, { userId, conversationId, payload: raw })
     return { ok: false, reason: validation.reason, period: periodoRaw }
@@ -113,7 +140,7 @@ export async function registrarProposta(
   // Trava de gravidez (o mesmo critério da rotina ideal e da Minha rotina).
   if (SEM_RETINOIDE.includes(opts.pregnancyStatus ?? '') && changes.action !== 'remove') {
     const passos = changes.action === 'replace_period' ? (changes.steps ?? []) : [changes]
-    if (passos.some((p) => detectTargetActive(p.step_name, p.ingredient).label === 'retinoide')) {
+    if (passos.some((p) => detectTargetActive(p.step_name, p.ingredient, en).label === 'retinoide')) {
       logRefusal('create', 'pregnancy-retinoid', { userId, conversationId, payload: changes })
       return { ok: false, reason: 'pregnancy-retinoid', period: changes.period }
     }
@@ -128,7 +155,7 @@ export async function registrarProposta(
       .eq('user_id', userId).order('updated_at', { ascending: false }).limit(1).maybeSingle()
     atual = { rotina_am: p?.rotina_am ?? [], rotina_pm: p?.rotina_pm ?? [] }
   }
-  const ensaio = applyProposal(atual as any, changes)
+  const ensaio = applyProposal(atual as any, changes, en)
   if (!ensaio.ok) {
     logRefusal('create', ensaio.reason, { userId, conversationId, payload: changes })
     return { ok: false, reason: ensaio.reason, period: changes.period }

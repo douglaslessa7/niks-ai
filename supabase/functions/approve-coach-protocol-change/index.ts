@@ -47,6 +47,8 @@ const tratar = async (req: Request): Promise<Response> => {
       suggestion_id?: string
       approved?: boolean
     }
+    // Idioma do celular (etapa 3 da tradução): rotina em inglês → classificadores em inglês.
+    const en = (body as { idioma?: string })?.idioma === 'en'
 
     if (!suggestion_id || approved === undefined) {
       logReject('bad-request', { hasSuggestionId: !!suggestion_id, approvedType: typeof approved })
@@ -109,7 +111,7 @@ const tratar = async (req: Request): Promise<Response> => {
     }
 
     // Rule 1 — validação de schema em runtime.
-    const validation = validateProposal(rawChanges)
+    const validation = validateProposal(rawChanges, en)
     if (!validation.ok) {
       logRefusal('apply-endpoint', validation.reason, { user_id, suggestionId: suggestion_id, payload: rawChanges })
       await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
@@ -120,14 +122,14 @@ const tratar = async (req: Request): Promise<Response> => {
     // mesmas travas (applyProposal). Os demais seguem na rotina ideal, como antes.
     if (await temMinhaRotina(supabase, user_id)) {
       const antes = await lerMinhaRotina(supabase, user_id)
-      const res = applyProposal(antes as any, validation.value)
+      const res = applyProposal(antes as any, validation.value, en)
       if (!res.ok) {
         logRefusal('apply-endpoint', res.reason, { user_id, suggestionId: suggestion_id, payload: validation.value })
         await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
         return json({ success: true, action: 'not_applied', reason: res.reason }, 200)
       }
       try {
-        await gravarMudanca(supabase, user_id, antes, res.next as any, validation.value)
+        await gravarMudanca(supabase, user_id, antes, res.next as any, validation.value, en)
       } catch (e) {
         console.error('MINHA_ROTINA_WRITE_FAILED', JSON.stringify({ scope: 'apply-endpoint', user_id, suggestionId: suggestion_id, error: String((e as Error)?.message ?? e) }))
         await supabase.from('coach_protocol_suggestions').update({ status: 'approved' }).eq('id', suggestion_id)
@@ -157,6 +159,7 @@ const tratar = async (req: Request): Promise<Response> => {
     const result = applyProposal(
       { rotina_am: protocol.rotina_am ?? [], rotina_pm: protocol.rotina_pm ?? [] },
       validation.value,
+      en,
     )
     if (!result.ok) {
       logRefusal('apply-endpoint', result.reason, { user_id, suggestionId: suggestion_id, payload: validation.value })
@@ -206,7 +209,7 @@ const tratar = async (req: Request): Promise<Response> => {
 // senão, o motivo em linguagem simples. Assim a NIKS nunca precisa "dizer que alterou".
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return tratar(req)
-  const corpo = await req.clone().json().catch(() => null) as { suggestion_id?: string; approved?: boolean } | null
+  const corpo = await req.clone().json().catch(() => null) as { suggestion_id?: string; approved?: boolean; idioma?: string } | null
   const res = await tratar(req)
   if (res.status !== 200 || !corpo?.suggestion_id || corpo.approved !== true) return res
   try {
@@ -218,8 +221,15 @@ Deno.serve(async (req) => {
     const pc = (sug.proposed_changes ?? {}) as Record<string, unknown>
     const periodo: 'am' | 'pm' = pc.period === 'am' ? 'am' : 'pm'
     const quando = periodo === 'am' ? 'da manhã' : 'da noite'
+    const en = corpo.idioma === 'en' // etapa 3 da tradução: a confirmação no idioma dela
     let texto: string | null = null
-    if (dados.action === 'applied') texto = `Pronto, sua rotina ${quando} foi atualizada ✓`
+    if (en) {
+      const when = periodo === 'am' ? 'morning' : 'evening'
+      if (dados.action === 'applied') texto = `Done, your ${when} routine has been updated ✓`
+      else if (dados.action === 'not_applied') texto = `I couldn't apply this change: ${motivoSimples(String(dados.reason ?? ''), periodo, true)}. If you'd like, tell me again what you want to change.`
+      else if (dados.action === 'expired') texto = "This suggestion has expired. Tell me again what you'd like to change and I'll prepare a new one."
+    }
+    else if (dados.action === 'applied') texto = `Pronto, sua rotina ${quando} foi atualizada ✓`
     else if (dados.action === 'not_applied') texto = `Não consegui aplicar essa mudança: ${motivoSimples(String(dados.reason ?? ''), periodo)}. Se quiser, me conta de novo o que você quer mudar.`
     else if (dados.action === 'expired') texto = 'Essa sugestão expirou. Me conta de novo o que você quer mudar que eu preparo outra.'
     if (!texto) return res

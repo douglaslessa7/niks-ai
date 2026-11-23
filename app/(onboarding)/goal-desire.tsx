@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { OB_STEPS, ObChoiceScreen, ObChoice, obStep, useOnMount } from '../../components/onboarding/kit';
 import { OBJETIVOS_PELE, valorObjetivo } from '../../components/onboarding/answers';
 
@@ -14,7 +15,7 @@ import { OBJETIVOS_PELE, valorObjetivo } from '../../components/onboarding/answe
 // respondido, a rotina começa a ser gerada em segundo plano assim que o relatório do scan
 // fica pronto (`lib/onboardingPrefetch.ts`).
 const OPTIONS: ObChoice<string>[] = OBJETIVOS_PELE.map((o) => ({
-  label: o.nome, sub: o.desc, strong: true, value: valorObjetivo(o),
+  label: t(o.nome), sub: t(o.desc), strong: true, value: valorObjetivo(o),
 }));
 
 const STEP = OB_STEPS.objetivo;
@@ -29,7 +30,7 @@ export default function GoalDesire() {
 
   return (
     <ObChoiceScreen<string>
-      title="Qual a pele dos seus sonhos?"
+      title={t('Qual a pele dos seus sonhos?')}
       options={OPTIONS}
       centerOptions
       onBack={() => router.back()}

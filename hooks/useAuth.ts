@@ -12,6 +12,7 @@ import { cancelRoutineReminders } from '../lib/routineReminders'
 import { resetRevenueCatIdentity } from '../lib/subscriptionGate'
 import { useAppStore } from '../store/onboarding'
 import { limparCompraNestaSessao } from '../lib/sinalCompra'
+import { t } from '../lib/i18n'
 
 // Client ID iOS gerado no Google Cloud Console
 GoogleSignin.configure({
@@ -43,7 +44,7 @@ export function useAuth() {
       const userInfo = await GoogleSignin.signIn()
       const idToken = userInfo.data?.idToken
 
-      if (!idToken) throw new Error('Sem token do Google')
+      if (!idToken) throw new Error(t('Sem token do Google'))
 
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
@@ -51,7 +52,7 @@ export function useAuth() {
       })
 
       if (error) throw error
-      if (!data.session) throw new Error('Sessão não retornada pelo Supabase')
+      if (!data.session) throw new Error(t('Sessão não retornada pelo Supabase'))
 
       return data.session
     } catch (error) {
@@ -80,7 +81,7 @@ export function useAuth() {
         nonce: hashedNonce,
       })
 
-      if (!credential.identityToken) throw new Error('Sem identity token da Apple')
+      if (!credential.identityToken) throw new Error(t('Sem identity token da Apple'))
 
       const { data, error } = await supabase.auth.signInWithIdToken({
         provider: 'apple',
@@ -113,7 +114,7 @@ export function useAuth() {
       setLoading(true)
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      if (!data.session) throw new Error('Sessão não retornada pelo Supabase')
+      if (!data.session) throw new Error(t('Sessão não retornada pelo Supabase'))
       return data.session
     } catch (error) {
       console.error('Erro no login com e-mail:', error)
@@ -128,7 +129,7 @@ export function useAuth() {
       setLoading(true)
       const { data, error } = await supabase.auth.signUp({ email, password })
       if (error) throw error
-      if (!data.session) throw new Error('Sessão não retornada pelo Supabase')
+      if (!data.session) throw new Error(t('Sessão não retornada pelo Supabase'))
       return data.session
     } catch (error) {
       console.error('Erro no cadastro com e-mail:', error)
@@ -194,7 +195,7 @@ export function useAuth() {
     // ⚠️ A RPC `delete_user` continua viva no banco de propósito: as builds
     // antigas em produção ainda a chamam. Não remover até a base ter migrado.
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) throw new Error('Sessão expirada. Entre novamente para apagar a conta.')
+    if (!session) throw new Error(t('Sessão expirada. Entre novamente para apagar a conta.'))
 
     const { error } = await supabase.functions.invoke('delete-account')
     // Se a limpeza dos arquivos falhou, a conta NÃO foi apagada. Propagar o erro

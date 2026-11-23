@@ -23,6 +23,7 @@ import Animated, {
   Easing, FadeIn, FadeOut, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming,
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
+import { emIngles, horaEn, t } from '../../lib/i18n';
 import { requestCoachMeasure, useCoachTargets, type CoachTargetKey } from '../../lib/coachMarks';
 import { dispararAtalhoGuia, encerrarGuia, irParaGuia, useGuia, type Guia, type PassoGuia } from '../../lib/guia';
 import { pularDesafio, type DesafioId } from '../../lib/missoes';
@@ -50,27 +51,32 @@ type Passo = {
   pular?: DesafioId;
 };
 
-const D4 = 'Fazer o skincare';
-const ESTANTE = 'Este produto é seu? Coloque na sua estante.';
+const D4 = t('Fazer o skincare');
+const ESTANTE = t('Este produto é seu? Coloque na sua estante.');
+// "HH:MM" (guia) → como aparece: igual em português; "8:00 AM" no inglês.
+const horaNaTela = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return emIngles && Number.isFinite(h) && Number.isFinite(m) ? horaEn(h, m) : hhmm;
+};
 const PASSOS: Record<PassoGuia, Passo> = {
-  'd1-aba': { alvo: 'nav-produtos', pad: 4, r: 'pill', texto: () => 'Vamos escanear um produto seu. Toque em Produtos.', rotas: ['/home'], avanca: [{ rota: '/recomendacao-produtos', para: 'd1-scan' }], pular: 'd1' },
-  'd1-scan': { alvo: 'prod-scanBtn', pad: 6, r: 'pill', texto: () => 'Toque aqui para abrir o scanner.', rotas: ['/recomendacao-produtos'], avanca: [{ rota: '/product-camera', para: 'd1-foto' }], pular: 'd1' },
-  'd1-foto': { alvo: 'scan-foto', pad: 6, r: 'pill', texto: () => 'Aponte para o produto e toque para tirar a foto.', rotas: ['/product-camera'], avanca: [{ rota: '/product-loading', para: 'd1-espera' }], pular: 'd1' },
+  'd1-aba': { alvo: 'nav-produtos', pad: 4, r: 'pill', texto: () => t('Vamos escanear um produto seu. Toque em Produtos.'), rotas: ['/home'], avanca: [{ rota: '/recomendacao-produtos', para: 'd1-scan' }], pular: 'd1' },
+  'd1-scan': { alvo: 'prod-scanBtn', pad: 6, r: 'pill', texto: () => t('Toque aqui para abrir o scanner.'), rotas: ['/recomendacao-produtos'], avanca: [{ rota: '/product-camera', para: 'd1-foto' }], pular: 'd1' },
+  'd1-foto': { alvo: 'scan-foto', pad: 6, r: 'pill', texto: () => t('Aponte para o produto e toque para tirar a foto.'), rotas: ['/product-camera'], avanca: [{ rota: '/product-loading', para: 'd1-espera' }], pular: 'd1' },
   'd1-espera': { texto: () => null, rotas: ['/product-loading'], avanca: [{ rota: '/product-result', para: 'd2-adicionar' }, { rota: '/product-camera', para: 'd1-foto' }] },
-  'd2-aba': { alvo: 'nav-produtos', pad: 4, r: 'pill', texto: () => 'Vamos montar sua estante. Toque em Produtos.', rotas: ['/home'], avanca: [{ rota: '/recomendacao-produtos', para: 'd2-card' }] },
-  'd2-card': { alvo: 'prod-escaneado', pad: 4, r: 18, texto: () => 'Toque no produto que você tem em casa.', rotas: ['/recomendacao-produtos'] },
+  'd2-aba': { alvo: 'nav-produtos', pad: 4, r: 'pill', texto: () => t('Vamos montar sua estante. Toque em Produtos.'), rotas: ['/home'], avanca: [{ rota: '/recomendacao-produtos', para: 'd2-card' }] },
+  'd2-card': { alvo: 'prod-escaneado', pad: 4, r: 18, texto: () => t('Toque no produto que você tem em casa.'), rotas: ['/recomendacao-produtos'] },
   // Dentro do detalhe do produto (Modal): a dica mora nele (`ProductAnalysis`).
   'd2-detalhe': { texto: () => null, rotas: ['/recomendacao-produtos'] },
   'd2-adicionar': { alvo: 'scan-estante', pad: 4, r: 'pill', texto: () => ESTANTE, rotas: ['/product-result'], livre: true },
-  'd2-pronto': { texto: () => 'Produto na estante! Seu próximo desafio está na Home.', rotas: [], some: 4000 },
-  'd3-aba': { alvo: 'nav-rotina', pad: 4, r: 'pill', texto: () => 'Vamos montar sua rotina. Toque em Rotina.', rotas: ['/home'], avanca: [{ rota: '/protocolo', para: 'd3-escolher' }], pular: 'd3' },
-  'd3-escolher': { alvo: 'rot-escolher', pad: 6, r: 14, texto: () => 'Toque aqui para escolher o produto deste passo.', rotas: ['/protocolo'], atalho: true, pular: 'd3' },
+  'd2-pronto': { texto: () => t('Produto na estante! Seu próximo desafio está na Home.'), rotas: [], some: 4000 },
+  'd3-aba': { alvo: 'nav-rotina', pad: 4, r: 'pill', texto: () => t('Vamos montar sua rotina. Toque em Rotina.'), rotas: ['/home'], avanca: [{ rota: '/protocolo', para: 'd3-escolher' }], pular: 'd3' },
+  'd3-escolher': { alvo: 'rot-escolher', pad: 6, r: 14, texto: () => t('Toque aqui para escolher o produto deste passo.'), rotas: ['/protocolo'], atalho: true, pular: 'd3' },
   // Dentro da folha de produtos (Modal): a dica mora nela (`EscolherProdutoSheet`).
   'd3-folha': { texto: () => null, rotas: ['/protocolo'] },
-  'd3-pronto': { texto: (g) => `Pronto! Sua rotina da ${g.periodo === 'pm' ? 'noite' : 'manhã'} está completa.`, rotas: [], some: 4500 },
+  'd3-pronto': { texto: (g) => (g.periodo === 'pm' ? t('Pronto! Sua rotina da noite está completa.') : t('Pronto! Sua rotina da manhã está completa.')), rotas: [], some: 4500 },
   'd4-iniciar': { alvo: 'home-rot', pad: 6, r: 'pill', texto: () => D4, rotas: ['/home'], avanca: [{ rota: '/skincare', para: 'd4-concluir' }] },
   'd4-concluir': { alvo: 'sk-concluir', pad: 6, r: 'pill', texto: () => D4, rotas: ['/skincare'] },
-  'd4-fora': { texto: (g) => (g.hora ? `Seu skincare abre às ${g.hora}.` : null), rotas: [], some: 4000 },
+  'd4-fora': { texto: (g) => (g.hora ? t('Seu skincare abre às {{hora}}.', { hora: horaNaTela(g.hora) }) : null), rotas: [], some: 4000 },
 };
 
 export default function GuiaHost() {
@@ -142,10 +148,10 @@ function Recorte({ passo, texto }: { passo: Passo; texto: string }) {
       {/* As 4 faixas em volta do recorte: tocar nelas fecha a dica. O recorte fica livre. */}
       {!passo.livre && (
         <>
-          <Pressable onPress={fechar} style={{ position: 'absolute', left: 0, top: 0, width: W, height: Math.max(0, box.y) }} accessibilityLabel="Fechar dica" />
-          <Pressable onPress={fechar} style={{ position: 'absolute', left: 0, top: y2, width: W, height: Math.max(0, H - y2) }} accessibilityLabel="Fechar dica" />
-          <Pressable onPress={fechar} style={{ position: 'absolute', left: 0, top: box.y, width: Math.max(0, box.x), height: box.h }} accessibilityLabel="Fechar dica" />
-          <Pressable onPress={fechar} style={{ position: 'absolute', left: box.x + box.w, top: box.y, width: Math.max(0, W - box.x - box.w), height: box.h }} accessibilityLabel="Fechar dica" />
+          <Pressable onPress={fechar} style={{ position: 'absolute', left: 0, top: 0, width: W, height: Math.max(0, box.y) }} accessibilityLabel={t('Fechar dica')} />
+          <Pressable onPress={fechar} style={{ position: 'absolute', left: 0, top: y2, width: W, height: Math.max(0, H - y2) }} accessibilityLabel={t('Fechar dica')} />
+          <Pressable onPress={fechar} style={{ position: 'absolute', left: 0, top: box.y, width: Math.max(0, box.x), height: box.h }} accessibilityLabel={t('Fechar dica')} />
+          <Pressable onPress={fechar} style={{ position: 'absolute', left: box.x + box.w, top: box.y, width: Math.max(0, W - box.x - box.w), height: box.h }} accessibilityLabel={t('Fechar dica')} />
         </>
       )}
 
@@ -168,7 +174,7 @@ function Recorte({ passo, texto }: { passo: Passo; texto: string }) {
               style={{ alignSelf: 'flex-start' }}
               accessibilityRole="button"
             >
-              <Text style={styles.atalho}>Escanear vários de uma vez</Text>
+              <Text style={styles.atalho}>{t('Escanear vários de uma vez')}</Text>
             </TouchableOpacity>
           )}
           {passo.pular && (
@@ -179,7 +185,7 @@ function Recorte({ passo, texto }: { passo: Passo; texto: string }) {
               style={{ alignSelf: 'flex-start' }}
               accessibilityRole="button"
             >
-              <Text style={styles.pular}>Não tenho um produto agora</Text>
+              <Text style={styles.pular}>{t('Não tenho um produto agora')}</Text>
             </TouchableOpacity>
           )}
         </Animated.View>

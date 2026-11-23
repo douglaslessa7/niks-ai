@@ -28,6 +28,48 @@ const MESSAGES: Record<NotificationType, { title: string; body: string }> = {
   },
 };
 
+// Inglês (etapa 3 da tradução, nov/2026): só para quem tem `users.idioma = 'en'`. O resto
+// (null ou 'pt') recebe exatamente os textos acima.
+const MESSAGES_EN: Record<NotificationType, { title: string; body: string }> = {
+  morning_routine: {
+    title: '☀️ Good morning!',
+    body: "It's time for your morning skincare routine.",
+  },
+  night_routine: {
+    title: '🌙 Good night!',
+    body: "Don't forget your evening routine before bed.",
+  },
+  scan_available: {
+    title: '📸 Your scan is ready!',
+    body: "It's been 7 days. Time for a new skin analysis.",
+  },
+  food_reminder: {
+    title: '🥗 Log your meal',
+    body: "How's your eating going today? Check it now.",
+  },
+};
+
+// Quem tem o celular em inglês, entre os ids. Tolerante: se a coluna `idioma` ainda não
+// existir (função publicada antes da migration) ou a consulta falhar, ninguém vira inglês.
+// deno-lint-ignore no-explicit-any
+async function idsEmIngles(supabase: any, ids: string[]): Promise<Set<string>> {
+  const en = new Set<string>();
+  try {
+    for (const lote of chunkArray(ids, 100)) {
+      const { data, error } = await supabase.from('users').select('id').in('id', lote).eq('idioma', 'en');
+      if (error) {
+        console.warn('[send-notifications] idioma indisponível, seguindo em português:', error.message);
+        return new Set();
+      }
+      for (const u of data ?? []) en.add(u.id);
+    }
+  } catch (e) {
+    console.warn('[send-notifications] idioma indisponível, seguindo em português:', (e as Error).message);
+    return new Set();
+  }
+  return en;
+}
+
 Deno.serve(async (req) => {
   // Só o cron pode disparar: sem esta trava, qualquer um mandava push para a base inteira.
   // O segredo vem do Vault, via pg_cron. Deploy com --no-verify-jwt (o cron não tem sessão).
@@ -164,14 +206,17 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { title, body } = MESSAGES[type];
-    const messages = users.map((user) => ({
-      to: user.push_token,
-      title,
-      body,
-      sound: 'default',
-      data: { type },
-    }));
+    const emIngles = await idsEmIngles(supabase, users.map((u) => u.id));
+    const messages = users.map((user) => {
+      const { title, body } = emIngles.has(user.id) ? MESSAGES_EN[type] : MESSAGES[type];
+      return {
+        to: user.push_token,
+        title,
+        body,
+        sound: 'default',
+        data: { type },
+      };
+    });
 
     const envio = await enviarLotes(chunkArray(messages, 100));
 

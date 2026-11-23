@@ -1,6 +1,9 @@
 import { avisarSeSemAssinatura, autorizacaoIA } from './respostaIA';
 import { supabase } from './supabase';
-import { ScanResult, ProtocolResult, OnboardingData } from '../store/onboarding';
+import { idioma } from './i18n';
+import { ScanResult, ProtocolResult, OnboardingData, useAppStore } from '../store/onboarding';
+import { escolherProblema } from './analiseRapida';
+import { fetchComTeto } from './esperaDaRotina';
 
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI';
 
@@ -16,7 +19,8 @@ export async function fetchProtocol(
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const response = await fetch(
+      // Limite de 90 s (18/nov/2026): uma chamada pendurada não segura a tela de espera.
+      const response = await fetchComTeto(
         'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/generate-protocol',
         {
           method: 'POST',
@@ -24,8 +28,19 @@ export async function fetchProtocol(
             'Content-Type': 'application/json',
             'Authorization': await autorizacaoIA(ANON_KEY),
           },
-          body: JSON.stringify({ scanResult, onboardingData }),
-        }
+          // Motor da rotina v2: a dor principal que ela VIU (carta de alerta) vai junto; nas
+          // regenerações ela vem da linha `users` (dor_principal).
+          body: JSON.stringify({
+            idioma,
+            scanResult,
+            onboardingData: {
+              ...onboardingData,
+              dor_principal: onboardingData.dor_principal
+                ?? escolherProblema(useAppStore.getState().analiseRapida, onboardingData.concerns)?.problema ?? null,
+            },
+          }),
+        },
+        90_000,
       );
 
       if (!response.ok) {
@@ -63,11 +78,15 @@ export async function saveProtocol({
   userId,
   skinScanId,
   regenerate,
+  aoGravar,
 }: {
   data: ProtocolResult;
   userId: string;
   skinScanId: string | null;
   regenerate?: boolean;
+  /** Logo depois do insert em `protocolos`, ANTES da recomendação (que demora): quem chama
+   *  registra que a rotina já está na conta (a retomada da compra não grava de novo). */
+  aoGravar?: () => unknown;
 }) {
   const dicas = [
     data.introduction_warnings ?? null,
@@ -86,6 +105,7 @@ export async function saveProtocol({
     updated_at: new Date().toISOString(), // linha nova é inequivocamente a mais recente
   });
   if (erroRotina) throw erroRotina;
+  try { await aoGravar?.(); } catch (e) { console.warn('[generateProtocol] aoGravar falhou:', e); }
 
   // Encadeia a recomendação de produtos reais. A função é auto-guardada
   // (gera só no primeiro scan), então é seguro chamar sempre. Roda aqui —
@@ -99,7 +119,7 @@ export async function saveProtocol({
       console.error('[generateProtocol] recomendar-produtos: sem sessão, não chamada');
       return;
     }
-    const recRes = await fetch(
+    const recRes = await fetchComTeto(
       'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/recomendar-produtos',
       {
         method: 'POST',
@@ -108,8 +128,9 @@ export async function saveProtocol({
           'apikey': ANON_KEY,
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null, regenerate: regenerate ?? false }),
-      }
+        body: JSON.stringify({ user_id: userId, scan_id: skinScanId ?? null, regenerate: regenerate ?? false, idioma }),
+      },
+      90_000,
     );
     // Continua NÃO bloqueante (regra mantida) — só deixa de ser invisível. O `catch`
     // abaixo só pega erro de rede: um 409 ("protocolo ainda não disponível") ou um 500
@@ -132,6 +153,7 @@ export async function generateAndSaveProtocol({
   regenerate,
   onSuccess,
   onFinally,
+  aoGravar,
 }: {
   scanResult: ScanResult;
   onboardingData: OnboardingData;
@@ -140,12 +162,13 @@ export async function generateAndSaveProtocol({
   regenerate?: boolean;
   onSuccess: (result: ProtocolResult) => void;
   onFinally: () => void;
+  aoGravar?: () => unknown;
 }): Promise<boolean> {
   try {
     const data = await fetchProtocol(scanResult, onboardingData);
     if (!data) return false;
     onSuccess(data);
-    await saveProtocol({ data, userId, skinScanId, regenerate });
+    await saveProtocol({ data, userId, skinScanId, regenerate, aoGravar });
     return true;
   } catch (err) {
     console.error('[generateProtocol] Unexpected error:', err);

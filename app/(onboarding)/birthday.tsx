@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import {
@@ -50,7 +51,7 @@ export default function Birthday() {
     <ObScreen>
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(118) }}>
         {/* Sem subtítulo; "você tem?" sempre na 2ª linha (pedido do produto). */}
-        <ObTitle>{withName(name, 'quantos anos\nvocê tem?')}</ObTitle>
+        <ObTitle>{withName(name, t('quantos anos\nvocê tem?'))}</ObTitle>
       </View>
 
       {/* Roda: faixa central a 397 pt no design (topo da roda = 397 − 122) */}
@@ -64,7 +65,7 @@ export default function Birthday() {
           marginTop: 10, textAlign: 'center', fontSize: 13, fontWeight: '600',
           letterSpacing: 2, color: OB.sub, textTransform: 'uppercase',
         }}>
-          anos
+          {t('anos')}
         </Text>
       </View>
 

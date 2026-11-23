@@ -1,0 +1,1411 @@
+{
+ "gerado_em": "2026-11-19",
+ "regra": "Mensal e downsell = mesmos valores do TapFit; anual = anual TapFit x 129,90/149,90, arredondado. Brasil não é alterado.",
+ "produtos": {
+  "anual": "com.niksai.anual129",
+  "downsell": "br.com.niksai.app.anual.99",
+  "mensal": "br.com.niksai.app.mensal.39"
+ },
+ "precos": [
+  {
+   "territorio": "AFG",
+   "pais": "Afeganistão",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "ALB",
+   "pais": "Albânia",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "DEU",
+   "pais": "Alemanha",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "AGO",
+   "pais": "Angola",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "AIA",
+   "pais": "Anguila",
+   "moeda": "USD",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "ATG",
+   "pais": "Antígua e Barbuda",
+   "moeda": "USD",
+   "anual": 34.99,
+   "downsell": 24.99,
+   "mensal": 9.99
+  },
+  {
+   "territorio": "ARG",
+   "pais": "Argentina",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "DZA",
+   "pais": "Argélia",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "ARM",
+   "pais": "Armênia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 16.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "SAU",
+   "pais": "Arábia Saudita",
+   "moeda": "SAR",
+   "anual": 216.99,
+   "downsell": 169.99,
+   "mensal": 69.99
+  },
+  {
+   "territorio": "AUS",
+   "pais": "Austrália",
+   "moeda": "AUD",
+   "anual": 77.99,
+   "downsell": 59.99,
+   "mensal": 24.99
+  },
+  {
+   "territorio": "AZE",
+   "pais": "Azerbaijão",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "BHS",
+   "pais": "Bahamas",
+   "moeda": "USD",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "BRB",
+   "pais": "Barbados",
+   "moeda": "USD",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "BHR",
+   "pais": "Barein",
+   "moeda": "USD",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 16.99
+  },
+  {
+   "territorio": "BLZ",
+   "pais": "Belize",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "BEN",
+   "pais": "Benin",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "BMU",
+   "pais": "Bermudas",
+   "moeda": "USD",
+   "anual": 60.99,
+   "downsell": 49.99,
+   "mensal": 19.99
+  },
+  {
+   "territorio": "BLR",
+   "pais": "Bielorrússia",
+   "moeda": "USD",
+   "anual": 18.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "BOL",
+   "pais": "Bolívia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "BWA",
+   "pais": "Botsuana",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "BRA",
+   "pais": "Brasil",
+   "moeda": "BRL",
+   "anual": 129.9,
+   "downsell": 99.9,
+   "mensal": 39.9
+  },
+  {
+   "territorio": "BRN",
+   "pais": "Brunei",
+   "moeda": "USD",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "BGR",
+   "pais": "Bulgária",
+   "moeda": "EUR",
+   "anual": 21.99,
+   "downsell": 17.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "BFA",
+   "pais": "Burquina Faso",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "BTN",
+   "pais": "Butão",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "BEL",
+   "pais": "Bélgica",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 16.99
+  },
+  {
+   "territorio": "BIH",
+   "pais": "Bósnia e Herzegovina",
+   "moeda": "EUR",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "CPV",
+   "pais": "Cabo Verde",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 17.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "CMR",
+   "pais": "Camarões",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "KHM",
+   "pais": "Camboja",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "CAN",
+   "pais": "Canadá",
+   "moeda": "CAD",
+   "anual": 68.99,
+   "downsell": 49.99,
+   "mensal": 19.99
+  },
+  {
+   "territorio": "QAT",
+   "pais": "Catar",
+   "moeda": "QAR",
+   "anual": 189,
+   "downsell": 149.0,
+   "mensal": 59.99
+  },
+  {
+   "territorio": "KAZ",
+   "pais": "Cazaquistão",
+   "moeda": "KZT",
+   "anual": 9500,
+   "downsell": 7000.0,
+   "mensal": 2990.0
+  },
+  {
+   "territorio": "TCD",
+   "pais": "Chade",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "CHL",
+   "pais": "Chile",
+   "moeda": "CLP",
+   "anual": 25990,
+   "downsell": 19990.0,
+   "mensal": 7990.0
+  },
+  {
+   "territorio": "CHN",
+   "pais": "China",
+   "moeda": "CNY",
+   "anual": 169,
+   "downsell": 139.0,
+   "mensal": 53.8
+  },
+  {
+   "territorio": "CYP",
+   "pais": "Chipre",
+   "moeda": "EUR",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "COL",
+   "pais": "Colômbia",
+   "moeda": "COP",
+   "anual": 68900,
+   "downsell": 50000.0,
+   "mensal": 20000.0
+  },
+  {
+   "territorio": "COD",
+   "pais": "Congo - Kinshasa",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "KOR",
+   "pais": "Coreia do Sul",
+   "moeda": "KRW",
+   "anual": 68900,
+   "downsell": 50000.0,
+   "mensal": 20000.0
+  },
+  {
+   "territorio": "CRI",
+   "pais": "Costa Rica",
+   "moeda": "USD",
+   "anual": 29.99,
+   "downsell": 24.99,
+   "mensal": 9.99
+  },
+  {
+   "territorio": "CIV",
+   "pais": "Costa do Marfim",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "HRV",
+   "pais": "Croácia",
+   "moeda": "EUR",
+   "anual": 29.99,
+   "downsell": 21.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "DNK",
+   "pais": "Dinamarca",
+   "moeda": "DKK",
+   "anual": 429,
+   "downsell": 299.0,
+   "mensal": 129.0
+  },
+  {
+   "territorio": "DMA",
+   "pais": "Dominica",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "EGY",
+   "pais": "Egito",
+   "moeda": "EGP",
+   "anual": 949,
+   "downsell": 699.99,
+   "mensal": 299.0
+  },
+  {
+   "territorio": "SLV",
+   "pais": "El Salvador",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "ARE",
+   "pais": "Emirados Árabes Unidos",
+   "moeda": "AED",
+   "anual": 219,
+   "downsell": 149.99,
+   "mensal": 59.99
+  },
+  {
+   "territorio": "ECU",
+   "pais": "Equador",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 16.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "SVK",
+   "pais": "Eslováquia",
+   "moeda": "EUR",
+   "anual": 29.99,
+   "downsell": 21.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "SVN",
+   "pais": "Eslovênia",
+   "moeda": "EUR",
+   "anual": 42.99,
+   "downsell": 29.99,
+   "mensal": 12.99
+  },
+  {
+   "territorio": "ESP",
+   "pais": "Espanha",
+   "moeda": "EUR",
+   "anual": 42.99,
+   "downsell": 29.99,
+   "mensal": 12.99
+  },
+  {
+   "territorio": "SWZ",
+   "pais": "Essuatíni",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "USA",
+   "pais": "Estados Unidos",
+   "moeda": "USD",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "EST",
+   "pais": "Estônia",
+   "moeda": "EUR",
+   "anual": 34.99,
+   "downsell": 24.99,
+   "mensal": 9.99
+  },
+  {
+   "territorio": "FJI",
+   "pais": "Fiji",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "PHL",
+   "pais": "Filipinas",
+   "moeda": "PHP",
+   "anual": 1090,
+   "downsell": 899.0,
+   "mensal": 349.0
+  },
+  {
+   "territorio": "FIN",
+   "pais": "Finlândia",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "FRA",
+   "pais": "França",
+   "moeda": "EUR",
+   "anual": 47.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "GAB",
+   "pais": "Gabão",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "GHA",
+   "pais": "Gana",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "GEO",
+   "pais": "Geórgia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "GRD",
+   "pais": "Granada",
+   "moeda": "USD",
+   "anual": 29.99,
+   "downsell": 21.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "GRC",
+   "pais": "Grécia",
+   "moeda": "EUR",
+   "anual": 29.99,
+   "downsell": 21.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "GTM",
+   "pais": "Guatemala",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 16.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "GUY",
+   "pais": "Guiana",
+   "moeda": "USD",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "GNB",
+   "pais": "Guiné-Bissau",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "GMB",
+   "pais": "Gâmbia",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "HND",
+   "pais": "Honduras",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "HKG",
+   "pais": "Hong Kong, RAE da China",
+   "moeda": "HKD",
+   "anual": 429,
+   "downsell": 299.0,
+   "mensal": 129.0
+  },
+  {
+   "territorio": "HUN",
+   "pais": "Hungria",
+   "moeda": "HUF",
+   "anual": 9500,
+   "downsell": 7000.0,
+   "mensal": 2990.0
+  },
+  {
+   "territorio": "CYM",
+   "pais": "Ilhas Cayman",
+   "moeda": "USD",
+   "anual": 60.99,
+   "downsell": 44.99,
+   "mensal": 16.99
+  },
+  {
+   "territorio": "SLB",
+   "pais": "Ilhas Salomão",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "TCA",
+   "pais": "Ilhas Turcas e Caicos",
+   "moeda": "USD",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "VGB",
+   "pais": "Ilhas Virgens Britânicas",
+   "moeda": "USD",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "IDN",
+   "pais": "Indonésia",
+   "moeda": "IDR",
+   "anual": 350000,
+   "downsell": 250000.0,
+   "mensal": 99900.0
+  },
+  {
+   "territorio": "IRQ",
+   "pais": "Iraque",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "IRL",
+   "pais": "Irlanda",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 16.99
+  },
+  {
+   "territorio": "ISL",
+   "pais": "Islândia",
+   "moeda": "USD",
+   "anual": 60.99,
+   "downsell": 49.99,
+   "mensal": 19.99
+  },
+  {
+   "territorio": "ISR",
+   "pais": "Israel",
+   "moeda": "ILS",
+   "anual": 159,
+   "downsell": 119.0,
+   "mensal": 47.0
+  },
+  {
+   "territorio": "ITA",
+   "pais": "Itália",
+   "moeda": "EUR",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "YEM",
+   "pais": "Iêmen",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "JAM",
+   "pais": "Jamaica",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "JPN",
+   "pais": "Japão",
+   "moeda": "JPY",
+   "anual": 6100,
+   "downsell": 4990.0,
+   "mensal": 1990.0
+  },
+  {
+   "territorio": "JOR",
+   "pais": "Jordânia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "XKS",
+   "pais": "Kosovo",
+   "moeda": "EUR",
+   "anual": 18.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "KWT",
+   "pais": "Kuwait",
+   "moeda": "USD",
+   "anual": 38.99,
+   "downsell": 29.99,
+   "mensal": 11.99
+  },
+  {
+   "territorio": "LAO",
+   "pais": "Laos",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "LVA",
+   "pais": "Letônia",
+   "moeda": "EUR",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "LBR",
+   "pais": "Libéria",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "LTU",
+   "pais": "Lituânia",
+   "moeda": "EUR",
+   "anual": 34.99,
+   "downsell": 29.99,
+   "mensal": 10.99
+  },
+  {
+   "territorio": "LUX",
+   "pais": "Luxemburgo",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "LBN",
+   "pais": "Líbano",
+   "moeda": "USD",
+   "anual": 18.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "LBY",
+   "pais": "Líbia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MAC",
+   "pais": "Macau, RAE da China",
+   "moeda": "USD",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "MKD",
+   "pais": "Macedônia do Norte",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 16.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "MDG",
+   "pais": "Madagascar",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MWI",
+   "pais": "Malaui",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MDV",
+   "pais": "Maldivas",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "MLI",
+   "pais": "Mali",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MLT",
+   "pais": "Malta",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "MYS",
+   "pais": "Malásia",
+   "moeda": "MYR",
+   "anual": 89,
+   "downsell": 65.0,
+   "mensal": 24.99
+  },
+  {
+   "territorio": "MAR",
+   "pais": "Marrocos",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MRT",
+   "pais": "Mauritânia",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MUS",
+   "pais": "Maurício",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 17.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "MMR",
+   "pais": "Mianmar (Birmânia)",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "FSM",
+   "pais": "Micronésia",
+   "moeda": "USD",
+   "anual": 34.99,
+   "downsell": 24.99,
+   "mensal": 9.99
+  },
+  {
+   "territorio": "MDA",
+   "pais": "Moldávia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 17.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "MNG",
+   "pais": "Mongólia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MNE",
+   "pais": "Montenegro",
+   "moeda": "EUR",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "MSR",
+   "pais": "Montserrat",
+   "moeda": "USD",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 14.99
+  },
+  {
+   "territorio": "MOZ",
+   "pais": "Moçambique",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "MEX",
+   "pais": "México",
+   "moeda": "MXN",
+   "anual": 519,
+   "downsell": 399.0,
+   "mensal": 149.0
+  },
+  {
+   "territorio": "NAM",
+   "pais": "Namíbia",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "NRU",
+   "pais": "Nauru",
+   "moeda": "USD",
+   "anual": 42.99,
+   "downsell": 29.99,
+   "mensal": 11.99
+  },
+  {
+   "territorio": "NPL",
+   "pais": "Nepal",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "NIC",
+   "pais": "Nicarágua",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "NGA",
+   "pais": "Nigéria",
+   "moeda": "NGN",
+   "anual": 25900,
+   "downsell": 19900.0,
+   "mensal": 7000.0
+  },
+  {
+   "territorio": "NOR",
+   "pais": "Noruega",
+   "moeda": "NOK",
+   "anual": 609,
+   "downsell": 499.0,
+   "mensal": 199.0
+  },
+  {
+   "territorio": "NZL",
+   "pais": "Nova Zelândia",
+   "moeda": "NZD",
+   "anual": 89,
+   "downsell": 69.99,
+   "mensal": 24.99
+  },
+  {
+   "territorio": "NER",
+   "pais": "Níger",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "OMN",
+   "pais": "Omã",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "PLW",
+   "pais": "Palau",
+   "moeda": "USD",
+   "anual": 38.99,
+   "downsell": 29.99,
+   "mensal": 11.99
+  },
+  {
+   "territorio": "PAN",
+   "pais": "Panamá",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "PNG",
+   "pais": "Papua-Nova Guiné",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 17.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "PAK",
+   "pais": "Paquistão",
+   "moeda": "PKR",
+   "anual": 5199,
+   "downsell": 3999.0,
+   "mensal": 1499.0
+  },
+  {
+   "territorio": "PRY",
+   "pais": "Paraguai",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "NLD",
+   "pais": "Países Baixos",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 16.99
+  },
+  {
+   "territorio": "PER",
+   "pais": "Peru",
+   "moeda": "PEN",
+   "anual": 86.99,
+   "downsell": 69.99,
+   "mensal": 24.99
+  },
+  {
+   "territorio": "POL",
+   "pais": "Polônia",
+   "moeda": "PLN",
+   "anual": 129.99,
+   "downsell": 109.99,
+   "mensal": 44.99
+  },
+  {
+   "territorio": "PRT",
+   "pais": "Portugal",
+   "moeda": "EUR",
+   "anual": 34.99,
+   "downsell": 24.99,
+   "mensal": 9.99
+  },
+  {
+   "territorio": "KGZ",
+   "pais": "Quirguistão",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "KEN",
+   "pais": "Quênia",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "GBR",
+   "pais": "Reino Unido",
+   "moeda": "GBP",
+   "anual": 42.99,
+   "downsell": 34.99,
+   "mensal": 12.99
+  },
+  {
+   "territorio": "DOM",
+   "pais": "República Dominicana",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 16.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "COG",
+   "pais": "República do Congo",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "ROU",
+   "pais": "Romênia",
+   "moeda": "RON",
+   "anual": 129.99,
+   "downsell": 99.99,
+   "mensal": 39.99
+  },
+  {
+   "territorio": "RWA",
+   "pais": "Ruanda",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "RUS",
+   "pais": "Rússia",
+   "moeda": "RUB",
+   "anual": 1990,
+   "downsell": 1490.0,
+   "mensal": 599.0
+  },
+  {
+   "territorio": "LCA",
+   "pais": "Santa Lúcia",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "SYC",
+   "pais": "Seicheles",
+   "moeda": "USD",
+   "anual": 29.99,
+   "downsell": 24.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "SEN",
+   "pais": "Senegal",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "SLE",
+   "pais": "Serra Leoa",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "SGP",
+   "pais": "Singapura",
+   "moeda": "SGD",
+   "anual": 68.99,
+   "downsell": 59.99,
+   "mensal": 22.0
+  },
+  {
+   "territorio": "LKA",
+   "pais": "Sri Lanka",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "SUR",
+   "pais": "Suriname",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "SWE",
+   "pais": "Suécia",
+   "moeda": "SEK",
+   "anual": 609,
+   "downsell": 499.0,
+   "mensal": 199.0
+  },
+  {
+   "territorio": "CHE",
+   "pais": "Suíça",
+   "moeda": "CHF",
+   "anual": 47.9,
+   "downsell": 36.5,
+   "mensal": 14.5
+  },
+  {
+   "territorio": "KNA",
+   "pais": "São Cristóvão e Névis",
+   "moeda": "USD",
+   "anual": 34.99,
+   "downsell": 24.99,
+   "mensal": 9.99
+  },
+  {
+   "territorio": "STP",
+   "pais": "São Tomé e Príncipe",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 7.99
+  },
+  {
+   "territorio": "VCT",
+   "pais": "São Vicente e Granadinas",
+   "moeda": "USD",
+   "anual": 25.99,
+   "downsell": 19.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "SRB",
+   "pais": "Sérvia",
+   "moeda": "EUR",
+   "anual": 21.99,
+   "downsell": 16.99,
+   "mensal": 6.99
+  },
+  {
+   "territorio": "TJK",
+   "pais": "Tadjiquistão",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "THA",
+   "pais": "Tailândia",
+   "moeda": "THB",
+   "anual": 609,
+   "downsell": 499.0,
+   "mensal": 199.0
+  },
+  {
+   "territorio": "TWN",
+   "pais": "Taiwan",
+   "moeda": "TWD",
+   "anual": 1699,
+   "downsell": 1490.0,
+   "mensal": 549.0
+  },
+  {
+   "territorio": "TZA",
+   "pais": "Tanzânia",
+   "moeda": "TZS",
+   "anual": 51900,
+   "downsell": 39900.0,
+   "mensal": 14900.0
+  },
+  {
+   "territorio": "CZE",
+   "pais": "Tchéquia",
+   "moeda": "CZK",
+   "anual": 990,
+   "downsell": 799.0,
+   "mensal": 299.99
+  },
+  {
+   "territorio": "TON",
+   "pais": "Tonga",
+   "moeda": "USD",
+   "anual": 29.99,
+   "downsell": 24.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "TTO",
+   "pais": "Trinidad e Tobago",
+   "moeda": "USD",
+   "anual": 29.99,
+   "downsell": 21.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "TUN",
+   "pais": "Tunísia",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "TKM",
+   "pais": "Turcomenistão",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "TUR",
+   "pais": "Turquia",
+   "moeda": "TRY",
+   "anual": 1299,
+   "downsell": 899.99,
+   "mensal": 399.0
+  },
+  {
+   "territorio": "UKR",
+   "pais": "Ucrânia",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "UGA",
+   "pais": "Uganda",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "URY",
+   "pais": "Uruguai",
+   "moeda": "USD",
+   "anual": 34.99,
+   "downsell": 24.99,
+   "mensal": 9.99
+  },
+  {
+   "territorio": "UZB",
+   "pais": "Uzbequistão",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "VUT",
+   "pais": "Vanuatu",
+   "moeda": "USD",
+   "anual": 29.99,
+   "downsell": 24.99,
+   "mensal": 8.99
+  },
+  {
+   "territorio": "VEN",
+   "pais": "Venezuela",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "VNM",
+   "pais": "Vietnã",
+   "moeda": "VND",
+   "anual": 480000,
+   "downsell": 350000.0,
+   "mensal": 150000.0
+  },
+  {
+   "territorio": "ZWE",
+   "pais": "Zimbábue",
+   "moeda": "USD",
+   "anual": 21.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "ZMB",
+   "pais": "Zâmbia",
+   "moeda": "USD",
+   "anual": 16.99,
+   "downsell": 14.99,
+   "mensal": 5.99
+  },
+  {
+   "territorio": "ZAF",
+   "pais": "África do Sul",
+   "moeda": "ZAR",
+   "anual": 346.99,
+   "downsell": 249.99,
+   "mensal": 109.0
+  },
+  {
+   "territorio": "AUT",
+   "pais": "Áustria",
+   "moeda": "EUR",
+   "anual": 51.99,
+   "downsell": 39.99,
+   "mensal": 16.99
+  },
+  {
+   "territorio": "IND",
+   "pais": "Índia",
+   "moeda": "INR",
+   "anual": 1699,
+   "downsell": 1299.0,
+   "mensal": 499.0
+  }
+ ]
+}

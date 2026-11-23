@@ -8,6 +8,7 @@ import Animated, {
   Easing, interpolate, useAnimatedProps, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming,
 } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { BG_NIGHT, BG_STOPS } from '../../lib/homeTheme';
 import { fracaoNivel, nivelDe, TABELA_NIVEIS } from '../../lib/niveis';
 import type { PassoSessao } from '../../lib/sessaoSkincare';
@@ -218,7 +219,7 @@ function SkincareConcluido({ periodo, duracaoMs, passos, pontos, onContinuar }: 
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const continuar = () => { haptics.action(); onContinuar(); };
-  const titulo = periodo === 'am' ? 'Skincare matinal concluído!' : 'Skincare noturno concluído!';
+  const titulo = periodo === 'am' ? t('Skincare matinal concluído!') : t('Skincare noturno concluído!');
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -241,16 +242,16 @@ function SkincareConcluido({ periodo, duracaoMs, passos, pontos, onContinuar }: 
 
       {/* Tempo do skincare, o número grande em rosa, passos e produtos. */}
       <View style={[styles.blocoTempo, { top: y(166) }]} pointerEvents="none">
-        <Animated.Text style={[styles.rotuloTempo, rotuloTempoSt]}>Tempo do skincare</Animated.Text>
+        <Animated.Text style={[styles.rotuloTempo, rotuloTempoSt]}>{t('Tempo do skincare')}</Animated.Text>
         <Animated.View style={tempoSt}>
           <Contador de={0} para={segundos} atraso={480} duracao={1300} formato="tempo" rm={rm} style={styles.tempo} />
         </Animated.View>
         <Animated.View style={[styles.stats, statsSt]}>
           <Contador de={0} para={passos.length} atraso={1150} duracao={600} formato="num" rm={rm} style={styles.statsN} />
-          <Text style={styles.statsT}>{passos.length === 1 ? 'passo' : 'passos'}</Text>
+          <Text style={styles.statsT}>{passos.length === 1 ? t('passo') : t('passos')}</Text>
           <View style={styles.statsPonto} />
           <Contador de={0} para={nProdutos} atraso={1250} duracao={600} formato="num" rm={rm} style={styles.statsN} />
-          <Text style={styles.statsT}>{nProdutos === 1 ? 'produto' : 'produtos'}</Text>
+          <Text style={styles.statsT}>{nProdutos === 1 ? t('produto') : t('produtos')}</Text>
         </Animated.View>
       </View>
 
@@ -267,7 +268,7 @@ function SkincareConcluido({ periodo, duracaoMs, passos, pontos, onContinuar }: 
               <Text style={styles.pontosT}>NIKS Points</Text>
             </Animated.View>
             <View style={styles.nivelLinha}>
-              <Text style={styles.nivelT} numberOfLines={1}>Nível {nivel.nivel} · {nivel.titulo}</Text>
+              <Text style={styles.nivelT} numberOfLines={1}>{t('Nível {{n}} · {{titulo}}', { n: nivel.nivel, titulo: t(nivel.titulo) })}</Text>
               {nivel.teto > nivel.piso
                 ? <Contador de={pontos.totalAntes} para={total} atraso={2050} duracao={900} formato="num" rm={rm} sufixo={` / ${nivel.teto}`} style={styles.nivelT} />
                 : <Text style={styles.nivelT}>{total}</Text>}
@@ -281,7 +282,7 @@ function SkincareConcluido({ periodo, duracaoMs, passos, pontos, onContinuar }: 
 
       {/* Sua rotina de hoje: lista compacta num card só (rola se não couber). */}
       <View style={[styles.rotinaCaixa, { top: y(492), bottom: 34 + 50 + 14 + Math.max(0, insets.bottom - 34) }]}>
-        <Animated.Text style={[styles.rotinaRotulo, rotuloRotSt]}>Sua rotina de hoje</Animated.Text>
+        <Animated.Text style={[styles.rotinaRotulo, rotuloRotSt]}>{t('Sua rotina de hoje')}</Animated.Text>
         <Animated.View style={[styles.rotinaCard, rotinaSt]}>
           <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
             {passos.map((p, i) => <LinhaRotina key={String(p.id)} p={p} i={i} linhas={linhas} total={passos.length} />)}
@@ -290,8 +291,8 @@ function SkincareConcluido({ periodo, duracaoMs, passos, pontos, onContinuar }: 
       </View>
 
       <Animated.View style={[styles.ctaCaixa, { bottom: 34 + Math.max(0, insets.bottom - 34) }, ctaSt]}>
-        <TouchableOpacity activeOpacity={0.85} onPress={continuar} style={styles.cta} accessibilityRole="button" accessibilityLabel="Continuar">
-          <Text style={styles.ctaT}>Continuar</Text>
+        <TouchableOpacity activeOpacity={0.85} onPress={continuar} style={styles.cta} accessibilityRole="button" accessibilityLabel={t('Continuar')}>
+          <Text style={styles.ctaT}>{t('Continuar')}</Text>
         </TouchableOpacity>
       </Animated.View>
 
@@ -324,7 +325,7 @@ function LinhaRotina({ p, i, linhas, total }: { p: PassoSessao; i: number; linha
             <Text style={styles.linhaProd} numberOfLines={1}>{prod}</Text>
           </>
         ) : (
-          <Text style={styles.linhaProd} numberOfLines={1}>{nome || 'Passo'}</Text>
+          <Text style={styles.linhaProd} numberOfLines={1}>{nome || t('Passo')}</Text>
         )}
       </View>
       <Svg width={18} height={18} viewBox="0 0 24 24">

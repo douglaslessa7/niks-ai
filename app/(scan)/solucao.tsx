@@ -11,6 +11,7 @@ import BalancedText from '../../components/BalancedText';
 import { useObName } from '../../components/onboarding/kit';
 import { useObPassoVisto } from '../../components/onboarding/passo';
 import { OB_STEPS } from '../../components/onboarding/kit';
+import { t } from '../../lib/i18n';
 
 // Onboarding — "Calma, <nome>." (04/nov/2026): entre a carta revelada ("Quero resolver
 // isso") e o "Seu caminho". Sem botão, sem voltar, sem avanço por toque: segue sozinha.
@@ -112,13 +113,13 @@ export default function Solucao() {
 
       <Animated.View pointerEvents="none" style={[styles.bloco, { top: topoTexto }, f1Style]}>
         <Text style={styles.frase} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
-          {nome ? `Calma, ${nome}.` : 'Calma.'}
+          {nome ? t('Calma, {{nome}}.', { nome }) : t('Calma.')}
         </Text>
       </Animated.View>
 
       <View pointerEvents="none" style={[styles.bloco, { top: topoTexto }]}>
         <Animated.View style={f2Style}>
-          <BalancedText text="Nós temos a solução para a sua pele." style={styles.frase} />
+          <BalancedText text={t('Nós temos a solução para a sua pele.')} style={styles.frase} />
         </Animated.View>
       </View>
 

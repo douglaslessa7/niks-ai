@@ -11,6 +11,7 @@ import { useObName } from '../../components/onboarding/kit';
 import { PRIMEIRA } from '../../components/onboarding/personalizacao';
 import { useObPassoVisto } from '../../components/onboarding/passo';
 import { OB_STEPS } from '../../components/onboarding/kit';
+import { t } from '../../lib/i18n';
 
 // Onboarding — transição da personalização (04/nov/2026), logo depois do "Seu caminho":
 // "Agora vamos personalizar sua rotina, <nome>." no estilo da "Calma, <nome>."
@@ -70,7 +71,7 @@ export default function Personalizar() {
       <StatusBar style={barraEscura ? 'dark' : 'light'} />
       <Animated.View pointerEvents="none" style={[styles.bloco, { top: H / 2 - 56 }, textoStyle]}>
         <BalancedText
-          text={nome ? `Agora vamos personalizar sua rotina, ${nome}.` : 'Agora vamos personalizar sua rotina.'}
+          text={nome ? t('Agora vamos personalizar sua rotina, {{nome}}.', { nome }) : t('Agora vamos personalizar sua rotina.')}
           style={styles.frase}
         />
       </Animated.View>

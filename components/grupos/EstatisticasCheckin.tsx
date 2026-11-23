@@ -15,6 +15,7 @@ import StepIcon from '../rotina/StepIcon';
 import { tipoDoPasso } from '../../lib/tipoPasso';
 import { duracaoPorExtenso } from '../../lib/sessaoSkincare';
 import type { EstatisticasCheckin } from '../../lib/gruposServidor';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const MUTE = '#818181';
@@ -25,15 +26,15 @@ export function resumoEstatisticas(e: EstatisticasCheckin): string {
   const produtos = e.n_produtos ?? (e.passos ?? []).filter((p) => p.marca || p.produto).length;
   return [
     e.duracao_s != null ? duracaoPorExtenso(e.duracao_s * 1000) : null,
-    passos ? `${passos} ${passos === 1 ? 'passo' : 'passos'}` : null,
-    produtos ? `${produtos} ${produtos === 1 ? 'produto' : 'produtos'}` : null,
+    passos ? (passos === 1 ? t('{{n}} passo', { n: passos }) : t('{{n}} passos', { n: passos })) : null,
+    produtos ? (produtos === 1 ? t('{{n}} produto', { n: produtos }) : t('{{n}} produtos', { n: produtos })) : null,
   ].filter(Boolean).join(' · ');
 }
 
 /** O título que ela escreveu; sem título (o servidor devolve "Rotina da manhã/noite"), o do skincare. */
 export const tituloEstatisticas = (e: EstatisticasCheckin, rotina: 'am' | 'pm' | null, titulo?: string | null) =>
   (titulo && !/^Rotina da (manhã|noite)$/.test(titulo.trim()) ? titulo
-    : (e.periodo ?? rotina) === 'am' ? 'Skincare matinal' : 'Skincare noturno');
+    : (e.periodo ?? rotina) === 'am' ? t('Skincare matinal') : t('Skincare noturno'));
 
 /** Fileira de miniaturas dos produtos (mural). Mostra até `max`; o resto vira "+N". */
 export function MiniaturasProdutos({ est, max = 5, tamanho = 30 }: { est: EstatisticasCheckin; max?: number; tamanho?: number }) {
@@ -73,15 +74,15 @@ export function BlocoEstatisticas({ est }: { est: EstatisticasCheckin }) {
   const nPassos = est.n_passos ?? passos.length;
   const nProd = est.n_produtos ?? passos.filter((p) => p.marca || p.produto).length;
   const min = est.duracao_s != null ? Math.round(est.duracao_s / 60) : null;
-  const tempo = min == null ? null : min < 1 ? { v: '<1', r: 'minuto' } : min < 60 ? { v: String(min), r: min === 1 ? 'minuto' : 'minutos' } : { v: `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`, r: 'de skincare' };
+  const tempo = min == null ? null : min < 1 ? { v: '<1', r: t('minuto') } : min < 60 ? { v: String(min), r: min === 1 ? t('minuto') : t('minutos') } : { v: `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`, r: t('de skincare') };
   return (
     <View style={styles.card}>
       <View style={styles.nums}>
         {tempo && <Numero valor={tempo.v} rotulo={tempo.r} />}
         {tempo && <View style={styles.numSep} />}
-        <Numero valor={String(nPassos)} rotulo={nPassos === 1 ? 'passo' : 'passos'} />
+        <Numero valor={String(nPassos)} rotulo={nPassos === 1 ? t('passo') : t('passos')} />
         <View style={styles.numSep} />
-        <Numero valor={String(nProd)} rotulo={nProd === 1 ? 'produto' : 'produtos'} />
+        <Numero valor={String(nProd)} rotulo={nProd === 1 ? t('produto') : t('produtos')} />
       </View>
       {passos.length > 0 && <View style={styles.sep} />}
       <LinhasPassos passos={passos} />
@@ -111,7 +112,7 @@ export function LinhasPassos({ passos }: { passos: NonNullable<EstatisticasCheck
                   <Text style={styles.linhaProd} numberOfLines={2}>{prod}</Text>
                 </>
               ) : (
-                <Text style={styles.linhaProd} numberOfLines={2}>{nome || 'Passo'}</Text>
+                <Text style={styles.linhaProd} numberOfLines={2}>{nome || t('Passo')}</Text>
               )}
             </View>
           </View>

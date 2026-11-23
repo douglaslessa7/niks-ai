@@ -7,12 +7,13 @@
 import { Linking, Share } from 'react-native';
 import { conviteDoGrupo } from './gruposServidor';
 import { trackFora } from './mixpanel/MixpanelProvider';
+import { t } from './i18n';
 
 export type Canal = 'whatsapp' | 'instagram' | 'copiar';
 const APP_STORE = 'https://apps.apple.com/app/id6760590018';
 
 export function mensagemConvite(nome: string, codigo: string) {
-  return `Entra no meu grupo "${nome}" no NIKS para a gente fazer skincare juntas! Baixe aqui: ${APP_STORE}\nSeu código: ${codigo}`;
+  return t('Entra no meu grupo "{{nome}}" no NIKS para a gente fazer skincare juntas! Baixe aqui: {{link}}\nSeu código: {{codigo}}', { nome, link: APP_STORE, codigo });
 }
 
 // expo-clipboard é nativo: até o app ser recompilado com ele, cai na folha do sistema.

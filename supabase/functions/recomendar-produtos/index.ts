@@ -9,6 +9,24 @@
 import { travaAssinatura } from '../_shared/assinatura.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { verifyJWT } from '../_shared/jwt.ts'
+import { usaMotorNovo } from '../_shared/motor/gerar.ts'
+import { montarProdutosV2 } from '../_shared/motor/recomendar.ts'
+import { ativoLegivelEn, paraIdioma, SEM_PRODUTO_EN } from '../_shared/motor/ingles.ts'
+import { avaliarProduto, lerReacoes } from '../_shared/motor/reacoes.ts'
+
+// Etapa 3 da tradução (nov/2026): com `idioma: 'en'` no corpo, os classificadores abaixo
+// também entendem os nomes de passo em INGLÊS (rotina escrita em inglês) e os textos para
+// ela saem em inglês. Sem o campo, nada muda: os termos em inglês só entram com `en = true`.
+const EN_PROTETOR = ['sunscreen', 'sunblock', 'sun protection']
+const EN_LIMPEZA = ['cleansing', 'face wash', 'facial wash', 'micellar', 'makeup remover']
+const EN_OLEO_LIMPEZA = ['cleansing oil', 'cleansing balm']
+const EN_TONICO = ['toner', 'essence']
+const EN_BARREIRA = ['barrier']
+const EN_HIDRATACAO = ['moisturi', 'ceramide', 'emollient', 'gel-cream', 'gel cream', 'hydrating', 'face cream', 'night cream', 'day cream', 'rich cream']
+const EN_FINALIZACAO = ['occlusive', 'squalane', 'facial oil', 'face oil', 'petrolatum', 'vaseline']
+const EN_TRATAMENTO = ['acid', 'retinoid', 'tretinoin', 'vitamin c', 'niacinamide', 'antioxidant', 'treatment', 'spot']
+const EN_REPARADOR = ['repair', 'ceramide']
+const EN_OLHOS = ['eye cream', 'eye serum', 'eye gel', 'eye area', 'under-eye', 'undereye', 'under eye', 'dark circle', 'periorbital', 'around the eyes']
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,24 +46,26 @@ const json = (body: unknown, status = 200) =>
 // ─────────────────────────────────────────────────────────────────────────────
 type IconName = 'sun' | 'moon' | 'drop' | 'cleanser' | 'sparkle' | 'flask' | 'shield'
 
-function classifyStep(name: string, ingredient: string): { category: string; icon: IconName } {
+function classifyStep(name: string, ingredient: string, en = false): { category: string; icon: IconName } {
   const t = `${name} ${ingredient}`.toLowerCase()
-  const has = (...ks: string[]) => ks.some((k) => t.includes(k))
+  const has0 = (...ks: string[]) => ks.some((k) => t.includes(k))
+  // `ingles`: termos acrescentados só quando a rotina está em inglês (en = true).
+  const has = (...ks: (string | string[])[]) => has0(...ks.flatMap((k) => (Array.isArray(k) ? (en ? k : []) : [k])))
 
-  if (has('protetor solar', 'protetor', 'fps', 'filtro solar', 'spf')) return { category: 'Proteção', icon: 'sun' }
-  if (has('limpeza', 'cleanser', 'sabonete', 'espuma de limp', 'demaquilante', 'água micelar', 'agua micelar')) {
-    const oleoso = has('óleo', 'oleo', 'balm', 'bálsamo', 'balsamo', 'oil')
+  if (has('protetor solar', 'protetor', 'fps', 'filtro solar', 'spf', EN_PROTETOR)) return { category: 'Proteção', icon: 'sun' }
+  if (has('limpeza', 'cleanser', 'sabonete', 'espuma de limp', 'demaquilante', 'água micelar', 'agua micelar', EN_LIMPEZA)) {
+    const oleoso = has('óleo', 'oleo', 'balm', 'bálsamo', 'balsamo', 'oil', EN_OLEO_LIMPEZA)
     return { category: 'Limpeza', icon: oleoso ? 'drop' : 'cleanser' }
   }
-  if (has('tônico', 'tonico', 'essência', 'essencia', 'tônica', 'tonica')) return { category: 'Tônico', icon: 'drop' }
-  if (has('barreira')) return { category: 'Barreira', icon: 'shield' }
-  if (has('hidratante', 'ceramida', 'emoliente', 'gel-creme', 'gel creme', 'creme hidratante', 'hidrata')) {
+  if (has('tônico', 'tonico', 'essência', 'essencia', 'tônica', 'tonica', EN_TONICO)) return { category: 'Tônico', icon: 'drop' }
+  if (has('barreira', EN_BARREIRA)) return { category: 'Barreira', icon: 'shield' }
+  if (has('hidratante', 'ceramida', 'emoliente', 'gel-creme', 'gel creme', 'creme hidratante', 'hidrata', EN_HIDRATACAO)) {
     return { category: 'Hidratação', icon: 'flask' }
   }
-  if (has('oclusivo', 'esqualano', 'óleo facial', 'oleo facial', 'vaselina')) return { category: 'Finalização', icon: 'drop' }
+  if (has('oclusivo', 'esqualano', 'óleo facial', 'oleo facial', 'vaselina', EN_FINALIZACAO)) return { category: 'Finalização', icon: 'drop' }
   if (has('sérum', 'serum', 'ácido', 'acido', 'retinol', 'retinoide', 'retinal', 'tretinoína', 'tretinoina',
-          'vitamina c', 'niacinamida', 'azelaico', 'peptíde', 'peptide', 'antioxidante', 'aha', 'bha', 'tratamento')) {
-    if (has('reparador', 'ceramida')) return { category: 'Tratamento', icon: 'flask' }
+          'vitamina c', 'niacinamida', 'azelaico', 'peptíde', 'peptide', 'antioxidante', 'aha', 'bha', 'tratamento', EN_TRATAMENTO)) {
+    if (has('reparador', 'ceramida', EN_REPARADOR)) return { category: 'Tratamento', icon: 'flask' }
     return { category: 'Tratamento', icon: 'sparkle' }
   }
   return { category: 'Cuidado', icon: 'sparkle' }
@@ -82,9 +102,9 @@ function categoriaProduto(label: string, icon: IconName): string | null {
 const OLHOS_KEYWORDS = [
   'olheira', 'periocular', 'area dos olhos', 'contorno dos olhos', 'para os olhos', 'para olhos',
 ]
-function isOlhos(name: string, ingredient: string): boolean {
+function isOlhos(name: string, ingredient: string, en = false): boolean {
   const t = norm(`${name} ${ingredient}`)
-  return OLHOS_KEYWORDS.some((k) => t.includes(k))
+  return OLHOS_KEYWORDS.some((k) => t.includes(k)) || (en && EN_OLHOS.some((k) => t.includes(k)))
 }
 // Só estes labels podem virar 'olhos' — são exatamente os três caminhos acima.
 // Limpeza/Proteção/Tônico/Finalização/Barreira ficam de fora DE PROPÓSITO: é o que
@@ -128,22 +148,35 @@ const SKIN_TYPE_TO_CODE: Record<string, string> = {
 // 'acido' genérico foi propositalmente removido de aha_bha p/ não cortar ácido hialurônico.
 const ALLERGEN_KEYWORDS: Record<string, string[]> = {
   fragrancia:       ['fragr', 'perfum', 'aroma'],
-  aha_bha:          ['aha', 'bha', 'salicilico', 'glicolico', 'mandelico', 'lactico', 'latico', 'ferulico', 'esfoliante', 'peeling'],
+  // aha_bha: por ingrediente em _shared/motor/reacoes.ts (23/nov/2026), não por palavra.
   oleos_essenciais: ['oleo essencial', 'oleos essenciais', 'essential oil'],
   vitamina_c:       ['vitamina c', 'vit c', 'ascorbico'],
   centella:         ['centella', 'cica', 'gotu kola'],
   alcool:           ['alcool', 'alcohol'],
   niacinamida_alta: ['niacinamida', 'niacin', 'vitamina b3'],
   propolis:         ['propolis', 'propole'],
-  retinoides:       ['retino', 'tretinoina', 'retinal', 'adapaleno', 'vitamina a'],
+  retinoides:       ['retino', 'tretinoina', 'retinal', 'adapaleno', 'vitamina a', 'vitacid', 'vitaminacid', 'vitanol', 'differin', 'epiduo'],
 }
 
-function allergenCutCodes(allergyDescription: string | null | undefined): string[] {
+// Os mesmos alérgenos, escritos em inglês (descrição em inglês; só com en = true).
+const ALLERGEN_KEYWORDS_EN: Record<string, string[]> = {
+  fragrancia:       ['fragrance', 'perfume', 'scent'],
+  oleos_essenciais: ['essential oil'],
+  vitamina_c:       ['vitamin c', 'ascorbic'],
+  centella:         ['centella', 'cica', 'gotu kola'],
+  alcool:           ['alcohol'],
+  niacinamida_alta: ['niacinamide', 'niacin', 'vitamin b3'],
+  propolis:         ['propolis'],
+  retinoides:       ['retino', 'tretinoin', 'retinal', 'adapalene', 'vitamin a', 'retin-a', 'differin', 'epiduo'],
+}
+
+function allergenCutCodes(allergyDescription: string | null | undefined, en = false): string[] {
   if (!allergyDescription) return []
   const t = norm(allergyDescription)
   const cut = new Set<string>()
   for (const [code, kws] of Object.entries(ALLERGEN_KEYWORDS)) {
     if (kws.some((k) => t.includes(k))) cut.add(code)
+    if (en && (ALLERGEN_KEYWORDS_EN[code] ?? []).some((k) => t.includes(k))) cut.add(code)
   }
   return [...cut]
 }
@@ -189,37 +222,39 @@ function resolveSkinTypeCode(tipoPele: string | null | undefined, scan: any): st
 //   kind 'known'   → ativo reconhecido; `codes` = ativos_principais que satisfazem o gate.
 //                    AHA é CLASSE (mandélico/glicólico/láctico/aha/pha se substituem). BHA e azelaico são EXATOS.
 type Target = { kind: 'eye' | 'unknown' | 'known'; label?: string; codes?: string[] }
-function detectTargetActive(name: string, ingredient: string): Target {
+function detectTargetActive(name: string, ingredient: string, en = false): Target {
   const t = norm(`${name} ${ingredient}`)
-  const has = (...ks: string[]) => ks.some((k) => t.includes(k))
+  const has0 = (...ks: string[]) => ks.some((k) => t.includes(k))
+  // Listas entre colchetes: termos em inglês, só com en = true (mesma ordem de prioridade).
+  const has = (...ks: (string | string[])[]) => has0(...ks.flatMap((k) => (Array.isArray(k) ? (en ? k : []) : [k])))
   // Olhos / olheiras → omitir silenciosamente (regra de olheiras).
-  if (has('olheira', 'periocular', 'area dos olhos', 'contorno dos olhos', 'para os olhos', 'para olhos')) return { kind: 'eye' }
+  if (has('olheira', 'periocular', 'area dos olhos', 'contorno dos olhos', 'para os olhos', 'para olhos', EN_OLHOS)) return { kind: 'eye' }
   // Bakuchiol: NUNCA vira retinoide (retinol é contraindicado em gestante) → sem produto.
   if (has('bakuchiol')) return { kind: 'unknown', label: 'bakuchiol' }
   // Retinoides → retinol (único do catálogo).
-  if (has('retinol', 'retinal', 'retinaldeido', 'tretinoina', 'retinoide', 'adapaleno', ' hpr', 'hidroxipinacolona')) return { kind: 'known', label: 'retinoide', codes: ['retinol'] }
+  if (has('retinol', 'retinal', 'retinaldeido', 'tretinoina', 'retinoide', 'adapaleno', ' hpr', 'hidroxipinacolona', ['tretinoin', 'retinoid', 'adapalene', 'hydroxypinacolone'])) return { kind: 'known', label: 'retinoide', codes: ['retinol'] }
   // Azelaico — EXATO (não entra na classe AHA).
   if (has('azelaico', 'azelaic')) return { kind: 'known', label: 'azelaico', codes: ['acido_azelaico'] }
   // BHA / salicílico — EXATO (não vaza para AHA).
-  if (has('salicilico', ' bha', 'betaidroxi', ' lha')) return { kind: 'known', label: 'bha', codes: ['acido_salicilico'] }
+  if (has('salicilico', ' bha', 'betaidroxi', ' lha', ['salicylic', 'beta hydroxy', 'beta-hydroxy'])) return { kind: 'known', label: 'bha', codes: ['acido_salicilico'] }
   // AHA — CLASSE: mandélico/glicólico/láctico/aha/pha satisfazem uns aos outros.
-  if (has('mandelico', 'glicolico', 'lactico', 'latico', ' aha', ' pha', 'esfoliante quimico', 'esfoliacao quimica')) return { kind: 'known', label: 'aha', codes: ['acido_mandelico', 'acido_glicolico', 'aha', 'pha'] }
+  if (has('mandelico', 'glicolico', 'lactico', 'latico', ' aha', ' pha', 'esfoliante quimico', 'esfoliacao quimica', ['mandelic', 'glycolic', 'lactic', 'gluconolactone', 'chemical exfoliant', 'alpha hydroxy', 'alpha-hydroxy'])) return { kind: 'known', label: 'aha', codes: ['acido_mandelico', 'acido_glicolico', 'aha', 'pha'] }
   // Tranexâmico — EXATO.
-  if (has('tranexamico')) return { kind: 'known', label: 'tranexamico', codes: ['acido_tranexamico'] }
+  if (has('tranexamico', ['tranexamic'])) return { kind: 'known', label: 'tranexamico', codes: ['acido_tranexamico'] }
   // Niacinamida (pega 'niacinamide' EN também).
   if (has('niacinamid')) return { kind: 'known', label: 'niacinamida', codes: ['niacinamida'] }
   // Peptídeos.
   if (has('peptide', 'peptideo')) return { kind: 'known', label: 'peptideos', codes: ['peptideos'] }
   // Calmante / centella / pantenol.
-  if (has('centella', 'cica ', 'pantenol', 'calmante', 'madecassoside')) return { kind: 'known', label: 'centella', codes: ['centella'] }
+  if (has('centella', 'cica ', 'pantenol', 'calmante', 'madecassoside', ['panthenol', 'soothing', 'calming'])) return { kind: 'known', label: 'centella', codes: ['centella'] }
   // PDRN.
   if (has('pdrn')) return { kind: 'known', label: 'pdrn', codes: ['pdrn'] }
   // Mucina de caracol.
-  if (has('mucina', 'snail', 'caracol')) return { kind: 'known', label: 'mucina', codes: ['mucina_de_caracol'] }
+  if (has('mucina', 'snail', 'caracol', ['mucin'])) return { kind: 'known', label: 'mucina', codes: ['mucina_de_caracol'] }
   // Ácido hialurônico (sérum de hidratação).
-  if (has('hialuronico', 'hialuronato')) return { kind: 'known', label: 'hialuronico', codes: ['acido_hialuronico'] }
+  if (has('hialuronico', 'hialuronato', ['hyaluronic', 'hyaluronate'])) return { kind: 'known', label: 'hialuronico', codes: ['acido_hialuronico'] }
   // Vitamina C / antioxidante — POR ÚLTIMO ('antioxidante' é amplo; ativos específicos vêm antes).
-  if (has('vitamina c', 'vit c', 'ascorb', 'antioxidante')) return { kind: 'known', label: 'vitamina_c', codes: ['vitamina_c'] }
+  if (has('vitamina c', 'vit c', 'ascorb', 'antioxidante', ['vitamin c', 'antioxidant'])) return { kind: 'known', label: 'vitamina_c', codes: ['vitamina_c'] }
   // Tratamento com ativo que não mapeamos (peróxido de benzoíla, thiamidol, clindamicina...).
   return { kind: 'unknown' }
 }
@@ -229,11 +264,11 @@ const SEM_PRODUTO_MSG = 'Ainda não temos um produto no catálogo para este pass
 // Copy mínima determinística a partir dos dados do produto — usada SEMPRE que a IA
 // não devolver copy. NUNCA salvar string vazia (regra dura).
 const ativoLegivel = (a: string) => (a ?? '').replace(/_/g, ' ').replace(/\bacido\b/g, 'ácido')
-function synthCopy(p: any): string {
-  if (!p) return 'Boa opção para a sua rotina.'
-  const ativo = Array.isArray(p.ativos_principais) && p.ativos_principais[0] ? ativoLegivel(p.ativos_principais[0]) : ''
+function synthCopy(p: any, en = false): string {
+  if (!p) return en ? 'A great pick for your routine.' : 'Boa opção para a sua rotina.'
+  const ativo = Array.isArray(p.ativos_principais) && p.ativos_principais[0] ? (en ? ativoLegivelEn(p.ativos_principais[0]) : ativoLegivel(p.ativos_principais[0])) : ''
   const para = (p.ideal_para || '').trim()
-  let s = ativo ? `${p.marca} com ${ativo}` : `${p.marca} ${p.nome}`
+  let s = ativo ? (en ? `${p.marca} with ${ativo}` : `${p.marca} com ${ativo}`) : `${p.marca} ${p.nome}`
   if (para) s += ` — ${para}`
   s = s.trim()
   s = s.charAt(0).toUpperCase() + s.slice(1)
@@ -244,24 +279,26 @@ function synthCopy(p: any): string {
 // qualquer categoria — usado para desempatar passos-irmãos da mesma categoria staple
 // (ex.: "Hidratante Leve" vs "Hidratante com Ceramidas"). Retorna códigos de
 // ativos_principais preferidos + se o passo pede textura leve.
-function stepIntent(name: string, ingredient: string): { codes: string[]; light: boolean } {
+function stepIntent(name: string, ingredient: string, en = false): { codes: string[]; light: boolean } {
   const t = norm(`${name} ${ingredient}`)
+  // Inglês (só com en = true): os mesmos ativos/texturas com o nome em inglês.
+  const e = (...ks: string[]) => en && ks.some((k) => t.includes(k))
   const codes = new Set<string>()
   const add = (cond: boolean, ...cs: string[]) => { if (cond) cs.forEach((c) => codes.add(c)) }
-  add(t.includes('ceramida'), 'ceramidas')
-  add(t.includes('hialuron'), 'acido_hialuronico')
+  add(t.includes('ceramida') || e('ceramide'), 'ceramidas')
+  add(t.includes('hialuron') || e('hyaluron'), 'acido_hialuronico')
   add(t.includes('niacinamid'), 'niacinamida')
-  add(t.includes('salicilico') || t.includes(' bha'), 'acido_salicilico')
-  add(t.includes('glicolico'), 'acido_glicolico', 'aha')
-  add(t.includes('mandelico'), 'acido_mandelico', 'aha')
+  add(t.includes('salicilico') || t.includes(' bha') || e('salicylic'), 'acido_salicilico')
+  add(t.includes('glicolico') || e('glycolic'), 'acido_glicolico', 'aha')
+  add(t.includes('mandelico') || e('mandelic'), 'acido_mandelico', 'aha')
   add(t.includes(' aha') || t.includes(' pha'), 'aha', 'pha')
-  add(t.includes('centella') || t.includes('cica ') || t.includes('pantenol') || t.includes('calmante') || t.includes('madecass'), 'centella', 'pantenol')
+  add(t.includes('centella') || t.includes('cica ') || t.includes('pantenol') || t.includes('calmante') || t.includes('madecass') || e('panthenol', 'soothing', 'calming'), 'centella', 'pantenol')
   add(t.includes('propolis'), 'propolis')
   add(t.includes('mucina') || t.includes('snail') || t.includes('caracol'), 'mucina_de_caracol')
   add(t.includes('tea tree') || t.includes('melaleuca'), 'tea_tree')
   add(t.includes('esqualano') || t.includes('squalane'), 'esqualano')
-  add(t.includes('vaselina') || t.includes('petrolato'), 'petrolato')
-  const light = t.includes('leve') || t.includes('gel') || t.includes('oil-free') || t.includes('oil free') ||
+  add(t.includes('vaselina') || t.includes('petrolato') || e('petrolatum', 'vaseline'), 'petrolato')
+  const light = e('light', 'lightweight') || t.includes('leve') || t.includes('gel') || t.includes('oil-free') || t.includes('oil free') ||
     t.includes('oilfree') || t.includes('matte') || t.includes('fluido') || t.includes('aquoso') || t.includes('livre de oleo')
   return { codes: [...codes], light }
 }
@@ -314,7 +351,11 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { scan_id, regenerate } = await req.json().catch(() => ({}))
+    const corpo = await req.json().catch(() => ({}))
+    const { scan_id, regenerate } = corpo
+    // Idioma do celular (etapa 3 da tradução). Sem o campo (app antigo) → português.
+    const idioma = paraIdioma(corpo?.idioma)
+    const en = idioma === 'en'
 
     // Segurança (08/nov/2026): só com sessão válida, e a conta é sempre a do token. O
     // `user_id` que o app ainda manda no corpo é ignorado.
@@ -333,6 +374,19 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
+
+    // Motor da rotina v2 (nov/2026): produtos por ATIVO, casa primeiro, orçamento como
+    // preferência e a Minha rotina já com produto. Só para quem `usa_motor_novo` libera.
+    // Falha inesperada → segue no caminho antigo.
+    if (await usaMotorNovo(supabase, user_id)) {
+      try {
+        const r = await montarProdutosV2(supabase, user_id, { scanId: scan_id ?? null, regenerate: regenerate === true, idioma })
+        return json({ recomendacao: r.recomendacao, ...(('cached' in r && r.cached) ? { cached: true } : {}) })
+      } catch (e: any) {
+        if (e?.status === 404 || e?.status === 409) return json({ error: String(e.message) }, e.status)
+        console.error('MOTOR_V2_PRODUTOS_FALHOU', String(e))
+      }
+    }
 
     // ── Guarda "gerar uma vez" ────────────────────────────────────────────────
     const { data: existing } = await supabase
@@ -378,7 +432,8 @@ Deno.serve(async (req) => {
       .map((l: string) => CONCERN_LABEL_TO_CODE[norm(l)])
       .filter(Boolean)
     const concernCodes = [...new Set<string>([...onboardingConcerns, ...scanConcernCodes(scan)])]
-    const cutCodes = allergenCutCodes(user.allergy_description)
+    const cutCodes = allergenCutCodes(user.allergy_description, en)
+    const reacoes = lerReacoes(user.allergy_description)
     const isSensitive = user.allergy_type === 'sensitive'
     // "Tentando engravidar" entra no MESMO filtro de gestação e amamentação (04/nov/2026) — como
     // na generate-protocol, na Minha rotina e nos avisos de produto. ⚠️ Só vale depois do deploy.
@@ -392,10 +447,10 @@ Deno.serve(async (req) => {
         const name = (raw?.name ?? '').trim()
         const ingredient = (raw?.ingredient ?? '').trim()
         if (!name) continue
-        const { category, icon } = classifyStep(name, ingredient)
+        const { category, icon } = classifyStep(name, ingredient, en)
         // Olhos resolve ANTES do mapa de categorias e cobre os três caminhos de uma vez.
         // `category` (o label) NÃO muda: é ele que a tela exibe e tem que bater com a Rotina.
-        const cat = (OLHOS_LABELS.has(category) && isOlhos(name, ingredient))
+        const cat = (OLHOS_LABELS.has(category) && isOlhos(name, ingredient, en))
           ? 'olhos'
           : categoriaProduto(category, icon)
         if (!cat) continue // 'Cuidado' / não reconhecido → omite o passo
@@ -441,6 +496,8 @@ Deno.serve(async (req) => {
       if (isPregnant) q = q.eq('seguro_gestante', true)
       const { data: prods } = await q
       let elig = (prods ?? []).filter((p) => !overlaps(p.alergenos, cutCodes)) // corte DURO de alérgeno
+        // Reação por ingrediente (23/nov/2026): glicólico leve não tira BHA/PHA/lático suave.
+        .filter((p) => avaliarProduto({ codigos: p.ativos_principais, alergenos: p.alergenos, texto: p.nome, intensidade: p.intensidade }, reacoes)?.tipo !== 'bloqueia')
       if (gateCodes) elig = elig.filter((p) => overlaps(p.ativos_principais, gateCodes)) // GATE de ingrediente
       return rank(elig, pref)
     }
@@ -456,14 +513,14 @@ Deno.serve(async (req) => {
     for (const s of steps) catCount.set(s.categoria, (catCount.get(s.categoria) ?? 0) + 1)
 
     for (const step of steps) {
-      const pref = stepIntent(step.name, step.ingredient) // preferência de intenção (nudge)
+      const pref = stepIntent(step.name, step.ingredient, en) // preferência de intenção (nudge)
       // `olhos` é STAPLE (sem gate), mesmo classificando como 'Tratamento': o gate existe
       // para o colapso de escolha num pool de 70 séruns; com 15 produtos numa categoria
       // própria ele só produziria pool vazio (aha/bha/tranexamico/azelaico = 0 produtos),
       // e pool vazio em Tratamento vira card `sem_produto` VISÍVEL — pior que o silêncio.
       if (step.label === 'Tratamento' && step.categoria !== 'olhos') {
         // Só passos de Tratamento são gateados por ingrediente.
-        const target = detectTargetActive(step.name, step.ingredient)
+        const target = detectTargetActive(step.name, step.ingredient, en)
         // Inalcançável desde que 'olhos' virou staple (as keywords de isOlhos cobrem as
         // deste branch). Mantido como rede: se os dois vocabulários divergirem, o passo
         // volta a ser omitido em silêncio em vez de cair no pool errado.
@@ -540,7 +597,11 @@ Responda SOMENTE com JSON no formato:
     const userPrompt = `PERFIL DA USUÁRIA:\n${JSON.stringify(perfil, null, 2)}\n\nPASSOS E PRODUTOS ELEGÍVEIS (já compatíveis com o ativo que cada passo pede):\n${JSON.stringify(passosInput, null, 2)}`
 
     // Só chama a IA se houver passos com produto. (Pode haver só passos sem_produto.)
-    const aiOut = iaSteps.length > 0 ? await callOpenAI(systemPrompt, userPrompt) : { passos: [] }
+    // Inglês: o mesmo pedido + a instrução de idioma no fim (só a copy é texto para ela).
+    const systemPromptIdioma = en
+      ? systemPrompt + '\n\nLANGUAGE — OVERRIDES THE OUTPUT LANGUAGE ABOVE: the user reads the app in English. Write every "copy" in natural American English, warm and personal (same rules: short, ~18 words, specific to her). Keep the JSON format and the ids exactly as specified.'
+      : systemPrompt
+    const aiOut = iaSteps.length > 0 ? await callOpenAI(systemPromptIdioma, userPrompt) : { passos: [] }
 
     // ── Validação: só ids elegíveis, exatamente 1 principal, 1–3 por passo ───
     const aiByIndex = new Map<number, any>()
@@ -564,7 +625,7 @@ Responda SOMENTE com JSON no formato:
           ingrediente_alvo: r.ingrediente_alvo,
           produtos: [],
           sem_produto: true,
-          motivo: SEM_PRODUTO_MSG,
+          motivo: en ? SEM_PRODUTO_EN : SEM_PRODUTO_MSG,
         })
         continue
       }
@@ -606,7 +667,7 @@ Responda SOMENTE com JSON no formato:
       // Copy NUNCA vazia: se a IA não deu copy (ou trocamos o produto), sintetiza dos dados.
       list = list.map((x: any) => (x.copy && x.copy.length > 0)
         ? x
-        : { ...x, copy: synthCopy(byId(r.produtos, x.produto_id)) })
+        : { ...x, copy: synthCopy(byId(r.produtos, x.produto_id), en) })
 
       used.add(list.find((x: any) => x.principal)!.produto_id)
       usedPrincipalByCat.set(cat, used)

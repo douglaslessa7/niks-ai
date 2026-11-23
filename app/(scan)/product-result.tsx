@@ -7,7 +7,6 @@ import ProductAnalysis from '../../components/product/ProductAnalysis';
 import { requestAppReview } from '../../lib/storeReview';
 import { clearShareResume } from '../../lib/shareResume';
 import { useColecaoToggle } from '../../hooks/useColecaoToggle';
-import { waitScanCutout } from '../../lib/scanCutouts';
 import { supabase } from '../../lib/supabase';
 import { getUserId } from '../../lib/currentUser';
 import { addToColecao } from '../../lib/colecao';
@@ -23,6 +22,7 @@ import { ganhouPontos } from '../../lib/pontosAnimacao';
 import { encerrarGuia, irParaGuia, useGuia } from '../../lib/guia';
 import { verificarDesafios } from '../../lib/missoes';
 import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { t } from '../../lib/i18n';
 
 // Tela de RESULTADO do scan de produto (fluxo da câmera → loading → aqui).
 // O layout inteiro vive em `components/product/ProductAnalysis` — o MESMO componente que o
@@ -95,16 +95,16 @@ export default function ProductResult() {
         await definirProdutoDoPasso(alvo.passoId, { origem: 'estante', id: colecaoId }, aviso);
         invalidateCache(`minharotina:${uid}`);
         haptics.success();
-        Alert.alert('Adicionado à sua rotina', `Entrou no passo "${alvo.nome}" e na sua estante.`, [
-          { text: 'OK', style: 'cancel' },
-          { text: 'Ver rotina', onPress: () => router.replace('/(app)/protocolo' as any) },
+        Alert.alert(t('Adicionado à sua rotina'), t('Entrou no passo "{{passo}}" e na sua estante.', { passo: alvo.nome }), [
+          { text: t('OK'), style: 'cancel' },
+          { text: t('Ver rotina'), onPress: () => router.replace('/(app)/protocolo' as any) },
         ]);
       };
       if (aviso.nivel === 'forte') {
         haptics.warning();
-        Alert.alert('Atenção', `${aviso.texto ?? 'Esse produto pede cuidado na sua pele.'}\n\nEle já está na sua estante.`, [
-          { text: 'Escolher outro', style: 'cancel' },
-          { text: 'Usar mesmo assim', style: 'destructive', onPress: () => { void usar().catch(() => {}); } },
+        Alert.alert(t('Atenção'), t('{{aviso}}\n\nEle já está na sua estante.', { aviso: aviso.texto ? t(aviso.texto) : t('Esse produto pede cuidado na sua pele.') }), [
+          { text: t('Escolher outro'), style: 'cancel' },
+          { text: t('Usar mesmo assim'), style: 'destructive', onPress: () => { void usar().catch(() => {}); } },
         ]);
       } else {
         await usar();
@@ -112,7 +112,7 @@ export default function ProductResult() {
     })().catch((e) => {
       console.warn('[rotina] produto escaneado não entrou no passo:', e);
       haptics.error();
-      Alert.alert('Não deu pra pôr no passo', 'Abra a Rotina e escolha o produto de novo.');
+      Alert.alert(t('Não deu pra pôr no passo'), t('Abra a Rotina e escolha o produto de novo.'));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alvo, r?.status, r?.scan_id, colecaoSrc]);
@@ -154,7 +154,7 @@ export default function ProductResult() {
         console.warn('[rotina] adicionar do scan falhou:', e);
         haptics.error();
         setRotinaEstado('livre');
-        Alert.alert('Não deu para adicionar', 'Verifique sua conexão e tente de novo.');
+        Alert.alert(t('Não deu para adicionar'), t('Verifique sua conexão e tente de novo.'));
       }
     };
     // Aviso forte (risco real, ex.: retinoide na gravidez) pede confirmação, como na folha.
@@ -167,9 +167,9 @@ export default function ProductResult() {
     }, { pregnancyStatus: u?.pregnancy_status ?? null, tipoPele: u?.tipo_pele ?? null });
     if (av.nivel === 'forte') {
       haptics.warning();
-      Alert.alert('Atenção', av.texto ?? 'Esse produto pede cuidado na sua pele.', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Adicionar mesmo assim', style: 'destructive', onPress: () => { void fazer(); } },
+      Alert.alert(t('Atenção'), av.texto ? t(av.texto) : t('Esse produto pede cuidado na sua pele.'), [
+        { text: t('Cancelar'), style: 'cancel' },
+        { text: t('Adicionar mesmo assim'), style: 'destructive', onPress: () => { void fazer(); } },
       ]);
     } else {
       await fazer();
@@ -189,24 +189,14 @@ export default function ProductResult() {
       col.recheck();
       setRotinaEstado('livre');
     } catch {
-      Alert.alert('Não deu para desfazer', 'Abra a Rotina e remova o passo por lá.');
+      Alert.alert(t('Não deu para desfazer'), t('Abra a Rotina e remova o passo por lá.'));
     }
   };
 
-  // Recorte sem fundo (Fase 3): o servidor faz em segundo plano depois da análise. A foto
-  // original aparece na hora; quando o recorte fica pronto, troca por ele. Espera até 90 s:
-  // o normal é ~5 s, mas com a fila do Replicate cheia (429) o servidor tenta de novo por
-  // até ~3 min — com 20 s a tela desistia e ficava com a foto de fundo até ser reaberta.
-  // Se falhar, fica a original.
-  const [cutoutUri, setCutoutUri] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    setCutoutUri(null);
-    if (r?.status === 'ok' && r?.scan_id) {
-      waitScanCutout(r.scan_id, 90_000).then((url) => { if (alive && url) setCutoutUri(url); }).catch(() => {});
-    }
-    return () => { alive = false; };
-  }, [r?.scan_id, r?.status]);
+  // Recorte sem fundo (Fase 3): o servidor faz em segundo plano depois da análise e ele é
+  // usado na estante e nos "Escaneados". AQUI NÃO (18/nov/2026, pedido do produto): o
+  // resultado logo depois do scan mostra a foto que ela tirou, com a mão — antes a tela
+  // esperava o recorte e trocava a foto (ficava em branco no meio da troca).
 
   // 81t/81u · "Compartilhar com o grupo?" no FIM do scan: abre quando ela fecha o
   // resultado (aberta por cima da análise, cobriria o que ela acabou de escanear). Uma
@@ -228,7 +218,7 @@ export default function ProductResult() {
     setCompartilhando(true);
     try {
       const res = await compartilharProduto(r.scan_id, grupos);
-      if (!res.ok) { Alert.alert(res.motivo === 'filtro' ? 'Essa foto não pode ser publicada no grupo. Tente outra.' : 'Não deu para compartilhar agora', res.motivo === 'filtro' ? undefined : 'Tente de novo em instantes.'); return; }
+      if (!res.ok) { Alert.alert(res.motivo === 'filtro' ? t('Essa foto não pode ser publicada no grupo. Tente outra.') : t('Não deu para compartilhar agora'), res.motivo === 'filtro' ? undefined : t('Tente de novo em instantes.')); return; }
       trackFora('compartilhado', { origem: 'produto', grupos: res.grupos.length, carta: Boolean(res.carta_id) });
       await Promise.all(res.grupos.map((g) => invalidarGrupos(g)));
       haptics.success();
@@ -238,7 +228,7 @@ export default function ProductResult() {
       // Regras novas das cartas: produto no grupo dá pontos sem carta (1/dia) — a barra sobe já.
       else ganhouPontos(res.pontos ?? null);
     } catch {
-      Alert.alert('Não deu para compartilhar agora', 'Confira a internet e tente de novo.');
+      Alert.alert(t('Não deu para compartilhar agora'), t('Confira a internet e tente de novo.'));
     } finally {
       setCompartilhando(false);
     }
@@ -250,11 +240,10 @@ export default function ProductResult() {
     <ProductAnalysis
       result={productScanResult}
       photoUri={photoUri}
-      cutoutUri={cutoutUri}
       // Veio da folha "Escolher produto" → fecha de volta na Rotina.
       onClose={aoFechar}
       onRescan={() => router.replace('/(scan)/product-camera' as any)}
-      rescanLabel={productScanResult?.status === 'precisa_foto' ? 'Escanear os ingredientes' : 'Escanear outro produto'}
+      rescanLabel={productScanResult?.status === 'precisa_foto' ? t('Tirar outra foto') : t('Escanear outro produto')}
       colecao={colecaoSrc && col.owned !== null ? { owned: col.owned, busy: col.busy, onToggle: col.toggle } : undefined}
       rotina={!veioDaRotina && !alvo && r?.status === 'ok' && r?.scan_id ? { estado: rotinaEstado, onAdd: () => { void adicionarNaRotina(); } } : undefined}
     />
@@ -270,7 +259,7 @@ export default function ProductResult() {
       >
         <Text style={{ flex: 1, fontSize: 15, lineHeight: 20, color: '#FFFFFF' }}>{aviso.texto}</Text>
         <TouchableOpacity onPress={desfazer} hitSlop={10}>
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#FF8AC0' }}>Desfazer</Text>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#FF8AC0' }}>{t('Desfazer')}</Text>
         </TouchableOpacity>
       </Animated.View>
     )}

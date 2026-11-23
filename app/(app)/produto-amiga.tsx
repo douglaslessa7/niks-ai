@@ -11,6 +11,7 @@ import { abrirTrava } from '../../lib/trava';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { voltar as voltarOu } from '../../lib/navegar';
+import { t } from '../../lib/i18n';
 
 const PINK = '#E0447F';
 
@@ -39,9 +40,9 @@ export default function ProdutoAmiga() {
     produtoCompartilhado(grupo, id)
       .then((r) => {
         if (r.ok) setDados({ resultado: r.resultado, foto_url: r.foto_url });
-        else { Alert.alert('Esse produto não está mais disponível'); voltar(); }
+        else { Alert.alert(t('Esse produto não está mais disponível')); voltar(); }
       })
-      .catch(() => { Alert.alert('Não deu para abrir agora', 'Confira a internet e tente de novo.'); voltar(); });
+      .catch(() => { Alert.alert(t('Não deu para abrir agora'), t('Confira a internet e tente de novo.')); voltar(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grupo, id]);
 
@@ -53,7 +54,7 @@ export default function ProdutoAmiga() {
       setProductImage(await baixarBase64(dados.foto_url), 'image/jpeg');
       router.push('/(scan)/product-loading' as any);
     } catch {
-      Alert.alert('Não deu para analisar agora', 'Confira a internet e tente de novo.');
+      Alert.alert(t('Não deu para analisar agora'), t('Confira a internet e tente de novo.'));
     } finally {
       setAnalisando(false);
     }
@@ -62,17 +63,17 @@ export default function ProdutoAmiga() {
   if (!dados) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9f9f9' }}><ActivityIndicator /></View>;
 
   const bloco = convidada ? (
-    <TouchableOpacity activeOpacity={0.8} onPress={() => { haptics.tap(); abrirTrava('compatibilidade'); }} style={{ alignItems: 'center', paddingVertical: 8 }} accessibilityLabel="Ver a compatibilidade">
+    <TouchableOpacity activeOpacity={0.8} onPress={() => { haptics.tap(); abrirTrava('compatibilidade'); }} style={{ alignItems: 'center', paddingVertical: 8 }} accessibilityLabel={t('Ver a compatibilidade')}>
       <Text style={{ fontSize: 72, fontWeight: '800', color: 'transparent', textShadowColor: 'rgba(224,68,127,0.75)', textShadowRadius: 22, textShadowOffset: { width: 0, height: 0 } }}>88%</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -8 }}>
         <Lock size={16} color={PINK} strokeWidth={2.4} />
-        <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: -0.4, color: '#121212' }}>Compatibilidade de pele</Text>
+        <Text style={{ fontSize: 20, fontWeight: '800', letterSpacing: -0.4, color: '#121212' }}>{t('Compatibilidade de pele')}</Text>
       </View>
     </TouchableOpacity>
   ) : (
     <View style={{ alignItems: 'center', paddingVertical: 24 }}>
       <TouchableOpacity activeOpacity={0.85} disabled={analisando} onPress={verSeCombina} style={{ height: 52, borderRadius: 26, paddingHorizontal: 28, backgroundColor: '#FF5EA8', alignItems: 'center', justifyContent: 'center', minWidth: 240 }}>
-        {analisando ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: 17, fontWeight: '600' }}>Ver se combina comigo</Text>}
+        {analisando ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: 17, fontWeight: '600' }}>{t('Ver se combina comigo')}</Text>}
       </TouchableOpacity>
     </View>
   );

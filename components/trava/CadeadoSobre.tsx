@@ -3,12 +3,13 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Lock } from 'lucide-react-native';
 import { haptics } from '../../lib/haptics';
 import { abrirTrava, type FRASES } from '../../lib/trava';
+import { t } from '../../lib/i18n';
 
 export default function CadeadoSobre({ funcao }: { funcao: keyof typeof FRASES }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Função para assinantes"
+      accessibilityLabel={t('Função para assinantes')}
       onPress={() => { haptics.tap(); abrirTrava(funcao); }}
       style={[StyleSheet.absoluteFill, styles.veu]}
     >

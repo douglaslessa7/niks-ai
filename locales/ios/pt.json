@@ -1,0 +1,6 @@
+{
+  "NSCameraUsageDescription": "O NIKS AI precisa da câmera para analisar sua pele e suas refeições.",
+  "NSPhotoLibraryUsageDescription": "O NIKS AI precisa acessar suas fotos.",
+  "NSPhotoLibraryAddUsageDescription": "Permita salvar sua colagem NIKS na galeria de fotos.",
+  "NSUserTrackingUsageDescription": "Usamos isso para mostrar anúncios mais relevantes e medir a eficácia das campanhas."
+}

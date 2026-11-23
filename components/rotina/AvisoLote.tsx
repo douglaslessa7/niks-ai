@@ -19,6 +19,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { registrarToque } from '../../lib/pushToque';
 import { useUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { invalidateCache } from '../../lib/cache';
 import { buscarLote, fotosDoLote, lotePendente, marcarVisto, type Lote } from '../../lib/rotinaLotes';
 import { usePalco } from '../../lib/palco';
@@ -128,7 +129,7 @@ export default function AvisoLote() {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Image source={LOGO} style={{ width: 16, height: 16 }} resizeMode="contain" />
-          <Text style={st.origem}>NIKS · agora</Text>
+          <Text style={st.origem}>{t('NIKS · agora')}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {ok && usados.length > 0 && (
@@ -141,15 +142,15 @@ export default function AvisoLote() {
             </View>
           )}
           <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
-            <Text style={st.titulo}>{ok ? 'Sua rotina está pronta' : 'Não deu para montar sua rotina'}</Text>
+            <Text style={st.titulo}>{ok ? t('Sua rotina está pronta') : t('Não deu para montar sua rotina')}</Text>
             <Text style={st.sub}>
               {ok
-                ? (naRotina.length ? `Montei com ${naRotina.length} dos seus ${total} produtos.` : 'Veja o que achei dos seus produtos.')
-                : 'Suas fotos estão guardadas.'}
+                ? (naRotina.length ? t('Montei com {{usados}} dos seus {{total}} produtos.', { usados: naRotina.length, total }) : t('Veja o que achei dos seus produtos.'))
+                : t('Suas fotos estão guardadas.')}
             </Text>
           </View>
           <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); setLote(null); abrir(lote); }} style={st.ver}>
-            <Text style={st.verTxt}>{ok ? 'Ver' : 'Tentar'}</Text>
+            <Text style={st.verTxt}>{ok ? t('Ver') : t('Tentar')}</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>

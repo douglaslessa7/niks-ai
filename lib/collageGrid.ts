@@ -8,6 +8,7 @@
 // ⚠️ Quem consome: `app/(share)/share-capture.tsx` (grade ao vivo sobre a câmera) e
 // `app/(share)/share-preview.tsx` (o `<Collage>` do preview E da imagem exportada).
 // Mexer aqui muda as três coisas ao mesmo tempo — que é exatamente o objetivo.
+import { t } from './i18n';
 
 export type CollageGridId =
   | 'grid4'        // 2×2
@@ -36,12 +37,12 @@ function make(id: CollageGridId, rows: number[][], label: string): CollageGrid {
 // da grade de 6 células (que a colagem final não desenha) entrou a foto única, que
 // o usuário pediu explicitamente ("se ela quer uma foto só").
 export const COLLAGE_GRIDS: CollageGrid[] = [
-  make('grid4',       [[0, 1], [2, 3]], 'Quatro fotos em grade'),
-  make('rows2',       [[0], [1]],       'Duas fotos empilhadas'),
-  make('rows3',       [[0], [1], [2]],  'Três fotos empilhadas'),
-  make('top1bottom2', [[0], [1, 2]],    'Uma foto em cima e duas embaixo'),
-  make('full',        [[0]],            'Uma foto só'),
-  make('cols2',       [[0, 1]],         'Duas fotos lado a lado'),
+  make('grid4',       [[0, 1], [2, 3]], t('Quatro fotos em grade')),
+  make('rows2',       [[0], [1]],       t('Duas fotos empilhadas')),
+  make('rows3',       [[0], [1], [2]],  t('Três fotos empilhadas')),
+  make('top1bottom2', [[0], [1, 2]],    t('Uma foto em cima e duas embaixo')),
+  make('full',        [[0]],            t('Uma foto só')),
+  make('cols2',       [[0, 1]],         t('Duas fotos lado a lado')),
 ];
 
 export const DEFAULT_GRID_ID: CollageGridId = 'grid4';

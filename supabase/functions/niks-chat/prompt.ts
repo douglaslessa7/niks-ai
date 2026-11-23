@@ -703,6 +703,19 @@ Prefira:
 * "Não dá para cravar só por isso"
 `
 
+// O onboarding grava códigos ('none' | 'sensitive' | 'reaction' | 'no_history'); a IA lia
+// "sensitive" cru e não tratava como pele sensível (18/nov/2026).
+function alergiaLegivel(tipo: unknown, descricao: unknown): string {
+  const desc = typeof descricao === 'string' ? descricao.trim() : ''
+  switch (String(tipo ?? '')) {
+    case 'sensitive': return `pele sensível (ela relatou que a pele é sensível/reativa)${desc ? ` — ${desc}` : ''}`
+    case 'reaction': return `já teve reação a: ${desc || '(não informou a quê)'}`
+    case 'none': return 'sem alergia ou sensibilidade relatada'
+    case 'no_history': return 'não sabe se tem alergia (sem histórico)'
+    default: return desc || ''
+  }
+}
+
 export function buildContextPack(
   context: UserContext,
   message: string,
@@ -724,7 +737,7 @@ export function buildContextPack(
   <Sleep>${p.sleep ?? ''}</Sleep>
   <Sunscreen>${p.sunscreen ?? ''}</Sunscreen>
   <PregnancyStatus>${p.pregnancy_status ?? ''}</PregnancyStatus>
-  <Allergies>${p.allergy_type ?? ''} — ${p.allergy_description ?? ''}</Allergies>
+  <Allergies>${alergiaLegivel(p.allergy_type, p.allergy_description)}</Allergies>
 </UserProfile>`
 
   const scan = context.lastScan ?? {}

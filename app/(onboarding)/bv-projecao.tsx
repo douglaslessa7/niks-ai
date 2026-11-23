@@ -5,10 +5,11 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import { useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaCanto, BvProgresso, BvEtiqueta, BvTitulo, BvBotao, useBvFrame,
-  SEMANAS_ROTINA, DIAS_ROTINA, REDUCAO_DOR_PCT, useDorPrincipal, dataMeta, diaMesLongo, diaMesCurto,
+  SEMANAS_ROTINA, DIAS_ROTINA, menosDe, useDorPrincipal, dataMeta, diaMesLongo, diaMesCurto,
 } from '../../components/boasVindas/kit';
 
 // Boas-vindas · tela 4 "Projeção" (07/nov/2026, pedido do produto) na estrutura da tela 4 do
@@ -19,11 +20,11 @@ import {
 //     DIAGONAIS no fundo, como os do TapFit (`Listras`). A ALTURA de cada card é proporcional à
 //     dor: "Hoje" = 100%; "<data> · sem 4" = 60% (−40%).
 //   • A barra fica FIXA na semana 4 (pedido do produto: sem arrastar e sem correr sozinha).
-//   • Números: "−40% <dor>" e "30 dias"; "Meta estimada. Os resultados podem variar."
-// ⚠️ PROVISÓRIO: os −40% (`REDUCAO_DOR_PCT`) não vêm de dado nenhum.
+//   • Sem porcentagem (23/nov/2026): "Menos <dor>" e "30 dias"; "Os resultados podem variar."
+//     O gráfico (altura dos cards) fica, sem número.
 const CARD_H = 250;          // altura do card "Hoje" (= 100% da dor)
 const THUMB = 24;
-const NIVEL_META = 100 - REDUCAO_DOR_PCT;   // 60%
+const NIVEL_META = 60;   // altura do card da meta (gráfico, sem número na tela)
 
 // ENTRADA (07/nov/2026, pedido do produto: só ao entrar, nada depois): os blocos aparecem em
 // cascata de cima para baixo (esmaecem e sobem 12 pt, 420 ms, 70 ms entre eles) e a barra
@@ -72,7 +73,7 @@ export default function BvProjecao() {
 
   const meta = dataMeta();
   const titulo = dor.nome.charAt(0).toUpperCase() + dor.nome.slice(1);
-  const rotuloDireita = `${diaMesCurto(meta).toUpperCase()} · SEM ${SEMANAS_ROTINA}`;
+  const rotuloDireita = t('{{data}} · SEM {{semana}}', { data: diaMesCurto(meta).toUpperCase(), semana: SEMANAS_ROTINA });
 
   return (
     <BvScreen>
@@ -81,10 +82,10 @@ export default function BvProjecao() {
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(104), paddingHorizontal: 20 }}>
         <Animated.View entering={entra(0)}>
-          <BvEtiqueta>{`SEGUINDO A ROTINA POR ${SEMANAS_ROTINA} SEMANAS`}</BvEtiqueta>
+          <BvEtiqueta>{t('SEGUINDO A ROTINA POR {{semanas}} SEMANAS', { semanas: SEMANAS_ROTINA })}</BvEtiqueta>
         </Animated.View>
         <Animated.View entering={entra(1)}>
-          <BvTitulo style={{ marginTop: 10 }}>{`Essa é a sua pele em ${diaMesLongo(meta)}.`}</BvTitulo>
+          <BvTitulo style={{ marginTop: 10 }}>{t('Essa é a sua pele em {{data}}.', { data: diaMesLongo(meta) })}</BvTitulo>
         </Animated.View>
 
         {/* Os dois cards, alinhados embaixo; a altura é a dor (Hoje = 100%). */}
@@ -94,10 +95,9 @@ export default function BvProjecao() {
             backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
           }, cardHoje]}>
             <Listras cor="rgba(192,32,106,0.045)" />
-            <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: BV.sub }}>HOJE</Text>
+            <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: BV.sub }}>{t('HOJE')}</Text>
             <View>
               <Text style={{ fontSize: 13, fontWeight: '600', color: BV.body }}>{titulo}</Text>
-              <Text style={{ marginTop: 2, fontSize: 24, fontWeight: '700', letterSpacing: -0.6, color: BV.ink, fontVariant: ['tabular-nums'] }}>100%</Text>
             </View>
           </Animated.View>
 
@@ -115,7 +115,6 @@ export default function BvProjecao() {
               <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: BV.pink }}>{rotuloDireita}</Text>
               <View>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: BV.body }}>{titulo}</Text>
-                <Text style={{ marginTop: 2, fontSize: 28, fontWeight: '700', letterSpacing: -0.8, color: BV.pink, fontVariant: ['tabular-nums'] }}>{`${NIVEL_META}%`}</Text>
               </View>
             </View>
           </Animated.View>
@@ -125,7 +124,7 @@ export default function BvProjecao() {
         <Animated.View
           entering={entra(4)}
           accessible
-          accessibilityLabel={`Semana ${SEMANAS_ROTINA} de ${SEMANAS_ROTINA}`}
+          accessibilityLabel={t('Semana {{semana}} de {{total}}', { semana: SEMANAS_ROTINA, total: SEMANAS_ROTINA })}
           style={{ marginTop: 24, height: 28, justifyContent: 'center' }}
         >
           <View style={{ height: 6, borderRadius: 3, backgroundColor: BV.track, overflow: 'hidden' }}>
@@ -138,26 +137,26 @@ export default function BvProjecao() {
           }, bolinha]} />
         </Animated.View>
         <Animated.View entering={entra(4)} style={{ marginTop: 6, flexDirection: 'row', justifyContent: 'space-between' }}>
-          {['Hoje', 'Sem 1', 'Sem 2', 'Sem 3', `Sem ${SEMANAS_ROTINA}`].map((t, i) => (
-            <Text key={t} style={{ fontSize: 12, fontWeight: '600', color: i === SEMANAS_ROTINA ? BV.pink : BV.sub }}>{t}</Text>
+          {[t('Hoje'), t('Sem 1'), t('Sem 2'), t('Sem 3'), t('Sem {{semana}}', { semana: SEMANAS_ROTINA })].map((rotulo, i) => (
+            <Text key={rotulo} style={{ fontSize: 12, fontWeight: '600', color: i === SEMANAS_ROTINA ? BV.pink : BV.sub }}>{rotulo}</Text>
           ))}
         </Animated.View>
 
         <Animated.View entering={entra(5)} style={{ marginTop: 16, flexDirection: 'row', gap: 8 }}>
           <View style={{ flex: 1, borderRadius: 18, backgroundColor: BV.card, paddingVertical: 12, paddingHorizontal: 14 }}>
-            <Text style={{ fontSize: 22, fontWeight: '700', letterSpacing: -0.6, color: BV.pink, fontVariant: ['tabular-nums'] }}>{`−${REDUCAO_DOR_PCT}%`}</Text>
+            <Text style={{ fontSize: 22, fontWeight: '700', letterSpacing: -0.6, color: BV.pink, fontVariant: ['tabular-nums'] }}>{menosDe(dor.nome)}</Text>
             <Text numberOfLines={1} style={{ fontSize: 12, color: BV.sub }}>{dor.nome}</Text>
           </View>
           <View style={{ flex: 1, borderRadius: 18, backgroundColor: BV.card, paddingVertical: 12, paddingHorizontal: 14 }}>
             <Text style={{ fontSize: 22, fontWeight: '700', letterSpacing: -0.6, color: BV.ink, fontVariant: ['tabular-nums'] }}>{DIAS_ROTINA}</Text>
-            <Text style={{ fontSize: 12, color: BV.sub }}>dias</Text>
+            <Text style={{ fontSize: 12, color: BV.sub }}>{t('dias')}</Text>
           </View>
         </Animated.View>
 
-        <Animated.Text entering={entra(6)} style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: BV.sub }}>Meta estimada. Os resultados podem variar.</Animated.Text>
+        <Animated.Text entering={entra(6)} style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: BV.sub }}>{t('Os resultados podem variar.')}</Animated.Text>
       </View>
 
-      <BvBotao label="Quero chegar lá" seta onPress={() => router.push('/(onboarding)/bv-pacto' as any)} />
+      <BvBotao label={t('Quero chegar lá')} seta onPress={() => router.push('/(onboarding)/bv-pacto' as any)} />
     </BvScreen>
   );
 }

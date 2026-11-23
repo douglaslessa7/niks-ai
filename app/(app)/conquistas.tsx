@@ -44,6 +44,7 @@ import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 import { voltar as voltarOu } from '../../lib/navegar';
 import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
+import { t, emIngles } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -358,11 +359,12 @@ export default function Conquistas() {
   );
   const dt: Tile | undefined = mural[ck];
   const dFam = (dt?.item.carta.familia ?? 'colecionavel') as DeckKey;
+  const nT = tiles.length;
   const deckSub = dk === 'colecionavel'
-    ? `${tiles.length} ${tiles.length === 1 ? 'carta' : 'cartas'}, repetidas agrupadas com o selo`
+    ? (nT === 1 ? t('{{n}} carta, repetidas agrupadas com o selo', { n: nT }) : t('{{n}} cartas, repetidas agrupadas com o selo', { n: nT }))
     : dk === 'poder'
-      ? `${tiles.length} ${tiles.length === 1 ? 'carta de poder' : 'cartas de poder'}, da mais recente para a mais antiga`
-      : `${tiles.length} ${tiles.length === 1 ? 'carta' : 'cartas'}, da mais recente para a mais antiga`;
+      ? (nT === 1 ? t('{{n}} carta de poder, da mais recente para a mais antiga', { n: nT }) : t('{{n}} cartas de poder, da mais recente para a mais antiga', { n: nT }))
+      : (nT === 1 ? t('{{n}} carta, da mais recente para a mais antiga', { n: nT }) : t('{{n}} cartas, da mais recente para a mais antiga', { n: nT }));
   const gridW = W - 36;
   const cellW = (gridW - 30) / 4;
   const gridTop = insets.top + 58 + 18 + 16;
@@ -387,18 +389,20 @@ export default function Conquistas() {
                 <View style={styles.streakRow}>
                   <Svg width={30} height={30} viewBox="0 0 24 24"><Path d={FLAME} fill={PINK} /></Svg>
                   <Text style={styles.streakNum}>{n6}</Text>
-                  <Text style={styles.streakUnit}>{dias === 1 ? 'dia seguido' : 'dias seguidos'}</Text>
+                  <Text style={styles.streakUnit}>{dias === 1 ? t('dia seguido') : t('dias seguidos')}</Text>
                 </View>
                 {/* 79g: com a Proteção armada, o selo entra embaixo de "N dias seguidos" */}
                 {protegida && <SeloProtegida run={run} rm={rm} origem="left" style={{ marginTop: 6 }} />}
                 <Text style={[styles.record, protegida && { marginTop: 8 }]}>
-                  {`Seu recorde: ${recorde} ${recorde === 1 ? 'dia' : 'dias'}${protegida ? ' · se falhar 1 dia, não zera' : ''}`}
+                  {protegida
+                    ? (recorde === 1 ? t('Seu recorde: {{n}} dia · se falhar 1 dia, não zera', { n: recorde }) : t('Seu recorde: {{n}} dias · se falhar 1 dia, não zera', { n: recorde }))
+                    : (recorde === 1 ? t('Seu recorde: {{n}} dia', { n: recorde }) : t('Seu recorde: {{n}} dias', { n: recorde }))}
                 </Text>
                 <View style={styles.goalTrack}>
                   <Animated.View style={[styles.goalFill, barSt]} />
                   <View style={styles.goalLabelWrap}><Text style={styles.goalLabel}>{`${dias} / ${meta}`}</Text></View>
                 </View>
-                <Text style={styles.goalHint}>{`${falta === 1 ? 'Falta 1 dia' : `Faltam ${falta} dias`} para ${meta} dias seguidos`}</Text>
+                <Text style={styles.goalHint}>{falta === 1 ? t('Falta 1 dia para {{meta}} dias seguidos', { meta }) : t('Faltam {{falta}} dias para {{meta}} dias seguidos', { falta, meta })}</Text>
               </View>
               {/* top:50% do CSS = centro da caixa de padding; no Yoga a % é da caixa de conteúdo,
                   então centralizamos num invólucro de cima a baixo. */}
@@ -412,7 +416,7 @@ export default function Conquistas() {
                   </View>
                 </View>
                 <View style={styles.goalLock}><Lock size={15} color={PINK} sw={2.2} /></View>
-                <View style={styles.metaPill}><Text style={styles.metaPillText}>{`Meta ${meta} dias`}</Text></View>
+                <View style={styles.metaPill}><Text style={styles.metaPillText}>{t('Meta {{meta}} dias', { meta })}</Text></View>
               </View>
               </View>
             </View>
@@ -423,8 +427,8 @@ export default function Conquistas() {
             <View style={styles.pair}>
               {/* Regras novas das cartas (05/nov/2026): o card mostra só quantas ela já raspou e não
                   abre nada (o mural "Suas cartas" e o "x2" saíram do caminho; continuam no código). */}
-              <View style={styles.pairCard} accessible accessibilityLabel={`Você já raspou ${col.total} ${col.total === 1 ? 'carta' : 'cartas'}`}>
-                <Text style={[styles.pairTitle, { maxWidth: 104 }]}>{`Você já raspou ${n23} ${n23 === 1 ? 'carta' : 'cartas'}`}</Text>
+              <View style={styles.pairCard} accessible accessibilityLabel={col.total === 1 ? t('Você já raspou {{n}} carta', { n: col.total }) : t('Você já raspou {{n}} cartas', { n: col.total })}>
+                <Text style={[styles.pairTitle, { maxWidth: 104 }]}>{n23 === 1 ? t('Você já raspou {{n}} carta', { n: n23 }) : t('Você já raspou {{n}} cartas', { n: n23 })}</Text>
                 <View pointerEvents="none" style={styles.miniFan}>
                   {[{ l: 4, t: 18, r: -16 }, { l: 26, t: 8, r: -2 }, { l: 48, t: 2, r: 12, front: true }].map((c, i) => (
                     <View key={i} style={[styles.miniCard, { left: c.l, top: c.t, transform: [{ rotate: `${c.r}deg` }], boxShadow: c.front ? '0px 6px 14px rgba(200,60,120,0.22)' : '0px 4px 10px rgba(200,60,120,0.18)' }]}>
@@ -438,8 +442,8 @@ export default function Conquistas() {
               </View>
               {/* Medalhas: a função entra na próxima build. Por enquanto o card não abre a
                   tela de medalhas (que continua no código) e só mostra "Em breve". */}
-              <View style={[styles.pairCard, styles.pairCardOff]} accessible accessibilityLabel="Medalhas, em breve" accessibilityState={{ disabled: true }}>
-                <Text style={[styles.pairTitle, { color: MUTE }]}>Medalhas</Text>
+              <View style={[styles.pairCard, styles.pairCardOff]} accessible accessibilityLabel={t('Medalhas, em breve')} accessibilityState={{ disabled: true }}>
+                <Text style={[styles.pairTitle, { color: MUTE }]}>{t('Medalhas')}</Text>
                 {/* Medalha "trancada" (as cores da 77d), apagada */}
                 <View pointerEvents="none" style={[styles.medalDecor, { opacity: 0.7 }]}>
                   <View style={[styles.ribbon, { left: 20, width: 16, height: 40, backgroundColor: '#E9E9EB', transform: [{ rotate: '-16deg' }] }]} />
@@ -452,7 +456,7 @@ export default function Conquistas() {
                 <View pointerEvents="none" style={styles.emBreveWrap}>
                   <View style={styles.emBreve}>
                     <Icon d={['M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z', 'M12 6v6l4 2']} size={14} color="#FFFFFF" sw={2.4} />
-                    <Text style={styles.emBreveText}>Em breve</Text>
+                    <Text style={styles.emBreveText}>{t('Em breve')}</Text>
                   </View>
                 </View>
               </View>
@@ -464,7 +468,7 @@ export default function Conquistas() {
           {depois && (<>
           {/* w2 · Próximas conquistas */}
           <Enter i={2} run={run} rm={rm}>
-            <Text style={styles.sectionTitle}>Próximas conquistas</Text>
+            <Text style={styles.sectionTitle}>{t('Próximas conquistas')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingTop: 12, paddingHorizontal: 18, paddingBottom: 6 }}>
               {PROXIMAS.map((m) => (
                 <View key={m.name} style={styles.nextCard}>
@@ -472,7 +476,7 @@ export default function Conquistas() {
                     <View style={styles.nextIcon}><Image source={LOGO} style={{ width: 22, height: 22, opacity: 0.35 }} /></View>
                     <View style={styles.nextLock}><Lock size={11} color={MUTE} sw={2.4} /></View>
                   </View>
-                  <Text style={styles.nextName} numberOfLines={2} lineBreakStrategyIOS="standard">{m.name}</Text>
+                  <Text style={styles.nextName} numberOfLines={2} lineBreakStrategyIOS="standard">{t(m.name)}</Text>
                   <View style={styles.nextTrack}><View style={[styles.nextFill, { transform: [{ scaleX: m.c / m.t }] }]} /></View>
                   <Text style={styles.nextLabel}>{`${m.c}/${m.t}`}</Text>
                 </View>
@@ -493,14 +497,14 @@ export default function Conquistas() {
                 onPress={() => { haptics.tap(); skipEnter.current = true; router.push('/calendario?de=conquistas' as any); }}
                 style={styles.allBtn}
               >
-                <Text style={styles.allBtnText}>Ver todos os check-ins</Text>
+                <Text style={styles.allBtnText}>{t('Ver todos os check-ins')}</Text>
                 <Icon d="M9 6l6 6-6 6" size={14} color={PINK} sw={2.6} />
               </TouchableOpacity>
             </View>
           </Enter>
           </>)}
         </ScrollView>
-        <TopBar top={top} title="Suas conquistas" onPress={() => { haptics.tap(); voltarOu('/home'); }} label="Fechar" />
+        <TopBar top={top} title={t('Suas conquistas')} onPress={() => { haptics.tap(); voltarOu('/home'); }} label={t('Fechar')} />
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: INK }, dimSt]} />
       </Animated.View>
 
@@ -514,7 +518,7 @@ export default function Conquistas() {
             <>
               {/* "Suas cartas": o mural com todas as cartas, no visual da grade do deck (78b/79e).
                   As caixas de baralho (DeckBox) e a tela do deck ficaram fora do fluxo. */}
-              <Text style={styles.lead}>{`${col.total} ${col.total === 1 ? 'carta colecionada' : 'cartas colecionadas'}`}</Text>
+              <Text style={styles.lead}>{col.total === 1 ? t('{{n}} carta colecionada', { n: col.total }) : t('{{n}} cartas colecionadas', { n: col.total })}</Text>
               <View style={{ marginTop: 16, gap: 10 }}>
                 {Array.from({ length: Math.ceil(mural.length / 4) }, (_, r) => (
                   <View key={r} style={{ flexDirection: 'row', gap: 10 }}>
@@ -534,29 +538,29 @@ export default function Conquistas() {
             </>
           ) : (
             <>
-              <Text style={styles.lead}>{`${MEDALHAS_CONQUISTADAS.length} de ${TOTAL_MEDALHAS} conquistadas. As trancadas mostram o que falta.`}</Text>
+              <Text style={styles.lead}>{t('{{feitas}} de {{total}} conquistadas. As trancadas mostram o que falta.', { feitas: MEDALHAS_CONQUISTADAS.length, total: TOTAL_MEDALHAS })}</Text>
               {MEDALHAS_CONQUISTADAS.length > 0 && (
                 <>
-                  <Text style={[styles.medTitle, { marginTop: 22 }]}>Conquistadas</Text>
+                  <Text style={[styles.medTitle, { marginTop: 22 }]}>{t('Conquistadas')}</Text>
                   <MedalGrid
                     items={MEDALHAS_CONQUISTADAS}
                     render={(m) => (
                       <>
                         <Medal on />
-                        <Text style={styles.medName} numberOfLines={2} lineBreakStrategyIOS="standard">{m.name}</Text>
+                        <Text style={styles.medName} numberOfLines={2} lineBreakStrategyIOS="standard">{t(m.name)}</Text>
                         <Text style={styles.medDate}>{m.date}</Text>
                       </>
                     )}
                   />
                 </>
               )}
-              <Text style={[styles.medTitle, { marginTop: MEDALHAS_CONQUISTADAS.length ? 26 : 22 }]}>Trancadas</Text>
+              <Text style={[styles.medTitle, { marginTop: MEDALHAS_CONQUISTADAS.length ? 26 : 22 }]}>{t('Trancadas')}</Text>
               <MedalGrid
                 items={MEDALHAS_TRANCADAS}
                 render={(m) => (
                   <>
                     <Medal on={false} />
-                    <Text style={[styles.medName, { color: '#515151' }]} numberOfLines={2} lineBreakStrategyIOS="standard">{m.name}</Text>
+                    <Text style={[styles.medName, { color: '#515151' }]} numberOfLines={2} lineBreakStrategyIOS="standard">{t(m.name)}</Text>
                     <View style={styles.medTrack}><View style={[styles.medFill, { transform: [{ scaleX: m.c / m.t }] }]} /></View>
                     <Text style={styles.medLabel}>{`${m.c}/${m.t}`}</Text>
                   </>
@@ -565,7 +569,7 @@ export default function Conquistas() {
             </>
           )}
         </ScrollView>
-        <TopBar top={top} title={last === 'album' ? 'Suas cartas' : 'Medalhas'} back onPress={pop} label="Voltar" />
+        <TopBar top={top} title={last === 'album' ? t('Suas cartas') : t('Medalhas')} back onPress={pop} label={t('Voltar')} />
         </View>
       </Animated.View>
       )}
@@ -595,15 +599,15 @@ export default function Conquistas() {
             ))}
           </View>
         </ScrollView>
-        <TopBar top={top} title={deckObj.titulo} back onPress={closeDeck} label="Voltar" />
+        <TopBar top={top} title={t(deckObj.titulo)} back onPress={closeDeck} label={t('Voltar')} />
         </View>
       </Animated.View>
       )}
 
       {/* ═══ Detalhe da carta (78c/78d) ═══════════════════════════════════ */}
       <Animated.View pointerEvents={card != null ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, { zIndex: 20 }, dSt]}>
-        <Pressable onPress={() => closeCard(false)} style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(252,228,238,0.78)' }]} accessibilityLabel="Fechar carta" />
-        <TouchableOpacity activeOpacity={0.7} onPress={() => closeCard(true)} style={[styles.roundBtn, { top: top + 58, left: W - 16 - 38, zIndex: 2 }]} accessibilityLabel="Fechar">
+        <Pressable onPress={() => closeCard(false)} style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(252,228,238,0.78)' }]} accessibilityLabel={t('Fechar carta')} />
+        <TouchableOpacity activeOpacity={0.7} onPress={() => closeCard(true)} style={[styles.roundBtn, { top: top + 58, left: W - 16 - 38, zIndex: 2 }]} accessibilityLabel={t('Fechar')}>
           <Icon d={['M18 6 6 18', 'm6 6 12 12']} size={18} color={INK} sw={2} />
         </TouchableOpacity>
         {dt && (
@@ -622,13 +626,13 @@ export default function Conquistas() {
                 {dFam === 'colecionavel' && !dt.rara ? (
                   <View style={styles.cDup}>
                     <Icon d={COPY} size={16} color={PINK} sw={2} />
-                    <Text style={styles.cDupMain}>{`Você tem ${dt.vezes}`}</Text>
-                    <Text style={styles.cDupLast}>{dt.vezes > 1 ? `· última em ${diaCurto(dt.item.raspada_em)}` : `· raspada em ${diaCurto(dt.item.raspada_em)}`}</Text>
+                    <Text style={styles.cDupMain}>{t('Você tem {{n}}', { n: dt.vezes })}</Text>
+                    <Text style={styles.cDupLast}>{dt.vezes > 1 ? t('· última em {{dia}}', { dia: diaCurto(dt.item.raspada_em) }) : t('· raspada em {{dia}}', { dia: diaCurto(dt.item.raspada_em) })}</Text>
                   </View>
                 ) : (
                   <Text style={styles.dWhenInfo}>{quando(dt.item.raspada_em)}</Text>
                 )}
-                <Text style={[styles.dFoot, { marginTop: 10 }]}>Toque fora para fechar</Text>
+                <Text style={[styles.dFoot, { marginTop: 10 }]}>{t('Toque fora para fechar')}</Text>
               </View>
             </Animated.View>
           </View>
@@ -680,7 +684,9 @@ function Medal({ on }: { on: boolean }) {
 
 const SEM_SPREAD = { run: 0, ox: 0, oy: 0 };
 const COPY = ['M5.5 6h8A2.5 2.5 0 0 1 16 8.5v11a2.5 2.5 0 0 1-2.5 2.5h-8A2.5 2.5 0 0 1 3 19.5v-11A2.5 2.5 0 0 1 5.5 6z', 'M8 3h11a2 2 0 0 1 2 2v13'];
-const quando = (iso: string) => `Raspada em ${diaCurto(iso).replace(' ', ' de ')} · ${horaCurta(iso)}`;
+const quando = (iso: string) => t('Raspada em {{dia}} · {{hora}}', { dia: emIngles ? diaCurto(iso) : diaCurto(iso).replace(' ', ' de '), hora: horaCurta(iso) });
+// Rótulo da carta na grade (o componente usa `t` como a carta, então o texto sai daqui).
+const rotuloColecionavel = (vezes: number) => (vezes > 1 ? t('Carta colecionável, x{{vezes}}', { vezes }) : t('Carta colecionável'));
 
 // Carta da grade do deck. Ao abrir o deck, sai do monte (no lugar da caixa tocada) até
 // a célula dela com mola (ζ0,9 r0,55), 28 ms entre as cartas, girando ±8° e de .92→1.
@@ -717,7 +723,7 @@ function GridCard({
         activeOpacity={0.85}
         onPress={() => ref.current?.measureInWindow((x, y, ww, hh) => onOpen({ x, y, w: ww, h: hh }))}
         style={styles.gridCard}
-        accessibilityLabel={coll ? `Carta colecionável${t.vezes > 1 ? `, x${t.vezes}` : ''}` : `${t.item.carta.nome}, ${date}`}
+        accessibilityLabel={coll ? rotuloColecionavel(t.vezes) : `${t.item.carta.nome}, ${date}`}
       >
         {/* A carta da rodada 84 em miniatura (parada: o mural tem muitas). O "x2" das repetidas fica. */}
         <Carta v={visual} w={w} h={111} parado faiscasFora={false} />

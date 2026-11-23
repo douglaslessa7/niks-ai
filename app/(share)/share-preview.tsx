@@ -26,6 +26,7 @@ import {
   stickerAspect, stickerBaseFraction, specId, normalizeSpec,
 } from '../../lib/stickerSpec';
 import { CollageGrid, getGrid, gridForCount, cellRects, COLLAGE_GAP_FRACTION } from '../../lib/collageGrid';
+import { t } from '../../lib/i18n';
 
 // ── Preview da colagem + exportação 1080×1920 ─────────────────────────────────
 // Bloco D. As fotos chegam pelo store (`collagePhotos`) — nunca por router params.
@@ -417,13 +418,13 @@ export default function SharePreview() {
     try {
       const uri = await capture();
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('Indisponível', 'Compartilhamento não está disponível neste device.');
+        Alert.alert(t('Indisponível'), t('Compartilhamento não está disponível neste device.'));
         return;
       }
       await Sharing.shareAsync(uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
     } catch (e) {
       console.error('Erro ao compartilhar:', e);
-      Alert.alert('Erro', 'Não foi possível gerar a imagem.');
+      Alert.alert(t('Erro'), t('Não foi possível gerar a imagem.'));
     } finally {
       shareRef.current = false;
       setBusy(null);
@@ -439,15 +440,15 @@ export default function SharePreview() {
       // Permissão pedida NO TOQUE, não antes.
       const perm = await MediaLibrary.requestPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Sem permissão', 'Permita o acesso às fotos para salvar sua colagem.');
+        Alert.alert(t('Sem permissão'), t('Permita o acesso às fotos para salvar sua colagem.'));
         return;
       }
       const uri = await capture();
       await MediaLibrary.saveToLibraryAsync(uri);
-      Alert.alert('Salvo!', 'Sua colagem foi salva na galeria.');
+      Alert.alert(t('Salvo!'), t('Sua colagem foi salva na galeria.'));
     } catch (e) {
       console.error('Erro ao salvar:', e);
-      Alert.alert('Erro', 'Não foi possível salvar na galeria.');
+      Alert.alert(t('Erro'), t('Não foi possível salvar na galeria.'));
     } finally {
       saveRef.current = false;
       setBusy(null);
@@ -457,7 +458,7 @@ export default function SharePreview() {
   if (!photos.length) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: f7, color: INK_MUTE }}>Nenhuma foto para montar a colagem.</Text>
+        <Text style={{ fontFamily: f7, color: INK_MUTE }}>{t('Nenhuma foto para montar a colagem.')}</Text>
         <TouchableOpacity
           onPress={() => {
             haptics.tap();
@@ -465,7 +466,7 @@ export default function SharePreview() {
           }}
           style={{ marginTop: 16 }}
         >
-          <Text style={{ fontFamily: f7, color: CORAL }}>Voltar</Text>
+          <Text style={{ fontFamily: f7, color: CORAL }}>{t('Voltar')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -497,7 +498,7 @@ export default function SharePreview() {
               fontFamily: f7, fontSize: 20 * S, color: INK, letterSpacing: -0.6 * S,
             }}
           >
-            Seu Niks score
+            {t('Seu Niks score')}
           </Text>
         </View>
 
@@ -560,7 +561,7 @@ export default function SharePreview() {
             onPress={() => { haptics.tap(); setSheetOpen(true); }}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="Trocar adesivo"
+            accessibilityLabel={t('Trocar adesivo')}
             style={{
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
               height: 38 * S, paddingHorizontal: 16 * S, borderRadius: 100,
@@ -570,7 +571,7 @@ export default function SharePreview() {
           >
             <Sparkles size={15 * S} color={CORAL} strokeWidth={2.2} />
             <Text style={{ fontFamily: f7, fontSize: 13 * S, color: INK, marginLeft: 7 * S }}>
-              Trocar adesivo
+              {t('Trocar adesivo')}
             </Text>
           </TouchableOpacity>
 
@@ -580,7 +581,7 @@ export default function SharePreview() {
               marginTop: 8 * S, textAlign: 'center',
             }}
           >
-            Arraste e belisque o adesivo para posicionar
+            {t('Arraste e belisque o adesivo para posicionar')}
           </Text>
         </View>
 
@@ -602,7 +603,7 @@ export default function SharePreview() {
               <>
                 <Share2 size={18 * S} color={WHITE} strokeWidth={2.2} />
                 <Text style={{ fontFamily: f8, fontSize: 16 * S, color: WHITE, marginLeft: 8 * S }}>
-                  Compartilhar
+                  {t('Compartilhar')}
                 </Text>
               </>
             )}
@@ -625,7 +626,7 @@ export default function SharePreview() {
               <>
                 <Download size={18 * S} color={INK} strokeWidth={2.2} />
                 <Text style={{ fontFamily: f8, fontSize: 16 * S, color: INK, marginLeft: 8 * S }}>
-                  Salvar na galeria
+                  {t('Salvar na galeria')}
                 </Text>
               </>
             )}

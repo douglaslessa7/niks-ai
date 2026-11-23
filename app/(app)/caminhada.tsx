@@ -31,6 +31,11 @@ import {
 } from '../../components/caminhada/geometria';
 import { voltar as voltarOu } from '../../lib/navegar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
+import { t } from '../../lib/i18n';
+
+// Textos lidos dentro de worklets (o `t()` não roda no thread de UI): prontos aqui.
+const TXT_NIVEL_MAXIMO = t('Nível máximo');
+const TXT_FALTAM = t('faltam {{pts}} NIKS Points');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Sua caminhada" — réplica do design 68a–68f do Claude Design (projeto "NIKS home
@@ -560,10 +565,10 @@ export default function Caminhada() {
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.glow, glowSt]} />
 
       {/* Voltar + título */}
-      <TouchableOpacity activeOpacity={0.7} onPress={() => voltar()} style={[styles.back, { top: y(58) }]} accessibilityLabel="Voltar">
+      <TouchableOpacity activeOpacity={0.7} onPress={() => voltar()} style={[styles.back, { top: y(58) }]} accessibilityLabel={t('Voltar')}>
         <Svg width={18} height={18} viewBox="0 0 24 24"><Path d="m15 18-6-6 6-6" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
       </TouchableOpacity>
-      <View pointerEvents="none" style={[styles.titleRow, { top: y(58) }]}><Text style={styles.title}>Sua caminhada</Text></View>
+      <View pointerEvents="none" style={[styles.titleRow, { top: y(58) }]}><Text style={styles.title}>{t('Sua caminhada')}</Text></View>
 
       {/* Cabeçalho: nível, título, pontos e barra até o próximo */}
       <View style={[styles.hdr, { top: y(104) }]}>
@@ -573,16 +578,16 @@ export default function Caminhada() {
             <Medalha nivel={L} tamanho={56} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.hdrLvl}>{nivel ? `Nível ${L}` : ' '}</Text>
+            <Text style={styles.hdrLvl}>{nivel ? t('Nível {{n}}', { n: L }) : ' '}</Text>
             {/* O nome da medalha ("Diamante 3") encolhe até 78% se não couber ao lado de
                 "faltam N NIKS Points" (o design tinha "XP", mais curto). */}
-            <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{nivel?.titulo ?? ' '}</Text>
+            <Text style={styles.hdrName} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{nivel?.titulo ? t(nivel.titulo) : ' '}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             {/* "NIKS Points" só na linha de baixo (com a unidade nas duas, o nome não cabia).
                 No NIKS (último nível) não há próximo: só o total e "Nível máximo". */}
             <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return nivel ? (ultimoNivel ? fmt(v) : `${fmt(v)} / ${fmt(teto)}`) : ' '; }} style={styles.hdrXp} />
-            <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return nivel ? (ultimoNivel ? 'Nível máximo' : `faltam ${fmt(Math.max(0, teto - v))} NIKS Points`) : ' '; }} style={styles.hdrFalta} />
+            <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return nivel ? (ultimoNivel ? TXT_NIVEL_MAXIMO : TXT_FALTAM.replace('{{pts}}', fmt(Math.max(0, teto - v)))) : ' '; }} style={styles.hdrFalta} />
           </View>
         </View>
         <View style={styles.barWrap}>
@@ -624,8 +629,8 @@ export default function Caminhada() {
                     onTap={locked ? tocarEstavel : undefined}
                   />
                   <View pointerEvents="none" style={[styles.nameBlock, { top: cardTop(lv.n) + 192 }]}>
-                    <Text style={[styles.lvName, { color: locked ? MUTE : INK }]}>{lv.titulo}</Text>
-                    <Text style={styles.lvSub}>{`Nível ${lv.n} · ${fmt(lv.pontos)} NIKS Points`}</Text>
+                    <Text style={[styles.lvName, { color: locked ? MUTE : INK }]}>{t(lv.titulo)}</Text>
+                    <Text style={styles.lvSub}>{t('Nível {{n}} · {{pts}} NIKS Points', { n: lv.n, pts: fmt(lv.pontos) })}</Text>
                   </View>
                 </View>
               );
@@ -635,7 +640,7 @@ export default function Caminhada() {
               <Animated.View style={[styles.pulse, pulseSt]} />
               <View style={styles.markerDot} />
               <View style={styles.bubble}>
-                <Text style={styles.bubbleTop}>Você está aqui</Text>
+                <Text style={styles.bubbleTop}>{t('Você está aqui')}</Text>
                 <Vivo xp={xp} fmtFn={(v) => { 'worklet'; return `${fmt(v)} NIKS Points`; }} style={styles.bubbleXp} />
               </View>
             </Animated.View>
@@ -648,21 +653,21 @@ export default function Caminhada() {
 
       {/* Rodapé: como ganhar */}
       <View style={[styles.footer, { height: footerH }]}>
-        <Text style={styles.footTitle}>Como ganhar NIKS Points</Text>
+        <Text style={styles.footTitle}>{t('Como ganhar NIKS Points')}</Text>
         <View style={{ marginTop: 10, gap: 6 }}>
           <View style={styles.footRow}>
             <View style={styles.footIcon}><Svg width={15} height={15} viewBox="0 0 24 24"><Path d="M12 5v14M5 12h14" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" /></Svg></View>
             {prim ? (
               <Text style={styles.footText}>
-                <Text style={{ fontWeight: '600' }}>{`+${prim.min} a ${prim.max}`}</Text> no 1º skincare do dia, <Text style={{ fontWeight: '600' }}>{`+${rot.min} a ${rot.max}`}</Text> no 2º
+                <Text style={{ fontWeight: '600' }}>{t('+{{min}} a {{max}}', { min: prim.min, max: prim.max })}</Text>{' '}{t('no 1º skincare do dia,')}{' '}<Text style={{ fontWeight: '600' }}>{t('+{{min}} a {{max}}', { min: rot.min, max: rot.max })}</Text>{' '}{t('no 2º')}
               </Text>
             ) : (
-              <Text style={styles.footText}><Text style={{ fontWeight: '600' }}>{`+${rot.min} a ${rot.max} NIKS Points`}</Text> por rotina concluída</Text>
+              <Text style={styles.footText}><Text style={{ fontWeight: '600' }}>{t('+{{min}} a {{max}} NIKS Points', { min: rot.min, max: rot.max })}</Text>{' '}{t('por rotina concluída')}</Text>
             )}
           </View>
           <View style={styles.footRow}>
             <View style={styles.footIcon}><Svg width={15} height={15} viewBox="0 0 24 24"><Path d={PODER_INFO.scan_antecipado.icone} fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg></View>
-            <Text style={styles.footText}><Text style={{ fontWeight: '600' }}>{`+${scan.min} a ${scan.max}`}</Text> por scan de rosto, 1 por semana</Text>
+            <Text style={styles.footText}><Text style={{ fontWeight: '600' }}>{t('+{{min}} a {{max}}', { min: scan.min, max: scan.max })}</Text>{' '}{t('por scan de rosto, 1 por semana')}</Text>
           </View>
         </View>
       </View>
@@ -679,7 +684,7 @@ export default function Caminhada() {
       {sheetN != null && (
         <>
           <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, scrimSt]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={fecharFolha} accessibilityLabel="Fechar" />
+            <Pressable style={StyleSheet.absoluteFill} onPress={fecharFolha} accessibilityLabel={t('Fechar')} />
           </Animated.View>
           <Animated.View style={[styles.sheet, { paddingBottom: 40 }, sheetSt]}>
             <View style={styles.handle} />
@@ -694,9 +699,9 @@ export default function Caminhada() {
                 </View>
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.hdrLvl}>{`Nível ${shL}`}</Text>
-                <Text style={styles.shName}>{shLv?.titulo ?? ''}</Text>
-                <Text style={styles.shFalta}>{`faltam ${fmt(shFalta)} NIKS Points`}</Text>
+                <Text style={styles.hdrLvl}>{t('Nível {{n}}', { n: shL })}</Text>
+                <Text style={styles.shName}>{shLv?.titulo ? t(shLv.titulo) : ''}</Text>
+                <Text style={styles.shFalta}>{t('faltam {{pts}} NIKS Points', { pts: fmt(shFalta) })}</Text>
               </View>
             </View>
             <View style={[styles.barTrack, { marginTop: 22 }]}>
@@ -711,12 +716,12 @@ export default function Caminhada() {
                 <Svg width={19} height={19} viewBox="0 0 24 24"><Path d="M20 6 9 17l-5-5" fill="none" stroke="#fff" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" /></Svg>
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.shRot}>{shRot === 1 ? 'Cerca de 1 rotina concluída' : `Cerca de ${shRot} rotinas concluídas`}</Text>
-                <Text style={styles.shRotSub}>{`+${rot.min} a ${rot.max} NIKS Points por rotina`}</Text>
+                <Text style={styles.shRot}>{shRot === 1 ? t('Cerca de 1 rotina concluída') : t('Cerca de {{n}} rotinas concluídas', { n: shRot })}</Text>
+                <Text style={styles.shRotSub}>{t('+{{min}} a {{max}} NIKS Points por rotina', { min: rot.min, max: rot.max })}</Text>
               </View>
             </View>
             <TouchableOpacity activeOpacity={0.85} onPress={fecharFolha} style={[styles.pinkBtn, { marginTop: 18, height: 54 }]}>
-              <Text style={styles.pinkBtnText}>Entendi</Text>
+              <Text style={styles.pinkBtnText}>{t('Entendi')}</Text>
             </TouchableOpacity>
           </Animated.View>
         </>
@@ -726,13 +731,13 @@ export default function Caminhada() {
       {cel && (
         <Animated.View style={[StyleSheet.absoluteFill, styles.celBg, celSt]}>
           <Animated.View style={[styles.celContent, { top: y(128) }, celInSt]}>
-            <Text style={styles.celPre}>{cel.retro ? 'Você já é' : 'Você agora é'}</Text>
-            <Text style={styles.celName}>{cel.nivel.titulo}</Text>
+            <Text style={styles.celPre}>{cel.retro ? t('Você já é') : t('Você agora é')}</Text>
+            <Text style={styles.celName}>{t(cel.nivel.titulo)}</Text>
             <View style={styles.celMedalha}><Medalha nivel={cel.nivel.nivel} tamanho={240} /></View>
-            <Text style={styles.celSub}>{`Nível ${cel.nivel.nivel} · ${fmt(cel.nivel.piso)} NIKS Points`}</Text>
+            <Text style={styles.celSub}>{t('Nível {{n}} · {{pts}} NIKS Points', { n: cel.nivel.nivel, pts: fmt(cel.nivel.piso) })}</Text>
           </Animated.View>
           <TouchableOpacity activeOpacity={0.85} onPress={continuarCel} style={[styles.pinkBtn, styles.celBtn, { bottom: 40 }]}>
-            <Text style={styles.pinkBtnText}>Continuar</Text>
+            <Text style={styles.pinkBtnText}>{t('Continuar')}</Text>
           </TouchableOpacity>
         </Animated.View>
       )}

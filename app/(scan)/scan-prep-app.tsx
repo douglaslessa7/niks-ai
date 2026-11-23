@@ -10,6 +10,7 @@ import Svg, { Path } from 'react-native-svg';
 import { Image as ExpoImage } from 'expo-image';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
+import { t } from '../../lib/i18n';
 
 // ── Preparação do scan facial — versão DENTRO DO APP (novo design NIKS) ─────────
 // Tutorial de 4 passos em CARROSSEL (antes era uma tela só com 5 dicas em lista):
@@ -47,26 +48,26 @@ const STEPS = [
   {
     Icon: Sun,
     media: FOTO_LUZ,
-    title: 'Procure um lugar com uma boa iluminação natural',
-    body: 'Durante o dia, com claridade suave e sem sol batendo direto no rosto. Luz de teto e lâmpada amarela criam sombras que a análise lê como mancha.',
+    title: t('Procure um lugar com uma boa iluminação natural'),
+    body: t('Durante o dia, com claridade suave e sem sol batendo direto no rosto. Luz de teto e lâmpada amarela criam sombras que a análise lê como mancha.'),
   },
   {
     Icon: CalendarClock,
     media: FOTO_ROTINA,
-    title: 'Repita sempre no mesmo lugar e horário',
-    body: 'Mesmo cantinho, mesma hora do dia, de preferência com uma parede branca de fundo. É assim que conseguimos te dar uma análise precisa, comparar seus scans e te mostrar a evolução real da sua pele.',
+    title: t('Repita sempre no mesmo lugar e horário'),
+    body: t('Mesmo cantinho, mesma hora do dia, de preferência com uma parede branca de fundo. É assim que conseguimos te dar uma análise precisa, comparar seus scans e te mostrar a evolução real da sua pele.'),
   },
   {
     Icon: Glasses,
     media: FOTO_ACESSORIOS,
-    title: 'Tire qualquer acessório do rosto',
-    body: 'Óculos, brincos, boné, piercing. Nada pode cobrir a pele que a gente vai analisar.',
+    title: t('Tire qualquer acessório do rosto'),
+    body: t('Óculos, brincos, boné, piercing. Nada pode cobrir a pele que a gente vai analisar.'),
   },
   {
     Icon: Sparkles,
     media: FOTO_SCAN,
-    title: 'Rosto limpo e cabelo preso',
-    body: 'Sem maquiagem, sem filtro, cabelo preso para trás. É a sua pele de verdade que queremos ver.',
+    title: t('Rosto limpo e cabelo preso'),
+    body: t('Sem maquiagem, sem filtro, cabelo preso para trás. É a sua pele de verdade que queremos ver.'),
   },
 ];
 
@@ -227,7 +228,7 @@ export default function ScanPrepApp() {
             }}
           >
             <Text style={{ fontSize: 17, fontWeight: '600', color: WHITE }}>
-              {isLast ? 'Abrir câmera' : 'Continuar'}
+              {isLast ? t('Abrir câmera') : t('Continuar')}
             </Text>
             <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
               <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />

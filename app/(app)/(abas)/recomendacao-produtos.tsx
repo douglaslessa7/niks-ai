@@ -40,6 +40,7 @@ import InicialAvatar from '../../../components/InicialAvatar';
 import VoltarPelaBorda from '../../../components/VoltarPelaBorda';
 import FaixaPreco from '../../../components/product/FaixaPreco';
 import { descricaoFaixa, faixasDosProdutos, type FaixaPreco as FaixaPrecoValor } from '../../../lib/faixaPreco';
+import { t, emIngles, horaEn, idioma, MESES_CURTOS_EN } from '../../../lib/i18n';
 
 // ── "Produtos para você" — identidade do app (novo design) ────────────────────
 // Reformada para a linguagem visual do app (home / protocolo / niks-chat): fundo
@@ -113,7 +114,7 @@ type RecEntry = GridItem & { prod: Prod; step: string; copy: string };
 // (ScanItem e a lista de escaneados moram em lib/escaneados — a folha "Escolher produto" da Rotina usa a mesma.)
 
 // Tag no lugar do "% compatível" quando o scan é antigo e não tem o número.
-const VEREDITO_TAG: Record<string, string> = { pode_usar: 'Pode usar', com_ressalva: 'Com ressalva', evitaria: 'Evitaria' };
+const VEREDITO_TAG: Record<string, string> = { pode_usar: t('Pode usar'), com_ressalva: t('Com ressalva'), evitaria: t('Evitaria') };
 // "Alternativa ao seu protetor" etc. — linha de baixo dos cards da aba Recomendados.
 const ALT: Record<string, string> = {
   'Limpeza': 'à sua limpeza', 'Tônico': 'ao seu tônico', 'Sérum': 'ao seu sérum',
@@ -128,17 +129,18 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 function fmtWhen(iso: string, now: Date = new Date()): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const hm = emIngles ? horaEn(d.getHours(), d.getMinutes()) : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diff = Math.round((day(now) - day(d)) / 86_400_000);
-  if (diff === 0) return `Hoje, ${hm}`;
-  if (diff === 1) return `Ontem, ${hm}`;
+  if (diff === 0) return t('Hoje, {{hora}}', { hora: hm });
+  if (diff === 1) return t('Ontem, {{hora}}', { hora: hm });
+  if (emIngles) return `${MESES_CURTOS_EN[d.getMonth()]} ${d.getDate()}${d.getFullYear() !== now.getFullYear() ? `, ${d.getFullYear()}` : ''}`;
   return `${d.getDate()} ${MESES[d.getMonth()]}${d.getFullYear() !== now.getFullYear() ? ` ${d.getFullYear()}` : ''}`;
 }
 
 // Rótulos PT dos concerns reais de um produto (omite códigos desconhecidos).
 const targetsOf = (p: Prod): string[] =>
-  (p.concerns ?? []).map(concernLabel).filter((l): l is string => !!l);
+  (p.concerns ?? []).map(concernLabel).filter((l): l is string => !!l).map((l) => t(l));
 
 // Constrói um Item (card) a partir de um passo do JSON + mapa de produtos.
 // `prefix`/`index` definem o id (Manhã/Noite) e a numeração por seção.
@@ -150,7 +152,7 @@ function buildItem(passo: RecPasso, prodMap: Map<string, Prod>, prefix: string, 
   if (passo.sem_produto) {
     return {
       id: `${prefix}${index}`, num, step, empty: true,
-      note: passo.motivo || 'Ainda não temos um produto no catálogo para este passo.',
+      note: passo.motivo || t('Ainda não temos um produto no catálogo para este passo.'),
     };
   }
 
@@ -407,7 +409,7 @@ export default function RecomendacaoProdutos() {
             'apikey': ANON_KEY,
             'Authorization': `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ user_id: userId, scan_id: scan?.id ?? null }),
+          body: JSON.stringify({ user_id: userId, scan_id: scan?.id ?? null, idioma }),
         },
       );
       return res.ok ? 'ok' : 'falhou';
@@ -667,26 +669,26 @@ export default function RecomendacaoProdutos() {
             {fotoUrl
               ? <Image source={{ uri: fotoUrl }} style={p47.avatar} />
               : <InicialAvatar nome={nomeAvatar} tamanho={32} style={p47.avatar} />}
-            <Text style={p47.topTitle}>Minha estante</Text>
+            <Text style={p47.topTitle}>{t('Minha estante')}</Text>
           </View>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <TouchableOpacity activeOpacity={0.85} onPress={backToMain} style={p47.circle36} accessibilityLabel="Voltar">
+            <TouchableOpacity activeOpacity={0.85} onPress={backToMain} style={p47.circle36} accessibilityLabel={t('Voltar')}>
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><Path d="M15 6l-6 6 6 6" /></Svg>
             </TouchableOpacity>
-            <Text style={p47.topTitle}>Meus produtos</Text>
+            <Text style={p47.topTitle}>{t('Meus produtos')}</Text>
           </View>
         )}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }} {...(view === 'main' ? tutEdit : {})}>
           {/* Editar/OK da estante: sempre na estante, mesmo vazia (designs 59a–59d). No
               modo Editar, compartilhar e busca saem do topo — sobra só o "OK". */}
           {view === 'main' && (
-            <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.select(); setEditing((e) => !e); }} hitSlop={8} style={p47.editBtn} accessibilityLabel={editing ? 'Concluir edição da estante' : 'Editar estante'}>
-              <Text style={[p47.editText, editing && { fontWeight: '700' }]}>{editing ? 'OK' : 'Editar'}</Text>
+            <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.select(); setEditing((e) => !e); }} hitSlop={8} style={p47.editBtn} accessibilityLabel={editing ? t('Concluir edição da estante') : t('Editar estante')}>
+              <Text style={[p47.editText, editing && { fontWeight: '700' }]}>{editing ? t('OK') : t('Editar')}</Text>
             </TouchableOpacity>
           )}
           {view === 'main' && !editing && (
-            <TouchableOpacity activeOpacity={0.85} onPress={() => { void shelfRef.current?.share(); }} style={p47.circle36} accessibilityLabel="Compartilhar estante">
+            <TouchableOpacity activeOpacity={0.85} onPress={() => { void shelfRef.current?.share(); }} style={p47.circle36} accessibilityLabel={t('Compartilhar estante')}>
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 15V3.5M7.5 8 12 3.5 16.5 8M5 12.5v6A2 2 0 0 0 7 20.5h10a2 2 0 0 0 2-2v-6" /></Svg>
             </TouchableOpacity>
           )}
@@ -699,14 +701,14 @@ export default function RecomendacaoProdutos() {
   // a linha de baixo) — o MESMO na grade das listas e nos carrosséis da estante.
   // `inShelf` = selo "Na estante" no canto da foto (o produto já está na estante dela).
   const ProductCard = <G extends GridItem>(p: G, onPick: (p: G) => void, sub: string | null, style: object, inShelf = false, faixa?: FaixaPrecoValor) => (
-    <TouchableOpacity key={p.id} activeOpacity={0.85} onPress={() => { haptics.tap(); onPick(p); }} style={[{ gap: 8 }, style]} accessibilityLabel={faixa ? `${p.name || 'Produto'}. ${descricaoFaixa(faixa)}` : undefined}>
+    <TouchableOpacity key={p.id} activeOpacity={0.85} onPress={() => { haptics.tap(); onPick(p); }} style={[{ gap: 8 }, style]} accessibilityLabel={faixa ? `${p.name || t('Produto')}. ${descricaoFaixa(faixa)}` : undefined}>
       <View style={p47.imgCard}>
         {inShelf && (
           <View style={p47.shelfTag}>
             <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="#C0206A" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M3.5 3v18M20.5 3v18M3.5 10.5h17M3.5 20h17" />
             </Svg>
-            <Text style={p47.shelfTagText}>Na estante</Text>
+            <Text style={p47.shelfTagText}>{t('Na estante')}</Text>
           </View>
         )}
         {(p.cutoutUrl ?? p.photoUrl)
@@ -720,10 +722,10 @@ export default function RecomendacaoProdutos() {
             <View style={p47.badgeDot}>
               <Svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"><Path d="M5 12.5l4.5 4.5L19 7.5" /></Svg>
             </View>
-            <Text style={p47.badgeText}>{p.match != null ? `${p.match}% compatível` : VEREDITO_TAG[p.verdict!]}</Text>
+            <Text style={p47.badgeText}>{p.match != null ? t('{{compat}}% compatível', { compat: p.match }) : VEREDITO_TAG[p.verdict!]}</Text>
           </View>
         )}
-        <Text style={p47.name} numberOfLines={3} lineBreakStrategyIOS="push-out">{p.name || 'Produto'}</Text>
+        <Text style={p47.name} numberOfLines={3} lineBreakStrategyIOS="push-out">{p.name || t('Produto')}</Text>
         {!!sub && <Text style={p47.sub} numberOfLines={1}>{sub}</Text>}
       </View>
     </TouchableOpacity>
@@ -753,11 +755,11 @@ export default function RecomendacaoProdutos() {
       <>
         {chips && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 18, flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 18, gap: 6 }}>
-            {tags.map((t) => {
-              const on = t === cur;
+            {tags.map((tag) => {
+              const on = tag === cur;
               return (
-                <TouchableOpacity key={t} activeOpacity={0.85} onPress={() => { haptics.select(); o.setCat(t); }} style={[p47.chip, on ? p47.chipOn : p47.chipOff]}>
-                  <Text style={[p47.chipText, { fontWeight: on ? '600' : '500', color: on ? INK : '#6E6468' }]}>{t}</Text>
+                <TouchableOpacity key={tag} activeOpacity={0.85} onPress={() => { haptics.select(); o.setCat(tag); }} style={[p47.chip, on ? p47.chipOn : p47.chipOff]}>
+                  <Text style={[p47.chipText, { fontWeight: on ? '600' : '500', color: on ? INK : '#6E6468' }]}>{t(tag)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -765,12 +767,12 @@ export default function RecomendacaoProdutos() {
         )}
         <View style={p47.titleRow}>
           <Text style={p47.title}>{o.title}</Text>
-          <Text style={p47.count}>{shown.length === 1 ? '1 produto' : `${shown.length} produtos`}</Text>
+          <Text style={p47.count}>{shown.length === 1 ? t('1 produto') : t('{{n}} produtos', { n: shown.length })}</Text>
         </View>
         {!!o.note && <Text style={p47.note} lineBreakStrategyIOS="push-out">{o.note}</Text>}
         {!!q && shown.length === 0 && (
           <Text style={[p47.empty, { marginTop: 48, paddingHorizontal: 40 }]} lineBreakStrategyIOS="push-out">
-            {`Nenhum produto encontrado para “${query.trim()}”`}
+            {t('Nenhum produto encontrado para “{{busca}}”', { busca: query.trim() })}
           </Text>
         )}
         <View style={{ marginTop: 12, paddingHorizontal: 18, gap: 18 }}>
@@ -796,8 +798,8 @@ export default function RecomendacaoProdutos() {
     <>
       <View style={p47.sectionRow} {...o.tut?.[0]}>
         <Text style={p47.title}>{o.title}</Text>
-        <TouchableOpacity onPress={o.onAll} hitSlop={10} accessibilityLabel={`Ver todos: ${o.title}`}>
-          <Text style={p47.seeAll}>Ver todos</Text>
+        <TouchableOpacity onPress={o.onAll} hitSlop={10} accessibilityLabel={t('Ver todos: {{secao}}', { secao: o.title })}>
+          <Text style={p47.seeAll}>{t('Ver todos')}</Text>
         </TouchableOpacity>
       </View>
       <View style={{ marginTop: 12 }} {...o.tut?.[1]}>
@@ -816,7 +818,7 @@ export default function RecomendacaoProdutos() {
     <View style={{ marginTop: 12, paddingHorizontal: 18, gap: 10, alignItems: 'flex-start' }}>
       <Text style={p47.sub}>{text}</Text>
       <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); onRetry(); }} style={[p47.chip, p47.chipOn]}>
-        <Text style={[p47.chipText, { fontWeight: '600', color: INK }]}>Tentar de novo</Text>
+        <Text style={[p47.chipText, { fontWeight: '600', color: INK }]}>{t('Tentar de novo')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -850,9 +852,9 @@ export default function RecomendacaoProdutos() {
       };
       if (aviso.nivel === 'forte') {
         haptics.warning();
-        Alert.alert('Atenção', aviso.texto ?? 'Esse produto pede cuidado na sua pele.', [
-          { text: 'Escolher outro', style: 'cancel' },
-          { text: 'Usar mesmo assim', style: 'destructive', onPress: () => { void salvar().catch(() => Alert.alert('Não deu pra salvar no passo', 'Tente de novo em instantes.')); } },
+        Alert.alert(t('Atenção'), aviso.texto ? t(aviso.texto) : t('Esse produto pede cuidado na sua pele.'), [
+          { text: t('Escolher outro'), style: 'cancel' },
+          { text: t('Usar mesmo assim'), style: 'destructive', onPress: () => { void salvar().catch(() => Alert.alert(t('Não deu pra salvar no passo'), t('Tente de novo em instantes.'))); } },
         ]);
         return;
       }
@@ -860,7 +862,7 @@ export default function RecomendacaoProdutos() {
     } catch (e) {
       console.warn('[produtos] escolher para o passo falhou:', e);
       haptics.error();
-      Alert.alert('Não deu pra salvar no passo', 'Tente de novo em instantes.');
+      Alert.alert(t('Não deu pra salvar no passo'), t('Tente de novo em instantes.'));
     }
   };
 
@@ -870,7 +872,7 @@ export default function RecomendacaoProdutos() {
     pra: r.copy, praLong: r.copy, targets: targetsOf(r.prod), alts: [],
     categoria: r.prod.categoria ?? null, compat: r.match, recomendado: true,
   });
-  const recSub = (r: RecEntry) => (r.cat && ALT[r.cat] ? `Alternativa ${ALT[r.cat]}` : 'Alternativa pra sua rotina');
+  const recSub = (r: RecEntry) => (r.cat && ALT[r.cat] ? t('Alternativa {{alvo}}', { alvo: t(ALT[r.cat]) }) : t('Alternativa pra sua rotina'));
   // Selo "Na estante": o mesmo id (produto do catálogo / scan) OU o mesmo produto pela
   // marca + nome (lib/productMatch — o critério do "um card por produto"). Assim o card
   // do scan mais recente ganha o selo mesmo que a estante guarde um scan anterior, e um
@@ -894,7 +896,7 @@ export default function RecomendacaoProdutos() {
       } catch (e) {
         console.warn('[estante] falha ao remover', e);
         haptics.error();
-        Alert.alert('Não deu pra remover da sua estante', 'Tente de novo em instantes.');
+        Alert.alert(t('Não deu pra remover da sua estante'), t('Tente de novo em instantes.'));
       }
     });
   };
@@ -919,7 +921,7 @@ export default function RecomendacaoProdutos() {
   const Bubbles = () => (
     <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 53 + insets.bottom + 18, alignItems: 'center' }}>
     <View {...tutScanBtn}>
-    <TouchableOpacity activeOpacity={0.85} onPress={handleEscanearProduto} accessibilityRole="button" accessibilityLabel="Escanear produto" style={[p47.pill, PILL_PINK && p47.pillPink]}>
+    <TouchableOpacity activeOpacity={0.85} onPress={handleEscanearProduto} accessibilityRole="button" accessibilityLabel={t('Escanear produto')} style={[p47.pill, PILL_PINK && p47.pillPink]}>
       <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={PILL_FG} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
         <Path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M15.5 4H18a2 2 0 0 1 2 2v2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5M8.5 20H6a2 2 0 0 1-2-2v-2.5" />
       </Svg>
@@ -928,7 +930,7 @@ export default function RecomendacaoProdutos() {
         maxWidth: pillT.interpolate({ inputRange: [0, 1], outputRange: [160, 0] }),
         opacity: pillT.interpolate({ inputRange: [0, 0.6, 1], outputRange: [1, 0, 0] }),
       }}>
-        <Text numberOfLines={1} style={[p47.pillText, { color: PILL_FG }]}>Escanear produto</Text>
+        <Text numberOfLines={1} style={[p47.pillText, { color: PILL_FG }]}>{t('Escanear produto')}</Text>
       </Animated.View>
     </TouchableOpacity>
     </View>
@@ -968,15 +970,15 @@ export default function RecomendacaoProdutos() {
             if (!col.length && !rec.length && !sc.length) {
               return (
                 <Text style={[p47.empty, { marginTop: 64, paddingHorizontal: 40 }]} lineBreakStrategyIOS="push-out">
-                  {`Nenhum produto encontrado para “${query.trim()}”`}
+                  {t('Nenhum produto encontrado para “{{busca}}”', { busca: query.trim() })}
                 </Text>
               );
             }
             return (
               <>
-                {col.length > 0 && ProductGrid({ items: col, cat: 'Todos', setCat: () => {}, chips: false, onPick: (p) => { setNoPalco({ item: p.c, origem: null }); }, title: 'Na sua estante', subOf: (p) => p.c.marca })}
-                {rec.length > 0 && ProductGrid({ items: rec, cat: 'Todos', setCat: () => {}, chips: false, onPick: openRec, title: 'Recomendados pra você', subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa })}
-                {sc.length > 0 && ProductGrid({ items: sc, cat: 'Todos', setCat: () => {}, chips: false, onPick: setScanDetail, title: 'Escaneados', subOf: (p) => fmtWhen(p.createdAt), shelfOf: scanInShelf })}
+                {col.length > 0 && ProductGrid({ items: col, cat: 'Todos', setCat: () => {}, chips: false, onPick: (p) => { setNoPalco({ item: p.c, origem: null }); }, title: t('Na sua estante'), subOf: (p) => p.c.marca })}
+                {rec.length > 0 && ProductGrid({ items: rec, cat: 'Todos', setCat: () => {}, chips: false, onPick: openRec, title: t('Recomendados pra você'), subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa })}
+                {sc.length > 0 && ProductGrid({ items: sc, cat: 'Todos', setCat: () => {}, chips: false, onPick: setScanDetail, title: t('Escaneados'), subOf: (p) => fmtWhen(p.createdAt), shelfOf: scanInShelf })}
               </>
             );
           })() : (
@@ -996,40 +998,40 @@ export default function RecomendacaoProdutos() {
                 onScan={escanearDaEstante}
                 tutMark={tutShelf}
               />
-              {colState === 'error' && <RetryRow text="Não deu pra carregar sua estante agora." onRetry={loadColecao} />}
+              {colState === 'error' && <RetryRow text={t('Não deu pra carregar sua estante agora.')} onRetry={loadColecao} />}
 
               {/* Recomendados pra você */}
               {state === 'generating' && (
                 <>
-                  <View style={p47.sectionRow} {...tutRecTitle}><Text style={p47.title}>Recomendados pra você</Text></View>
+                  <View style={p47.sectionRow} {...tutRecTitle}><Text style={p47.title}>{t('Recomendados pra você')}</Text></View>
                   <View style={{ marginTop: 14, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 10 }} {...tutRecRow}>
                     <ActivityIndicator color="#FF5EA8" />
                     {/* Usuária legada: a recomendação está sendo gerada agora (IA, uma vez na vida da conta). */}
-                    <Text style={p47.sub}>Montando sua recomendação…</Text>
+                    <Text style={p47.sub}>{t('Montando sua recomendação…')}</Text>
                   </View>
                 </>
               )}
               {state === 'error' && (
                 <>
-                  <View style={p47.sectionRow}><Text style={p47.title}>Recomendados pra você</Text></View>
-                  <RetryRow text="Não deu pra carregar suas recomendações agora." onRetry={load} />
+                  <View style={p47.sectionRow}><Text style={p47.title}>{t('Recomendados pra você')}</Text></View>
+                  <RetryRow text={t('Não deu pra carregar suas recomendações agora.')} onRetry={load} />
                 </>
               )}
               {recShown.length > 0 && Carousel<RecEntry>({
-                title: 'Recomendados pra você', items: recShown, onPick: openRec, subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa,
+                title: t('Recomendados pra você'), items: recShown, onPick: openRec, subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa,
                 onAll: () => openList('recomendados'), tut: [tutRecTitle, tutRecRow],
               })}
 
               {/* Escaneados recentemente — vazio vira convite para o 1º scan */}
               {scanState === 'ready' && scansShown.length > 0 && Carousel<ScanItem>({
-                title: 'Escaneados recentemente', items: scansShown, onPick: setScanDetail, shelfOf: scanInShelf,
+                title: t('Escaneados recentemente'), items: scansShown, onPick: setScanDetail, shelfOf: scanInShelf,
                 alvoPrimeiro: passoGuia === 'd2-card' ? 'prod-escaneado' : undefined,
                 subOf: (p) => fmtWhen(p.createdAt), onAll: () => openList('escaneados'),
               })}
               {scanState === 'empty' && (
                 <>
-                  <View style={p47.sectionRow}><Text style={p47.title}>Escaneados recentemente</Text></View>
-                  <TouchableOpacity activeOpacity={0.85} onPress={handleEscanearProduto} style={p47.invite} accessibilityLabel="Escanear meu primeiro produto">
+                  <View style={p47.sectionRow}><Text style={p47.title}>{t('Escaneados recentemente')}</Text></View>
+                  <TouchableOpacity activeOpacity={0.85} onPress={handleEscanearProduto} style={p47.invite} accessibilityLabel={t('Escanear meu primeiro produto')}>
                     <View style={p47.inviteIcon}>
                       <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#FF5EA8" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M14.5 4.5h-5L8 6.5H5A1.5 1.5 0 0 0 3.5 8v10A1.5 1.5 0 0 0 5 19.5h14a1.5 1.5 0 0 0 1.5-1.5V8A1.5 1.5 0 0 0 19 6.5h-3z" />
@@ -1037,8 +1039,8 @@ export default function RecomendacaoProdutos() {
                       </Svg>
                     </View>
                     <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={p47.inviteTitle}>Escaneie seu primeiro produto</Text>
-                      <Text style={p47.sub} lineBreakStrategyIOS="push-out">Descubra se ele combina com a sua pele.</Text>
+                      <Text style={p47.inviteTitle}>{t('Escaneie seu primeiro produto')}</Text>
+                      <Text style={p47.sub} lineBreakStrategyIOS="push-out">{t('Descubra se ele combina com a sua pele.')}</Text>
                     </View>
                     <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#B5ABB0" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><Path d="M9 6l6 6-6 6" /></Svg>
                   </TouchableOpacity>
@@ -1046,8 +1048,8 @@ export default function RecomendacaoProdutos() {
               )}
               {scanState === 'error' && (
                 <>
-                  <View style={p47.sectionRow}><Text style={p47.title}>Escaneados recentemente</Text></View>
-                  <RetryRow text="Não deu pra carregar seus escaneados agora." onRetry={loadScans} />
+                  <View style={p47.sectionRow}><Text style={p47.title}>{t('Escaneados recentemente')}</Text></View>
+                  <RetryRow text={t('Não deu pra carregar seus escaneados agora.')} onRetry={loadScans} />
                 </>
               )}
             </>
@@ -1064,17 +1066,17 @@ export default function RecomendacaoProdutos() {
               <ActivityIndicator size="large" color="#FF5EA8" />
             </View>
           )}
-          {scanState === 'error' && <RetryRow text="Não deu pra carregar seus escaneados agora." onRetry={loadScans} />}
+          {scanState === 'error' && <RetryRow text={t('Não deu pra carregar seus escaneados agora.')} onRetry={loadScans} />}
           {(scanState === 'ready' || scanState === 'empty') && ProductGrid<ScanItem>({
             // Modo escolha: sem o que já está na estante (como na folha — não aparece duas vezes).
             items: scanState === 'ready' ? (escolha ? scansShown.filter((p) => !scanInShelf(p)) : scansShown) : [],
             cat: catS, setCat: setCatS,
             onPick: escolha ? (p) => { void escolherParaPasso({ origem: 'escaneado', id: p.id }); } : setScanDetail,
             searchOf: (p) => `${p.name ?? ''} ${p.brand ?? ''}`,
-            title: 'Escaneados recentemente',
+            title: t('Escaneados recentemente'),
             note: escolha
-              ? `Toque num produto para usar no passo “${escolha.nome}”.`
-              : 'Seus últimos escaneamentos, do mais recente pro mais antigo.',
+              ? t('Toque num produto para usar no passo “{{passo}}”.', { passo: escolha.nome })
+              : t('Seus últimos escaneamentos, do mais recente pro mais antigo.'),
             subOf: (p) => fmtWhen(p.createdAt), shelfOf: scanInShelf,
           })}
         </ScrollView>
@@ -1088,11 +1090,11 @@ export default function RecomendacaoProdutos() {
           {PageTop()}
           {!!escolha && (
             <Text style={[p47.note, { marginTop: 14, marginBottom: 12 }]} lineBreakStrategyIOS="push-out">
-              {`Toque num produto para usar no passo “${escolha.nome}”.`}
+              {t('Toque num produto para usar no passo “{{passo}}”.', { passo: escolha.nome })}
             </Text>
           )}
           {colState === 'error' ? (
-            <RetryRow text="Não deu pra carregar sua estante agora." onRetry={loadColecao} />
+            <RetryRow text={t('Não deu pra carregar sua estante agora.')} onRetry={loadColecao} />
           ) : (
             <Shelf
               items={colecao.filter((c) => c.status === 'tenho')}
@@ -1118,20 +1120,20 @@ export default function RecomendacaoProdutos() {
           {(state === 'loading' || state === 'generating') && (
             <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 }}>
               <ActivityIndicator size="large" color="#FF5EA8" />
-              {state === 'generating' && <Text style={[p47.note, { textAlign: 'center' }]}>Montando sua recomendação…</Text>}
+              {state === 'generating' && <Text style={[p47.note, { textAlign: 'center' }]}>{t('Montando sua recomendação…')}</Text>}
             </View>
           )}
-          {state === 'error' && <RetryRow text="Não deu pra carregar suas recomendações agora." onRetry={load} />}
+          {state === 'error' && <RetryRow text={t('Não deu pra carregar suas recomendações agora.')} onRetry={load} />}
           {(state === 'ready' || state === 'empty') && ProductGrid<RecEntry>({
             // Modo escolha: TODOS os recomendados (inclusive os que já estão em algum passo).
             items: escolha ? (state === 'ready' ? recList : []) : recShown,
             cat: catR, setCat: setCatR,
             searchOf: (r) => `${r.prod.nome ?? ''} ${r.prod.marca ?? ''}`,
             onPick: escolha ? (r) => { void escolherParaPasso({ origem: 'catalogo', id: r.id }); } : openRec,
-            title: 'Recomendados pra você',
+            title: t('Recomendados pra você'),
             note: escolha
-              ? `Toque num produto para usar no passo “${escolha.nome}”.`
-              : 'Alternativas que a IA indicou pra sua pele e que ficaram fora da rotina.',
+              ? t('Toque num produto para usar no passo “{{passo}}”.', { passo: escolha.nome })
+              : t('Alternativas que a IA indicou pra sua pele e que ficaram fora da rotina.'),
             subOf: recSub, shelfOf: recInShelf, faixaOf: recFaixa,
           })}
         </ScrollView>
@@ -1165,12 +1167,12 @@ export default function RecomendacaoProdutos() {
               autoCorrect={false}
               autoCapitalize="none"
               clearButtonMode="never"
-              placeholder={view === 'main' ? 'Buscar nos seus produtos' : view === 'recomendados' ? 'Buscar nos recomendados' : 'Buscar nos escaneados'}
+              placeholder={view === 'main' ? t('Buscar nos seus produtos') : view === 'recomendados' ? t('Buscar nos recomendados') : t('Buscar nos escaneados')}
               placeholderTextColor="#A39A9F"
               style={p47.searchInput}
             />
             {!!query && (
-              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8} accessibilityLabel="Limpar busca">
+              <TouchableOpacity onPress={() => setQuery('')} hitSlop={8} accessibilityLabel={t('Limpar busca')}>
                 <View style={p47.searchClear}>
                   <Svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3.2} strokeLinecap="round"><Path d="M6 6l12 12M18 6L6 18" /></Svg>
                 </View>
@@ -1178,7 +1180,7 @@ export default function RecomendacaoProdutos() {
             )}
           </View>
           <TouchableOpacity onPress={() => { haptics.tap(); closeSearch(); }} hitSlop={8}>
-            <Text style={p47.searchCancel}>Cancelar</Text>
+            <Text style={p47.searchCancel}>{t('Cancelar')}</Text>
           </TouchableOpacity>
         </View>
       )}

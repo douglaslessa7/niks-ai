@@ -1,4 +1,5 @@
 import { avisarSeSemAssinatura } from '../lib/respostaIA';
+import { idioma } from '../lib/i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../store/onboarding';
@@ -118,6 +119,7 @@ export function useProductAnalysis({
           body: JSON.stringify({
             images: [{ base64: productImageBase64, mimeType: productImageMimeType ?? 'image/jpeg' }],
             clientScanId: clientScanIdRef.current,
+            idioma,
             ...(name ? { productName: name } : {}),
           }),
         });

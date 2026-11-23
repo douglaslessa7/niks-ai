@@ -9,6 +9,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 import {
   OB, OB_STEPS, ObScreen, ObHeader, ObTitle, ObSubtitle, ObPillButton,
   useObFrame, useObName, withName, obStep, useOnMount,
@@ -145,9 +146,9 @@ export default function Horario() {
       <StatusBar style="dark" />
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(118), alignItems: 'center' }}>
         <Animated.View style={{ alignSelf: 'stretch', opacity: conteudo }}>
-          <ObTitle>{withName(name, e.titulo)}</ObTitle>
+          <ObTitle>{withName(name, t(e.titulo))}</ObTitle>
         </Animated.View>
-        <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30, alignSelf: 'stretch' }}>A gente te lembra na hora certa.</ObSubtitle>
+        <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30, alignSelf: 'stretch' }}>{t('A gente te lembra na hora certa.')}</ObSubtitle>
 
         <Pilula progresso={pilula} etapa={etapa} />
 
@@ -165,7 +166,7 @@ export default function Horario() {
               <Path d="M10 20.5a2 2 0 0 0 4 0" />
             </Svg>
             <Text style={{ fontSize: 15, lineHeight: 20, color: OB.sub }}>
-              {'Lembrete todos os dias às '}
+              {t('Lembrete todos os dias às ')}
               <Text style={{ color: OB.ink, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{selecionado}</Text>
             </Text>
           </View>
@@ -195,7 +196,7 @@ function Pilula({ progresso, etapa }: { progresso: Animated.Value; etapa: Etapa 
             ? <><Circle cx={12} cy={12} r={4} /><Path d={SOL_D} /></>
             : <Path d={LUA_D} />}
         </Svg>
-        <Text style={{ fontSize: 15, fontWeight: on ? '600' : '500', color: cor }}>{qual === 'manha' ? 'Manhã' : 'Noite'}</Text>
+        <Text style={{ fontSize: 15, fontWeight: on ? '600' : '500', color: cor }}>{qual === 'manha' ? t('Manhã') : t('Noite')}</Text>
       </View>
     );
   };
@@ -203,7 +204,7 @@ function Pilula({ progresso, etapa }: { progresso: Animated.Value; etapa: Etapa 
     <View
       pointerEvents="none"
       accessible
-      accessibilityLabel={etapa === 'manha' ? 'Etapa: manhã' : 'Etapa: noite'}
+      accessibilityLabel={etapa === 'manha' ? t('Etapa: manhã') : t('Etapa: noite')}
       style={{ marginTop: 36, width: PILULA_W, height: 40, borderRadius: 20, backgroundColor: OB.option, padding: 4, flexDirection: 'row', gap: 4 }}
     >
       <Animated.View style={{

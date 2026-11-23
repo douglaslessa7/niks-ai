@@ -4,6 +4,10 @@
 // pele + a rotina ideal: diz, por produto, se identificou, se serve e por quê, e monta
 // a rotina dela com os que servem (manhã/noite, ordem, dias) + o que falta da ideal.
 //
+// MOTOR NOVO (19/nov/2026): quem a chave `motor_config.lote_v2` libera passa pelo `v2.ts` — a IA só identifica,
+// o código decide (produto de casa que faz o mesmo papel tem prioridade sobre o catálogo).
+// O que vem abaixo é o lote antigo (IA decide tudo), que segue para as outras contas.
+//
 // DOIS modos (JWT da usuária; o user_id vem do token, nunca do corpo):
 //
 // • LOTE (Fase 6 — o que o app usa): { caminhos: string[], tem_rotulo: boolean[] }
@@ -32,6 +36,9 @@ import { createSupabaseClient, buildContext } from '../analisar-produto/context.
 import { buildContextPack } from '../analisar-produto/prompt.ts'
 import { MONTAR_ROTINA_SYSTEM_PROMPT } from './prompt.ts'
 import { ensureScanCutout, norm, sameBrand, sameName } from '../_shared/scanCutout.ts'
+import { usaMotorNovo } from '../_shared/motor/gerar.ts'
+import { AntesDeGravar, processarLoteV2 } from './v2.ts'
+import { INSTRUCAO_EN, PUSH, ativosEn, idiomaDoCorpo, motivoEn, type Idioma } from './en.ts'
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void }
 
@@ -67,6 +74,21 @@ function normalizarDias(v: unknown): string[] | null {
 // Conferência determinística: o prompt manda, mas a regra de segurança não pode
 // depender só dele. Produto não identificado ou "evitaria" NUNCA fica na rotina; todo
 // produto identificado fora da rotina aparece em fora_da_rotina.
+// Rede de segurança (18/nov/2026): a IA escrevia "Você não está grávido e a barreira…". Tira a
+// menção a NÃO estar grávida do começo de cada texto (o prompt já pede para não escrever).
+const NAO_GRAVIDA = /^\s*(voc[eê]\s+)?n[aã]o\s+est[aá]\s+gr[aá]vid[ao](\s+nem\s+amamentando)?\s*(,\s*|\s+e\s+|\s*;\s*|\.\s*)/i
+function tirarNaoGravida(t: unknown): unknown {
+  if (typeof t !== 'string' || !NAO_GRAVIDA.test(t)) return t
+  const resto = t.replace(NAO_GRAVIDA, '').replace(/^(ent[aã]o|portanto|por isso)\s*,?\s*/i, '').trim()
+  return resto ? resto.charAt(0).toUpperCase() + resto.slice(1) : t
+}
+function semNaoGravida(r: any): any {
+  for (const lista of [r?.produtos, r?.fora_da_rotina]) {
+    if (Array.isArray(lista)) for (const p of lista) if (p && typeof p === 'object') p.motivo = tirarNaoGravida(p.motivo)
+  }
+  return r
+}
+
 function conferir(r: any, total: number): any {
   // Frequência de cada produto normalizada: { diario, dias } coerentes entre si.
   const produtos: any[] = (Array.isArray(r?.produtos) ? r.produtos : []).map((p: any) => {
@@ -104,7 +126,7 @@ function conferir(r: any, total: number): any {
 }
 
 // Chamada à IA (com 2 novas tentativas em 500/503) + conferência. Lança em falha.
-async function analisar(context: any, produtos: { base64: string; mimeType?: string; tem_rotulo: boolean }[]) {
+async function analisar(context: any, produtos: { base64: string; mimeType?: string; tem_rotulo: boolean }[], idioma: Idioma = 'pt') {
   // Mesmo formato de blocos do analisar-produto; aqui o protocolo é a rotina IDEAL.
   const pack = buildContextPack(context)
     .replace('<CurrentProtocol>', '<IdealRoutine>')
@@ -112,7 +134,7 @@ async function analisar(context: any, produtos: { base64: string; mimeType?: str
 
   const userContent: any[] = [{
     type: 'text',
-    text: `${pack}\n\nSão ${produtos.length} produtos, na ordem abaixo. Analise cada um e monte a rotina segundo o contexto acima.`,
+    text: `${pack}\n\nSão ${produtos.length} produtos, na ordem abaixo. Analise cada um e monte a rotina segundo o contexto acima.` + (idioma === 'en' ? INSTRUCAO_EN : ''),
   }]
   produtos.forEach((p, i) => {
     userContent.push({
@@ -159,7 +181,11 @@ async function analisar(context: any, produtos: { base64: string; mimeType?: str
 
   const texto = data?.choices?.[0]?.message?.content
   if (!texto) throw new Error(`OpenAI sem resposta: ${JSON.stringify(data).slice(0, 300)}`)
-  const resultado = conferir(extractJSON(texto), produtos.length)
+  const resultado = semNaoGravida(conferir(extractJSON(texto), produtos.length))
+  // Inglês: o texto de reserva da conferência ("Ficou fora da rotina.") também.
+  if (idioma === 'en') for (const f of resultado.fora_da_rotina ?? []) f.motivo = motivoEn(f.motivo)
+  // Inglês: ativos lidos pela IA nos nomes em inglês (o detector do motor entende os dois).
+  if (idioma === 'en') for (const p of resultado.produtos ?? []) p.ativos_detectados = ativosEn(p.ativos_detectados)
   return { resultado, medicao: { modelo: MODELO, ms, usage: data.usage, finish_reason: data.choices[0].finish_reason } }
 }
 
@@ -199,7 +225,7 @@ async function enviarPush(supabase: any, userId: string, title: string, body: st
 
 // O que o app lê de um produto escaneado (formato do analisar-produto, ver
 // components/product/ProductAnalysis.tsx) a partir do que o lote disse do produto.
-function resultadoDoScan(p: any) {
+function resultadoDoScan(p: any, idioma: Idioma = 'pt') {
   return {
     status: 'ok',
     origem: 'montar_rotina',
@@ -208,7 +234,7 @@ function resultadoDoScan(p: any) {
       ativos_detectados: Array.isArray(p.ativos_detectados) ? p.ativos_detectados : [],
     },
     confianca: p.precisao === 'baixa' ? 'media' : 'alta',
-    nota: p.leu_rotulo ? null : 'Sem a lista de ingredientes, essa análise é menos exata.',
+    nota: p.leu_rotulo ? null : idioma === 'en' ? 'Without the ingredient list, this analysis is less precise.' : 'Sem a lista de ingredientes, essa análise é menos exata.',
     veredito: p.veredito ?? null,
     compatibilidade: typeof p.compatibilidade === 'number' ? Math.round(p.compatibilidade) : null,
     resumo: p.motivo ?? null,
@@ -223,7 +249,7 @@ function resultadoDoScan(p: any) {
  * marca e nome) → reaproveita, sem duplicar. Devolve os scans novos (para o recorte).
  * Não identificado → nada (a tela mostra a mensagem combinada).
  */
-async function paraEstante(supabase: any, userId: string, loteId: string, caminhos: string[], r: any): Promise<string[]> {
+async function paraEstante(supabase: any, userId: string, loteId: string, caminhos: string[], r: any, idioma: Idioma = 'pt'): Promise<string[]> {
   const { data: estante } = await supabase
     .from('colecao_produtos').select('id, nome, marca').eq('user_id', userId)
   const scansNovos: string[] = []
@@ -247,7 +273,7 @@ async function paraEstante(supabase: any, userId: string, loteId: string, caminh
       image_path: imagePath,
       produto_nome: p.nome ?? null,
       produto_marca: p.marca ?? null,
-      resultado: resultadoDoScan(p),
+      resultado: resultadoDoScan(p, idioma),
       client_scan_id: `lote:${loteId}:${i}`,
     }).select('id').single()
     if (e1 || !scan) { console.warn('montar-rotina: product_scans falhou', i, e1?.message); continue }
@@ -266,15 +292,59 @@ async function paraEstante(supabase: any, userId: string, loteId: string, caminh
   return scansNovos
 }
 
-async function processarLote(supabase: any, userId: string, loteId: string, caminhos: string[], temRotulo: boolean[]) {
+/**
+ * Quem passa pelo lote novo: a chave `motor_config.lote_v2` ('desligado' | 'motor' | 'todas'),
+ * lida a cada lote (desligar vale na hora, sem publicar). Sem a função SQL (antes da
+ * migration) ou com erro → a regra de antes: só quem `usa_motor_novo`.
+ */
+async function usaLoteV2(supabase: any, uid: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('usa_lote_v2', { p_uid: uid })
+  if (error) {
+    console.warn('LOTE_V2_CHAVE_ERRO', error.message)
+    return await usaMotorNovo(supabase, uid)
+  }
+  return data === true
+}
+
+/** Lote pronto: push e, por último, os recortes sem fundo (não atrasam o aviso). */
+async function avisarERecortar(supabase: any, userId: string, loteId: string, scansNovos: string[], idioma: Idioma = 'pt') {
+  const [titulo, texto] = PUSH.pronto[idioma]
+  if (await enviarPush(supabase, userId, titulo, texto, { type: 'rotina_lote', lote_id: loteId })) {
+    await supabase.from('rotina_lotes').update({ notificado_em: new Date().toISOString() }).eq('id', loteId)
+  }
+  // Um de cada vez. Se o tempo da função acabar no meio, o app pede os que faltarem
+  // (recorte_status ainda null).
+  for (const scanId of scansNovos) {
+    await supabase.from('product_scans').update({ recorte_status: 'pendente' }).eq('id', scanId).is('recorte_status', null)
+    const r = await ensureScanCutout(supabase, scanId).catch(() => ({ status: 'falhou' }))
+    // O item da estante sai do "carregando" (com recorte ou com a foto).
+    await supabase.from('colecao_produtos').update({ recorte_status: r.status === 'ok' ? 'ok' : 'falhou' }).eq('product_scan_id', scanId)
+  }
+}
+
+async function processarLote(supabase: any, userId: string, loteId: string, caminhos: string[], temRotulo: boolean[], idioma: Idioma = 'pt') {
   try {
+    // Lote no motor novo (19/nov/2026): a chave `motor_config.lote_v2` decide (`usa_lote_v2`);
+    // erro antes de gravar → lote antigo.
+    if (await usaLoteV2(supabase, userId)) {
+      try {
+        const { scansNovos } = await processarLoteV2(supabase, userId, loteId, caminhos, temRotulo, {
+          baixar: (p) => baixar(supabase, p), paraBase64,
+        }, idioma)
+        await avisarERecortar(supabase, userId, loteId, scansNovos, idioma)
+        return
+      } catch (e) {
+        if (!(e instanceof AntesDeGravar)) throw e
+        console.error('LOTE_V2_VOLTA_AO_ANTIGO', loteId, e.message)
+      }
+    }
     const imagens = await Promise.all(caminhos.map((c) => baixar(supabase, c)))
     if (imagens.some((b) => !b)) throw new Error('imagem do lote não encontrada no bucket')
     const context = await buildContext(supabase, userId, { rotina: 'ideal' })
     const { resultado, medicao } = await analisar(context, imagens.map((b, i) => ({
       base64: paraBase64(b!), mimeType: 'image/jpeg', tem_rotulo: !!temRotulo[i],
-    })))
-    const scansNovos = await paraEstante(supabase, userId, loteId, caminhos, resultado)
+    })), idioma)
+    const scansNovos = await paraEstante(supabase, userId, loteId, caminhos, resultado, idioma)
 
     // Grava o resultado, troca a Minha rotina pela montada (automático — decisão de
     // 09/10; rotina vazia não apaga a atual) e SÓ ENTÃO marca 'pronto'.
@@ -285,25 +355,14 @@ async function processarLote(supabase: any, userId: string, loteId: string, cami
     if (eApl) throw new Error(`aplicar rotina: ${eApl.message}`)
     await supabase.from('rotina_lotes').update({ status: 'pronto', concluido_em: new Date().toISOString() }).eq('id', loteId)
     console.log('MONTAR_ROTINA_LOTE', JSON.stringify({ userId, loteId, produtos: caminhos.length, passos, ...medicao }))
-
-    if (await enviarPush(supabase, userId, 'Sua rotina está pronta ✨', 'Montei uma rotina com os produtos que você tem. Toque para ver.', { type: 'rotina_lote', lote_id: loteId })) {
-      await supabase.from('rotina_lotes').update({ notificado_em: new Date().toISOString() }).eq('id', loteId)
-    }
-
-    // Recortes sem fundo por último, um de cada vez (não atrasam o aviso). Se o tempo
-    // da função acabar no meio, o app pede os que faltarem (recorte_status ainda null).
-    for (const scanId of scansNovos) {
-      await supabase.from('product_scans').update({ recorte_status: 'pendente' }).eq('id', scanId).is('recorte_status', null)
-      const r = await ensureScanCutout(supabase, scanId).catch(() => ({ status: 'falhou' }))
-      // O item da estante sai do "carregando" (com recorte ou com a foto).
-      await supabase.from('colecao_produtos').update({ recorte_status: r.status === 'ok' ? 'ok' : 'falhou' }).eq('product_scan_id', scanId)
-    }
+    await avisarERecortar(supabase, userId, loteId, scansNovos, idioma)
   } catch (e) {
     console.error('montar-rotina-com-produtos: lote falhou', loteId, e)
     await supabase.from('rotina_lotes').update({
       status: 'erro', erro: String((e as Error)?.message ?? e).slice(0, 500), concluido_em: new Date().toISOString(),
     }).eq('id', loteId)
-    if (await enviarPush(supabase, userId, 'Não deu para montar sua rotina', 'Suas fotos estão guardadas. Toque para tentar de novo.', { type: 'rotina_lote', lote_id: loteId })) {
+    const [titulo, texto] = PUSH.erro[idioma]
+    if (await enviarPush(supabase, userId, titulo, texto, { type: 'rotina_lote', lote_id: loteId })) {
       await supabase.from('rotina_lotes').update({ notificado_em: new Date().toISOString() }).eq('id', loteId)
     }
   }
@@ -322,6 +381,8 @@ Deno.serve(async (req) => {
     const bloqueio = await travaAssinatura(userId, 'montar-rotina-com-produtos')
     if (bloqueio) return bloqueio
     const body = await req.json().catch(() => null)
+    // Idioma (etapa 3): textos e push do lote. Sem o campo = português, como sempre.
+    const idioma = idiomaDoCorpo(body)
     const supabase = createSupabaseClient()
 
     // ── LOTE ──
@@ -341,7 +402,7 @@ Deno.serve(async (req) => {
       // Conta de teste (20261207, tabela `contas_teste`): sem o teto do dia.
       if ((count ?? 0) >= 1) {
         const { data: teste } = await supabase.rpc('eh_conta_teste', { p_uid: userId })
-        if (teste !== true) return json({ error: 'Você já montou uma rotina hoje.' }, 429)
+        if (teste !== true) return json({ error: idioma === 'en' ? "You've already built a routine today." : 'Você já montou uma rotina hoje.' }, 429)
       }
 
       const { data: lote, error } = await supabase.from('rotina_lotes')
@@ -350,7 +411,7 @@ Deno.serve(async (req) => {
         console.error('montar-rotina-com-produtos: criar lote falhou', error)
         return json({ error: 'Erro ao montar a rotina' }, 500)
       }
-      EdgeRuntime.waitUntil(processarLote(supabase, userId, lote.id, caminhos, temRotulo))
+      EdgeRuntime.waitUntil(processarLote(supabase, userId, lote.id, caminhos, temRotulo, idioma))
       return json({ lote_id: lote.id }, 202)
     }
 
@@ -365,7 +426,7 @@ Deno.serve(async (req) => {
       }
     }
     const context = await buildContext(supabase, userId, { rotina: 'ideal' })
-    const { resultado, medicao } = await analisar(context, produtos)
+    const { resultado, medicao } = await analisar(context, produtos, idioma)
     console.log('MONTAR_ROTINA_MEDICAO', JSON.stringify({ userId, produtos: produtos.length, ...medicao }))
     return json({ ...resultado, _medicao: medicao })
   } catch (e) {

@@ -10,6 +10,7 @@ import { analisesDeHoje, createSupabaseClient, montarContexto } from './context.
 import { SOS_ESPINHA_SYSTEM_PROMPT, montarTexto } from './prompt.ts'
 import { emGestacao, inicioDoDiaBrasilia, LIMITE_POR_DIA, produtosPermitidos, sanearResposta, textoDaAnalise } from './regras.ts'
 import { guardarFoto, responderConversa } from './conversa.ts'
+import { INSTRUCAO_EN, idiomaDoCorpo } from './idioma.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,6 +46,8 @@ Deno.serve(async (req) => {
 
     const corpo = JSON.parse(rawBody)
     const { image } = corpo as { image?: { base64?: string; mimeType?: string } }
+    // Idioma da resposta (etapa 3): sem o campo = português, como sempre.
+    const idioma = idiomaDoCorpo(corpo)
 
     if (corpo.acao === 'convite') {
       const { data, error } = await createSupabaseClient().rpc('espinha_avaliar', { p_user: userId })
@@ -57,7 +60,7 @@ Deno.serve(async (req) => {
       return json({ ok: true })
     }
     if (corpo.acao === 'mensagem') {
-      const r = await responderConversa(createSupabaseClient(), userId, corpo)
+      const r = await responderConversa(createSupabaseClient(), userId, corpo, idioma)
       if (r.texto !== undefined) return new Response(r.texto, { headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' } })
       return json(r.json, r.status)
     }
@@ -77,11 +80,13 @@ Deno.serve(async (req) => {
     const permitidos = produtosPermitidos(ctx.produtos, ctx.perfil, ctx.memorias)
 
     const { result, registrarCusto } = await analisar({
-      supabase, userId, systemPrompt: SOS_ESPINHA_SYSTEM_PROMPT, texto: montarTexto(ctx, permitidos, agora), imagens,
+      // Inglês: a regra de idioma vai TAMBÉM no prompt principal (no texto da usuária sozinha, o
+      // Claude seguia o "Português do Brasil" de <Escrita> — teste de 23/nov/2026). Português: igual.
+      supabase, userId, systemPrompt: idioma === 'en' ? SOS_ESPINHA_SYSTEM_PROMPT + INSTRUCAO_EN : SOS_ESPINHA_SYSTEM_PROMPT, texto: montarTexto(ctx, permitidos, agora) + (idioma === 'en' ? INSTRUCAO_EN : ''), imagens,
     })
     EdgeRuntime.waitUntil(registrarCusto())
 
-    const resposta = result ? sanearResposta(result, permitidos, emGestacao(ctx.perfil, ctx.memorias)) : null
+    const resposta = result ? sanearResposta(result, permitidos, emGestacao(ctx.perfil, ctx.memorias), idioma) : null
     if (!resposta) return json({ error: 'Erro ao analisar' }, 500)
     if (resposta.status !== 'ok') return json(resposta)
 
@@ -89,7 +94,7 @@ Deno.serve(async (req) => {
     try {
       const url = await guardarFoto(supabase, userId, imagens[0].base64, 'sos')
       const { data, error } = await supabase.rpc('espinha_criar', {
-        p_user: userId, p_foto: url ? JSON.stringify([url]) : null, p_analise: resposta, p_texto: textoDaAnalise(resposta), p_agora: agora.toISOString(),
+        p_user: userId, p_foto: url ? JSON.stringify([url]) : null, p_analise: resposta, p_texto: textoDaAnalise(resposta, idioma), p_agora: agora.toISOString(),
       })
       if (error) throw error
       conversationId = data ?? null

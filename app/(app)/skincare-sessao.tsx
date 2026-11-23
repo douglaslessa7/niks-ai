@@ -27,6 +27,7 @@ import StepIcon from '../../components/rotina/StepIcon';
 import { voltar as voltarOu } from '../../lib/navegar';
 import { BG_STOPS, homeTheme } from '../../lib/homeTheme';
 import { fraseFrequencia } from '../../lib/frequencia';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sessão de skincare — réplica das telas 88a1, 88b e 88c do Claude Design (projeto "NIKS home
@@ -350,7 +351,7 @@ export default function SkincareSessao() {
   }, [])); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!sessao) return <View style={{ flex: 1, backgroundColor: TEMAS.am.fundo[2] }} />;
-  const titulo = sessao.periodo === 'am' ? 'Skincare matinal' : 'Skincare noturno';
+  const titulo = sessao.periodo === 'am' ? t('Skincare matinal') : t('Skincare noturno');
   const tema = TEMAS[sessao.periodo];
   const ocupado = popup !== 'nenhum' || concluindo || folha !== 'fechada';
 
@@ -369,7 +370,7 @@ export default function SkincareSessao() {
           disabled={ocupado}
           style={[styles.fechar, { top: y(60) }]}
           accessibilityRole="button"
-          accessibilityLabel="Sair da sessão"
+          accessibilityLabel={t('Sair da sessão')}
         >
           <Svg width={24} height={24} viewBox="0 0 24 24">
             <Path d="M6 6l12 12M18 6L6 18" fill="none" stroke={tema.texto} strokeWidth={2.4} strokeLinecap="round" />
@@ -414,7 +415,7 @@ export default function SkincareSessao() {
             disabled={ocupado}
             style={[styles.botao, { boxShadow: `0px 20px 44px ${tema.botaoSombra}` }]}
             accessibilityRole="button"
-            accessibilityLabel="Concluir o skincare"
+            accessibilityLabel={t('Concluir o skincare')}
           >
             <Svg width={BOTAO} height={BOTAO} style={StyleSheet.absoluteFill} pointerEvents="none">
               <Defs>
@@ -430,7 +431,7 @@ export default function SkincareSessao() {
             <Svg width={50} height={50} viewBox="0 0 24 24">
               <Path d="M4.5 12.5l5 5L19.5 7" fill="none" stroke={tema.acento} strokeWidth={2.8} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
-            <Text style={[styles.botaoT, { color: tema.acento }]}>Concluir</Text>
+            <Text style={[styles.botaoT, { color: tema.acento }]}>{t('Concluir')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </Animated.View>
@@ -460,25 +461,25 @@ export default function SkincareSessao() {
       {/* 88b */}
       <PopUp
         aberta={popup === 'concluir'}
-        titulo="Terminou seu skincare?"
+        titulo={t('Terminou seu skincare?')}
         onFora={concluindo ? undefined : continuar}
-        principal={{ texto: 'Concluir', cor: PINK, sombra: 'rgba(255,94,168,0.35)', onPress: concluir, ocupado: concluindo }}
-        secundario={{ texto: 'Voltar', onPress: () => { haptics.tap(); continuar(); }, desligado: concluindo }}
+        principal={{ texto: t('Concluir'), cor: PINK, sombra: 'rgba(255,94,168,0.35)', onPress: concluir, ocupado: concluindo }}
+        secundario={{ texto: t('Voltar'), onPress: () => { haptics.tap(); continuar(); }, desligado: concluindo }}
       >
-        <Text style={styles.popRotulo}>Tempo da sessão</Text>
+        <Text style={styles.popRotulo}>{t('Tempo da sessão')}</Text>
         <Text style={styles.popTempo}>{formatarCronometro(tempoParado)}</Text>
       </PopUp>
 
       {/* 88c */}
       <PopUp
         aberta={popup === 'sair'}
-        titulo="Você tem certeza que deseja sair?"
+        titulo={t('Você tem certeza que deseja sair?')}
         onFora={continuar}
-        principal={{ texto: 'Excluir sessão', cor: RED, sombra: 'rgba(253,58,66,0.28)', onPress: excluir }}
-        secundario={{ texto: 'Continuar sessão', onPress: () => { haptics.tap(); continuar(); } }}
+        principal={{ texto: t('Excluir sessão'), cor: RED, sombra: 'rgba(253,58,66,0.28)', onPress: excluir }}
+        secundario={{ texto: t('Continuar sessão'), onPress: () => { haptics.tap(); continuar(); } }}
       >
         {/* `standard` = a quebra do iOS que evita uma palavra sozinha na última linha (o design usa text-wrap: balance). */}
-        <Text style={styles.popTexto} lineBreakStrategyIOS="standard">A sessão e todo o seu progresso aqui serão perdidos.</Text>
+        <Text style={styles.popTexto} lineBreakStrategyIOS="standard">{t('A sessão e todo o seu progresso aqui serão perdidos.')}</Text>
       </PopUp>
 
       {/* 90a: depois de "Concluir", esmaecendo por cima da sessão (o pop-up do grupo vem por cima dela). */}
@@ -519,7 +520,7 @@ function Cronometro({ inicio, fim, style }: { inicio: number; fim: number | null
   }, [fim]);
   const ms = (fim ?? agora) - inicio;
   return (
-    <Text style={style} pointerEvents="none" accessibilityLabel={`Tempo: ${duracaoPorExtenso(ms)}`}>
+    <Text style={style} pointerEvents="none" accessibilityLabel={t('Tempo: {{duracao}}', { duracao: duracaoPorExtenso(ms) })}>
       {formatarCronometro(ms)}
     </Text>
   );
@@ -538,7 +539,7 @@ function LinhaPasso({ p, n, tema, onPress }: { p: PassoSessao; n: number; tema: 
       disabled={!onPress}
       style={[styles.passo, { backgroundColor: tema.cartao, borderColor: tema.cartaoBorda }]}
       accessibilityRole="button"
-      accessibilityLabel={`Ver instruções: ${nome || prod || 'passo'}`}
+      accessibilityLabel={t('Ver instruções: {{nome}}', { nome: nome || prod || t('passo') })}
     >
       <Text style={[styles.passoN, cor]}>{n}</Text>
       <View style={styles.passoFoto}>
@@ -553,7 +554,7 @@ function LinhaPasso({ p, n, tema, onPress }: { p: PassoSessao; n: number; tema: 
             <Text style={[styles.passoProd, cor]} numberOfLines={1}>{prod}</Text>
           </>
         ) : (
-          <Text style={[styles.passoProd, cor]} numberOfLines={1}>{nome || 'Passo'}</Text>
+          <Text style={[styles.passoProd, cor]} numberOfLines={1}>{nome || t('Passo')}</Text>
         )}
       </View>
     </TouchableOpacity>
@@ -616,7 +617,7 @@ function FolhaPasso({ passo, inicial, n, topo, onFechar }: {
     <View style={[StyleSheet.absoluteFill, { zIndex: 60 }]} pointerEvents={aberta ? 'auto' : 'none'}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.folhaVeu, veuSt]}>
         {/* Tocar fora fecha (sem haptic: é o véu). */}
-        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} accessibilityLabel="Fechar instruções" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} accessibilityLabel={t('Fechar instruções')} />
       </Animated.View>
       <Animated.View style={[styles.folha, { height: altura }, folhaSt]}>
         <ScrollView
@@ -625,7 +626,7 @@ function FolhaPasso({ passo, inicial, n, topo, onFechar }: {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}
         >
           {/* A folha inteira é o "toque de novo": fecha. */}
-          <Pressable onPress={fechar} accessibilityRole="button" accessibilityLabel="Fechar instruções" style={{ paddingHorizontal: 22 }}>
+          <Pressable onPress={fechar} accessibilityRole="button" accessibilityLabel={t('Fechar instruções')} style={{ paddingHorizontal: 22 }}>
             <View style={styles.folhaAlca} />
             <Animated.View style={miolosSt}>
               <View style={styles.folhaCabeca}>
@@ -635,19 +636,19 @@ function FolhaPasso({ passo, inicial, n, topo, onFechar }: {
                     : <StepIcon tipo={p.tipo} size={28} />}
                 </View>
                 <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                  <Text style={styles.folhaPasso}>Passo {numero}{nome ? ` · ${nome}` : ''}</Text>
-                  <Text style={styles.folhaProd} numberOfLines={2}>{prod || nome || 'Passo'}</Text>
+                  <Text style={styles.folhaPasso}>{t('Passo {{n}}', { n: numero })}{nome ? ` · ${nome}` : ''}</Text>
+                  <Text style={styles.folhaProd} numberOfLines={2}>{prod || nome || t('Passo')}</Text>
                 </View>
               </View>
               {!!p.dias?.length && <Text style={styles.folhaDias}>{fraseFrequencia(p.dias)}</Text>}
-              <Text style={styles.folhaRotulo}>Como usar</Text>
+              <Text style={styles.folhaRotulo}>{t('Como usar')}</Text>
               <Text style={styles.folhaTexto} lineBreakStrategyIOS="push-out">
-                {p.instrucao || 'Este passo ainda não tem instruções.'}
+                {p.instrucao || t('Este passo ainda não tem instruções.')}
               </Text>
               {/* Observação da IA sobre o produto dela (a mesma do card aberto na aba Rotina). */}
               {!!p.aviso && (
                 <View style={[styles.folhaAviso, p.aviso.nivel === 'forte' && { backgroundColor: '#FDECEA' }]}>
-                  <Text style={[styles.folhaAvisoT, p.aviso.nivel === 'forte' && { color: '#B42318' }]}>{p.aviso.texto}</Text>
+                  <Text style={[styles.folhaAvisoT, p.aviso.nivel === 'forte' && { color: '#B42318' }]}>{t(p.aviso.texto)}</Text>
                 </View>
               )}
             </Animated.View>
@@ -687,7 +688,7 @@ function PopUp({ aberta, titulo, children, principal, secundario, onFora }: {
     <View style={[StyleSheet.absoluteFill, { zIndex: 80 }]} pointerEvents={aberta ? 'auto' : 'none'}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.veu, veuSt]}>
         {/* Tocar fora = continuar (sem haptic: é o véu). */}
-        <Pressable style={StyleSheet.absoluteFill} onPress={onFora} accessibilityLabel="Fechar" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onFora} accessibilityLabel={t('Fechar')} />
       </Animated.View>
       <View style={styles.popCentro} pointerEvents="box-none">
         <Animated.View style={[styles.card, cardSt]}>

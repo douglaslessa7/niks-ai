@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { t } from './i18n';
 
 export const ANDROID_CHANNEL_ID = 'default';
 
@@ -14,7 +15,7 @@ export const ANDROID_CHANNEL_ID = 'default';
 export async function setupAndroidNotificationChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-    name: 'Lembretes NIKS',
+    name: t('Lembretes NIKS'),
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: '#FF6F61',

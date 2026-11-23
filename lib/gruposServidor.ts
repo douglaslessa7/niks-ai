@@ -252,7 +252,9 @@ async function semLogin<T>(body: Record<string, unknown>, tetoMs: number, token?
 export const validarCodigo = (codigo: string) =>
   semLogin<{ valido: boolean; nome?: string; convidou?: string; cheio?: boolean; motivo?: string }>({ acao: 'validar_codigo', codigo }, 8000);
 /** Sem login. Sem resposta conta como desligada: a tela de código não aparece. */
-export const statusApp = () => semLogin<{ ligada: boolean; versao_minima: string | null }>({ acao: 'convidada_status' }, 3000);
+/** 1.64: `avaliacao_onboarding` ('brasil' | 'desligado'; `null`/ausente com a `grupos` ≤ v23 = não pede). */
+export const statusApp = () =>
+  semLogin<{ ligada: boolean; versao_minima: string | null; avaliacao_onboarding?: string | null }>({ acao: 'convidada_status' }, 3000);
 
 // Fase 9: conta da lista de teste vê o modo convidada. Sem sessão o servidor não sabe quem é,
 // então o aparelho lembra, para o onboarding de uma conta nova. Só muda o que aparece na tela.
@@ -269,8 +271,10 @@ export async function convidadaLigada(): Promise<boolean> {
   if (session) return false;
   return (await AsyncStorage.getItem(APARELHO_DE_TESTE).catch(() => null)) === '1';
 }
-export const estadoAcesso = () =>
-  chamar<{ estado: 'assinante' | 'convidada' | 'sem_acesso' }>({ acao: 'estado' }).then((r) => r.estado);
+export const estadoAcesso = () => estadoAcessoCompleto().then((r) => r.estado);
+/** 1.64: com `foi_convidada` (servidor com a migration 20261220120000; antes vem `undefined`/`null`). */
+export const estadoAcessoCompleto = () =>
+  chamar<{ estado: 'assinante' | 'convidada' | 'sem_acesso'; foi_convidada?: boolean | null }>({ acao: 'estado' });
 export const entrarComCodigo = (codigo: string) =>
   chamar<{ ok: true; grupo_id: string; nome?: string; ja_era?: boolean } | Recusa>({ acao: 'entrar_codigo', codigo });
 export const sairDoGrupo = (grupoId: string) => chamar<{ ok: boolean; motivo?: string }>({ acao: 'sair', grupo_id: grupoId });

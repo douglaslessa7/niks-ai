@@ -32,6 +32,7 @@ import { verificarTutorialGrupos } from '../../lib/gruposTutorial';
 import { voltar as voltarOu } from '../../lib/navegar';
 import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 import { usePuxarParaAtualizar } from '../../hooks/usePuxarParaAtualizar';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Seus grupos — réplica de 81c (com grupos), 81d (sem grupo) e 81e (folha "Novo grupo")
@@ -243,12 +244,11 @@ export default function SeusGrupos() {
     }
     const pend = skincareSemCheckin();
     if (!pend) return;
-    const qual = pend.periodo === 'am' ? 'matinal' : 'noturno';
     setTimeout(() => {
-      Alert.alert(`Publicar o check-in do seu skincare ${qual}?`, 'Tire a foto e mostre para o grupo o skincare que você acabou de fazer.', [
-        { text: 'Agora não', style: 'cancel', onPress: () => limparUltimoSkincare() },
+      Alert.alert(pend.periodo === 'am' ? t('Publicar o check-in do seu skincare matinal?') : t('Publicar o check-in do seu skincare noturno?'), t('Tire a foto e mostre para o grupo o skincare que você acabou de fazer.'), [
+        { text: t('Agora não'), style: 'cancel', onPress: () => limparUltimoSkincare() },
         {
-          text: 'Tirar foto',
+          text: t('Tirar foto'),
           onPress: () => router.push({ pathname: '/checkin', params: { fluxo: 'skincare', rotina: pend.periodo, grupos: grupoId, de: 'grupo', grupo: grupoId } } as any),
         },
       ]);
@@ -318,8 +318,8 @@ export default function SeusGrupos() {
     <View style={{ flex: 1 }}>
     <View style={styles.root}>
       <StatusBar style="dark" />
-      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>Seus grupos</Text></View>
-      <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); voltarOu('/grupos'); }} style={[styles.back, { top: y(54) }]} accessibilityLabel="Voltar">
+      <View pointerEvents="none" style={[styles.titleRow, { top: y(54) }]}><Text style={styles.title}>{t('Seus grupos')}</Text></View>
+      <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); voltarOu('/grupos'); }} style={[styles.back, { top: y(54) }]} accessibilityLabel={t('Voltar')}>
         <Icon d="m15 18-6-6 6-6" size={26} color={INK} sw={2} />
       </TouchableOpacity>
 
@@ -348,13 +348,13 @@ export default function SeusGrupos() {
                           <FotoComMoldura key={m.user_id} nivel={m.nivel} foto={m.foto} nome={m.nome} tamanho={44} pequena vazio="#FCE3EE" style={styles.av} />
                         ))}
                       </View>
-                      <Text style={styles.hoje}>{so ? 'Só você · convide amigas' : `${g.feitos_hoje} de ${g.total} fizeram hoje`}</Text>
+                      <Text style={styles.hoje}>{so ? t('Só você · convide amigas') : t('{{feitos}} de {{total}} fizeram hoje', { feitos: g.feitos_hoje, total: g.total })}</Text>
                     </View>
                   </View>
                   <View style={styles.sep} />
                   <View style={styles.rankRow}>
                     <Text style={styles.rank} numberOfLines={1}>
-                      {rankOn ? `Você está em ${g.sua_posicao_semana}º esta semana` : 'Semana começa com o primeiro check-in'}
+                      {rankOn ? t('Você está em {{pos}}º esta semana', { pos: String(g.sua_posicao_semana) }) : t('Semana começa com o primeiro check-in')}
                     </Text>
                     <Icon d="m9 18 6-6-6-6" size={16} color="#B5B5B5" sw={2.4} />
                   </View>
@@ -366,11 +366,11 @@ export default function SeusGrupos() {
             <TouchableOpacity activeOpacity={0.7} onPress={abrirFolha} style={styles.criarLink}>
               <AlvoGuia chave="lista-criar" style={{ flexDirection: 'row', alignItems: 'center', gap: styles.criarLink.gap }}>
                 <View style={styles.criarCirculo}>{convidada ? <Lock size={13} color="#fff" strokeWidth={2.6} /> : <Icon d="M12 5v14M5 12h14" size={15} color="#fff" sw={3} />}</View>
-                <Text style={styles.criarT}>Criar grupo</Text>
+                <Text style={styles.criarT}>{t('Criar grupo')}</Text>
               </AlvoGuia>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.7} onPress={abrirCodigo} style={styles.criarLink}>
-              <Text style={styles.criarT}>Entrar com código</Text>
+              <Text style={styles.criarT}>{t('Entrar com código')}</Text>
             </TouchableOpacity>
           </Entra>
         </ScrollView>
@@ -403,17 +403,17 @@ export default function SeusGrupos() {
                   </Svg>
                 ))}
               </View>
-              <Text style={styles.vazioT}>{'Faça skincare com suas amigas\ne vejam quem é mais constante'}</Text>
-              <Text style={styles.vazioS}>Check-in com foto todo dia, ranking da semana e a jornada de cada uma</Text>
+              <Text style={styles.vazioT}>{t('Faça skincare com suas amigas\ne vejam quem é mais constante')}</Text>
+              <Text style={styles.vazioS}>{t('Check-in com foto todo dia, ranking da semana e a jornada de cada uma')}</Text>
               </AlvoGuia>
               <AlvoGuia chave="lista-criar" style={{ marginTop: 24 }}>
                 <TouchableOpacity activeOpacity={0.85} onPress={abrirFolha} style={styles.criarPilula}>
                   {convidada ? <Lock size={15} color="#fff" strokeWidth={2.6} /> : <Icon d="M12 5v14M5 12h14" size={16} color="#fff" sw={2.6} />}
-                  <Text style={styles.criarPilulaT}>Criar grupo</Text>
+                  <Text style={styles.criarPilulaT}>{t('Criar grupo')}</Text>
                 </TouchableOpacity>
               </AlvoGuia>
               <TouchableOpacity activeOpacity={0.7} onPress={abrirCodigo} style={[styles.criarLink, { marginTop: 8 }]}>
-                <Text style={styles.criarT}>Entrar com código</Text>
+                <Text style={styles.criarT}>{t('Entrar com código')}</Text>
               </TouchableOpacity>
             </View>
           </Entra>
@@ -422,7 +422,7 @@ export default function SeusGrupos() {
 
       {/* ── Folha "Novo grupo" (81e) ────────────────────────────────────── */}
       <Animated.View style={[StyleSheet.absoluteFill, styles.veu, veuSt]} pointerEvents={aberta ? 'auto' : 'none'}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => { haptics.tap(); fecharFolha(); }} accessibilityLabel="Fechar" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => { haptics.tap(); fecharFolha(); }} accessibilityLabel={t('Fechar')} />
       </Animated.View>
       <Animated.View
         onLayout={(e) => setFolhaH(e.nativeEvent.layout.height)}
@@ -431,17 +431,17 @@ export default function SeusGrupos() {
       >
         <View style={styles.alca} />
         <View style={styles.folhaHead}>
-          <Text style={styles.folhaT}>{comCodigo ? 'Entrar em um grupo' : 'Novo grupo'}</Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); fecharFolha(); }} style={styles.fechar} accessibilityLabel="Fechar">
+          <Text style={styles.folhaT}>{comCodigo ? t('Entrar em um grupo') : t('Novo grupo')}</Text>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); fecharFolha(); }} style={styles.fechar} accessibilityLabel={t('Fechar')}>
             <Icon d="M18 6 6 18M6 6l12 12" size={16} color={INK} sw={2.4} />
           </TouchableOpacity>
         </View>
         <View style={styles.nomeCard}>
-          <Text style={styles.nomeLabel}>{comCodigo ? 'Código do grupo' : 'Nome do grupo'}</Text>
+          <Text style={styles.nomeLabel}>{comCodigo ? t('Código do grupo') : t('Nome do grupo')}</Text>
           <TextInput
             value={nome}
             onChangeText={(t) => { setNome(t); if (erro) setErro(''); }}
-            placeholder={comCodigo ? 'NIKS-XXXXXX' : 'Ex.: As Hidratadas'}
+            placeholder={comCodigo ? 'NIKS-XXXXXX' : t('Ex.: As Hidratadas')}
             placeholderTextColor="#A9A3A6"
             selectionColor={PINK}
             maxLength={comCodigo ? 20 : 40}
@@ -451,11 +451,11 @@ export default function SeusGrupos() {
             onSubmitEditing={comCodigo ? entrar : criar}
             style={styles.nomeInput}
           />
-          <Text style={[styles.nomeDica, !!erro && { color: '#D93A6B' }]}>{erro || (comCodigo ? 'Digite o código que sua amiga te mandou.' : 'Depois você convida as amigas pelo código.')}</Text>
+          <Text style={[styles.nomeDica, !!erro && { color: '#D93A6B' }]}>{erro ? t(erro) : (comCodigo ? t('Digite o código que sua amiga te mandou.') : t('Depois você convida as amigas pelo código.'))}</Text>
           {comCodigo && <BotaoColarCodigo onColar={(c) => { setNome(c); setErro(''); }} />}
         </View>
         <TouchableOpacity activeOpacity={0.85} onPress={comCodigo ? entrar : criar} disabled={ocupado} style={[styles.cta, !ok && { opacity: 0.45 }]}>
-          {ocupado ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaT}>{comCodigo ? 'Entrar' : 'Criar grupo'}</Text>}
+          {ocupado ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaT}>{comCodigo ? t('Entrar', { context: 'grupo' }) : t('Criar grupo')}</Text>}
         </TouchableOpacity>
       </Animated.View>
     </View>

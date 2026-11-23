@@ -10,22 +10,23 @@
 import { useMemo } from 'react';
 import TutorialOverlay, { type TutStop } from './TutorialOverlay';
 import { useEstadoCartas } from '../../lib/cartasServidor';
+import { t } from '../../lib/i18n';
 
 const STOPS: TutStop[] = [
-  { t: 'Cada skincare, check-in e carta vira NIKS Points, e eles sobem o seu nível.', a: { u: ['home-nivel'], pad: 6, r: 14 } },
+  { t: t('Cada skincare, check-in e carta vira NIKS Points, e eles sobem o seu nível.'), a: { u: ['home-nivel'], pad: 6, r: 14 } },
   // O texto atual do botão (aprovado em 05/nov/2026).
-  { t: 'Quando chegar a hora, toque aqui para fazer seu skincare e o check-in no seu grupo.', a: { u: ['home-rot'], pad: 6, r: 'pill' } },
-  { t: 'O primeiro skincare do dia libera uma carta para raspar.', a: { u: ['home-carta'], pad: 4, r: 24 } },
+  { t: t('Quando chegar a hora, toque aqui para fazer seu skincare e o check-in no seu grupo.'), a: { u: ['home-rot'], pad: 6, r: 'pill' } },
+  { t: t('O primeiro skincare do dia libera uma carta para raspar.'), a: { u: ['home-carta'], pad: 4, r: 24 } },
   // "Seu grupo" (ou o convite "Criar grupo") fica mais embaixo: a home rola até ele.
-  { t: 'Faça skincare com suas amigas e veja quem já fez hoje.', a: { u: ['home-grupo'], pad: 4, r: 24 }, scroll: true },
-  { t: 'Sua rotina de manhã e de noite, com os seus produtos.', a: { u: ['nav-rotina'], pad: 2, r: 'pill' } },
-  { t: 'Escaneie um produto e veja se ele combina com a sua pele.', a: { u: ['nav-produtos'], pad: 2, r: 'pill' } },
+  { t: t('Faça skincare com suas amigas e veja quem já fez hoje.'), a: { u: ['home-grupo'], pad: 4, r: 24 }, scroll: true },
+  { t: t('Sua rotina de manhã e de noite, com os seus produtos.'), a: { u: ['nav-rotina'], pad: 2, r: 'pill' } },
+  { t: t('Escaneie um produto e veja se ele combina com a sua pele.'), a: { u: ['nav-produtos'], pad: 2, r: 'pill' } },
 ];
 
 // Pontos diretos (20261204): no modo pontos não há carta do dia — os textos falam de NIKS Points.
 const TEXTOS_MODO_PONTOS: Record<number, string> = {
-  0: 'Cada skincare e check-in vira NIKS Points, e eles sobem o seu nível.',
-  2: 'O primeiro skincare do dia vale até 50 NIKS Points.',
+  0: t('Cada skincare e check-in vira NIKS Points, e eles sobem o seu nível.'),
+  2: t('O primeiro skincare do dia vale até 50 NIKS Points.'),
 };
 
 export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {

@@ -3,6 +3,9 @@ import { createSupabaseClient, buildContext } from './context.ts'
 import { ANALISAR_PRODUTO_SYSTEM_PROMPT, buildContextPack } from './prompt.ts'
 import { ensureScanCutout } from '../_shared/scanCutout.ts'
 import { analisar } from './roteador.ts'
+import { conferirResultado } from './conferir.ts'
+import { INSTRUCAO_EN, idiomaDoCorpo } from './idioma.ts'
+import { aplicarOrigem, blocoDaLista, buscarEmSegundoPlano, gravar, identificar, procurarNaTabela, transcreverRotulo } from './ingredientes.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -84,6 +87,53 @@ async function verifyJWT(token: string): Promise<{ sub: string } | null> {
   }
 }
 
+// ── Resultado fixo por conta (tabela `scan_resultados_fixos`) ─────────────────
+// Falha na busca ou regex inválida → segue o fluxo normal (nunca quebra o scan).
+type ResultadoFixo = {
+  id: string; rotulo: string; marca_regex: string; texto_regex: string
+  nome_excluir_regex: string | null; resultado: Record<string, unknown>
+}
+
+async function buscarResultadosFixos(supabase: ReturnType<typeof createSupabaseClient>, userId: string): Promise<ResultadoFixo[]> {
+  try {
+    const { data, error } = await supabase
+      .from('scan_resultados_fixos')
+      .select('id, rotulo, marca_regex, texto_regex, nome_excluir_regex, resultado')
+      .eq('user_id', userId)
+      .eq('ativo', true)
+    if (error) { console.error('analisar-produto: scan_resultados_fixos', error); return [] }
+    return (data ?? []) as ResultadoFixo[]
+  } catch (e) {
+    console.error('analisar-produto: scan_resultados_fixos', e)
+    return []
+  }
+}
+
+const semAcento = (s: unknown) =>
+  String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+function encontrarResultadoFixo(fixos: ResultadoFixo[], result: any, hint: string): ResultadoFixo | null {
+  if (!fixos.length || !result) return null
+  const p = result.produto ?? {}
+  const marca = semAcento(`${p.marca ?? ''} ${hint}`)
+  const nome = semAcento(p.nome)
+  const texto = semAcento([
+    p.nome, p.categoria, ...(Array.isArray(p.ativos_detectados) ? p.ativos_detectados : []),
+    result.o_que_faz, result.mensagem, hint,
+  ].filter(Boolean).join(' '))
+  for (const f of fixos) {
+    try {
+      if (!new RegExp(f.marca_regex, 'i').test(marca)) continue
+      if (!new RegExp(f.texto_regex, 'i').test(texto)) continue
+      if (f.nome_excluir_regex && new RegExp(f.nome_excluir_regex, 'i').test(nome)) continue
+      return f
+    } catch (e) {
+      console.error('analisar-produto: regex inválida em scan_resultados_fixos', f.id, e)
+    }
+  }
+  return null
+}
+
 const DIAS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 function normalizarDias(v: unknown): string[] | null {
   if (!Array.isArray(v)) return null
@@ -136,6 +186,8 @@ Deno.serve(async (req) => {
     if (bloqueio) return bloqueio
 
     const body = JSON.parse(rawBody)
+    // Idioma da resposta (etapa 3): sem o campo = português, como sempre.
+    const idioma = idiomaDoCorpo(body)
     const { images, clientScanId, productName } = body as {
       images?: Array<{ base64: string; mimeType: string }>
       clientScanId?: string
@@ -157,31 +209,58 @@ Deno.serve(async (req) => {
 
     const supabase = createSupabaseClient()
 
-    // Monta o context pack a partir do banco (service role, pelo userId do JWT).
-    const context = await buildContext(supabase, userId)
+    const imagens = images
+      .filter((img) => img?.base64)
+      .map((img) => ({ base64: img.base64, mimeType: img.mimeType || 'image/jpeg' }))
+
+    // Monta o context pack a partir do banco (service role, pelo userId do JWT). Em paralelo, o
+    // Haiku identifica o produto para procurar a lista de ingredientes na tabela (nov/2026).
+    const t0 = Date.now()
+    const [context, ident] = await Promise.all([
+      buildContext(supabase, userId),
+      identificar(supabase, userId, imagens, 'analisar-produto-identificar'),
+    ])
+    const tabela = ident?.marca && ident?.nome
+      ? await procurarNaTabela(supabase, ident.marca, ident.nome).catch((e) => { console.error('ingredientes: tabela', e); return null })
+      : null
+    const achada = tabela?.achada ?? null
+    console.log('analisar-produto: INGREDIENTES', userId, JSON.stringify({ ident, chave: tabela?.chave, achada: achada ? { chave: achada.linha.chave, fonte: achada.linha.fonte, corr: achada.correspondencia } : null, ms: Date.now() - t0 }))
     const contextPack = buildContextPack(context)
     const skinScanId = (context.lastScan?.id as string | undefined) ?? null
 
     // Mensagem do usuário = context pack + instrução final + as fotos (produto e, se
     // houver, ingredientes) — o roteador monta no formato de cada modelo.
-    const texto = `${contextPack}\n\nAnalise o produto na(s) foto(s) segundo o contexto acima.` +
-      (productNameHint
+    // Cache (nov/2026): `texto` é igual entre os scans da mesma usuária (contexto + instrução) e
+    // leva a marca de cache no roteador; o título da página, que muda a cada scan, vai à parte em
+    // `textoExtra`. Juntos (texto + textoExtra) são exatamente o texto de antes.
+    const texto = `${contextPack}\n\nAnalise o produto na(s) foto(s) segundo o contexto acima.`
+    const textoExtra = (productNameHint
         ? `\n\nContexto extra (não verificado — título da página de onde a usuária compartilhou o produto): "${productNameHint}".\n` +
           `Regras para esse título:\n` +
           `- Ele só pode ajudar a identificar \`produto.nome\` e \`produto.marca\`. Se a foto contradizer o título, vale a foto.\n` +
           `- \`produto.ativos_detectados\` vem SOMENTE do que estiver legível na foto (rótulo ou lista de ingredientes). Nunca inclua um ativo porque ele aparece no título ou porque o título sugere a fórmula. Se nenhum ativo estiver legível na foto, retorne \`ativos_detectados\` vazio.\n` +
           `- O título não aumenta a \`confianca\`: ela continua calibrada só pelo que a foto mostra.`
-        : '')
-    const imagens = images
-      .filter((img) => img?.base64)
-      .map((img) => ({ base64: img.base64, mimeType: img.mimeType || 'image/jpeg' }))
+        : '') + (achada ? blocoDaLista(achada) : '') + (idioma === 'en' ? INSTRUCAO_EN : '')
 
     // Claude Sonnet 5.5 com o gpt-5.4-mini como reserva (roteador.ts). O custo vai para
     // `ia_custos` em segundo plano, sem atrasar a resposta.
-    const { result, registrarCusto } = await analisar({
-      supabase, userId, systemPrompt: ANALISAR_PRODUTO_SYSTEM_PROMPT, texto, imagens,
+    // Resultados fixos desta conta (tabela `scan_resultados_fixos`), buscados em
+    // paralelo com a IA para não somar tempo.
+    const fixosPromise = buscarResultadosFixos(supabase, userId)
+    const analise = await analisar({
+      supabase, userId, systemPrompt: ANALISAR_PRODUTO_SYSTEM_PROMPT, texto, textoExtra, imagens,
     })
+    const { registrarCusto } = analise
+    let result = analise.result
     EdgeRuntime.waitUntil(registrarCusto())
+
+    // A IA só identificou o produto: se bater com um resultado fixo ATIVO da conta,
+    // a resposta vira o texto pronto (o mesmo em toda foto). Ver a migration.
+    const fixo = encontrarResultadoFixo(await fixosPromise, result, productNameHint)
+    if (fixo) {
+      console.log('analisar-produto: resultado fixo aplicado', fixo.id, fixo.rotulo, userId)
+      result = structuredClone(fixo.resultado)
+    }
 
     if (!result) {
       return new Response(
@@ -205,6 +284,20 @@ Deno.serve(async (req) => {
       for (const k of ['depois_do_passo_id', 'substitui_passo_id']) {
         const v = result.decisao_rotina[k]
         result.decisao_rotina[k] = typeof v === 'string' && validos.has(v) ? v : null
+      }
+    }
+
+    // Conferência no código (nov/2026): segurança e faixa da nota (só a pele dela) e as regras
+    // do motor na decisão de rotina. Resultado fixo da conta não passa por aqui (é texto pronto).
+    if (!fixo) {
+      try {
+        const origem = aplicarOrigem(result, achada, ident, idioma)
+        if (origem.length) console.log('analisar-produto: INGREDIENTES_ORIGEM', userId, origem.join(' | '))
+        const conf = conferirResultado(result, context, idioma)
+        if (conf.mudancas.length) console.log('analisar-produto: CONFERENCIA', userId, conf.mudancas.join(' | '))
+        result = conf.result
+      } catch (e) {
+        console.error('analisar-produto: CONFERENCIA_FALHOU', e) // a análise segue como a IA mandou
       }
     }
 
@@ -283,6 +376,23 @@ Deno.serve(async (req) => {
     } catch (persistErr) {
       console.error('analisar-produto: falha ao persistir product_scan', persistErr)
       // Segue e devolve o resultado mesmo assim.
+    }
+
+    // Tabela de ingredientes, em segundo plano (não atrasa a resposta):
+    // - foto com a lista legível e análise "alta" → transcreve e grava como rótulo (vence as outras);
+    // - produto sem linha na tabela → busca na internet, se `reservar_busca` liberar.
+    if (!fixo && result?.status === 'ok') {
+      const marca = result?.produto?.marca ?? ident?.marca
+      const nome = result?.produto?.nome ?? ident?.nome
+      const jaTemRotulo = achada?.correspondencia === 'exata' && achada.linha.fonte === 'rotulo'
+      if (marca && nome && ident?.tem_lista && result.confianca === 'alta' && !jaTemRotulo) {
+        EdgeRuntime.waitUntil((async () => {
+          const r = await transcreverRotulo(supabase, userId, imagens, 'ingredientes-rotulo')
+          if (r) await gravar(supabase, marca, nome, { inci: r.inci, fonte: 'rotulo', fonte_scan: scanId, confianca: 'alta', concentracoes: r.concentracoes, conferencias: { nome_na_foto: `${r.marca ?? ''} | ${r.nome ?? ''}` } })
+        })().catch((e) => console.error('ingredientes: rotulo', e)))
+      } else if (ident?.marca && ident?.nome && tabela && !tabela.temLinha && !achada) {
+        EdgeRuntime.waitUntil(buscarEmSegundoPlano(supabase, userId, ident.marca, ident.nome, 'ingredientes-busca').catch((e) => console.error('ingredientes: busca', e)))
+      }
     }
 
     // Recorte SEM FUNDO da foto (Fase 3), em segundo plano — não atrasa a resposta.

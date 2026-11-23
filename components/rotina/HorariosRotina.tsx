@@ -19,6 +19,7 @@ import { getUserId } from '../../lib/currentUser';
 import { invalidateCache } from '../../lib/cache';
 import { syncRoutineReminders } from '../../lib/routineReminders';
 import { haptics } from '../../lib/haptics';
+import { emIngles, horaEn, t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -30,7 +31,7 @@ const DEFAULT_PM = 21 * 60;
 const ROW = 40; // altura de cada linha do seletor
 
 const pad = (n: number) => String(n).padStart(2, '0');
-export const fmtHorario = (m: number) => `${Math.floor(m / 60)}:${pad(m % 60)}`;
+export const fmtHorario = (m: number) => (emIngles ? horaEn(Math.floor(m / 60), m % 60) : `${Math.floor(m / 60)}:${pad(m % 60)}`);
 function parseTime(v: unknown, fallback: number): number {
   if (typeof v !== 'string') return fallback;
   const m = v.match(/^(\d{1,2}):(\d{2})/);
@@ -167,8 +168,8 @@ export default function HorariosRotina({ onHorarios }: { onHorarios?: (am: numbe
   const dm = draft % 60;
 
   const slots = [
-    { k: 'am' as const, label: 'Manhã', d: SUN, t: fmtHorario(am) },
-    { k: 'pm' as const, label: 'Noite', d: MOON, t: fmtHorario(pm) },
+    { k: 'am' as const, label: t('Manhã'), d: SUN, t: fmtHorario(am) },
+    { k: 'pm' as const, label: t('Noite'), d: MOON, t: fmtHorario(pm) },
   ];
 
   return (
@@ -188,7 +189,7 @@ export default function HorariosRotina({ onHorarios }: { onHorarios?: (am: numbe
                 <View style={{ gap: 2 }}>
                   <Text style={styles.slotLabel}>{s.label}</Text>
                   <Text style={styles.slotTime}>{s.t}</Text>
-                  <Text style={styles.slotEdit}>Editar</Text>
+                  <Text style={styles.slotEdit}>{t('Editar')}</Text>
                 </View>
               </View>
             </View>
@@ -209,7 +210,7 @@ export default function HorariosRotina({ onHorarios }: { onHorarios?: (am: numbe
         >
           <View style={styles.handle} />
           <Text style={{ textAlign: 'center', fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: INK }}>
-            {edit === 'pm' ? 'Rotina da noite' : 'Rotina da manhã'}
+            {edit === 'pm' ? t('Rotina da noite') : t('Rotina da manhã')}
           </Text>
           <View style={styles.pickerWrap}>
             <View style={styles.pickerBand} pointerEvents="none" />
@@ -222,10 +223,10 @@ export default function HorariosRotina({ onHorarios }: { onHorarios?: (am: numbe
             )}
           </View>
           <TouchableOpacity activeOpacity={0.85} disabled={saving} onPress={saveEdit} style={[styles.bigBtn, { marginTop: 20, opacity: saving ? 0.7 : 1 }]}>
-            <Text style={{ color: '#fff', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 }}>Salvar horário</Text>
+            <Text style={{ color: '#fff', fontSize: 17, fontWeight: '600', letterSpacing: -0.3 }}>{t('Salvar horário')}</Text>
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); setEdit(null); }} style={{ marginTop: 10, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>Cancelar</Text>
+            <Text style={{ fontSize: 17, fontWeight: '500', letterSpacing: -0.3, color: PINK_TEXT }}>{t('Cancelar')}</Text>
           </TouchableOpacity>
         </Animated.View>
       </Modal>

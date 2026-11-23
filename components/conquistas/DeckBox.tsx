@@ -20,6 +20,7 @@ import {
 } from '@shopify/react-native-skia';
 import Svg, { Path as SvgPath } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import type { Deck } from '../../lib/conquistas';
 
 const INK = '#121212';
@@ -309,12 +310,12 @@ export default function DeckBox({ deck, index, width, clock, sheen, rm, onOpen }
           {deck.rare && SPARKS.map(([x, y, s, c], i) => <Twinkle key={i} i={i} x={x} y={y} s={s} c={c} rm={rm} />)}
         </View>
         <View style={styles.nameRow}>
-          <Text style={styles.name}>{deck.name}</Text>
+          <Text style={styles.name}>{t(deck.name)}</Text>
           {deck.rare && (
             <Svg width={14} height={14} viewBox="0 0 24 24"><SvgPath d={SPARKLE} fill={PINK} /></Svg>
           )}
         </View>
-        <Text style={styles.sub}>{deck.n ? `${deck.n} cartas · última em ${deck.last}` : '0 cartas'}</Text>
+        <Text style={styles.sub}>{deck.n ? t('{{n}} cartas · última em {{dia}}', { n: deck.n, dia: deck.last ?? '' }) : t('0 cartas')}</Text>
       </Pressable>
     </View>
   );

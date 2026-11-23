@@ -21,8 +21,8 @@ import { moderarImagem } from '../_shared/moderacao.ts'
 //   { acao: 'validar_convite', token } / { acao: 'entrar', token }
 //   { acao: 'validar_codigo', codigo }               → SEM login: { valido, nome, convidou, cheio }
 //   { acao: 'entrar_codigo', codigo }                → como `entrar`; o tipo é decidido no banco
-//   { acao: 'convidada_status' }                     → SEM login: { ligada }
-//   { acao: 'estado' }                               → { estado: assinante | convidada | sem_acesso }
+//   { acao: 'convidada_status' }                     → SEM login: { ligada, teste, versao_minima, avaliacao_onboarding }
+//   { acao: 'estado' }                               → { estado: assinante | convidada | sem_acesso, foi_convidada }
 //   { acao: 'sair', grupo_id } / { acao: 'remover', grupo_id, user_id }
 //   { acao: 'bloquear', user_id, bloquear? } / { acao: 'denunciar', tipo, grupo_id, user_id?, checkin_id?, compartilhamento_id?, motivo? }
 //   { acao: 'produto_compartilhado', grupo_id, compartilhamento_id } → produto sem a nota de quem escaneou
@@ -104,9 +104,22 @@ async function avisarCheckin(supabase: Supa, checkinId: string) {
   try {
     const { data, error } = await supabase.rpc('destinatarias_checkin', { p_checkin: checkinId })
     if (error) throw error
+    // Inglês (etapa 3 da tradução): só para quem tem `users.idioma = 'en'`. Tolerante: sem a
+    // coluna (antes da migration) ou com erro na consulta, todas recebem o texto de sempre.
+    const emIngles = new Set<string>()
+    // deno-lint-ignore no-explicit-any
+    const ids = [...new Set((data ?? []).map((d: any) => d.user_id as string).filter(Boolean))]
+    try {
+      for (let i = 0; i < ids.length; i += 100) {
+        const r = await supabase.from('users').select('id').in('id', ids.slice(i, i + 100)).eq('idioma', 'en')
+        if (r.error) { emIngles.clear(); break }
+        for (const u of r.data ?? []) emIngles.add(u.id)
+      }
+    } catch { emIngles.clear() }
     // deno-lint-ignore no-explicit-any
     const msgs = (data ?? []).map((d: any) => ({
-      to: d.push_token, title: d.grupo_nome, body: `${d.autora} fez check-in 📸`, sound: 'default',
+      to: d.push_token, title: d.grupo_nome,
+      body: emIngles.has(d.user_id) ? `${d.autora} checked in 📸` : `${d.autora} fez check-in 📸`, sound: 'default',
       data: { type: 'grupo_checkin', grupo_id: d.grupo_id },
     }))
     for (let i = 0; i < msgs.length; i += 100) {
@@ -190,7 +203,12 @@ serve(async (req) => {
 
   // Sem login: o onboarding decide se mostra a tela de código.
   if (acao === 'convidada_status') {
-    const { data } = await supabase.from('grupos_config').select('convidada_ligada, versao_minima').eq('id', 1).maybeSingle()
+    // 23/nov/2026 (1.64): junto vai a chave do pedido de avaliação do onboarding (`avaliacao_config`).
+    // Erro ou tabela ausente → `null`, e o app não pede.
+    const [{ data }, { data: avaliacao }] = await Promise.all([
+      supabase.from('grupos_config').select('convidada_ligada, versao_minima').eq('id', 1).maybeSingle(),
+      supabase.from('avaliacao_config').select('avaliacao_onboarding').eq('id', 1).maybeSingle(),
+    ])
     const ligada = data?.convidada_ligada === true
     let teste = false
     const auth = req.headers.get('authorization') ?? ''
@@ -202,7 +220,12 @@ serve(async (req) => {
         console.error('[grupos] convidada_ativa:', (e as Error).message)
       }
     }
-    return json({ ligada: ligada || teste, teste, versao_minima: data?.versao_minima ?? null })
+    return json({
+      ligada: ligada || teste,
+      teste,
+      versao_minima: data?.versao_minima ?? null,
+      avaliacao_onboarding: avaliacao?.avaliacao_onboarding ?? null,
+    })
   }
 
   const authHeader = req.headers.get('authorization')
@@ -329,8 +352,19 @@ serve(async (req) => {
         return json(await rpc(supabase, 'entrar_grupo_codigo', { p_uid: uid, p_codigo: codigo }))
       }
 
-      case 'estado':
-        return json({ estado: await rpc(supabase, 'estado_acesso', { p_uid: uid }) })
+      case 'estado': {
+        // 22/nov/2026 (1.64): `foi_convidada` — só ex-convidada de verdade vê "sem grupo" (em
+        // qualquer celular). Sem a migration 20261220120000 (função ausente) → `null`, e o app
+        // usa o que guardou no aparelho. O `estado` continua igual para as versões antigas.
+        const estado = await rpc(supabase, 'estado_acesso', { p_uid: uid })
+        let foi: boolean | null = null
+        try {
+          foi = await rpc(supabase, 'foi_convidada', { p_uid: uid }) === true
+        } catch (e) {
+          console.error('[grupos] foi_convidada:', (e as Error).message)
+        }
+        return json({ estado, foi_convidada: foi })
+      }
 
       case 'sair':
         return json(await rpc(supabase, 'sair_grupo', { p_uid: uid, p_grupo: gid }))

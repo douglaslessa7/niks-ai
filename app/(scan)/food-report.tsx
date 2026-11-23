@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { useAppStore } from '../../store/onboarding';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
+import { idioma, t } from '../../lib/i18n';
 
 type FoodItem = {
   name: string;
@@ -55,12 +56,12 @@ const WHITE_D = RING_SIZE - 30;   // disco branco central (dentro do anel)
 
 // Frases que rodam abaixo do círculo conforme a análise da refeição avança.
 const FOOD_PHASES = [
-  'Identificando os alimentos',
-  'Avaliando os macronutrientes',
-  'Analisando o índice glicêmico',
-  'Verificando inflamação e oxidação',
-  'Cruzando com o seu perfil de pele',
-  'Calculando o impacto na sua pele',
+  t('Identificando os alimentos'),
+  t('Avaliando os macronutrientes'),
+  t('Analisando o índice glicêmico'),
+  t('Verificando inflamação e oxidação'),
+  t('Cruzando com o seu perfil de pele'),
+  t('Calculando o impacto na sua pele'),
 ];
 
 // ─── Design tokens ────────────────────────────────────────────
@@ -72,9 +73,9 @@ function scoreColor(score: number): string {
 }
 
 const impactPillConfig = {
-  positivo: { bg: '#ECFDF5', fg: '#065F46', dot: '#86EFAC', label: 'AJUDA' },
-  neutro:   { bg: '#FFFBEB', fg: '#92400E', dot: '#FCD34D', label: 'NEUTRO' },
-  negativo: { bg: '#FFF5F4', fg: '#991B1B', dot: '#FCA5A5', label: 'PIORA' },
+  positivo: { bg: '#ECFDF5', fg: '#065F46', dot: '#86EFAC', label: t('AJUDA') },
+  neutro:   { bg: '#FFFBEB', fg: '#92400E', dot: '#FCD34D', label: t('NEUTRO') },
+  negativo: { bg: '#FFF5F4', fg: '#991B1B', dot: '#FCA5A5', label: t('PIORA') },
 };
 
 const impactSwatchConfig = {
@@ -232,7 +233,7 @@ function FoodCard({ food, defaultOpen = false, fontItalic, fontReg, latoRegular 
           <View style={{ marginTop: 6, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
             <ImpactPill impact={food.impact} />
             {food.substitution && (
-              <Text style={{ fontSize: 10, fontWeight: '500', letterSpacing: 0.4, color: '#FB7B6B', textTransform: 'uppercase' }}>· substituição</Text>
+              <Text style={{ fontSize: 10, fontWeight: '500', letterSpacing: 0.4, color: '#FB7B6B', textTransform: 'uppercase' }}>{t('· substituição')}</Text>
             )}
           </View>
         </View>
@@ -245,9 +246,9 @@ function FoodCard({ food, defaultOpen = false, fontItalic, fontReg, latoRegular 
 
       {open && (
         <View style={{ paddingHorizontal: 18, paddingBottom: 20, paddingTop: 4, borderTopWidth: 0.5, borderTopColor: 'rgba(43,39,36,0.08)' }}>
-          <FoodSection eyebrow="EVIDÊNCIA">{food.evidence}</FoodSection>
-          <FoodSection eyebrow="MECANISMO">{food.mechanism}</FoodSection>
-          <FoodSection eyebrow="RELEVÂNCIA PARA SUA PELE">{food.relevance_to_skin}</FoodSection>
+          <FoodSection eyebrow={t('EVIDÊNCIA')}>{food.evidence}</FoodSection>
+          <FoodSection eyebrow={t('MECANISMO')}>{food.mechanism}</FoodSection>
+          <FoodSection eyebrow={t('RELEVÂNCIA PARA SUA PELE')}>{food.relevance_to_skin}</FoodSection>
           {food.substitution && (
             <View style={{ marginTop: 14, backgroundColor: 'rgba(251,123,107,0.06)', borderWidth: 0.5, borderColor: '#FB7B6B', borderRadius: 14, padding: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -255,7 +256,7 @@ function FoodCard({ food, defaultOpen = false, fontItalic, fontReg, latoRegular 
                   <Path d="M1 5.5h7M5 2.5l3 3-3 3" stroke="#FB7B6B" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   <Path d="M10 5.5h-7M6 8.5l-3-3 3-3" stroke="#FB7B6B" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" opacity={0.4} fill="none" />
                 </Svg>
-                <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: '#FB7B6B' }}>substitua por</Text>
+                <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: '#FB7B6B' }}>{t('substitua por')}</Text>
               </View>
               <Text style={{ marginTop: 10, fontSize: 15, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.15, lineHeight: 21.75 }}>{food.substitution}</Text>
             </View>
@@ -417,7 +418,7 @@ export default function FoodReport() {
 
       if (!foodImageBase64) {
         console.error('[food-report] foodImageBase64 está null — abortando análise');
-        setError('Imagem não disponível. Tente tirar a foto novamente.');
+        setError(t('Imagem não disponível. Tente tirar a foto novamente.'));
         return;
       }
 
@@ -435,6 +436,7 @@ export default function FoodReport() {
                 'Authorization': await autorizacaoIA('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV0cGxqdndtZXllcXdyZnVsYmZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwOTc4MTUsImV4cCI6MjA4ODY3MzgxNX0.zFbYbO2LbjK1DZSK4JRkieWiD0JHnDRCMtkPU1kWaxI'),
               },
               body: JSON.stringify({
+                idioma,
                 imageBase64: foodImageBase64,
                 mimeType: foodImageMimeType ?? 'image/jpeg',
                 skinProfile: {
@@ -512,7 +514,7 @@ export default function FoodReport() {
     } catch (err: any) {
       console.error('Erro ao analisar refeição:', String(err));
       track('food_scan_failed', { error: err?.message ?? 'unknown' });
-      setError('Não foi possível analisar a refeição. Tente novamente.');
+      setError(t('Não foi possível analisar a refeição. Tente novamente.'));
       analyzingRef.current = false;
     } finally {
       apiDoneRef.current = true;
@@ -563,15 +565,15 @@ export default function FoodReport() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontFamily: fBold, fontSize: 13, color: '#FFFFFF', marginBottom: 3 }}>
-                    Estamos com alta demanda agora
+                    {t('Estamos com alta demanda agora')}
                   </Text>
                   {countdownPaused ? (
                     <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                      Por favor, aguarde só mais um pouco.
+                      {t('Por favor, aguarde só mais um pouco.')}
                     </Text>
                   ) : (
                     <Text style={{ fontFamily: fSemi, fontSize: 12, color: '#FFFFFF', lineHeight: 18 }}>
-                      O impacto da sua refeição na pele está sendo calculado. Por favor, aguarde só mais{' '}
+                      {t('O impacto da sua refeição na pele está sendo calculado. Por favor, aguarde só mais')}{' '}
                       <Text style={{ fontFamily: fBold }}>{countdown}s</Text>.
                     </Text>
                   )}
@@ -674,7 +676,7 @@ export default function FoodReport() {
                 fontFamily: fSemi, fontSize: 13.5, color: 'rgba(29,58,68,0.38)',
                 letterSpacing: -0.1, textAlign: 'center', marginTop: 10, paddingHorizontal: 32,
               }}>
-                Isso leva só alguns segundos. Não feche o app.
+                {t('Isso leva só alguns segundos. Não feche o app.')}
               </Text>
             </View>
 
@@ -690,13 +692,13 @@ export default function FoodReport() {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F6F4EE', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
         <Text style={{ color: '#1A1A1A', fontSize: 16, fontWeight: '600', textAlign: 'center', marginBottom: 16 }}>
-          {error ?? 'Erro inesperado'}
+          {error ?? t('Erro inesperado')}
         </Text>
         <TouchableOpacity
           onPress={() => { haptics.action(); analyzeFood(); }}
           style={{ backgroundColor: '#FB7B6B', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
         >
-          <Text style={{ color: 'white', fontWeight: '600' }}>Tentar novamente</Text>
+          <Text style={{ color: 'white', fontWeight: '600' }}>{t('Tentar novamente')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -753,7 +755,7 @@ export default function FoodReport() {
           {/* Hero info block */}
           <View style={{ position: 'absolute', bottom: 26, left: 22, right: 22 }}>
             <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: '#fff', opacity: 0.85 }}>
-              RELATÓRIO DE IMPACTO
+              {t('RELATÓRIO DE IMPACTO')}
             </Text>
             <View style={{ marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 18 }}>
               <ScoreRing score={result.meal_score} size={86} fontReg={fontReg} fontItalic={fontItalic} />
@@ -761,7 +763,7 @@ export default function FoodReport() {
                 {/* Frosted label badge */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.28)', paddingHorizontal: 11, paddingVertical: 5, borderRadius: 100 }}>
                   <View style={{ width: 5, height: 5, borderRadius: 99, backgroundColor: '#FB7B6B' }} />
-                  <Text style={{ fontSize: 10, fontWeight: '600', letterSpacing: 1.2, color: '#fff' }}>{result.meal_label.toUpperCase()}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '600', letterSpacing: 1.2, color: '#fff' }}>{t(result.meal_label).toUpperCase()}</Text>
                 </View>
                 {/* meal_name: Regular (non-italic) per design reference */}
                 <Text style={{ marginTop: 10, fontSize: 22, fontFamily: fontReg, color: '#fff', letterSpacing: -0.4, lineHeight: 26.4 }}>
@@ -774,7 +776,7 @@ export default function FoodReport() {
 
         {/* Summary — Regular per design reference */}
         <View style={{ paddingHorizontal: 22, paddingTop: 32 }}>
-          <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: 'rgba(43,39,36,0.55)' }}>RESUMO</Text>
+          <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: 'rgba(43,39,36,0.55)' }}>{t('RESUMO')}</Text>
           <Text style={{ marginTop: 14, fontSize: 14, lineHeight: 21.7, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.1 }}>
             {result.meal_summary}
           </Text>
@@ -784,7 +786,7 @@ export default function FoodReport() {
         {result.highlights.length > 0 && (
           <View style={{ paddingHorizontal: 22, paddingTop: 32 }}>
             <CollapsibleSection
-              title="Pontos Positivos"
+              title={t('Pontos Positivos')}
               count={result.highlights.length}
               kind="positive"
               items={result.highlights}
@@ -798,7 +800,7 @@ export default function FoodReport() {
         {result.watch_out.length > 0 && (
           <View style={{ paddingHorizontal: 22, paddingTop: 14 }}>
             <CollapsibleSection
-              title="Pontos de Atenção"
+              title={t('Pontos de Atenção')}
               count={result.watch_out.length}
               kind="attention"
               items={result.watch_out}
@@ -811,14 +813,14 @@ export default function FoodReport() {
         {/* Foods */}
         <View style={{ paddingHorizontal: 22, paddingTop: 36 }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: 'rgba(43,39,36,0.55)' }}>ALIMENTOS IDENTIFICADOS</Text>
+            <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 1.8, textTransform: 'uppercase', color: 'rgba(43,39,36,0.55)' }}>{t('ALIMENTOS IDENTIFICADOS')}</Text>
             <Text style={{ fontSize: 11, color: 'rgba(43,39,36,0.35)' }}>
-              {result.foods.length} itens · toque para abrir
+              {t('{{n}} itens · toque para abrir', { n: result.foods.length })}
             </Text>
           </View>
           <Text style={{ marginTop: 12, marginBottom: 18, fontSize: 26, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.5, lineHeight: 28.6 }}>
-            {'Cada ingrediente, '}
-            <Text style={{ fontFamily: fontItalic, color: '#FB7B6B' }}>decifrado.</Text>
+            {t('Cada ingrediente, ')}
+            <Text style={{ fontFamily: fontItalic, color: '#FB7B6B' }}>{t('decifrado.')}</Text>
           </Text>
           <View style={{ gap: 10 }}>
             {result.foods.map((f, i) => (
@@ -833,7 +835,7 @@ export default function FoodReport() {
             <View style={{ paddingHorizontal: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 22 }}>
                 <Text style={{ fontSize: 32, fontFamily: fontItalic, color: '#FB7B6B', letterSpacing: -1, lineHeight: 36 }}>—</Text>
-                <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 2.4, textTransform: 'uppercase', color: '#FB7B6B' }}>você sabia</Text>
+                <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 2.4, textTransform: 'uppercase', color: '#FB7B6B' }}>{t('você sabia')}</Text>
                 <View style={{ flex: 1, height: 0.5, backgroundColor: 'rgba(251,123,107,0.4)' }} />
               </View>
               <Text style={{ fontSize: 22, fontFamily: fontReg, color: '#2B2724', letterSpacing: -0.5, lineHeight: 29.7 }}>
@@ -860,7 +862,7 @@ export default function FoodReport() {
           activeOpacity={0.85}
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#FB7B6B', borderRadius: 100, paddingVertical: 17, shadowColor: '#FB7B6B', shadowOpacity: 0.188, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}
         >
-          <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff', letterSpacing: -0.075 }}>Voltar para tela inicial</Text>
+          <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff', letterSpacing: -0.075 }}>{t('Voltar para tela inicial')}</Text>
           <Svg width={14} height={14} viewBox="0 0 24 24">
             <Path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
           </Svg>

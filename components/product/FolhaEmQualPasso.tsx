@@ -6,6 +6,7 @@ import { usePulsoMedalha } from '../medalhas/usePulsoMedalha';
 import { haptics } from '../../lib/haptics';
 import { periodoInicial, type RecomendacaoPasso } from '../../lib/recomendacaoPasso';
 import type { Periodo, PassoRotina } from '../../lib/minhaRotina';
+import { t } from '../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Em qual passo?" — aberta em "Colocar na rotina" (tela do produto da estante). Seletor
@@ -19,8 +20,8 @@ const PINK_DEEP = '#E8468F';
 const EASE_SHEET = Easing.bezier(0.32, 0.72, 0, 1);
 const ESCALA_PULSO = 0.02;
 
-const nomeDoPasso = (p: PassoRotina) => p.nome?.trim() || p.produto?.nome?.trim() || 'Passo';
-const produtoDoPasso = (p: PassoRotina) => (p.produto ? [p.produto.marca, p.produto.nome].filter(Boolean).join(' · ') : 'Sem produto');
+const nomeDoPasso = (p: PassoRotina) => p.nome?.trim() || p.produto?.nome?.trim() || t('Passo');
+const produtoDoPasso = (p: PassoRotina) => (p.produto ? [p.produto.marca, p.produto.nome].filter(Boolean).join(' · ') : t('Sem produto'));
 
 function Selo({ texto }: { texto: string }) {
   return <View style={s.selo}><Text style={s.seloTxt}>{texto}</Text></View>;
@@ -69,25 +70,25 @@ export default function FolhaEmQualPasso({ passos, recomendacao: r, ocupado, rm,
   const novoAqui = r.tipo === 'novo' && r.periodos.includes(periodo) ? r : null;
 
   const quandoNovo = (n: Extract<RecomendacaoPasso, { tipo: 'novo' }>) => [
-    n.periodos.length === 2 ? 'Manhã e noite' : n.periodos[0] === 'am' ? 'Manhã' : 'Noite',
-    n.dias ? n.dias.join(', ') : 'Todo dia',
+    n.periodos.length === 2 ? t('Manhã e noite') : n.periodos[0] === 'am' ? t('Manhã') : t('Noite'),
+    n.dias ? n.dias.join(', ') : t('Todo dia'),
   ].join(' · ');
 
   return (
     <View style={StyleSheet.absoluteFill}>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(30,20,25,0.28)' }]} onPress={onFechar} accessibilityLabel="Fechar" />
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(30,20,25,0.28)' }]} onPress={onFechar} accessibilityLabel={t('Fechar')} />
       <Animated.View
         entering={rm ? FadeIn.duration(150) : SlideInDown.duration(260).easing(EASE_SHEET)}
         style={[s.folha, { paddingBottom: folgaBase, maxHeight: alturaTela * 0.72 }]}
       >
-        <Text style={s.titulo}>Em qual passo?</Text>
+        <Text style={s.titulo}>{t('Em qual passo?')}</Text>
         <SeletorPeriodo valor={periodo} onChange={setPeriodo} fundo="#F7EEF2" style={{ marginTop: 12 }} />
         {r.tipo === 'aviso' && <Text style={s.aviso}>{r.texto}</Text>}
 
         <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 12 }} contentContainerStyle={{ paddingBottom: 4, paddingHorizontal: 4 }}>
           {!!novoAqui && (
-            <CardRecomendado rm={rm} disabled={ocupado} onPress={onCriarNovo} rotulo={`Criar novo passo: ${novoAqui.nome}, ${quandoNovo(novoAqui)}`}>
-              <Selo texto="Novo passo recomendado" />
+            <CardRecomendado rm={rm} disabled={ocupado} onPress={onCriarNovo} rotulo={t('Criar novo passo: {{nome}}, {{quando}}', { nome: novoAqui.nome, quando: quandoNovo(novoAqui) })}>
+              <Selo texto={t('Novo passo recomendado')} />
               <Text style={s.passoNome} numberOfLines={1}>{novoAqui.nome}</Text>
               <Text style={s.passoSub} numberOfLines={1}>{quandoNovo(novoAqui)}</Text>
               <Text style={s.porque} numberOfLines={2}>{novoAqui.porque}</Text>
@@ -95,8 +96,8 @@ export default function FolhaEmQualPasso({ passos, recomendacao: r, ocupado, rm,
           )}
 
           {doPeriodo.map((p) => (porque?.[p.id] ? (
-            <CardRecomendado key={p.id} rm={rm} disabled={ocupado} onPress={() => onEscolher(p, true)} rotulo={`Recomendado: ${nomeDoPasso(p)}. ${porque[p.id]}`}>
-              <Selo texto="Recomendado" />
+            <CardRecomendado key={p.id} rm={rm} disabled={ocupado} onPress={() => onEscolher(p, true)} rotulo={t('Recomendado: {{passo}}. {{porque}}', { passo: nomeDoPasso(p), porque: porque[p.id] })}>
+              <Selo texto={t('Recomendado')} />
               <Text style={s.passoNome} numberOfLines={1}>{nomeDoPasso(p)}</Text>
               <Text style={s.passoSub} numberOfLines={1}>{produtoDoPasso(p)}</Text>
               <Text style={s.porque} numberOfLines={2}>{porque[p.id]}</Text>
@@ -109,7 +110,7 @@ export default function FolhaEmQualPasso({ passos, recomendacao: r, ocupado, rm,
           )))}
 
           {doPeriodo.length === 0 && !novoAqui && (
-            <Text style={s.vazio}>Nenhum passo {periodo === 'am' ? 'de manhã' : 'à noite'}.</Text>
+            <Text style={s.vazio}>{periodo === 'am' ? t('Nenhum passo de manhã.') : t('Nenhum passo à noite.')}</Text>
           )}
         </ScrollView>
       </Animated.View>

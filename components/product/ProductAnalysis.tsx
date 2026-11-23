@@ -19,8 +19,9 @@ import { getScoreTheme } from '../../lib/scoreTheme';
 import { haptics } from '../../lib/haptics';
 import AlvoGuia from '../coach/AlvoGuia';
 import { useGuia } from '../../lib/guia';
-import { diasDoPasso } from '../../lib/frequencia';
+import { diaCurto, diasDoPasso } from '../../lib/frequencia';
 import { ShelfAddButton, ShelfRemoveLink } from './ShelfStatus';
+import { t } from '../../lib/i18n';
 
 // Análise de um produto escaneado — réplica do Figma "Novo design app NIKS" (node 136:126).
 //
@@ -60,15 +61,15 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 
 const VEREDITO: Record<string, { label: string; fg: string; bg: string }> = {
-  pode_usar:    { label: 'Pode usar',        fg: '#1E9E63', bg: 'rgba(30,158,99,0.12)' },
-  com_ressalva: { label: 'Use com ressalva', fg: '#C67C1E', bg: 'rgba(232,161,60,0.15)' },
-  evitaria:     { label: 'Eu evitaria',      fg: '#D8483F', bg: 'rgba(216,72,63,0.12)' },
+  pode_usar:    { label: t('Pode usar'),        fg: '#1E9E63', bg: 'rgba(30,158,99,0.12)' },
+  com_ressalva: { label: t('Use com ressalva'), fg: '#C67C1E', bg: 'rgba(232,161,60,0.15)' },
+  evitaria:     { label: t('Eu evitaria'),      fg: '#D8483F', bg: 'rgba(216,72,63,0.12)' },
 };
 
 const ROTINA_TIPO: Record<string, string> = {
-  adicionar: 'Vale adicionar à sua rotina',
-  substituir: 'Vale substituir um passo',
-  manter_rotina: 'Sua rotina já resolve isso',
+  adicionar: t('Vale adicionar à sua rotina'),
+  substituir: t('Vale substituir um passo'),
+  manter_rotina: t('Sua rotina já resolve isso'),
 };
 
 type Props = {
@@ -94,7 +95,7 @@ type Props = {
   blocoCompatibilidade?: React.ReactNode;
 };
 
-export default function ProductAnalysis({ blocoCompatibilidade, result: r, photoUri, cutoutUri, onClose, onRescan, rescanLabel = 'Escanear outro produto', colecao, rotina }: Props) {
+export default function ProductAnalysis({ blocoCompatibilidade, result: r, photoUri, cutoutUri, onClose, onRescan, rescanLabel = t('Escanear outro produto'), colecao, rotina }: Props) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const S = width / 393;
@@ -221,7 +222,7 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
           {/* Desafio 2: no detalhe (Modal) a dica mora aqui; no resultado do scan, o host a desenha. */}
           {passoGuia === 'd2-detalhe' && !colecao.owned && (
             <View accessibilityLiveRegion="polite" style={{ marginBottom: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, backgroundColor: '#FFE3EF', borderWidth: 1.5, borderColor: '#FF5EA8' }}>
-              <Text style={{ fontSize: 15, fontWeight: '600', lineHeight: 20, letterSpacing: -0.2, color: '#C0206A' }}>Este produto é seu? Coloque na sua estante.</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', lineHeight: 20, letterSpacing: -0.2, color: '#C0206A' }}>{t('Este produto é seu? Coloque na sua estante.')}</Text>
             </View>
           )}
           {passoGuia === 'd2-adicionar' && !colecao.owned ? (
@@ -301,15 +302,16 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
       <View style={{ flex: 1, backgroundColor: WHITE }}>
         <CloseButton />
         <View style={{ paddingTop: insets.top + s(80), paddingHorizontal: s(24) }}>
-          <Text style={{ fontFamily: f8, fontSize: s(20), color: INK }}>Não recebemos a análise</Text>
-          <Text style={{ fontFamily: f4, fontSize: s(14), color: INK_MUTE, marginTop: s(8), lineHeight: s(14) * 1.5 }}>Tente escanear o produto de novo.</Text>
+          <Text style={{ fontFamily: f8, fontSize: s(20), color: INK }}>{t('Não recebemos a análise')}</Text>
+          <Text style={{ fontFamily: f4, fontSize: s(14), color: INK_MUTE, marginTop: s(8), lineHeight: s(14) * 1.5 }}>{t('Tente escanear o produto de novo.')}</Text>
           <RescanButton />
         </View>
       </View>
     );
   }
 
-  // ── Precisa de foto dos ingredientes ───────────────────────────────────────
+  // ── Não reconheceu o produto: pede outra foto da FRENTE ─────────────────────
+  // (18/nov/2026: ela fotografa só a frente; nunca pedir verso/lista de ingredientes.)
   if (r.status === 'precisa_foto') {
     return (
       <View style={{ flex: 1, backgroundColor: WHITE }}>
@@ -318,9 +320,9 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
           {photoUri ? <Image source={{ uri: photoUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : null}
         </View>
         <View style={{ paddingTop: s(24), paddingHorizontal: s(20) }}>
-          <Text style={{ fontFamily: f8, fontSize: s(23), lineHeight: s(23) * 1.18, color: INK }}>Preciso ver os ingredientes</Text>
+          <Text style={{ fontFamily: f8, fontSize: s(23), lineHeight: s(23) * 1.18, color: INK }}>{t('Não reconheci esse produto')}</Text>
           <Text style={{ fontFamily: f4, fontSize: s(14.5), lineHeight: s(14.5) * 1.6, color: INK_BODY, marginTop: s(12) }}>
-            {r.mensagem || 'Não consegui identificar o produto pela foto. Me manda uma foto da lista de ingredientes que eu analiso pra você.'}
+            {r.mensagem || t('Não consegui ler o nome e a marca nessa foto. Tenta de novo pela frente da embalagem, com boa luz e o nome bem visível.')}
           </Text>
           <RescanButton />
         </View>
@@ -339,7 +341,7 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
   // de a função devolver `dias` não tem o campo → sem chip (não dá para afirmar "todo dia").
   const temFrequencia = 'dias' in decisao;
   const diasSugeridos = diasDoPasso(Array.isArray(decisao.dias) ? decisao.dias : null);
-  const periodoLabel = decisao.periodo === 'am' ? 'Manhã' : decisao.periodo === 'pm' ? 'Noite' : decisao.periodo === 'am+pm' ? 'Manhã e noite' : null;
+  const periodoLabel = decisao.periodo === 'am' ? t('Manhã') : decisao.periodo === 'pm' ? t('Noite') : decisao.periodo === 'am+pm' ? t('Manhã e noite') : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: PAGE_BG }}>
@@ -367,7 +369,7 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
               {compat != null ? `${compat}%` : '—'}
             </Text>
             <Text style={{ fontFamily: f8, fontSize: s(20), letterSpacing: s(-0.4), color: INK, marginTop: s(-14) }}>
-              Compatibilidade de pele
+              {t('Compatibilidade de pele')}
             </Text>
           </View>
           )}
@@ -401,7 +403,7 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
         <View style={{ marginTop: -CARD_OVERLAP, zIndex: 2 }}>
           {/* O que significa? — identidade do produto (header) + título + manchete */}
           <Card
-            title="O que significa?"
+            title={t('O que significa?')}
             icon={Sparkles}
             index={0}
             first
@@ -412,11 +414,11 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
                     <Text style={{ fontFamily: f7, fontSize: s(11), letterSpacing: s(11) * 0.14, textTransform: 'uppercase', color: INK_MUTE, marginBottom: s(3) }}>{produto.marca}</Text>
                   )}
                   <Text style={{ fontFamily: f8, fontSize: s(18), lineHeight: s(18) * 1.25, letterSpacing: s(18) * -0.02, color: INK }}>
-                    {produto.nome || produto.categoria || 'Produto'}
+                    {produto.nome || produto.categoria || t('Produto')}
                   </Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: s(7), marginTop: s(10) }}>
                     {!!veredito && <Chip label={veredito.label} fg={veredito.fg} bg={veredito.bg} />}
-                    {r.confianca === 'media' && <Chip label="Confiança média" />}
+                    {r.confianca === 'media' && <Chip label={t('Confiança média')} />}
                   </View>
                 </View>
                 <View style={{ height: 1, backgroundColor: HAIRLINE, marginTop: s(15), marginBottom: s(15) }} />
@@ -434,30 +436,30 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
               o campo saiu do prompt por ser redundante com o `o_que_faz`, que agora cobre
               o Momento 1 inteiro. Scans antigos ainda têm o campo no jsonb — a tela ignora. */}
           {!!r.o_que_faz && (
-            <Card title="O que é" icon={FlaskConical} index={1}><Body>{r.o_que_faz}</Body></Card>
+            <Card title={t('O que é')} icon={FlaskConical} index={1}><Body>{r.o_que_faz}</Body></Card>
           )}
 
           {/* Momento 2 — na pele dela (some quando "evitaria") */}
           {!isEvitaria && !!r.resultado_esperado_para_voce && (
-            <Card title="Na sua pele" icon={ScanFace} index={2}><Body>{r.resultado_esperado_para_voce}</Body></Card>
+            <Card title={t('Na sua pele')} icon={ScanFace} index={2}><Body>{r.resultado_esperado_para_voce}</Body></Card>
           )}
 
           {/* Decisão de rotina — Camada 2, independente da compatibilidade.
               Card de DESTAQUE (rosa claro): é a conclusão prática da tela. */}
           {!isEvitaria && !!decisao.tipo && (
-            <Card title="Sobre a sua rotina" icon={Flower2} index={3} accent>
+            <Card title={t('Sobre a sua rotina')} icon={Flower2} index={3} accent>
               <Text style={{ fontFamily: f8, fontSize: s(15.5), lineHeight: s(15.5) * 1.35, color: INK, marginTop: s(13) }}>
-                {ROTINA_TIPO[decisao.tipo] ?? 'Sobre a sua rotina'}
+                {ROTINA_TIPO[decisao.tipo] ?? t('Sobre a sua rotina')}
               </Text>
               {(!!decisao.passo || !!periodoLabel) && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: s(7), marginTop: s(10) }}>
                   {!!decisao.passo && <Chip label={decisao.passo} fg={ACCENT} bg={WHITE} />}
                   {!!periodoLabel && <Chip label={periodoLabel} fg={ACCENT} bg={WHITE} />}
-                  {!!periodoLabel && temFrequencia && <Chip label={diasSugeridos ? `${diasSugeridos.length}x por semana · ${diasSugeridos.join(', ')}` : 'Todo dia'} fg={ACCENT} bg={WHITE} />}
+                  {!!periodoLabel && temFrequencia && <Chip label={diasSugeridos ? t('{{n}}x por semana · {{dias}}', { n: diasSugeridos.length, dias: diasSugeridos.map(diaCurto).join(', ') }) : t('Todo dia')} fg={ACCENT} bg={WHITE} />}
                 </View>
               )}
               {!!decisao.produto_substituivel && (
-                <Text style={{ fontFamily: f5, fontSize: s(12.5), color: INK_MUTE, marginTop: s(8) }}>No lugar de: {decisao.produto_substituivel}</Text>
+                <Text style={{ fontFamily: f5, fontSize: s(12.5), color: INK_MUTE, marginTop: s(8) }}>{t('No lugar de: {{produto}}', { produto: decisao.produto_substituivel })}</Text>
               )}
               {!!decisao.justificativa && <Body top={8}>{decisao.justificativa}</Body>}
               {/* "Adicionar à minha rotina" (Fase 8): entra onde a análise sugeriu. */}
@@ -476,7 +478,7 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
                     ? <ActivityIndicator color={WHITE} />
                     : (
                       <Text style={{ fontFamily: f8, fontSize: s(15.5), color: rotina.estado === 'feito' ? ACCENT : WHITE }}>
-                        {rotina.estado === 'feito' ? '✓ Na sua rotina' : decisao.tipo === 'substituir' ? 'Trocar na minha rotina' : 'Adicionar à minha rotina'}
+                        {rotina.estado === 'feito' ? t('✓ Na sua rotina') : decisao.tipo === 'substituir' ? t('Trocar na minha rotina') : t('Adicionar à minha rotina')}
                       </Text>
                     )}
                 </TouchableOpacity>
@@ -486,7 +488,7 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
 
           {/* Avisos — cada um numa linha âmbar */}
           {avisos.length > 0 && (
-            <Card title="Fique de olho" icon={TriangleAlert} index={4}>
+            <Card title={t('Fique de olho')} icon={TriangleAlert} index={4}>
               <View style={{ marginTop: s(13) }}>
                 {avisos.map((a, i) => (
                   <View
@@ -508,7 +510,7 @@ export default function ProductAnalysis({ blocoCompatibilidade, result: r, photo
 
           {/* Ativos detectados */}
           {ativos.length > 0 && (
-            <Card title="Ativos detectados" icon={Atom} index={5}>
+            <Card title={t('Ativos detectados')} icon={Atom} index={5}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: s(7), marginTop: s(13) }}>
                 {ativos.map((t, i) => <Chip key={i} label={t} fg={ACCENT} bg={WASH} />)}
               </View>

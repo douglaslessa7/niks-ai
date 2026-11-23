@@ -1,4 +1,5 @@
 import * as ImageManipulator from 'expo-image-manipulator';
+import { idioma } from './i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Análise RÁPIDA do scan do onboarding (06/nov/2026) — a Edge Function `analise-rapida`.
@@ -128,7 +129,7 @@ export async function chamarAnaliseRapida(foto: { uri: string; base64: string },
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
         // `problemas`: a função nova (06/nov/2026) ignora e avalia os 9; a anterior usa.
-        body: JSON.stringify({ imageBase64: base64, problemas: problemasMarcados(concerns) }),
+        body: JSON.stringify({ imageBase64: base64, problemas: problemasMarcados(concerns), idioma }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${JSON.stringify(data).slice(0, 200)}`);

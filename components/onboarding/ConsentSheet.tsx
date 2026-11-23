@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
+import { t } from '../../lib/i18n';
 import { OB, ObPillButton } from './kit';
 import { PrivacyIllustration } from './PrivacyIllustration';
 
@@ -68,30 +69,30 @@ export function ConsentSheet({ visible, onAccept, onDecline }: {
           marginTop: 2, marginHorizontal: 17, textAlign: 'center',
           fontSize: 26, lineHeight: 31, fontWeight: '700', letterSpacing: -0.4, color: OB.ink,
         }}>
-          Sua pele. Seus dados.
+          {t('Sua pele. Seus dados.')}
         </Text>
         <Text style={{ marginTop: 10, marginHorizontal: 30, textAlign: 'center', fontSize: 16, lineHeight: 22, color: OB.sub }}>
-          Suas fotos e dados de pele não são vendidos a ninguém, e você pode apagá-los quando quiser.
+          {t('Suas fotos e dados de pele não são vendidos a ninguém, e você pode apagá-los quando quiser.')}
         </Text>
 
         <View style={{ marginTop: 22, alignSelf: 'stretch', marginLeft: 24, marginRight: 28 }}>
           <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
             <CheckCircle on={aceito} onPress={() => { haptics.select(); setAceito((v) => !v); }} />
             <Text style={bodyText}>
-              Concordo com a análise das minhas fotos e dados de pele pela NIKS, com inteligência artificial de parceiros, conforme a{' '}
-              <PolicyLink label="Política de Privacidade" /> e os <PolicyLink label="Termos de Uso" />.
+              {t('Concordo com a análise das minhas fotos e dados de pele pela NIKS, com inteligência artificial de parceiros, conforme a')}{' '}
+              <PolicyLink label="Política de Privacidade" />{t(' e os ')}<PolicyLink label="Termos de Uso" />.
             </Text>
           </View>
         </View>
 
-        <ObPillButton label="Aceitar e continuar" width={245} onPress={aceitar} style={{ marginTop: 24 }} />
+        <ObPillButton label={t('Aceitar e continuar')} width={245} onPress={aceitar} style={{ marginTop: 24 }} />
         <TouchableOpacity
           onPress={() => { haptics.tap(); onDecline(); }}
           activeOpacity={0.6}
           hitSlop={{ top: 8, bottom: 8, left: 16, right: 16 }}
           style={{ marginTop: 14, height: 24, justifyContent: 'center' }}
         >
-          <Text style={{ fontSize: 16, color: OB.sub }}>Cancelar</Text>
+          <Text style={{ fontSize: 16, color: OB.sub }}>{t('Cancelar')}</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>
@@ -126,7 +127,7 @@ function PolicyLink({ label }: { label: string }) {
       onPress={() => { haptics.tap(); Linking.openURL(url); }}
       style={{ color: OB.pink, fontWeight: '500' }}
     >
-      {label}
+      {t(label)}
     </Text>
   );
 }

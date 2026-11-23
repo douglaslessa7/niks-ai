@@ -10,6 +10,7 @@ import { haptics } from '../../lib/haptics';
 import BalancedText from '../../components/BalancedText';
 import { useObPassoVisto } from '../../components/onboarding/passo';
 import { OB_STEPS } from '../../components/onboarding/kit';
+import { t } from '../../lib/i18n';
 
 // Onboarding — transição da demonstração do scan de produto (04/nov/2026), logo depois da
 // pergunta da água; substituiu as 2 telas de preparação (educação + apresentação), a pedido do
@@ -34,8 +35,8 @@ const SAI = 250;
 const EO = Easing.bezier(0.23, 1, 0.32, 1);           // ease-out forte
 const COBRE_CURVA = Easing.inOut(Easing.quad);
 
-const FRASE_1 = 'Nem todo produto serve para a sua pele. Alguns podem até estar te fazendo mal.';
-const FRASE_2 = 'O NIKS analisa cada um para você.';
+const FRASE_1 = t('Nem todo produto serve para a sua pele. Alguns podem até estar te fazendo mal.');
+const FRASE_2 = t('O NIKS analisa cada um para você.');
 
 export default function DemoTransicao() {
   useObPassoVisto(OB_STEPS.demoTransicao, 'Demo: transição');

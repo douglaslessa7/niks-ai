@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { invalidateCache } from '../../lib/cache';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import { voltar as voltarOu } from '../../lib/navegar';
 
@@ -129,22 +130,22 @@ export default function SetName() {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
           {/* Cabeçalho: voltar · "Seu nome" */}
           <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-            <TouchableOpacity onPress={() => { haptics.tap(); voltarOu('/perfil'); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel="Voltar">
+            <TouchableOpacity onPress={() => { haptics.tap(); voltarOu('/perfil'); }} activeOpacity={0.85} style={styles.backBtn} accessibilityLabel={t('Voltar')}>
               <Svg width={18} height={18} viewBox="0 0 24 24">
                 <Path d="M15 5l-7 7 7 7" fill="none" stroke={INK} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
             </TouchableOpacity>
-            <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>Seu nome</Text>
+            <Text style={{ fontSize: 17, fontWeight: '400', letterSpacing: -0.3, color: INK }}>{t('Seu nome')}</Text>
             <View style={{ width: 36 }} />
           </View>
 
           <View style={{ paddingHorizontal: 18, paddingTop: 28, flex: 1 }}>
-            <Text style={styles.title}>Qual é o seu nome?</Text>
-            <Text style={styles.subtitle}>É assim que a NIKS vai chamar você.</Text>
+            <Text style={styles.title}>{t('Qual é o seu nome?')}</Text>
+            <Text style={styles.subtitle}>{t('É assim que a NIKS vai chamar você.')}</Text>
 
             <View style={{ gap: 12 }}>
-              <FloatingLabelInput label="Nome" value={firstName} onChangeText={setFirstName} />
-              <FloatingLabelInput label="Sobrenome" value={lastName} onChangeText={setLastName} />
+              <FloatingLabelInput label={t('Nome')} value={firstName} onChangeText={setFirstName} />
+              <FloatingLabelInput label={t('Sobrenome')} value={lastName} onChangeText={setLastName} />
             </View>
           </View>
 
@@ -156,7 +157,7 @@ export default function SetName() {
               style={[styles.bigBtn, { opacity: !canSave ? 0.45 : saving ? 0.7 : 1 }]}
             >
               <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: '#FFFFFF' }}>
-                {saving ? 'Salvando...' : 'Salvar'}
+                {saving ? t('Salvando...') : t('Salvar')}
               </Text>
             </TouchableOpacity>
           </View>

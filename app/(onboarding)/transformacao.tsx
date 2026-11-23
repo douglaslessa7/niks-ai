@@ -1,6 +1,7 @@
 import { Image, ImageSourcePropType, Text, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import { OB, ObHeader, ObPillButton, OB_BOTAO_H, ObScreen, useObFrame } from '../../components/onboarding/kit';
 import { useObPassoVisto } from '../../components/onboarding/passo';
 import { OB_STEPS } from '../../components/onboarding/kit';
@@ -51,7 +52,7 @@ export default function Transformacao() {
   const { width: W } = useWindowDimensions();
   const { y, buttonBottom } = useObFrame();
   const cardH = (W - 40) / PROPORCAO;
-  const t = TRANSFORMACAO;
+  const dados = TRANSFORMACAO;
 
   const continuar = () => {
     haptics.action();
@@ -63,24 +64,24 @@ export default function Transformacao() {
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(100), bottom: buttonBottom + OB_BOTAO_H + 16, paddingTop: 22, justifyContent: 'center' }}>
         {/* 25/30 com as letras bem juntas, como no Tapfit: a 1ª linha mede ~222 pt (medido). */}
         <Text style={{ marginHorizontal: 20, fontSize: 25, lineHeight: 30, fontWeight: '700', letterSpacing: -1.35, color: OB.ink }}>
-          {'Olha o antes e depois\ncom o NIKS.'}
+          {t('Olha o antes e depois\ncom o NIKS.')}
         </Text>
 
         <View
           accessible
-          accessibilityLabel={`Antes e depois de ${t.nome}`}
+          accessibilityLabel={t('Antes e depois de {{nome}}', { nome: t(dados.nome) })}
           style={{ marginTop: 16, marginHorizontal: 20, height: cardH, borderRadius: 14, overflow: 'hidden', flexDirection: 'row', gap: 2 }}
         >
-          <Metade foto={t.antes} />
-          <Metade foto={t.depois} />
+          <Metade foto={dados.antes} />
+          <Metade foto={dados.depois} />
         </View>
 
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85} style={{ marginTop: 13, marginHorizontal: 20, textAlign: 'center', fontSize: 17, lineHeight: 22 }}>
-          <Text style={{ fontWeight: '600', color: OB.ink }}>{t.nome}</Text>
-          <Text style={{ color: OB.sub }}>{`  ·  ${t.cidade}`}</Text>
+          <Text style={{ fontWeight: '600', color: OB.ink }}>{t(dados.nome)}</Text>
+          <Text style={{ color: OB.sub }}>{`  ·  ${t(dados.cidade)}`}</Text>
         </Text>
         <Text style={{ marginTop: 13, marginHorizontal: 20, textAlign: 'center', fontSize: 12, lineHeight: 16, color: OB.sub }}>
-          Com autorização. Resultados individuais variam.
+          {t('Com autorização. Resultados individuais variam.')}
         </Text>
       </View>
 
@@ -92,7 +93,7 @@ export default function Transformacao() {
           fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 1.4, color: OB.sub,
         }}
       >
-        TRANSFORMAÇÃO REAL
+        {t('TRANSFORMAÇÃO REAL')}
       </Text>
       <ObPillButton bottom={buttonBottom} onPress={continuar} />
     </ObScreen>

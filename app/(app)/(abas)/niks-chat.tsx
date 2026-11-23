@@ -21,6 +21,7 @@ import { haptics } from '../../../lib/haptics';
 import { loteDeHoje } from '../../../lib/rotinaLotes';
 import { abrirMontarRotina } from '../../../lib/abrirMontarRotina';
 import VoltarPelaBorda from '../../../components/VoltarPelaBorda';
+import { t, emIngles, idioma, DIAS_CURTOS_EN, MESES_CURTOS_EN } from '../../../lib/i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NIKS Chat — réplica dos designs 39a (início) e 39b (conversa em andamento) do
@@ -146,11 +147,11 @@ function daysAgo(iso: string): number {
 // "Hoje" · "Ontem" · "Seg" (esta semana) · "19 set"
 function shortDay(iso: string): string {
   const n = daysAgo(iso);
-  if (n <= 0) return 'Hoje';
-  if (n === 1) return 'Ontem';
+  if (n <= 0) return t('Hoje');
+  if (n === 1) return t('Ontem');
   const d = new Date(iso);
-  if (n < 7) return WEEKDAYS[d.getDay()];
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  if (n < 7) return emIngles ? DIAS_CURTOS_EN[d.getDay()] : WEEKDAYS[d.getDay()];
+  return emIngles ? `${MESES_CURTOS_EN[d.getMonth()]} ${d.getDate()}` : `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -219,8 +220,8 @@ type CoachSuggestion = {
 // O servidor (app novo, `rotinaV2`) manda `[[SUGESTAO:<id>]]` no fim da resposta: o card
 // aparece na hora, sem a corrida de antes. O marcador nunca aparece na tela.
 const MARCADOR_SUGESTAO = /\n?\[\[SUGESTAO:([0-9a-f-]+)\]\]\s*$/
-function semMarcador(t: string): string {
-  return t.replace(MARCADOR_SUGESTAO, '').replace(/\n?\[\[[^\]]*$/, '')
+function semMarcador(txt: string): string {
+  return txt.replace(MARCADOR_SUGESTAO, '').replace(/\n?\[\[[^\]]*$/, '')
 }
 
 // ── Message type ──────────────────────────────────────────────────────────────
@@ -243,6 +244,11 @@ type Message = {
 const TRIGGER_PHRASES = [
   'posso incluir isso no seu protocolo?',
   'posso remover isso do seu protocolo?',
+  // Resposta em inglês (etapa 3): mesmas perguntas, na forma que o prompt em inglês usa.
+  'can i add this to your protocol?',
+  'can i remove this from your protocol?',
+  'can i add this to your routine?',
+  'can i remove this from your routine?',
 ]
 const APPROVE_URL = 'https://utpljvwmeyeqwrfulbfr.supabase.co/functions/v1/approve-coach-protocol-change'
 
@@ -304,7 +310,7 @@ async function approveProtocolChange(
         'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ suggestion_id: suggestionId, approved }),
+      body: JSON.stringify({ suggestion_id: suggestionId, approved, idioma }),
     })
     const data = await resp.json().catch(() => ({} as any))
     if (!resp.ok) {
@@ -319,11 +325,11 @@ async function approveProtocolChange(
 
 // Resumo legível do proposed_changes para o card.
 function formatChangeSummary(pc: ProposedChanges): string {
-  const verbo = pc.action === 'add' ? 'Incluir' : pc.action === 'remove' ? 'Remover' : pc.action === 'replace' ? 'Trocar por' : 'Ajustar'
-  const item = (pc.step_name || pc.ingredient || 'passo').trim()
+  const verbo = pc.action === 'add' ? t('Incluir') : pc.action === 'remove' ? t('Remover') : pc.action === 'replace' ? t('Trocar por') : t('Ajustar')
+  const item = (pc.step_name || pc.ingredient || t('passo')).trim()
   const extra = pc.ingredient && pc.step_name && pc.ingredient.trim().toLowerCase() !== pc.step_name.trim().toLowerCase() ? ` (${pc.ingredient.trim()})` : ''
   const dias = Array.isArray(pc.schedule_days) && pc.schedule_days.length ? ` · ${pc.schedule_days.join(', ')}` : ''
-  const sai = pc.action === 'replace' && pc.replaces ? `\nSai: ${pc.replaces}` : ''
+  const sai = pc.action === 'replace' && pc.replaces ? `\n${t('Sai: {{item}}', { item: pc.replaces })}` : ''
   return `${verbo} ${item}${extra}${dias}${sai}`
 }
 
@@ -349,11 +355,11 @@ function ProtocolApprovalCard({
   }
 
   if (suggestion.status !== 'pending') {
-    const label = suggestion.status === 'applied' ? 'Aprovado ✓'
-      : suggestion.status === 'rejected' ? 'Recusado'
-      : suggestion.status === 'expired' ? 'Essa sugestão expirou'
-      : suggestion.status === 'superseded' ? 'Substituída por uma sugestão mais nova'
-      : 'Resolvido'
+    const label = suggestion.status === 'applied' ? t('Aprovado ✓')
+      : suggestion.status === 'rejected' ? t('Recusado')
+      : suggestion.status === 'expired' ? t('Essa sugestão expirou')
+      : suggestion.status === 'superseded' ? t('Substituída por uma sugestão mais nova')
+      : t('Resolvido')
     return (
       <View style={[styles.card, { marginTop: 8 }]}>
         <Text style={{ fontSize: 15, letterSpacing: -0.25, color: MUTED }}>{label}</Text>
@@ -365,10 +371,10 @@ function ProtocolApprovalCard({
     <View style={[styles.card, { marginTop: 8 }]}>
       {/* O PERÍODO em destaque: a mudança é na manhã OU na noite. */}
       <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 0.3, color: '#E8468F', textTransform: 'uppercase' }}>
-        {suggestion.proposed_changes.period === 'am' ? 'Rotina da manhã' : 'Rotina da noite'}
+        {suggestion.proposed_changes.period === 'am' ? t('Rotina da manhã') : t('Rotina da noite')}
       </Text>
       <Text style={[styles.cardTitle, { marginTop: 4 }]}>
-        {suggestion.proposed_changes.action === 'replace_period' ? 'Sua rotina passa a ser' : 'Sugestão de mudança'}
+        {suggestion.proposed_changes.action === 'replace_period' ? t('Sua rotina passa a ser') : t('Sugestão de mudança')}
       </Text>
       {suggestion.proposed_changes.action === 'replace_period' && Array.isArray(suggestion.proposed_changes.steps) ? (
         <View style={{ marginTop: 8, gap: 4 }}>
@@ -386,7 +392,7 @@ function ProtocolApprovalCard({
         <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 20, letterSpacing: -0.25, color: MUTED }}>{suggestion.reason}</Text>
       )}
       {failed && (
-        <Text style={{ fontSize: 13, color: '#C0392B', marginTop: 8 }}>Não consegui registrar agora. Tenta de novo.</Text>
+        <Text style={{ fontSize: 13, color: '#C0392B', marginTop: 8 }}>{t('Não consegui registrar agora. Tenta de novo.')}</Text>
       )}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
         <TouchableOpacity
@@ -395,7 +401,7 @@ function ProtocolApprovalCard({
           activeOpacity={0.85}
           style={[styles.sendBtn, { flex: 1, height: 44, opacity: submitting !== null ? 0.6 : 1 }]}
         >
-          <Text style={styles.sendText}>{submitting === 'approve' ? 'Aprovando…' : 'Aprovar'}</Text>
+          <Text style={styles.sendText}>{submitting === 'approve' ? t('Aprovando…') : t('Aprovar')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => decide(false)}
@@ -404,7 +410,7 @@ function ProtocolApprovalCard({
           style={{ flex: 1, height: 44, borderRadius: 100, borderWidth: 1, borderColor: FIELD_BD, alignItems: 'center', justifyContent: 'center', opacity: submitting !== null ? 0.6 : 1 }}
         >
           <Text style={{ fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: INK }}>
-            {submitting === 'reject' ? 'Recusando…' : 'Recusar'}
+            {submitting === 'reject' ? t('Recusando…') : t('Recusar')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -675,7 +681,7 @@ export default function NiksChat() {
     }
     if (res.ok || res.action === 'expired') {
       setPendente(null)
-      const texto = res.mensagem ?? (approved ? null : 'Combinado, deixei sua rotina como estava.')
+      const texto = res.mensagem ?? (approved ? null : t('Combinado, deixei sua rotina como estava.'))
       if (texto) {
         if (mode === 'active') setMessages(prev => [...prev, { id: `conf-${Date.now()}`, role: 'assistant', content: texto, live: true }])
         else setConfirmacao(texto)
@@ -775,7 +781,7 @@ export default function NiksChat() {
     }
 
     if (!accessToken) {
-      showSendError('Ocorreu um erro. Tente novamente.')
+      showSendError(t('Ocorreu um erro. Tente novamente.'))
       return
     }
 
@@ -802,8 +808,8 @@ export default function NiksChat() {
       if (xhr.status !== 200) {
         avisarSeSemAssinatura(xhr.status);
         const erro = naEspinha && xhr.status === 429
-          ? 'Você já mandou 20 mensagens hoje nesta conversa. Amanhã a gente continua por aqui.'
-          : 'Ocorreu um erro. Tente novamente.'
+          ? t('Você já mandou 20 mensagens hoje nesta conversa. Amanhã a gente continua por aqui.')
+          : t('Ocorreu um erro. Tente novamente.')
         setMessages(prev => prev.map(m =>
           m.id === assistantMsgId
             ? { ...m, content: erro, isStreaming: false }
@@ -833,7 +839,7 @@ export default function NiksChat() {
     xhr.onerror = () => {
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
-          ? { ...m, content: 'Ocorreu um erro. Tente novamente.', isStreaming: false }
+          ? { ...m, content: t('Ocorreu um erro. Tente novamente.'), isStreaming: false }
           : m
       ))
     }
@@ -844,7 +850,7 @@ export default function NiksChat() {
     xhr.ontimeout = () => {
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
-          ? { ...m, content: 'A resposta demorou muito. Tente novamente.', isStreaming: false }
+          ? { ...m, content: t('A resposta demorou muito. Tente novamente.'), isStreaming: false }
           : m
       ))
     }
@@ -860,14 +866,20 @@ export default function NiksChat() {
       // App novo: recebe o id da sugestão no fim da resposta e entende "trocar a rotina
       // inteira de um período" (replace_period).
       rotinaV2: true,
+      // Idioma do celular: a NIKS responde nele (sem o campo, servidor antigo → português).
+      idioma,
     }))
   }
 
   const handleSuggestionPress = async (text: string) => {
     setNiksChatMode('active')
-    const predefined = PREDEFINED_RESPONSES[text]
-    if (predefined) {
+    // As opções e as respostas prontas ficam em português como chave; a conversa (que ela
+    // vê e que fica no histórico) vai na língua do celular — em português, o texto de sempre.
+    const predefinidaPt = PREDEFINED_RESPONSES[text]
+    if (predefinidaPt) {
       if (!userId) return
+      const predefined = t(predefinidaPt)
+      text = t(text)
 
       const { data: newConv } = await supabase
         .from('coach_conversations')
@@ -892,7 +904,7 @@ export default function NiksChat() {
       ])
       setMode('active')
     } else {
-      sendMessage(text)
+      sendMessage(t(text))
     }
   }
 
@@ -936,14 +948,14 @@ export default function NiksChat() {
     if (pendingImages.length >= 5) return
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
-        { options: ['Tirar foto', 'Escolher da galeria', 'Cancelar'], cancelButtonIndex: 2 },
+        { options: [t('Tirar foto'), t('Escolher da galeria'), t('Cancelar')], cancelButtonIndex: 2 },
         (i) => { if (i === 0) pickImage('camera'); if (i === 1) pickImage('gallery') },
       )
     } else {
-      Alert.alert('Enviar foto', undefined, [
-        { text: 'Tirar foto', onPress: () => pickImage('camera') },
-        { text: 'Escolher da galeria', onPress: () => pickImage('gallery') },
-        { text: 'Cancelar', style: 'cancel' },
+      Alert.alert(t('Enviar foto'), undefined, [
+        { text: t('Tirar foto'), onPress: () => pickImage('camera') },
+        { text: t('Escolher da galeria'), onPress: () => pickImage('gallery') },
+        { text: t('Cancelar'), style: 'cancel' },
       ])
     }
   }
@@ -980,7 +992,7 @@ export default function NiksChat() {
     const convPorId = Object.fromEntries(convs.map(c => [c.id, c]))
     const titleMap: Record<string, string> = {}
     userMsgs?.forEach(msg => {
-      if (!titleMap[msg.conversation_id]) titleMap[msg.conversation_id] = msg.content || 'Foto'
+      if (!titleMap[msg.conversation_id]) titleMap[msg.conversation_id] = msg.content || t('Foto')
     })
 
     const lastMap: Record<string, { content: string; created_at: string }> = {}
@@ -992,10 +1004,10 @@ export default function NiksChat() {
       .filter(id => lastMap[id])
       .map(id => ({
         id,
-        title: (convPorId[id]?.tipo === 'espinha' && convPorId[id]?.title ? convPorId[id].title! : titleMap[id] ?? 'Conversa').slice(0, 80),
+        title: (convPorId[id]?.tipo === 'espinha' && convPorId[id]?.title ? convPorId[id].title! : titleMap[id] ?? t('Conversa')).slice(0, 80),
         espinha: convPorId[id]?.tipo === 'espinha',
         when: shortDay(lastMap[id].created_at),
-        prev: (lastMap[id].content || 'Foto').replace(/\s+/g, ' '),
+        prev: (lastMap[id].content || t('Foto')).replace(/\s+/g, ' '),
         recent: id === espinhaAtiva || daysAgo(lastMap[id].created_at) < 7,
       })))
     setHistoryLoading(false)
@@ -1126,8 +1138,8 @@ export default function NiksChat() {
     | { kind: 'typing'; key: string }
     | { kind: 'sugestao'; key: string }
   const intro: Row[] = [
-    { kind: 'bot', key: 'hi', text: firstName ? `oi, ${firstName}! 👋` : 'oi! 👋' },
-    { kind: 'bot', key: 'help', text: 'me conta, como posso te ajudar hoje?' },
+    { kind: 'bot', key: 'hi', text: firstName ? t('oi, {{nome}}! 👋', { nome: firstName }) : t('oi! 👋') },
+    { kind: 'bot', key: 'help', text: t('me conta, como posso te ajudar hoje?') },
     { kind: 'card', key: 'about' },
   ]
   const rows: Row[] = done ? intro : intro.slice(0, introShown)
@@ -1191,13 +1203,13 @@ export default function NiksChat() {
     if (r.kind === 'card') {
       return (
         <View key={r.key} style={[styles.card, { marginTop: mt }]}>
-          <Text style={styles.cardTitle} lineBreakStrategyIOS="push-out">O que a NIKS faz neste chat? Veja aqui os detalhes</Text>
+          <Text style={styles.cardTitle} lineBreakStrategyIOS="push-out">{t('O que a NIKS faz neste chat? Veja aqui os detalhes')}</Text>
           {aboutOpen && (
             <View style={{ marginTop: 12, gap: 8 }}>
               {ABOUT.map(ab => (
                 <View key={ab} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
                   <View style={styles.aboutDot} />
-                  <Text style={[styles.aboutText, { flex: 1 }]}>{ab}</Text>
+                  <Text style={[styles.aboutText, { flex: 1 }]}>{t(ab)}</Text>
                 </View>
               ))}
             </View>
@@ -1207,7 +1219,7 @@ export default function NiksChat() {
             onPress={() => { haptics.tap(); setAboutOpen(o => !o) }}
             style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}
           >
-            <Text style={styles.moreText}>{aboutOpen ? 'Ler menos' : 'Ler mais'}</Text>
+            <Text style={styles.moreText}>{aboutOpen ? t('Ler menos') : t('Ler mais')}</Text>
             <Svg width={16} height={16} viewBox="0 0 24 24" style={{ transform: [{ rotate: aboutOpen ? '180deg' : '0deg' }] }}>
               <Path d="M6 9l6 6 6-6" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
             </Svg>
@@ -1254,7 +1266,7 @@ export default function NiksChat() {
     )
   }
 
-  const dayLabel = done && conversationTime ? shortDay(conversationTime) : 'Hoje'
+  const dayLabel = done && conversationTime ? shortDay(conversationTime) : t('Hoje')
   const recentConvs = historyConversations.filter(c => c.recent)
   const olderConvs = historyConversations.filter(c => !c.recent)
 
@@ -1313,7 +1325,7 @@ export default function NiksChat() {
             onPress={() => { haptics.tap(); router.navigate('/home' as any) }}
             activeOpacity={0.85}
             style={[styles.barBtn, { left: 14 }]}
-            accessibilityLabel="Voltar"
+            accessibilityLabel={t('Voltar')}
           >
             <Svg width={24} height={24} viewBox="0 0 24 24">
               <Path d="M15.5 4.5 8 12l7.5 7.5" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
@@ -1323,7 +1335,7 @@ export default function NiksChat() {
             onPress={() => { haptics.tap(); loadHistory() }}
             activeOpacity={0.85}
             style={[styles.barBtn, { right: 14 }]}
-            accessibilityLabel="Conversas anteriores"
+            accessibilityLabel={t('Conversas anteriores')}
           >
             <Svg width={24} height={24} viewBox="0 0 24 24">
               <Path d="M3 12a9 9 0 1 0 2.64-6.36L3 8.3" fill="none" stroke={INK} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
@@ -1400,7 +1412,7 @@ export default function NiksChat() {
                   <Path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" fill={PINK} />
                 </Svg>
               </View>
-              <Text style={[styles.optText, { flex: 1, fontWeight: '600' }]} lineBreakStrategyIOS="push-out">{OPCAO_LOTE}</Text>
+              <Text style={[styles.optText, { flex: 1, fontWeight: '600' }]} lineBreakStrategyIOS="push-out">{t(OPCAO_LOTE)}</Text>
               <Svg width={14} height={14} viewBox="0 0 24 24">
                 <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
@@ -1419,7 +1431,7 @@ export default function NiksChat() {
                     <View style={[styles.radio, { borderWidth: 1.5, borderColor: '#A39A9F' }]}>
                       <View style={[styles.radioDot, { backgroundColor: 'transparent' }]} />
                     </View>
-                    <Text style={[styles.optText, { flex: 1 }]} lineBreakStrategyIOS="push-out">{q}</Text>
+                    <Text style={[styles.optText, { flex: 1 }]} lineBreakStrategyIOS="push-out">{t(q)}</Text>
                     <Svg width={14} height={14} viewBox="0 0 24 24">
                       <Path d="M9 6l6 6-6 6" fill="none" stroke={PINK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
                     </Svg>
@@ -1437,7 +1449,7 @@ export default function NiksChat() {
                   <View style={[styles.radio, on ? { borderWidth: 2, borderColor: PINK } : { borderWidth: 1.5, borderColor: '#A39A9F' }]}>
                     <View style={[styles.radioDot, { backgroundColor: on ? PINK : 'transparent' }]} />
                   </View>
-                  <Text style={styles.optText} lineBreakStrategyIOS="push-out">{q}</Text>
+                  <Text style={styles.optText} lineBreakStrategyIOS="push-out">{t(q)}</Text>
                 </TouchableOpacity>
               )
             })}
@@ -1447,7 +1459,7 @@ export default function NiksChat() {
                 <TextInput
                   value={freeText}
                   onChangeText={(t) => { setFreeText(t); if (t) setPick(null) }}
-                  placeholder="Ou escreva sua pergunta"
+                  placeholder={t('Ou escreva sua pergunta')}
                   placeholderTextColor="#9A9497"
                   style={styles.input}
                 />
@@ -1463,7 +1475,7 @@ export default function NiksChat() {
                 onPress={handleSubmit}
                 style={[styles.sendBtn, !canSubmit && { backgroundColor: '#FFD3E5', shadowOpacity: 0 }]}
               >
-                <Text style={styles.sendText}>Enviar</Text>
+                <Text style={styles.sendText}>{t('Enviar')}</Text>
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -1478,7 +1490,7 @@ export default function NiksChat() {
                 <TextInput
                   value={inputText}
                   onChangeText={setInputText}
-                  placeholder="Pergunte à NIKS"
+                  placeholder={t('Pergunte à NIKS')}
                   placeholderTextColor="#9A9497"
                   multiline
                   style={[styles.input, { maxHeight: 96, paddingTop: 9, paddingBottom: 9 }]}
@@ -1515,7 +1527,7 @@ export default function NiksChat() {
           colors={['#FCEAF1', '#FFFFFF']}
           style={{ height: insets.top + 56, paddingTop: insets.top + 6, paddingLeft: 20, paddingRight: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
         >
-          <Text style={styles.drawerTitle}>Conversas</Text>
+          <Text style={styles.drawerTitle}>{t('Conversas')}</Text>
           <TouchableOpacity onPress={() => { haptics.tap(); setHistoryVisible(false) }} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
             <Svg width={22} height={22} viewBox="0 0 24 24">
               <Path d="M6 6l12 12M18 6 6 18" fill="none" stroke={INK} strokeWidth={1.9} strokeLinecap="round" />
@@ -1527,19 +1539,19 @@ export default function NiksChat() {
             <Svg width={18} height={18} viewBox="0 0 24 24">
               <Path d="M12 5v14M5 12h14" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" />
             </Svg>
-            <Text style={styles.sendText}>Nova conversa</Text>
+            <Text style={styles.sendText}>{t('Nova conversa')}</Text>
           </TouchableOpacity>
         </View>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
           {historyLoading ? (
-            <Text style={[styles.histGroup, { textAlign: 'center' }]}>Carregando…</Text>
+            <Text style={[styles.histGroup, { textAlign: 'center' }]}>{t('Carregando…')}</Text>
           ) : historyConversations.length === 0 ? (
-            <Text style={[styles.histGroup, { textAlign: 'center' }]}>Nenhuma conversa ainda.</Text>
+            <Text style={[styles.histGroup, { textAlign: 'center' }]}>{t('Nenhuma conversa ainda.')}</Text>
           ) : (
             <>
-              {recentConvs.length > 0 && <Text style={styles.histGroup}>Esta semana</Text>}
+              {recentConvs.length > 0 && <Text style={styles.histGroup}>{t('Esta semana')}</Text>}
               {recentConvs.map(renderHistItem)}
-              {olderConvs.length > 0 && <Text style={styles.histGroup}>Anteriores</Text>}
+              {olderConvs.length > 0 && <Text style={styles.histGroup}>{t('Anteriores')}</Text>}
               {olderConvs.map(renderHistItem)}
             </>
           )}

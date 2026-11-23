@@ -50,6 +50,7 @@ import { voltar as voltarOu } from '../../lib/navegar';
 import { useGestoVoltar } from '../../hooks/useGestoVoltar';
 import { Gesture, GestureDetector, State, type GestureType } from 'react-native-gesture-handler';
 import { origemDe, type Origem } from '../../lib/origemZoom';
+import { t, emIngles, horaEn, MESES_CURTOS_EN } from '../../lib/i18n';
 
 const BG = '#F9F2F5';
 const INK = '#121212';
@@ -64,6 +65,7 @@ const MESES = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', '
 function quando(c: CheckinDetalhe): string {
   const [, m, d] = c.dia.split('-').map(Number);
   const h = new Date(c.hora_exibida);
+  if (emIngles) return `${MESES_CURTOS_EN[(m || 1) - 1]} ${d}, ${horaEn(h.getHours(), h.getMinutes())}`;
   const hora = `${h.getHours()}:${String(h.getMinutes()).padStart(2, '0')}`;
   return `${d} de ${MESES[(m || 1) - 1]}, ${hora} ${c.rotina === 'am' ? 'de manhã' : 'à noite'}`;
 }
@@ -97,12 +99,12 @@ type Topo = { insetTop: number; onVoltar: () => void; onMenu: (c: CheckinDetalhe
 function BotoesNaFoto({ topo, c }: { topo: Topo; c: CheckinDetalhe | null }) {
   return (
     <View style={[styles.botoesFoto, { top: topo.insetTop + 6 }]} pointerEvents="box-none">
-      <TouchableOpacity activeOpacity={0.7} onPress={topo.onVoltar} style={styles.vidro} accessibilityLabel="Voltar" hitSlop={6}>
+      <TouchableOpacity activeOpacity={0.7} onPress={topo.onVoltar} style={styles.vidro} accessibilityLabel={t('Voltar')} hitSlop={6}>
         <Icone d="m15 18-6-6 6-6" color="#fff" />
       </TouchableOpacity>
       {c && !c.voce ? (
         <Animated.View entering={FadeIn.duration(200)}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => topo.onMenu(c)} style={styles.vidro} accessibilityLabel="Mais opções" hitSlop={6}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => topo.onMenu(c)} style={styles.vidro} accessibilityLabel={t('Mais opções')} hitSlop={6}>
             <Pontos cor="#fff" />
           </TouchableOpacity>
         </Animated.View>
@@ -170,7 +172,7 @@ function Pagina({ id, largura, rm, onCarregou, topo, info }: { id: string; largu
     return (
       <View style={{ width: largura, minHeight: fotoH }}>
         <Animated.View style={[styles.pagina, { width: largura, minHeight: fotoH, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }, st]}>
-          <Text style={styles.indisponivel}>Este check-in não está mais disponível.</Text>
+          <Text style={styles.indisponivel}>{t('Este check-in não está mais disponível.')}</Text>
         </Animated.View>
         <BotoesNaFoto topo={{ ...topo, insetTop: topo.insetTop }} c={null} />
       </View>
@@ -194,7 +196,7 @@ function Pagina({ id, largura, rm, onCarregou, topo, info }: { id: string; largu
       <View style={styles.quem}>
         <FotoComMoldura nivel={c.autora.nivel} foto={c.autora.foto} nome={c.autora.nome} tamanho={44} pequena vazio="#F6D3E1" />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.nome} numberOfLines={1}>{c.voce ? 'Você' : c.autora.nome}</Text>
+          <Text style={styles.nome} numberOfLines={1}>{c.voce ? t('Você') : c.autora.nome}</Text>
           <Text style={styles.quando} numberOfLines={1}>{quando(c)}</Text>
         </View>
       </View>
@@ -206,7 +208,7 @@ function Pagina({ id, largura, rm, onCarregou, topo, info }: { id: string; largu
         </>
       ) : (
         <>
-          <Text style={styles.titulo}>{c.titulo}</Text>
+          <Text style={styles.titulo}>{/^Rotina da (manhã|noite)$/.test(c.titulo) ? t(c.titulo) : c.titulo}</Text>
           {!!c.descricao && <Text style={styles.descricao}>{c.descricao}</Text>}
         </>
       )}
@@ -463,14 +465,14 @@ function Tela({ params }: { params: Params }) {
     fecharFolha(() => {
       if (k === 'flag') {
         if (!c.grupo_id) return;
-        Alert.alert('Denunciar esta foto?', 'A equipe do NIKS vai analisar em até 24 horas.', [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Denunciar', style: 'destructive', onPress: () => { denunciar({ tipo: 'foto', grupo_id: c.grupo_id!, checkin_id: c.checkin_id }).then((r) => { if (r.ok) { Alert.alert('Recebemos sua denúncia. Essa foto ficou escondida enquanto revisamos.'); saiu(); } else Alert.alert('Não deu para denunciar agora', 'Tente de novo mais tarde.'); }).catch(() => {}); } },
+        Alert.alert(t('Denunciar esta foto?'), t('A equipe do NIKS vai analisar em até 24 horas.'), [
+          { text: t('Cancelar'), style: 'cancel' },
+          { text: t('Denunciar'), style: 'destructive', onPress: () => { denunciar({ tipo: 'foto', grupo_id: c.grupo_id!, checkin_id: c.checkin_id }).then((r) => { if (r.ok) { Alert.alert(t('Recebemos sua denúncia. Essa foto ficou escondida enquanto revisamos.')); saiu(); } else Alert.alert(t('Não deu para denunciar agora'), t('Tente de novo mais tarde.')); }).catch(() => {}); } },
         ]);
       } else {
-        Alert.alert(`Bloquear ${c.autora.nome}?`, 'Você deixa de ver as fotos e os avisos dela. Ela não é avisada.', [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Bloquear', style: 'destructive', onPress: () => { bloquear(c.user_id).then(saiu).catch(() => {}); } },
+        Alert.alert(t('Bloquear {{nome}}?', { nome: c.autora.nome }), t('Você deixa de ver as fotos e os avisos dela. Ela não é avisada.'), [
+          { text: t('Cancelar'), style: 'cancel' },
+          { text: t('Bloquear'), style: 'destructive', onPress: () => { bloquear(c.user_id).then(saiu).catch(() => {}); } },
         ]);
       }
     });
@@ -514,7 +516,7 @@ function Tela({ params }: { params: Params }) {
         ))}
         {!ids.length && (
           <View style={[styles.pagina, { width: W, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }]}>
-            <Text style={styles.indisponivel}>Este check-in não está mais disponível.</Text>
+            <Text style={styles.indisponivel}>{t('Este check-in não está mais disponível.')}</Text>
             <BotoesNaFoto topo={topo} c={null} />
           </View>
         )}
@@ -532,7 +534,7 @@ function Tela({ params }: { params: Params }) {
       {folha && (
         <>
           <Animated.View style={[StyleSheet.absoluteFill, styles.veu, veuSt]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => { haptics.tap(); fecharFolha(); }} accessibilityLabel="Fechar" />
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => { haptics.tap(); fecharFolha(); }} accessibilityLabel={t('Fechar')} />
           </Animated.View>
           <Animated.View onLayout={(e) => setFolhaH(e.nativeEvent.layout.height)} style={[styles.folha, { paddingBottom: insets.bottom + 16 }, folhaSt]}>
             <View style={styles.alca} />
@@ -540,16 +542,16 @@ function Tela({ params }: { params: Params }) {
               {!!atual?.grupo_id && (
                 <TouchableOpacity activeOpacity={0.7} onPress={() => acao('flag')} style={[styles.folhaItem, styles.folhaFio]}>
                   <Icone d="M4 22V4a1 1 0 0 1 1-1h12l-2 4 2 4H5" size={18} color={PINK} />
-                  <Text style={styles.folhaLabel}>Denunciar check-in</Text>
+                  <Text style={styles.folhaLabel}>{t('Denunciar check-in')}</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity activeOpacity={0.7} onPress={() => acao('block')} style={styles.folhaItem}>
                 <Icone d="M4.9 4.9l14.2 14.2M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z" size={18} color={PINK} />
-                <Text style={styles.folhaLabel} numberOfLines={1}>{`Bloquear ${atual?.autora.nome ?? ''}`}</Text>
+                <Text style={styles.folhaLabel} numberOfLines={1}>{t('Bloquear {{nome}}', { nome: atual?.autora.nome ?? '' })}</Text>
               </TouchableOpacity>
             </View>
             <TouchableOpacity activeOpacity={0.7} onPress={() => { haptics.tap(); fecharFolha(); }} style={styles.cancelar}>
-              <Text style={styles.cancelarT}>Cancelar</Text>
+              <Text style={styles.cancelarT}>{t('Cancelar')}</Text>
             </TouchableOpacity>
           </Animated.View>
         </>

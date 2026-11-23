@@ -1,4 +1,7 @@
 import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
+import { registrarAceiteSeContaNova } from '../../lib/aceiteTermos';
+import { assinaturaDeOutraConta, decidirSemAssinatura } from '../../lib/onboardingObrigatorio';
+import { carregarAcesso } from '../../lib/acesso';
 import { convidadaLigada } from '../../lib/gruposServidor';
 import { useState } from 'react';
 import {
@@ -15,6 +18,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { loginRevenueCat } from '../../lib/revenuecat';
 import { comTetoRc, confirmPremium } from '../../lib/subscriptionGate';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
+import { t } from '../../lib/i18n';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -39,22 +43,27 @@ export default function Login() {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
 
-  const routeAfterLogin = async (userId?: string) => {
+  const routeAfterLogin = async (userId?: string, user?: { id: string; created_at?: string } | null) => {
     // Garante que o RevenueCat está logado com o usuário que acabou de autenticar
     // ANTES de verificar a assinatura. Sem isso, getCustomerInfo() lê o customer
     // anônimo (o loginRevenueCat do _layout.tsx é fire-and-forget e pode não ter
     // completado) → isSubscribed false → usuário existente cai no paywall/signup.
     if (userId) await comTetoRc(loginRevenueCat(userId));
-    if (await confirmPremium({ label: 'login' })) {
+    // 1.64: premium só pelo aparelho (Apple ID com a assinatura de OUTRA conta, sem onboarding)
+    // não conta — segue a regra de quem não assina (`lib/onboardingObrigatorio.ts`).
+    if (await confirmPremium({ label: 'login' }) && !(userId && await assinaturaDeOutraConta(userId))) {
       router.replace('/(app)/home');
       return;
     }
-    // Com a convidada ligada, o portão decide: grupo, sem grupo ou paywall.
-    if (await convidadaLigada()) {
+    const conta = user ?? (userId ? { id: userId } : null);
+    // Convidada de grupo com acesso ativo: o guard do app abre o grupo, como antes.
+    if (conta && await convidadaLigada() && (await carregarAcesso(conta.id)) === 'convidada') {
       router.replace('/(app)/home');
       return;
     }
-    router.replace('/(onboarding)/paywall-soft');
+    // 1.64: foi convidada e perdeu o acesso → "sem grupo"; conta nova ou sem as respostas do
+    // onboarding → tela rosa e onboarding completo, já logada; o resto → paywall.
+    await decidirSemAssinatura(conta, router, 'login');
   };
 
   // Opções → campo de e-mail (só depois do toque em "Continuar com e-mail"), como no cadastro.
@@ -95,9 +104,9 @@ export default function Login() {
       const session = await signInWithEmail(email, password);
       if (session.user?.id) identify(session.user.id);
       track('user_logged_in', { method: 'email' });
-      await routeAfterLogin(session.user?.id);
+      await routeAfterLogin(session.user?.id, session.user);
     } catch (error: any) {
-      Alert.alert('Erro ao entrar', error?.message ?? 'Tente novamente.');
+      Alert.alert(t('Erro ao entrar'), error?.message ?? t('Tente novamente.'));
     } finally {
       setLocalLoading(false);
     }
@@ -108,10 +117,11 @@ export default function Login() {
     try {
       const session = await signInWithGoogle();
       if (session.user?.id) identify(session.user.id);
+      await registrarAceiteSeContaNova(session.user); // 1.64: "Entrar" que criou conta nova
       track('user_logged_in', { method: 'google' });
-      await routeAfterLogin(session.user?.id);
+      await routeAfterLogin(session.user?.id, session.user);
     } catch (error: any) {
-      Alert.alert('Erro', error?.message ?? 'Tente novamente.');
+      Alert.alert(t('Erro'), error?.message ?? t('Tente novamente.'));
     }
   };
 
@@ -131,10 +141,11 @@ export default function Login() {
       const data = await signInWithApple();
       if (!data) return;
       if (data.user?.id) identify(data.user.id);
+      await registrarAceiteSeContaNova(data.user as { id?: string; created_at?: string }); // 1.64: "Entrar" que criou conta nova
       track('user_logged_in', { method: 'apple' });
-      await routeAfterLogin(data.user?.id);
+      await routeAfterLogin(data.user?.id, data.user as { id: string; created_at?: string } | null);
     } catch (error: any) {
-      Alert.alert('Erro', error?.message ?? 'Tente novamente.');
+      Alert.alert(t('Erro'), error?.message ?? t('Tente novamente.'));
     }
   };
 
@@ -150,12 +161,12 @@ export default function Login() {
           {/* Título */}
           <View style={{ paddingHorizontal: 24 }}>
             <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink }}>
-              Bem-vinda de volta! Continue a sua jornada.
+              {t('Bem-vinda de volta! Continue a sua jornada.')}
             </Text>
             <Text style={{ marginTop: 12, fontSize: 17, lineHeight: 23, color: OB.sub }}>
-              {'Entre na sua conta no '}
+              {t('Entre na sua conta no ')}
               <Text style={{ fontWeight: '700', color: OB.ink }}>NIKS</Text>
-              {' para continuar de onde parou.'}
+              {t(' para continuar de onde parou.')}
             </Text>
           </View>
 
@@ -180,7 +191,7 @@ export default function Login() {
                         <Svg width={20} height={20} viewBox="0 0 24 24">
                           <Path d="M17.05 12.04c-.03-2.71 2.21-4.01 2.31-4.07-1.26-1.84-3.22-2.09-3.92-2.12-1.67-.17-3.26 1-4.11 1-.86 0-2.17-.98-3.57-.95-1.84.03-3.54 1.07-4.49 2.71-1.92 3.33-.49 8.25 1.38 10.96.91 1.32 2 2.8 3.4 2.75 1.37-.06 1.89-.88 3.54-.88 1.65 0 2.12.88 3.57.85 1.47-.03 2.4-1.35 3.3-2.68 1.04-1.54 1.47-3.04 1.49-3.12-.03-.01-2.87-1.1-2.9-4.36zM14.5 4.27c.75-.91 1.26-2.17 1.12-3.43-1.08.04-2.39.72-3.17 1.62-.7.8-1.31 2.08-1.15 3.32 1.21.09 2.45-.61 3.2-1.51z" fill="#FFFFFF" />
                         </Svg>
-                        <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>Continuar com a Apple</Text>
+                        <Text style={{ fontSize: 17, fontWeight: '600', color: '#FFFFFF' }}>{t('Continuar com a Apple')}</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -201,7 +212,7 @@ export default function Login() {
                         <Path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
                         <Path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
                       </Svg>
-                      <Text style={{ fontSize: 17, fontWeight: '600', color: OB.ink }}>Continuar com o Google</Text>
+                      <Text style={{ fontSize: 17, fontWeight: '600', color: OB.ink }}>{t('Continuar com o Google')}</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -210,16 +221,16 @@ export default function Login() {
                   activeOpacity={0.7}
                   style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text style={{ fontSize: 17, fontWeight: '600', color: OB.pink }}>Continuar com e-mail</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '600', color: OB.pink }}>{t('Continuar com e-mail')}</Text>
                 </TouchableOpacity>
               </>
             ) : (
               <>
                 <View>
-                  <Text style={fieldLabel}>Endereço de e-mail</Text>
+                  <Text style={fieldLabel}>{t('Endereço de e-mail')}</Text>
                   <View style={[field(focusedField === 'email'), { justifyContent: 'center' }]}>
                     <TextInput
-                      placeholder="seuemail@exemplo.com"
+                      placeholder={t('seuemail@exemplo.com')}
                       placeholderTextColor={OB.sub}
                       value={email}
                       onChangeText={handleEmailChange}
@@ -238,10 +249,10 @@ export default function Login() {
 
                 {step === 'password' && (
                   <View>
-                    <Text style={fieldLabel}>Sua senha</Text>
+                    <Text style={fieldLabel}>{t('Sua senha')}</Text>
                     <View style={[field(focusedField === 'password'), { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
                       <TextInput
-                        placeholder="Digite sua senha"
+                        placeholder={t('Digite sua senha')}
                         placeholderTextColor={OB.sub}
                         value={password}
                         onChangeText={setPassword}
@@ -264,7 +275,7 @@ export default function Login() {
                     </View>
                     <TouchableOpacity activeOpacity={0.7} style={{ alignSelf: 'flex-end', marginTop: 8 }}>
                       <Text style={{ fontSize: 15, fontWeight: '500', color: OB.pink }}>
-                        Esqueceu sua senha?
+                        {t('Esqueceu sua senha?')}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -277,14 +288,14 @@ export default function Login() {
                     <ActivityIndicator color="#FFFFFF" />
                   </View>
                 ) : (
-                  <ObPillButton label="Entrar" onPress={handleLogin} disabled={!passwordActive} style={wide} />
+                  <ObPillButton label={t('Entrar')} onPress={handleLogin} disabled={!passwordActive} style={wide} />
                 )}
                 <TouchableOpacity
                   onPress={fecharEmail}
                   activeOpacity={0.7}
                   style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Text style={{ fontSize: 16, color: OB.sub }}>Voltar para Apple e Google</Text>
+                  <Text style={{ fontSize: 16, color: OB.sub }}>{t('Voltar para Apple e Google')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -292,21 +303,21 @@ export default function Login() {
 
           {/* Termos */}
           <Text style={{ marginTop: 16, paddingHorizontal: 24, textAlign: 'center', fontSize: 13, lineHeight: 18, color: OB.sub }}>
-            {'Ao continuar, você concorda com nossos '}
+            {t('Ao continuar, você concorda com os ')}
             <Text
               onPress={() => { haptics.tap(); Linking.openURL(TERMOS_URL); }}
               style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
             >
-              Termos de Uso
+              {t('Termos de Uso')}
             </Text>
-            {' e '}
+            {t(' e a ')}
             <Text
               onPress={() => { haptics.tap(); Linking.openURL(PRIVACY_URL); }}
               style={{ color: OB.ink, fontWeight: '600', textDecorationLine: 'underline' }}
             >
-              Política de Privacidade
+              {t('Política de Privacidade')}
             </Text>
-            {'.'}
+            {t('. Não toleramos conteúdo ofensivo nem abuso.')}
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

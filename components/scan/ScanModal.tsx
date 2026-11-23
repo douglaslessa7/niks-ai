@@ -12,6 +12,7 @@ import { AIConsentModal } from '../ui/AIConsentModal';
 import { useAIConsent } from '../../hooks/useAIConsent';
 import { useAppStore } from '../../store/onboarding';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 
 interface ScanModalProps {
   isOpen: boolean;
@@ -125,13 +126,13 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
           {/* Cabeçalho centralizado */}
           <View style={{ alignItems: 'center', paddingHorizontal: 4 }}>
             <Text style={{ fontFamily: fBold, fontSize: 11, letterSpacing: 2.4, color: CORAL, textTransform: 'uppercase' }}>
-              Novo scan
+              {t('Novo scan')}
             </Text>
             <Text style={{ fontFamily: fXBold, fontSize: 26, color: INK, letterSpacing: -1, marginTop: 8, textAlign: 'center' }}>
-              Escolha o tipo de scan
+              {t('Escolha o tipo de scan')}
             </Text>
             <Text style={{ fontFamily: fMed, fontSize: 14, color: INK_MUTE, letterSpacing: -0.3, marginTop: 8, textAlign: 'center' }}>
-              Selecione o que você deseja analisar
+              {t('Selecione o que você deseja analisar')}
             </Text>
           </View>
 
@@ -152,14 +153,14 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
               </View>
 
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontFamily: fXBold, fontSize: 18, color: INK, letterSpacing: -0.5 }}>Escanear produto</Text>
+                <Text style={{ fontFamily: fXBold, fontSize: 18, color: INK, letterSpacing: -0.5 }}>{t('Escanear produto')}</Text>
                 {/* Badge "mais usado" */}
                 <View style={{ flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 5, marginTop: 6, paddingVertical: 3, paddingLeft: 7, paddingRight: 9, borderRadius: 100, backgroundColor: CORAL_WASH }}>
                   <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: CORAL }} />
-                  <Text style={{ fontFamily: fBold, fontSize: 11, color: CORAL, letterSpacing: -0.1 }}>mais usado</Text>
+                  <Text style={{ fontFamily: fBold, fontSize: 11, color: CORAL, letterSpacing: -0.1 }}>{t('mais usado')}</Text>
                 </View>
                 <Text style={{ fontFamily: fMed, fontSize: 13, color: INK_MUTE, letterSpacing: -0.2, marginTop: 6, lineHeight: 18 }}>
-                  Descubra se um produto vai funcionar pra você
+                  {t('Descubra se um produto vai funcionar pra você')}
                 </Text>
               </View>
 
@@ -181,9 +182,9 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
               </View>
 
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontFamily: fXBold, fontSize: 18, color: INK, letterSpacing: -0.5 }}>Escanear rosto</Text>
+                <Text style={{ fontFamily: fXBold, fontSize: 18, color: INK, letterSpacing: -0.5 }}>{t('Escanear rosto')}</Text>
                 <Text style={{ fontFamily: fMed, fontSize: 13, color: INK_MUTE, letterSpacing: -0.2, marginTop: 6, lineHeight: 18 }}>
-                  Faça uma análise facial completa
+                  {t('Faça uma análise facial completa')}
                 </Text>
               </View>
 
@@ -200,7 +201,7 @@ export function ScanModal({ isOpen, onClose }: ScanModalProps) {
               style={{ paddingTop: 16, paddingBottom: 4, alignItems: 'center' }}
             >
               <Text style={{ fontFamily: fSemi, fontSize: 15, color: INK_MUTE, letterSpacing: -0.2 }}>
-                Cancelar
+                {t('Cancelar')}
               </Text>
             </TouchableOpacity>
           </View>

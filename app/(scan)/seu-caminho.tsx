@@ -14,6 +14,8 @@ import { OB, ObPillButton, ObScreen, useObFrame } from '../../components/onboard
 import { caminhoDaCarta, cartaDoOnboarding } from '../../lib/cartaOnboarding';
 import { useObPassoVisto } from '../../components/onboarding/passo';
 import { OB_STEPS } from '../../components/onboarding/kit';
+import { t } from '../../lib/i18n';
+import { decidirAvaliacaoOnboarding, executarAvaliacaoOnboarding } from '../../lib/avaliacaoOnboarding';
 
 // Onboarding — "Seu caminho" (04/nov/2026): depois da carta revelada ("Quero resolver
 // isso") e da "Calma, <nome>.", antes do resultado do scan. Réplica da trilha do Tapfit ("Como funciona")
@@ -128,6 +130,19 @@ export default function SeuCaminho() {
     const sai = navigation.addListener('transitionStart' as never, () => { clearTimeout(t); setVisivel(true); });
     return () => { clearTimeout(t); sai(); };
   }, [navigation]);
+
+  // Avaliação da App Store (1.64, teste do produto — `lib/avaliacaoOnboarding.ts`): a decisão
+  // (chave do servidor + país) começa já na montagem; o pop-up nativo só abre quando a animação
+  // termina (destaque em 1430 + 420 ms → 2 s depois de `visivel`) e se ela ainda estiver aqui.
+  const [decisaoAvaliacao] = useState(() => decidirAvaliacaoOnboarding());
+  useEffect(() => {
+    if (!visivel) return;
+    let ativa = true;
+    const t = setTimeout(() => {
+      decisaoAvaliacao.then((a) => { if (ativa) executarAvaliacaoOnboarding(a); });
+    }, 2000);
+    return () => { ativa = false; clearTimeout(t); };
+  }, [visivel, decisaoAvaliacao]);
 
   // Sem voltar (como a carta): o voltar do Android não faz nada; o gesto está desligado
   // no `(scan)/_layout`.
@@ -266,7 +281,7 @@ export default function SeuCaminho() {
   return (
     <ObScreen>
       <Text style={{ position: 'absolute', left: 0, right: 0, top: y(74), textAlign: 'center', fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 1.4, color: OB.sub }}>
-        SEU CAMINHO
+        {t('SEU CAMINHO')}
       </Text>
 
       <View style={{ flex: 1, paddingTop: y(126), paddingHorizontal: 24, paddingBottom: buttonBottom + 56 + 48 }}>
@@ -281,7 +296,7 @@ export default function SeuCaminho() {
           </Text>
         </Animated.View>
         <Animated.Text style={[{ marginTop: 10, fontSize: 17, lineHeight: 23, color: OB.sub }, subStyle]}>
-          Montamos cada passo.
+          {t('Montamos cada passo.')}
         </Animated.Text>
 
         {/* A trilha ocupa o espaço que sobra (encolhe em tela baixa, sem rolagem). */}
@@ -366,9 +381,9 @@ export default function SeuCaminho() {
       </View>
 
       <Text style={{ position: 'absolute', left: 24, right: 24, bottom: buttonBottom + 56 + 14, textAlign: 'center', fontSize: 13, lineHeight: 17, color: '#B5AEB1' }}>
-        Meta estimada. Os resultados podem variar.
+        {t('Meta estimada. Os resultados podem variar.')}
       </Text>
-      <ObPillButton label="Quero chegar lá" width={telaW - 48} onPress={continuar} bottom={buttonBottom}
+      <ObPillButton label={t('Quero chegar lá')} width={telaW - 48} onPress={continuar} bottom={buttonBottom}
         style={{ height: 56, borderRadius: 28 }} />
     </ObScreen>
   );

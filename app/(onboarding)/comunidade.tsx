@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import Svg, { Path } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
+import { t } from '../../lib/i18n';
 import {
   OB, ObHeader, ObPillButton, OB_BOTAO_H, ObScreen, ObSubtitle, ObTitle, useObFrame,
 } from '../../components/onboarding/kit';
@@ -49,8 +50,8 @@ export default function Comunidade() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: y(118), paddingBottom: buttonBottom + OB_BOTAO_H + 24 }}
       >
-        <ObTitle>Mais de 200 mil mulheres</ObTitle>
-        <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>estão usando o NIKS no mundo todo.</ObSubtitle>
+        <ObTitle>{t('Mais de 200 mil mulheres')}</ObTitle>
+        <ObSubtitle style={{ marginTop: 9, marginHorizontal: 30 }}>{t('estão usando o NIKS no mundo todo.')}</ObSubtitle>
         <View style={{ marginTop: 22, marginHorizontal: 17, gap: 8 }}>
           {DEPOIMENTOS.map((d, i) => <CardDepoimento key={i} d={d} />)}
         </View>
@@ -64,9 +65,9 @@ export default function Comunidade() {
           fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 1.4, color: OB.sub,
         }}
       >
-        COMUNIDADE
+        {t('COMUNIDADE')}
       </Text>
-      <ObPillButton label="Montar minha rotina" width={232} bottom={buttonBottom} onPress={montar} />
+      <ObPillButton label={t('Montar minha rotina')} width={232} bottom={buttonBottom} onPress={montar} />
     </ObScreen>
   );
 }
@@ -96,7 +97,7 @@ function CardDepoimento({ d }: { d: Depoimento }) {
 
 function Estrelas({ n }: { n: number }) {
   return (
-    <View accessible accessibilityLabel={`${n} de 5 estrelas`} style={{ flexDirection: 'row', gap: 2 }}>
+    <View accessible accessibilityLabel={t('{{n}} de 5 estrelas', { n })} style={{ flexDirection: 'row', gap: 2 }}>
       {[0, 1, 2, 3, 4].map((i) => (
         <Svg key={i} width={14} height={14} viewBox="0 0 24 24">
           <Path d={ESTRELA} fill={i < n ? OB.pink : OB.track} />

@@ -1,9 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Revisão do scan em lote — réplica do Claude Design (`NiksLoteFlo`, tela 55e).
 // "Seus produtos · N de 7 · ainda cabem X": cards em 2 colunas (foto da frente),
-//   · com rótulo → "✓ Frente e rótulo";
-//   · sem rótulo → selo "Sem rótulo" + "A análise fica menos precisa." + "Adicionar
-//     rótulo" (abre a câmera direto no rótulo daquele produto);
+//   · só "Produto N" (decisão de 18/nov/2026: ela fotografa só a frente — sem rótulo,
+//     sem "Adicionar rótulo"; a lista de ingredientes vem da tabela no servidor);
 //   · X remove na hora; "Adicionar produto" (tracejado) volta à câmera (até 7).
 // "Montar minha rotina" → envia as imagens para o bucket `rotina-lotes` e começa o lote
 // no servidor (lib/rotinaLotes) → "Montando sua rotina". Teto do dia → aviso, e as
@@ -22,6 +21,7 @@ import { BUCKET_LOTES, MAX_PRODUTOS_LOTE, enviarLote, useLote } from '../../lib/
 import { iniciarLote, TetoDoDiaError } from '../../lib/rotinaLotes';
 import { supabase } from '../../lib/supabase';
 import VoltarPelaBorda from '../../components/VoltarPelaBorda';
+import { t } from '../../lib/i18n';
 
 const INK = '#121212';
 const PINK = '#FF5EA8';
@@ -54,11 +54,11 @@ export default function LoteRevisao() {
     haptics.tap();
     if (!count) { router.dismissAll(); return; }
     Alert.alert(
-      'Sair do scan?',
-      `Você vai perder ${count === 1 ? 'o produto fotografado' : `os ${count} produtos fotografados`}.`,
+      t('Sair do scan?'),
+      count === 1 ? t('Você vai perder o produto fotografado.') : t('Você vai perder os {{n}} produtos fotografados.', { n: count }),
       [
-        { text: 'Continuar', style: 'cancel' },
-        { text: 'Sair', style: 'destructive', onPress: () => { limpar(); router.dismissAll(); } },
+        { text: t('Continuar'), style: 'cancel' },
+        { text: t('Sair'), style: 'destructive', onPress: () => { limpar(); router.dismissAll(); } },
       ],
     );
   };
@@ -81,9 +81,9 @@ export default function LoteRevisao() {
         // As fotos não vão ser usadas: sai do bucket (com as frentes ao lado).
         const todas = enviados.flatMap((c) => [c, c.replace(/\.jpg$/, '-frente.jpg')]);
         if (todas.length) void supabase.storage.from(BUCKET_LOTES).remove(todas);
-        Alert.alert('Você já montou uma rotina hoje', 'Dá para montar uma por dia. Tente de novo amanhã.');
+        Alert.alert(t('Você já montou uma rotina hoje'), t('Dá para montar uma por dia. Tente de novo amanhã.'));
       } else {
-        Alert.alert('Não deu para montar sua rotina', 'Verifique sua conexão e tente de novo.');
+        Alert.alert(t('Não deu para montar sua rotina'), t('Verifique sua conexão e tente de novo.'));
       }
     } finally {
       setEnvio(false);
@@ -101,14 +101,14 @@ export default function LoteRevisao() {
       />
       <ScrollView contentContainerStyle={{ paddingTop: 54, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
         <View style={{ height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity onPress={sair} activeOpacity={0.85} accessibilityLabel="Voltar" style={st.voltar}>
+          <TouchableOpacity onPress={sair} activeOpacity={0.85} accessibilityLabel={t('Voltar')} style={st.voltar}>
             <Svg width={16} height={16} viewBox="0 0 24 24"><Path d="M15 6l-6 6 6 6" fill="none" stroke={INK} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" /></Svg>
           </TouchableOpacity>
         </View>
         <View style={{ marginTop: 12, paddingHorizontal: 20, gap: 4 }}>
-          <Text style={st.titulo}>Seus produtos</Text>
+          <Text style={st.titulo}>{t('Seus produtos')}</Text>
           <Text style={st.sub}>
-            {count >= MAX_PRODUTOS_LOTE ? `${MAX_PRODUTOS_LOTE} de ${MAX_PRODUTOS_LOTE} · você chegou no limite` : `${count} de ${MAX_PRODUTOS_LOTE} · ainda cabem ${MAX_PRODUTOS_LOTE - count}`}
+            {count >= MAX_PRODUTOS_LOTE ? t('{{max}} de {{max}} · você chegou no limite', { max: MAX_PRODUTOS_LOTE }) : t('{{n}} de {{max}} · ainda cabem {{resto}}', { n: count, max: MAX_PRODUTOS_LOTE, resto: MAX_PRODUTOS_LOTE - count })}
           </Text>
         </View>
 
@@ -121,31 +121,14 @@ export default function LoteRevisao() {
                 <TouchableOpacity
                   onPress={() => { haptics.tap(); remover(p.id); }}
                   activeOpacity={0.85}
-                  accessibilityLabel={`Remover o produto ${i + 1}`}
+                  accessibilityLabel={t('Remover o produto {{n}}', { n: i + 1 })}
                   style={st.remover}
                 >
                   <Svg width={11} height={11} viewBox="0 0 24 24"><Path d="M6 6l12 12M18 6L6 18" fill="none" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" /></Svg>
                 </TouchableOpacity>
               </View>
               <View style={{ paddingHorizontal: 4, paddingBottom: 4, gap: 4 }}>
-                <Text style={st.produtoN}>Produto {i + 1}</Text>
-                {p.rotuloUri ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <Svg width={13} height={13} viewBox="0 0 24 24"><Path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke={PINK} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-                    <Text style={{ fontSize: 13, color: MUTED }}>Frente e rótulo</Text>
-                  </View>
-                ) : (
-                  <>
-                    <View style={st.semRotulo}><Text style={st.semRotuloTxt}>Sem rótulo</Text></View>
-                    <Text style={{ fontSize: 13, lineHeight: 17, color: MUTED }}>A análise fica menos precisa.</Text>
-                    <TouchableOpacity
-                      onPress={() => { haptics.tap(); router.push({ pathname: '/(scan)/lote-camera', params: { rotuloDe: p.id } } as any); }}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={st.addRotulo}>Adicionar rótulo</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+                <Text style={st.produtoN}>{t('Produto {{n}}', { n: i + 1 })}</Text>
               </View>
             </View>
           ))}
@@ -154,7 +137,7 @@ export default function LoteRevisao() {
               <View style={st.adicionarCirculo}>
                 <Svg width={18} height={18} viewBox="0 0 24 24"><Path d="M12 5v14M5 12h14" fill="none" stroke={PINK_TEXT} strokeWidth={2.4} strokeLinecap="round" /></Svg>
               </View>
-              <Text style={st.adicionarTxt}>Adicionar produto</Text>
+              <Text style={st.adicionarTxt}>{t('Adicionar produto')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -168,7 +151,7 @@ export default function LoteRevisao() {
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 104 }}
       />
       <TouchableOpacity onPress={montar} disabled={!count || envio} activeOpacity={0.85} style={[st.montar, { opacity: count ? 1 : 0.4 }]}>
-        {envio ? <ActivityIndicator color="#FFFFFF" /> : <Text style={st.montarTxt}>Montar minha rotina</Text>}
+        {envio ? <ActivityIndicator color="#FFFFFF" /> : <Text style={st.montarTxt}>{t('Montar minha rotina')}</Text>}
       </TouchableOpacity>
     </View>
     </VoltarPelaBorda>
@@ -189,9 +172,6 @@ const st = {
   fotoBox: { height: 84, borderRadius: 11, alignItems: 'center' as const, justifyContent: 'center' as const },
   remover: { position: 'absolute' as const, top: 6, right: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(18,18,18,0.38)', alignItems: 'center' as const, justifyContent: 'center' as const },
   produtoN: { fontSize: 15, fontWeight: '600' as const, letterSpacing: -0.3, color: INK },
-  semRotulo: { alignSelf: 'flex-start' as const, height: 22, justifyContent: 'center' as const, paddingHorizontal: 9, borderRadius: 100, backgroundColor: '#FFF1DC' },
-  semRotuloTxt: { fontSize: 12, fontWeight: '600' as const, color: '#9A5300' },
-  addRotulo: { fontSize: 14, fontWeight: '600' as const, letterSpacing: -0.2, color: PINK_TEXT },
   adicionar: {
     height: 134, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed' as const, borderColor: '#F4B5CF', backgroundColor: 'rgba(255,255,255,0.5)',
     alignItems: 'center' as const, justifyContent: 'center' as const, gap: 8,
