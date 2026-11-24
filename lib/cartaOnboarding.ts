@@ -22,25 +22,15 @@ export const CARTA_IDADE_NO_ONBOARDING = false;
  *  houver a comparação real com a média das usuárias, troque para `real: true` com o número
  *  medido: o caminho muda sozinho para "De N% para 0% acima da média".
  *  (Objeto, e não constantes soltas, para os testes trocarem em memória pelo depurador.) */
-// ⚠️ PROVISÓRIO — NÃO PODE IR AO AR. O 40% é fixo só para teste (06/nov/2026); antes de publicar,
-// trocar pela comparação real com as usuárias ou tirar o número (ver README, "Análise de pele só
-// depois da compra").
-// 23/nov/2026 (decisão do produto): SEM número na tela. A carta diz "Seu scan mostrou [problema]
-// acima do ideal para a sua pele." `numero` 0 só marca a carta como revelada (nada é exibido).
-export const CARTA_ALERTA: { numero: number; real: boolean } = { numero: 0, real: false };
+// 1.64 (2), decisão do produto (24/nov/2026): o 40% VOLTA à carta (era o da 1.62/1.63; a 1.64 (1)
+// tinha tirado). Continua FIXO, não vem do scan. Só a carta mostra o número: o "Seu caminho", a
+// tela final e as boas-vindas seguem SEM número (`real: false`).
+export const CARTA_ALERTA: { numero: number; real: boolean } = { numero: 40, real: false };
 
 /** A Carta 1, notícia boa: "Você tem menos [problema] do que 30% das usuárias."
- *  ⚠️ PROVISÓRIO — NÃO PODE IR AO AR. O 30% é fixo só para teste (06/nov/2026, pedido do
- *  produto); não vem de dado nenhum. Antes de publicar, trocar pelo número real ou tirar. */
-// 23/nov/2026: SEM número. A carta diz "[ponto forte] é um dos pontos fortes da sua pele."
-export const CARTA_PONTO_FORTE: { numero: number } = { numero: 0 };
-
-/** O problema que ela quase não tem, dito como qualidade ("Tom uniforme", não "manchas"). */
-const PONTO_FORTE_NOME: Record<ProblemaId, string> = {
-  acne: 'Pele livre de acne', manchas: 'Tom uniforme', cravos: 'Poros limpos', oleosidade: 'Oleosidade equilibrada',
-  rugas: 'Pele firme', poros: 'Poros discretos', olheiras: 'Olhar descansado', ressecamento: 'Pele hidratada',
-  textura: 'Textura lisa',
-};
+ *  30% FIXO, não vem de dado nenhum. 1.64 (2), decisão do produto (24/nov/2026): volta à
+ *  carta, com o nome do PROBLEMA ("menos rugas"), como na 1.62/1.63. */
+export const CARTA_PONTO_FORTE: { numero: number } = { numero: 30 };
 
 /** A Carta 1 (o ponto forte). null = pular a Carta 1 (nenhum problema não marcado com
  *  intensidade 0 ou 1, ou a análise não avaliou os outros problemas). Nunca é um problema
@@ -52,7 +42,7 @@ export function pontoForteDoOnboarding(
 ): PontoForteOnboarding | null {
   const alerta = escolherProblema(rapida, o.concerns);
   const p = escolherPontoForte(rapida, o.concerns, alerta?.problema ?? null);
-  return p ? { problema: p.problema, nome: t(PONTO_FORTE_NOME[p.problema] ?? NOME_PROBLEMA[p.problema]), numero: CARTA_PONTO_FORTE.numero } : null;
+  return p ? { problema: p.problema, nome: t(NOME_PROBLEMA[p.problema]), numero: CARTA_PONTO_FORTE.numero } : null;
 }
 
 /** Versão SEM número, pronta e DESLIGADA (06/nov/2026, pedido do produto, "para trocar em

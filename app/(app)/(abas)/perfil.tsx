@@ -215,7 +215,9 @@ export default function Perfil() {
     haptics.warning();
     Alert.alert(
       t('Apagar minha conta'),
-      t('Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.'),
+      // 1.64 (2): apagar a conta não cancela a assinatura da Apple (14 assinaturas ficaram
+      // pagas sem conta, 24/nov/2026). Só texto: o cancelamento é dela, nos Ajustes.
+      t('Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.\n\nApagar a conta não cancela a sua assinatura da Apple. Para parar a cobrança, cancele em Ajustes do iPhone › seu nome › Assinaturas › NIKS.'),
       [
         { text: t('Cancelar'), style: 'cancel' },
         {

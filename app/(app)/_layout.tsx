@@ -24,7 +24,7 @@ import AvisoCadeado from '../../components/trava/AvisoCadeado';
 import { Lock } from 'lucide-react-native';
 import { vincularAssinatura } from '../../lib/assinaturaServidor';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
-import { assinaturaDeOutraConta, decidirSemAssinatura } from '../../lib/onboardingObrigatorio';
+import { decidirSemAssinatura } from '../../lib/onboardingObrigatorio';
 import { useAppStore } from '../../store/onboarding';
 import NameCapture from '../../components/onboarding/NameCapture';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
@@ -382,9 +382,12 @@ export default function AppLayout() {
       // Guard de assinatura — fail closed: resposta negativa ou nenhuma confirmação vai para o
       // paywall. Se o RevenueCat falhar ou não responder, `confirmPremium` confere no Superwall
       // e no servidor antes de negar.
-      // 1.64: premium só pelo aparelho (Apple ID com a assinatura de OUTRA conta, servidor diz
-      // que esta não assina, sem onboarding) segue a regra de quem não assina.
-      const premium = await confirmPremium({ label: 'portao' }) && !(await assinaturaDeOutraConta(session.user.id));
+      // 1.64 (2): assinante pelo aparelho entra, com ou sem onboarding (decisão do produto). A
+      // compra de OUTRA conta já é barrada dentro do `confirmPremium` (prova da Apple →
+      // `outraConta`). A 1.64 (1) também mandava ao onboarding quem paga com uma compra ainda
+      // sem conta no servidor (130 assinaturas assim em 23/nov) — ex.: comprou no onboarding e
+      // entrou com outro login.
+      const premium = await confirmPremium({ label: 'portao' });
       if (!premium) {
         // Parte B: convidada abre sempre no grupo; sem resposta e sem histórico, paywall.
         const estado = await carregarAcesso(session.user.id);

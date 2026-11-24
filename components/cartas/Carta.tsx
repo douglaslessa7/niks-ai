@@ -395,22 +395,41 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
       </>
     );
   } else if (v.k === 'alerta') {
-    // Carta de alerta (sem número desde 23/nov/2026). Mesmo fundo, holo e faíscas da carta da idade.
+    // "Você tem" · "40%" (o % menor, na mesma linha de base) · "mais [problema]" · pílula
+    // "do que a usuária padrão" (06/nov/2026; volta na 1.64 (2), decisão do produto de 24/nov —
+    // a 1.64 (1) dizia "Seu scan mostrou [problema] acima do ideal"). Mesmo fundo, holo e
+    // faíscas da carta da idade.
     // `semNumero` (desligada): "Encontramos sinais de" · [problema] grande · pílula com a região.
-    // 23/nov/2026: sem número — "Seu scan mostrou" · [problema] grande · "acima do ideal para a sua pele".
-    const fraseBaixo = v.semNumero ? v.regiaoTexto ?? null : t('acima do ideal para a sua pele');
+    const fraseBaixo = v.semNumero ? v.regiaoTexto ?? null : t('do que a usuária padrão');
     const larg = wi - 2 * X(MARGEM_OB);
     corpo = (
       <>
         <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,255,255,0.95), rgba(255,190,192,0.35) 60%, rgba(255,190,192,0))' }} />
         <View style={{ position: 'absolute', left: X(MARGEM_OB), right: X(MARGEM_OB), top: Y(20), bottom: Y(20), alignItems: 'center', justifyContent: 'center' }}>
           <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
-            {v.semNumero ? t('Encontramos sinais de') : t('Seu scan mostrou')}
+            {v.semNumero ? t('Encontramos sinais de') : t('Você tem')}
           </Text>
-          <View style={{ alignSelf: 'stretch', marginTop: 8 * s }}>
-            <TextoPorPalavra texto={v.problema} larg={larg} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
-              style={{ fontWeight: '800', letterSpacing: -1 * s, color: VERMELHO_ALERTA }} />
-          </View>
+          {v.semNumero ? (
+            <View style={{ alignSelf: 'stretch', marginTop: 8 * s }}>
+              <TextoPorPalavra texto={v.problema} larg={larg} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
+                style={{ fontWeight: '800', letterSpacing: -1 * s, color: VERMELHO_ALERTA }} />
+            </View>
+          ) : (
+            <>
+              <View style={{ marginTop: 4 * s, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' }}>
+                {v.numero != null
+                  ? <Contador alvo={v.numero} contar={!!v.contar} style={{ fontSize: 96 * s, lineHeight: 102 * s, fontWeight: '800', letterSpacing: -3 * s, color: VERMELHO_ALERTA, fontVariant: ['tabular-nums'] }} />
+                  : <Text style={{ fontSize: 96 * s, lineHeight: 102 * s }}> </Text>}
+                {v.numero != null && (
+                  <Text style={{ marginLeft: 2 * s, fontSize: 40 * s, lineHeight: 44 * s, fontWeight: '800', color: VERMELHO_ALERTA }}>%</Text>
+                )}
+              </View>
+              <View style={{ alignSelf: 'stretch' }}>
+                <TextoPorPalavra texto={t('mais {{problema}}', { problema: v.problema })} larg={larg} max={21 * s} K={K_BOLD} minUmaLinha={17 * s}
+                  style={{ fontWeight: '700', letterSpacing: -0.4 * s, color: INK }} />
+              </View>
+            </>
+          )}
           {!!fraseBaixo && (
             <View style={[pilulaOb(s), { backgroundColor: VERMELHO_ALERTA, boxShadow: `0px ${4 * s}px ${10 * s}px rgba(200,30,54,0.28)` }]}>
               <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{fraseBaixo}</Text>
@@ -420,8 +439,10 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
       </>
     );
   } else if (v.k === 'pontoForte') {
-    // Carta 1, a notícia boa (sem número desde 23/nov/2026). Mesmo fundo, holo e faíscas da carta de
-    // alerta (as duas cartas do onboarding são da mesma família).
+    // "Você tem" · "menos" · [problema] grande em rosa · pílula "do que N% das usuárias" (volta na
+    // 1.64 (2), decisão do produto de 24/nov — a 1.64 (1) dizia "[ponto forte] é um dos pontos
+    // fortes da sua pele"). Mesmo fundo, holo e faíscas da carta de alerta (as duas cartas do
+    // onboarding são da mesma família).
     corpo = (
       <>
         <Holo w={wi} h={hi} parado={parado} />
@@ -429,13 +450,16 @@ function CartaBase({ v, w, h: hProp, pontos, selo, semSombra, faiscasFora = true
         <Faisca i={5} parado={parado} size={13 * s} color="#FFFFFF" style={{ right: X(24), top: Y(150) }} />
         <View style={{ position: 'absolute', left: (wi - 180 * s) / 2, top: hi * 0.4 - 90 * s, width: 180 * s, height: 180 * s, borderRadius: 90 * s, experimental_backgroundImage: 'radial-gradient(closest-side, rgba(255,250,240,0.95), rgba(255,200,150,0.35) 60%, rgba(255,200,150,0))' }} />
         <View style={{ position: 'absolute', left: X(MARGEM_OB), right: X(MARGEM_OB), top: Y(20), bottom: Y(20), alignItems: 'center', justifyContent: 'center' }}>
-          {/* 23/nov/2026: sem número — [ponto forte] grande · "é um dos pontos fortes da sua pele". */}
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ alignSelf: 'stretch', fontSize: 16 * s, lineHeight: 20 * s, fontWeight: '600', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>
+            {t('Você tem')}
+          </Text>
+          <Text style={{ marginTop: 4 * s, fontSize: 20 * s, lineHeight: 25 * s, fontWeight: '700', letterSpacing: -0.4 * s, color: INK, textAlign: 'center' }}>{t('menos')}</Text>
           <View style={{ alignSelf: 'stretch', marginTop: 4 * s }}>
             <TextoPorPalavra texto={v.problema} larg={wi - 2 * X(MARGEM_OB)} max={38 * s} K={K_HEAVY} minUmaLinha={30 * s}
               style={{ fontWeight: '800', letterSpacing: -1 * s, color: PINK }} />
           </View>
           <View style={[pilulaOb(s), { opacity: v.numero != null ? 1 : 0, backgroundColor: PINK, boxShadow: `0px ${4 * s}px ${10 * s}px rgba(240,140,100,0.25)` }]}>
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{t('é um dos pontos fortes da sua pele')}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={textoPilulaOb(s)}>{t('do que {{n}}% das usuárias', { n: v.numero ?? 0 })}</Text>
           </View>
         </View>
       </>

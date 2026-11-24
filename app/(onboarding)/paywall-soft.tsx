@@ -321,10 +321,12 @@ export default function PaywallSoft() {
     setPergunta(false);
     await confirmarESeguir('restored');
   };
+  // 1.64 (2): "Agora não" volta para a pergunta. Antes chamava o paywall, que o Superwall não
+  // mostra para quem já assina no Apple ID (`userIsSubscribed`) — ela caía em "Não conseguimos
+  // carregar agora", sem saída. Com a assinatura ativa, o caminho é usá-la nesta conta.
   const recusarAssinatura = () => {
     track('assinatura_pergunta_recusou');
-    setPergunta(false);
-    void present(placementBase(), 'recusou_usar_assinatura');
+    haptics.warning();
   };
 
   const tentarDeNovo = () => {

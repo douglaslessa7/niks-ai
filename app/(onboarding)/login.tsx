@@ -1,6 +1,6 @@
 import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
 import { registrarAceiteSeContaNova } from '../../lib/aceiteTermos';
-import { assinaturaDeOutraConta, decidirSemAssinatura } from '../../lib/onboardingObrigatorio';
+import { decidirSemAssinatura } from '../../lib/onboardingObrigatorio';
 import { carregarAcesso } from '../../lib/acesso';
 import { convidadaLigada } from '../../lib/gruposServidor';
 import { useState } from 'react';
@@ -49,9 +49,9 @@ export default function Login() {
     // anônimo (o loginRevenueCat do _layout.tsx é fire-and-forget e pode não ter
     // completado) → isSubscribed false → usuário existente cai no paywall/signup.
     if (userId) await comTetoRc(loginRevenueCat(userId));
-    // 1.64: premium só pelo aparelho (Apple ID com a assinatura de OUTRA conta, sem onboarding)
-    // não conta — segue a regra de quem não assina (`lib/onboardingObrigatorio.ts`).
-    if (await confirmPremium({ label: 'login' }) && !(userId && await assinaturaDeOutraConta(userId))) {
+    // 1.64 (2): assinante pelo aparelho entra, com ou sem onboarding. A compra de OUTRA conta
+    // já é barrada dentro do `confirmPremium` (prova da Apple → `outraConta`).
+    if (await confirmPremium({ label: 'login' })) {
       router.replace('/(app)/home');
       return;
     }

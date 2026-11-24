@@ -3,7 +3,6 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { confirmPremium } from '../../lib/subscriptionGate';
-import { assinaturaDeOutraConta } from '../../lib/onboardingObrigatorio';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEP_TOTAL } from '../../components/onboarding/kit';
@@ -36,10 +35,9 @@ export default function OnboardingLayout() {
 
       // Ex-convidada que acabou de assinar: as boas-vindas ficam no onboarding.
       if (session && !onNameStep && !naEspera && !useAcesso.getState().boasVindasEx) {
-        // 1.64: premium só pelo aparelho (assinatura do Apple ID de OUTRA conta, sem onboarding)
-        // fica aqui — faz o onboarding (`lib/onboardingObrigatorio.ts`); sem isto, ping-pong
-        // entre a home e a tela rosa.
-        if (await confirmPremium({ label: 'onboarding:layout' }) && !(await assinaturaDeOutraConta(session.user.id))) {
+        // 1.64 (2): assinante pelo aparelho entra, com ou sem onboarding. A compra de OUTRA
+        // conta já é barrada dentro do `confirmPremium` (prova da Apple → `outraConta`).
+        if (await confirmPremium({ label: 'onboarding:layout' })) {
           router.replace('/(app)/home');
           return;
         }

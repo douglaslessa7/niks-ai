@@ -13,9 +13,11 @@
 // conta sem assinatura caía em "sem grupo" (no lugar do paywall). Quem chama `decidirSemAssinatura`:
 // `routeAfterLogin` (login.tsx), o guard do `(app)/_layout` e a reconferência ao voltar ao app.
 //
-// "Assinante só pelo aparelho" (`assinaturaDeOutraConta`): o Superwall diz ACTIVE (a assinatura é
-// do Apple ID do aparelho), mas o servidor diz que ESTA conta não assina, e a conta não fez o
-// onboarding — típico de uma 2ª conta no iPhone de quem assina em outra. Vai pela regra acima.
+// Assinante pelo aparelho (Superwall ACTIVE) entra, com ou sem onboarding. Só a compra ligada a
+// OUTRA conta não vale, e isso o `confirmPremium` já decide pela prova da Apple (`outraConta`).
+// A 1.64 (1) tinha aqui `assinaturaDeOutraConta` (Superwall ACTIVE + servidor "não assina" + sem
+// onboarding → regra de quem não assina): sem a prova, ela não distinguia a compra de outra conta
+// da compra ainda SEM conta no servidor — quem pagou caía no "Que bom te ver!". Saiu na 1.64 (2).
 //
 // "Onboarding feito" = dores salvas OU scan de pele OU rotina ideal. Erro na leitura = feito
 // (nunca prende quem já tem tudo por falta de internet). Assinante sem onboarding segue direto.
@@ -27,7 +29,7 @@ import { useAppStore } from '../store/onboarding';
 import { trackFora } from './mixpanel/MixpanelProvider';
 import { lerCompraNestaSessao, limparCompraNestaSessao } from './sinalCompra';
 import { transferirNoCadastro } from './regraCompra';
-import { assinanteNoServidor, enviarComprovantes } from './assinaturaServidor';
+import { enviarComprovantes } from './assinaturaServidor';
 import { atualizarCompraPendente } from './compraPendente';
 import { entrarNoGrupoGuardado } from './convidada';
 import { mensagemDoCodigo } from './codigoConvite';
@@ -58,16 +60,6 @@ export async function onboardingFeito(uid: string): Promise<boolean> {
     console.warn('[onboardingObrigatorio] leitura falhou; segue como feito:', e);
     return true;
   }
-}
-
-/**
- * Deu premium, mas só pelo aparelho? (Superwall ACTIVE pela assinatura do Apple ID, o servidor
- * diz que esta conta NÃO assina e ela não fez o onboarding.) Sem resposta do servidor → `false`
- * (fica como assinante, como antes).
- */
-export async function assinaturaDeOutraConta(uid: string): Promise<boolean> {
-  if (await onboardingFeito(uid)) return false;
-  return (await assinanteNoServidor()) === false;
 }
 
 /**
