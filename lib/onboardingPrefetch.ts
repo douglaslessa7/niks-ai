@@ -380,10 +380,14 @@ export async function saveOnboardingProtocol({
     if (result) useAppStore.getState().setPrefetchedProtocol({ key, result });
   };
 
+  // 1.64 (3): `regenerate: true` — a rotina do onboarding é a nova ideal da conta, então as
+  // recomendações são refeitas para ELA. Antes, quem refazia o onboarding e entrava numa conta
+  // antiga ficava com a rotina nova e os produtos da rotina anterior (a função devolvia a
+  // recomendação já salva). Conta nova: não muda nada (não há recomendação salva).
   if (!ready) {
     let gerada = null as ProtocolResult | null;
     const salvou = await generateAndSaveProtocol({
-      scanResult, onboardingData, skinScanId, userId, onFinally, aoGravar,
+      scanResult, onboardingData, skinScanId, userId, onFinally, aoGravar, regenerate: true,
       onSuccess: (r) => { gerada = r; onSuccess(r); },
     });
     if (!salvou) {
@@ -394,7 +398,7 @@ export async function saveOnboardingProtocol({
   }
   try {
     onSuccess(ready);
-    await saveProtocol({ data: ready, userId, skinScanId, aoGravar });
+    await saveProtocol({ data: ready, userId, skinScanId, aoGravar, regenerate: true });
   } catch (err) {
     console.error('[onboardingPrefetch] falha ao gravar a rotina pré-gerada:', err);
     guardar(ready);

@@ -43,14 +43,24 @@ export function resetUserId(): void {
  * Já sai preenchido a partir do segundo uso na sessão (o id fica em memória),
  * então a tela não perde um render esperando. Na primeira vez devolve null por
  * um instante — por isso quem consome deve passar `enabled: Boolean(userId)`.
+ *
+ * 1.64 (3): também acompanha a sessão. Antes perguntava UMA vez, ao montar: a aba montada
+ * sem sessão (ex.: no meio da troca do onboarding para o "Entrar") guardava null para sempre
+ * e a Rotina ficava em "Carregando sua rotina…" sem nem ir à rede (24/nov/2026).
+ * O callback do `onAuthStateChange` não chama o Supabase (só lê a sessão recebida).
  */
 export function useUserId(): string | null {
   const [id, setId] = useState<string | null>(peekUserId());
   useEffect(() => {
-    if (id) return;
     let active = true;
-    getUserId().then((v) => { if (active) setId(v); });
-    return () => { active = false; };
-  }, [id]);
+    if (!id) getUserId().then((v) => { if (active && v) setId(v); });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_evento, session) => {
+      const novo = session?.user?.id ?? null;
+      cachedId = novo;
+      if (active) setId(novo);
+    });
+    return () => { active = false; subscription.unsubscribe(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return id;
 }
