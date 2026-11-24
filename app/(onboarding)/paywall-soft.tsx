@@ -13,6 +13,7 @@ import {
   canShowDownsell,
   consumeSuppressReapresentar,
   consumeNextPlacement,
+  downsellPlacementPara,
   markDownsellShown,
   nextPaywallPlacement,
   requestDownsell,
@@ -161,7 +162,7 @@ export default function PaywallSoft() {
       falhasRef.current = 0;
       setSemPaywall(false);
     },
-    onDismiss: async (_info, result?: PaywallResult) => {
+    onDismiss: async (info, result?: PaywallResult) => {
       // Fechamento causado pelo botão "TENHO CUPOM" ou pelo cancelamento da folha da
       // Apple (que pede o downsell): pula ESTA reapresentação (uso único).
       if (consumeSuppressReapresentar()) {
@@ -183,9 +184,11 @@ export default function PaywallSoft() {
       }
       // Recusou (X) ou resultado desconhecido: nada de RevenueCat, nada de restore
       // automático. Paywall de novo — na 1ª saída da sessão, o downsell (mesmo flag
-      // do cancelamento da folha da Apple).
-      const placement = nextPaywallPlacement();
-      await pwDecisao(`onDismiss(${result?.type ?? 'sem resultado'}) — fechou sem pagar`, `PAYWALL de novo (${placement})`, 'paywall');
+      // do cancelamento da folha da Apple). Qual downsell sai do paywall que ela viu
+      // (`info.identifier`): "Paywall OG 149" → paywall_downsell_149; senão, paywall_downsell.
+      const placement = nextPaywallPlacement(info?.identifier);
+      await pwDecisao(`onDismiss(${result?.type ?? 'sem resultado'}) — fechou sem pagar`, `PAYWALL de novo (${placement})`, 'paywall',
+        `Paywall que ela viu: ${info?.identifier ?? '?'}`);
       void present(placement, 'dismiss_recusou');
     },
     onSkip: (reason) => {
@@ -231,11 +234,17 @@ export default function PaywallSoft() {
       if (!canShowDownsell()) {
         return;
       }
+      // Qual downsell: o do paywall em que ela desistiu ("Paywall OG 149" →
+      // paywall_downsell_149; qualquer outro → paywall_downsell). Lido ANTES do dismiss.
+      const ev = eventInfo.event as { paywallInfo?: { identifier?: string } };
+      const paywallVisto = ev.paywallInfo?.identifier;
+      const placement = downsellPlacementPara(paywallVisto);
       markDownsellShown();
       armSuppressReapresentar();
       try { await Superwall.shared.dismiss(); } catch {}
-      await pwDecisao('transactionAbandon — desistiu na folha da Apple', 'DOWNSELL (paywall_downsell)', 'paywall');
-      requestDownsell();
+      await pwDecisao('transactionAbandon — desistiu na folha da Apple', `DOWNSELL (${placement})`, 'paywall',
+        `Paywall que ela viu: ${paywallVisto ?? '?'}`);
+      requestDownsell(placement);
     },
   });
 
@@ -244,8 +253,8 @@ export default function PaywallSoft() {
   // carrega os callbacks de fail closed acima (onSkip/onError → paywall).
   useEffect(() => {
     if (PULAR_PAYWALL) return;
-    return subscribeDownsellRequest(() => {
-      void present('paywall_downsell', 'transactionAbandon');
+    return subscribeDownsellRequest((placement) => {
+      void present(placement, 'transactionAbandon');
     });
   }, []);
 

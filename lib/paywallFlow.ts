@@ -47,14 +47,34 @@ export function markDownsellShown(): void {
   _downsellShown = true;
 }
 
+// ── Qual downsell: depende do paywall que ela viu (A/B do paywall_onboarding) ─
+// 24/nov/2026: o `paywall_onboarding` roda um A/B entre o "Paywall OG" (268614) e o
+// "Paywall OG 149" (296850, anual …anual.149). Quem saiu do OG 149 vai para o
+// downsell novo (`paywall_downsell_149` → "Downsell 149", 297078: roleta → 129,90 →
+// presente → 99,90); qualquer outro caso, o downsell de sempre.
+//
+// A comparação é pelo IDENTIFIER do paywall (o `PaywallInfo.identifier` que o
+// Superwall entrega no onDismiss e no evento `transactionAbandon`), não pelo nome
+// nem pelo id numérico: o identifier é fixado quando o paywall é criado e não muda
+// ao renomear (o "Paywall OG" ainda carrega `teste-anual-12990-…` do nome antigo).
+// ⚠️ Se o "Paywall OG 149" for DUPLICADO ou recriado, o novo terá outro identifier —
+// atualizar aqui, senão as usuárias dele caem no downsell antigo (nunca sem paywall).
+export const PAYWALL_OG_149_IDENTIFIER = 'example-paywall-2ac3-2026-11-24';
+
+/** O placement de downsell que corresponde ao paywall de onde ela saiu. */
+export function downsellPlacementPara(paywallIdentifier?: string | null): string {
+  return paywallIdentifier === PAYWALL_OG_149_IDENTIFIER ? 'paywall_downsell_149' : 'paywall_downsell';
+}
+
 /**
  * O placement a registrar quando a usuária sai do paywall SEM assinar.
- * Primeira saída da sessão → downsell (e marca o flag); daí em diante, o normal.
+ * Primeira saída da sessão → o downsell do paywall que ela viu (e marca o flag);
+ * daí em diante, o normal. O flag é um só para os dois downsells.
  */
-export function nextPaywallPlacement(): string {
+export function nextPaywallPlacement(paywallIdentifier?: string | null): string {
   if (canShowDownsell()) {
     markDownsellShown();
-    return 'paywall_downsell';
+    return downsellPlacementPara(paywallIdentifier);
   }
   return 'paywall_onboarding';
 }
@@ -67,7 +87,9 @@ export function nextPaywallPlacement(): string {
 // downsell; quem registra é a `paywall-soft`, que está inscrita aqui.
 // Sem inscrito (paywall-soft desmontada), o pedido é descartado — e o guard de
 // assinatura de (app)/_layout.tsx continua sendo a rede de segurança.
-type DownsellListener = () => void;
+// O pedido leva o placement do downsell (`downsellPlacementPara`); sem ele (o bloco
+// inativo do controller, que não sabe qual paywall estava aberto), o de sempre.
+type DownsellListener = (placement: string) => void;
 let _downsellListener: DownsellListener | null = null;
 
 export function subscribeDownsellRequest(listener: DownsellListener): () => void {
@@ -77,8 +99,8 @@ export function subscribeDownsellRequest(listener: DownsellListener): () => void
   };
 }
 
-export function requestDownsell(): void {
-  _downsellListener?.();
+export function requestDownsell(placement: string = 'paywall_downsell'): void {
+  _downsellListener?.(placement);
 }
 
 // ── Qual placement o paywall-soft registra ao reganhar o foco ────────────────
