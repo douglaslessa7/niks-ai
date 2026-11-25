@@ -2,7 +2,10 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PaywalloClient, onboardingManager } from '@virex-tech/paywallo-sdk';
-import { mixpanel, initMixpanel } from './mixpanelClient';
+import { mixpanel, initMixpanel, superPropertiesBase, token as MIXPANEL_TOKEN } from './mixpanelClient';
+import { iniciarSessionReplay, sincronizarDistinctId } from './sessionReplay';
+import { lerAparelhoInterno } from './aparelhoInterno';
+import { definirMixpanelNoSuperwall, identificarSuperwall } from './superwallIdentidade';
 import { OB_STEP_TOTAL, OB_PAYWALLO_LAST } from '../../components/onboarding/kit';
 import { getOnboardingAttempt } from '../onboardingAttempt';
 
@@ -129,6 +132,8 @@ type MixpanelPendente =
   | { tipo: 'reset' }
   | { tipo: 'timeEvent'; evento: string }
   | { tipo: 'people'; props: Record<string, unknown> }
+  | { tipo: 'people_once'; props: Record<string, unknown> }
+  | { tipo: 'people_inc'; prop: string; by: number }
   | { tipo: 'super'; props: Record<string, unknown> };
 
 const MIXPANEL_FILA_MAX = 200;
@@ -142,15 +147,33 @@ function executarNoMixpanel(item: MixpanelPendente, daFila: boolean) {
       break;
     case 'identify':
       mixpanel.identify(item.userId);
+      // Depois do principal, com o MESMO id: Session Replay e Superwall (a integração
+      // Superwall → Mixpanel usa o appUserId do Superwall como distinct_id).
+      sincronizarDistinctId(item.userId);
+      definirMixpanelNoSuperwall(item.userId); // atributo de integração (eventos `sw_*`)
+      identificarSuperwall(item.userId);
       break;
     case 'reset':
       mixpanel.reset();
+      // O reset apaga as super properties: devolve as fixas (o `plano` volta no próximo
+      // `atualizarPlano`).
+      mixpanel.registerSuperProperties(superPropertiesBase());
+      // Id anônimo NOVO: o Session Replay passa a usar ele (o Superwall é zerado no logout).
+      mixpanel.getDistinctId()
+        .then((id) => { sincronizarDistinctId(id); definirMixpanelNoSuperwall(id); })
+        .catch(() => {});
       break;
     case 'timeEvent':
       mixpanel.timeEvent(item.evento);
       break;
     case 'people':
       mixpanel.getPeople().set(item.props);
+      break;
+    case 'people_once':
+      mixpanel.getPeople().setOnce(item.props);
+      break;
+    case 'people_inc':
+      mixpanel.getPeople().increment(item.prop, item.by);
       break;
     case 'super':
       mixpanel.registerSuperProperties(item.props);
@@ -169,6 +192,49 @@ function enviarAoMixpanel(item: MixpanelPendente) {
 /** Evento de fora do React (libs, roteador de push): mesma fila do `track`. */
 export function trackFora(event: string, properties?: Record<string, unknown>) {
   enviarAoMixpanel({ tipo: 'track', evento: event, props: properties, quando: Date.now() });
+}
+
+// Plano antes do 1º evento da sessão: a fila só é esvaziada depois que o plano inicial é
+// conhecido (ou passado o teto), e ele é registrado como super property ANTES — assim
+// `app_opened`, `first_open` e o 1º passo do onboarding já saem com `plano`. Sem resposta
+// no teto, vale a super property gravada pelo SDK na sessão anterior (o Mixpanel persiste
+// super properties no aparelho); na 1ª abertura sem resposta, os primeiros eventos saem sem plano.
+const PLANO_TETO_MS = 3000;
+let planoInicial: string | null = null;
+let resolverPlano: () => void = () => {};
+const planoPronto = new Promise<void>((r) => { resolverPlano = r; });
+/** Chamado por lib/mixpanel/perfil.ts quando o 1º plano da sessão é calculado. */
+export function planoInicialConhecido(plano: string) {
+  if (mixpanelPronto) return;
+  planoInicial = plano;
+  resolverPlano();
+}
+
+// Identidade e perfil fora do React (mesma fila — nada se perde antes do init).
+// `identify` com o MESMO id repetido não faz nada no Mixpanel: o último id é lembrado
+// aqui só para não repetir a chamada a cada evento de sessão.
+let ultimoIdentify: string | null = null;
+export function identifyFora(userId: string) {
+  if (!userId || userId === ultimoIdentify) return;
+  ultimoIdentify = userId;
+  enviarAoMixpanel({ tipo: 'identify', userId });
+}
+/** Logout / conta apagada: novo id anônimo + super properties fixas de volta. */
+export function resetMixpanelFora() {
+  ultimoIdentify = null;
+  enviarAoMixpanel({ tipo: 'reset' });
+}
+export function peopleSet(props: Record<string, unknown>) {
+  enviarAoMixpanel({ tipo: 'people', props });
+}
+export function peopleSetOnce(props: Record<string, unknown>) {
+  enviarAoMixpanel({ tipo: 'people_once', props });
+}
+export function peopleIncrement(prop: string, by = 1) {
+  enviarAoMixpanel({ tipo: 'people_inc', prop, by });
+}
+export function superFora(props: Record<string, unknown>) {
+  enviarAoMixpanel({ tipo: 'super', props });
 }
 
 function esvaziarFilaMixpanel() {
@@ -200,8 +266,26 @@ export function MixpanelProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     initMixpanel()
+      .then(() => Promise.all([
+        Promise.race([planoPronto, new Promise<void>((r) => setTimeout(r, PLANO_TETO_MS))]),
+        // Aparelho do time (Keychain): `usuario_interno` certo já no 1º evento, mesmo anônimo.
+        lerAparelhoInterno(),
+      ]))
       .then(() => {
+        if (planoInicial) mixpanel.registerSuperProperties({ plano: planoInicial });
+        const internoBase = superPropertiesBase().usuario_interno;
+        mixpanel.registerSuperProperties({ usuario_interno: internoBase });
+        mixpanel.getPeople().set({ usuario_interno: internoBase });
         esvaziarFilaMixpanel();
+        // Session Replay DEPOIS do principal, com o mesmo token e o distinct_id atual (já com
+        // o identify da fila aplicado). Amostragem: 100% interno (base), 40% o resto.
+        mixpanel.getDistinctId()
+          .then((id) => {
+            sincronizarDistinctId(id);
+            definirMixpanelNoSuperwall(id); // anônimo no início: cobre a compra antes do cadastro
+            iniciarSessionReplay(MIXPANEL_TOKEN, id, internoBase === true);
+          })
+          .catch(() => {});
         mixpanelPronto = true;
         setIsReady(true);
       })
@@ -229,8 +313,8 @@ export function MixpanelProvider({ children }: { children: ReactNode }) {
       forwardOnboardingStepToPaywallo(event, props);
       enviarAoMixpanel({ tipo: 'track', evento: event, props, quando: Date.now() });
     },
-    identify: (userId) => enviarAoMixpanel({ tipo: 'identify', userId }),
-    reset: () => enviarAoMixpanel({ tipo: 'reset' }),
+    identify: (userId) => identifyFora(userId),
+    reset: () => resetMixpanelFora(),
     flush: () => {
       if (mixpanelPronto) mixpanel.flush();
     },

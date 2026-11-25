@@ -1,5 +1,6 @@
 import { PWDIAG_LINK, ligarDiagnostico } from '../lib/paywallDebug';
 import { guardarConvite } from '../lib/convitePendente';
+import { zerarAparelhoDev } from '../lib/devReset';
 
 // Links do sistema que o expo-router NÃO deve tentar rotear.
 //
@@ -26,7 +27,14 @@ const CONVITE = /^\/?convite\/([A-Za-z0-9_-]{16,64})(?:[/?#]|$)/i;
 // externo não pode pular o portão de assinatura.
 const SEM_LINK = /^\/?(?:\((?:scan|share|foto)\)\/)?(?:analisando-foto|camera|camera-multi|demo-scan|demo-transicao|food-camera|food-report|loading|loading-dentro-app|lote-camera|lote-montando|lote-resultado|lote-revisao|pergunta|personalizar|product-camera|product-loading|product-result|rate-us|resultado-scan|results|scan-prep|scan-prep-app|seu-caminho|share-product-loading|solucao|sos-camera|sos-loading|sos-resultado|share-capture|share-preview|ajustar-foto)(?:[/?#]|$)/i;
 
+// SÓ __DEV__: niks-ai://dev-zerar-aparelho deixa o aparelho "virgem" para teste (lib/devReset.ts).
+const DEV_ZERAR = /^\/?dev-zerar-aparelho(?:[/?#]|$)/i;
+
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }) {
+  if (__DEV__ && DEV_ZERAR.test(pathSemScheme(path))) {
+    setTimeout(() => { void zerarAparelhoDev(); }, initial ? 4000 : 0);
+    return initial ? '/' : null;
+  }
   if (path.includes('dataUrl=')) {
     return initial ? '/' : null;
   }

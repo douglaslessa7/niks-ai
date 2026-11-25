@@ -1,7 +1,6 @@
 import Purchases, { LOG_LEVEL, PACKAGE_TYPE } from 'react-native-purchases';
 import type { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
 import { Platform } from 'react-native';
-import { mixpanel } from './mixpanel/mixpanelClient';
 
 // O `.env` do repo tem valores `placeholder`, então a chave só é lida do
 // ambiente quando é uma chave de verdade — caso contrário cai no literal, que
@@ -86,23 +85,16 @@ export async function getPackages(): Promise<{
   return { mensal, anual };
 }
 
+// ⚠️ SEM eventos do Mixpanel aqui (removidos em 25/nov/2026): ninguém chama estas duas funções —
+// quem compra é o Superwall, direto pela StoreKit — e os `purchase_*` daqui nunca dispararam.
+// Os eventos de compra saem de lib/mixpanel/superwallBridge.tsx.
 export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo> {
-  const plan = pkg.product.identifier.includes('anual') ? 'anual' : 'mensal';
-  mixpanel.track('purchase_initiated', { plan });
-  try {
-    const { customerInfo } = await Purchases.purchasePackage(pkg);
-    mixpanel.track('purchase_completed', { plan });
-    return customerInfo;
-  } catch (err: any) {
-    mixpanel.track('purchase_failed', { plan, error: err?.message ?? 'unknown' });
-    throw err;
-  }
+  const { customerInfo } = await Purchases.purchasePackage(pkg);
+  return customerInfo;
 }
 
 export async function restorePurchases(): Promise<CustomerInfo> {
-  const customerInfo = await Purchases.restorePurchases();
-  mixpanel.track('purchase_restored');
-  return customerInfo;
+  return await Purchases.restorePurchases();
 }
 
 export async function getCustomerInfo(): Promise<CustomerInfo> {

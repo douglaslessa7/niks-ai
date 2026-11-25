@@ -35,5 +35,5 @@ export default function HomeCoachMarks({ onFinish }: { onFinish: () => void }) {
     () => (estado?.modo_pontos ? STOPS.map((s, i) => (TEXTOS_MODO_PONTOS[i] ? { ...s, t: TEXTOS_MODO_PONTOS[i] } : s)) : STOPS),
     [estado?.modo_pontos],
   );
-  return <TutorialOverlay stops={stops} onFinish={onFinish} />;
+  return <TutorialOverlay stops={stops} onFinish={onFinish} qual="home" />;
 }

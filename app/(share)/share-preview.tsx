@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import Sensivel from '../../components/Sensivel';
 import {
   View, Text, Image, TouchableOpacity, useWindowDimensions, Alert,
   ActivityIndicator, PixelRatio,
@@ -14,6 +15,7 @@ import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { useAppStore } from '../../store/onboarding';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { supabase } from '../../lib/supabase';
 import { getUserId } from '../../lib/currentUser';
 import NiksStickerView from '../../components/NiksStickerView';
@@ -125,16 +127,17 @@ function Collage({
           embrulho nunca foi necessário. */}
       {rects.map((r, i) =>
         photos[i] ? (
-          <Image
-            key={i}
-            source={{ uri: photos[i] }}
-            resizeMode="cover" // nunca esticada
-            style={{
-              position: 'absolute',
-              left: r.left - bleed, top: r.top - bleed,
-              width: r.width + bleed * 2, height: r.height + bleed * 2,
-            }}
-          />
+          <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none" key={i}>
+            <Image
+              source={{ uri: photos[i] }}
+              resizeMode="cover" // nunca esticada
+              style={{
+                position: 'absolute',
+                left: r.left - bleed, top: r.top - bleed,
+                width: r.width + bleed * 2, height: r.height + bleed * 2,
+              }}
+            />
+          </Sensivel>
         ) : null
       )}
 
@@ -422,6 +425,8 @@ export default function SharePreview() {
         return;
       }
       await Sharing.shareAsync(uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+      // O iOS não diz para qual app ela mandou: `destino` é a folha de compartilhar do sistema.
+      trackFora('share_story_concluido', { destino: 'folha_do_sistema', fotos: photos.length });
     } catch (e) {
       console.error('Erro ao compartilhar:', e);
       Alert.alert(t('Erro'), t('Não foi possível gerar a imagem.'));
@@ -445,6 +450,7 @@ export default function SharePreview() {
       }
       const uri = await capture();
       await MediaLibrary.saveToLibraryAsync(uri);
+      trackFora('share_salvo_galeria', { fotos: photos.length });
       Alert.alert(t('Salvo!'), t('Sua colagem foi salva na galeria.'));
     } catch (e) {
       console.error('Erro ao salvar:', e);

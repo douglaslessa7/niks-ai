@@ -173,6 +173,7 @@ export default function ScanPrep() {
 
   const openCamera = () => {
     track('onboarding_step_completed', obStep(STEP, STEP_NAME));
+    track('scan_started', { contexto: 'onboarding', origem: 'tutorial' });
     router.push('/(scan)/camera' as any);
   };
 

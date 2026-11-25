@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import Sensivel from '../../components/Sensivel';
 import { Alert, Animated, Easing, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { X, Image as ImageIcon } from 'lucide-react-native';
@@ -8,6 +9,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Device from 'expo-device';
 import { useScanConsentGate } from '../../hooks/useScanConsentGate';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { CONSENT_SOS_BODY } from '../../components/ui/AIConsentModal';
 import { haptics } from '../../lib/haptics';
 import { guardarFoto, lerUltimaAnalise } from '../../lib/sosEspinha';
@@ -52,6 +54,7 @@ function BotaoRedondo({ onPress, children }: { onPress: () => void; children: Re
 
 export default function SosCamera() {
   const router = useRouter();
+  useEffect(() => { trackFora('sos_iniciado', {}); }, []);
   // Aceite próprio: mesmo quem já aceitou o aviso geral precisa ver que a foto fica guardada.
   const { consentGate } = useScanConsentGate({ chave: 'ai_consent_sos_v1', body: CONSENT_SOS_BODY });
   const { width } = useWindowDimensions();
@@ -148,7 +151,9 @@ export default function SosCamera() {
   return (
     <View style={{ flex: 1, backgroundColor: '#111111' }}>
       {!isSimulator && permission?.granted && (
-        <CameraView ref={cameraRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} facing="front" />
+        <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
+          <CameraView ref={cameraRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} facing="front" />
+        </Sensivel>
       )}
 
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, flexDirection: 'row', paddingHorizontal: 20, paddingTop: 60, paddingBottom: 12 }}>

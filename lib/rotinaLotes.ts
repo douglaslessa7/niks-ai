@@ -14,6 +14,36 @@
 import { supabase } from './supabase';
 import { idioma } from './i18n';
 import { getScanCutouts } from './scanCutouts';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { trackFora } from './mixpanel/MixpanelProvider';
+
+// Mixpanel: `lote_concluido` / `lote_erro` uma vez por lote, quando o app vê o fim (na tela
+// "Montando…" ou no aviso dentro do app). Ids já medidos ficam no aparelho. Só lotes que
+// terminaram nas últimas 6 h (não mede lotes antigos na 1ª leitura depois da atualização).
+const MEDIDOS_KEY = 'mx:lotes_medidos';
+async function medirFimDoLote(l: Lote | null): Promise<void> {
+  if (!l || (l.status !== 'pronto' && l.status !== 'erro')) return;
+  const fim = l.concluido_em ? Date.parse(l.concluido_em) : Date.now();
+  if (Date.now() - fim > 6 * 3600_000) return;
+  try {
+    const raw = await AsyncStorage.getItem(MEDIDOS_KEY);
+    const ids: string[] = raw ? JSON.parse(raw) : [];
+    if (ids.includes(l.id)) return;
+    await AsyncStorage.setItem(MEDIDOS_KEY, JSON.stringify([...ids, l.id].slice(-50)));
+  } catch { return; }
+  const ms = l.concluido_em ? Date.parse(l.concluido_em) - Date.parse(l.criado_em) : null;
+  const qtd = l.caminhos?.length ?? 0;
+  if (l.status === 'pronto') {
+    const r = l.resultado as any;
+    trackFora('lote_concluido', {
+      ms, qtd_produtos: qtd,
+      identificados: Array.isArray(r?.produtos) ? r.produtos.filter((p: any) => p?.identificado !== false).length : null,
+      fora_da_rotina: Array.isArray(r?.fora_da_rotina) ? r.fora_da_rotina.length : null,
+    });
+  } else {
+    trackFora('lote_erro', { ms, qtd_produtos: qtd, etapa: 'servidor' });
+  }
+}
 
 export type StatusLote = 'processando' | 'pronto' | 'erro';
 
@@ -80,6 +110,7 @@ export async function loteDeHoje(userId: string): Promise<Lote | null> {
 
 export async function buscarLote(id: string): Promise<Lote | null> {
   const { data } = await supabase.from('rotina_lotes').select(CAMPOS).eq('id', id).maybeSingle();
+  void medirFimDoLote((data as Lote | null) ?? null);
   return (data as Lote | null) ?? null;
 }
 
@@ -92,6 +123,7 @@ export async function lotePendente(userId: string): Promise<Lote | null> {
     .from('rotina_lotes').select(CAMPOS)
     .eq('user_id', userId).is('visto_em', null)
     .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  void medirFimDoLote((data as Lote | null) ?? null);
   return (data as Lote | null) ?? null;
 }
 

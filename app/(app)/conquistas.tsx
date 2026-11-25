@@ -13,6 +13,7 @@
 // o calendário é o de check-ins da aba Grupos (components/grupos/CalendarioCheckins). Cartas e
 // medalhas vêm de lib/conquistas: exemplo do design só em __DEV__, zerado em produção.
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { useDepoisDaTransicao } from '../../hooks/useDepoisDaTransicao';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Pressable, Image, StyleSheet, useWindowDimensions } from 'react-native';
@@ -167,6 +168,7 @@ type Frame = { x: number; y: number; w: number; h: number };
 type Screen = 'hub' | 'album' | 'medals';
 
 export default function Conquistas() {
+  useEffect(() => { trackFora('conquistas_visto', {}); }, []);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: W } = useWindowDimensions();

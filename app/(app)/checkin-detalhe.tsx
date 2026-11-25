@@ -26,6 +26,7 @@
 // além do limite (ou num puxão) ela volta voando para dentro da miniatura; senão, volta à tela
 // cheia. Detalhes no bloco "Transição de zoom" de `Tela`. "Reduzir movimento": só fade.
 // ─────────────────────────────────────────────────────────────────────────────
+import Sensivel from '../../components/Sensivel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
@@ -160,7 +161,9 @@ function Pagina({ id, largura, rm, onCarregou, topo, info }: { id: string; largu
             "carregando"; o resto entra com fade quando o servidor responde. */}
         <View style={[styles.foto, { height: fotoH, alignItems: 'center', justifyContent: 'center' }]}>
           {fotoJa
-            ? <Image source={fonteDoCheckin(id, fotoJa)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" transition={0} />
+            ? <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+  <Image source={fonteDoCheckin(id, fotoJa)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" transition={0} />
+</Sensivel>
             : <ActivityIndicator color={PINK} />}
           <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.sombraTopo, { height: topo.insetTop + 76 }]} />
         </View>
@@ -182,10 +185,12 @@ function Pagina({ id, largura, rm, onCarregou, topo, info }: { id: string; largu
   return (
     <Animated.View style={[{ width: largura }, !soFoto && st]}>
       <View style={[styles.foto, { height: fotoH }]}>
-        {c.foto_url ? <Image source={fonteDoCheckin(c.checkin_id, c.foto_url)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" transition={0}
-          // Link vencido (detalhe guardado no disco há mais de 1 h e a foto fora do cache): troca
-          // pelo link novo que a leitura do servidor acabou de trazer.
-          onError={() => { const n = checkinDetalheEmMemoria(id); if (n && n.foto_url !== c.foto_url) setEstado({ tipo: 'pronto', c: n }); }} /> : null}
+        {c.foto_url ? <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+  <Image source={fonteDoCheckin(c.checkin_id, c.foto_url)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" transition={0}
+            // Link vencido (detalhe guardado no disco há mais de 1 h e a foto fora do cache): troca
+            // pelo link novo que a leitura do servidor acabou de trazer.
+            onError={() => { const n = checkinDetalheEmMemoria(id); if (n && n.foto_url !== c.foto_url) setEstado({ tipo: 'pronto', c: n }); }} />
+</Sensivel> : null}
         {/* Sombra suave no topo: os botões e a barra de status sempre legíveis sobre a foto. */}
         <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, infoSt]}>
           <LinearGradient pointerEvents="none" colors={['rgba(0,0,0,0.32)', 'rgba(0,0,0,0)']} style={[styles.sombraTopo, { height: topo.insetTop + 76 }]} />

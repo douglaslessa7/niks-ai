@@ -4,9 +4,7 @@ import Animated, { Easing, FadeInDown, useAnimatedStyle, useSharedValue, withDel
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
-import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
-import { useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaCanto, BvProgresso, BvEtiqueta, BvTitulo, BvBotao, useBvFrame,
   SEMANAS_ROTINA, DIAS_ROTINA, menosDe, useDorPrincipal, dataMeta, diaMesLongo, diaMesCurto,
@@ -50,10 +48,8 @@ function Listras({ cor, largura = 260, altura = CARD_H }: { cor: string; largura
 
 export default function BvProjecao() {
   const router = useRouter();
-  const { track } = useMixpanel();
   const { y } = useBvFrame();
   const dor = useDorPrincipal();
-  useOnMount(() => track('boas_vindas_tela', { tela: 4, nome: 'projecao', dor: dor.problema }));
 
   // A barra enche uma vez, junto com a cascata (depois do card da semana 4).
   const enche = useSharedValue(0);

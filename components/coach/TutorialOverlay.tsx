@@ -18,6 +18,7 @@
 // Skia, com shared values: o movimento roda no thread de UI, sem refazer layout nem máscara
 // a cada quadro. Medir é caro: só na troca de parada e, de leve, a cada 1 s (carga tardia).
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Animated, BackHandler, Easing, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -149,9 +150,11 @@ type Props = {
   total?: number;
   /** Avisa a parada atual: posição dela em `stops`. */
   onParada?: (indice: number) => void;
+  /** Mixpanel: nome do tutorial (`tutorial_visto` / `_concluido` / `_pulado`). Sem ele, nada é medido. */
+  qual?: string;
 };
 
-export default function TutorialOverlay({ stops: allStops, onFinish, semPular = false, antes = 0, total, onParada }: Props) {
+export default function TutorialOverlay({ stops: allStops, onFinish, semPular = false, antes = 0, total, onParada, qual }: Props) {
   const targets = useCoachTargets();
   // "Reduzir movimento" (06/nov/2026): o recorte pula direto para a próxima parada e o
   // balão só esmaece (sem deslizar 6 pt).
@@ -195,6 +198,16 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const at = (ms: number, fn: () => void) => { timers.current.push(setTimeout(fn, ms)); };
+
+  // Mixpanel: visto quando as paradas congelam (com pelo menos uma); em tutorial de vários
+  // trechos, só no 1º trecho (o "concluído" sai no último).
+  const vistoRef = useRef(false);
+  const ultimoTrecho = total == null || antes + stops.length >= total;
+  useEffect(() => {
+    if (!qual || vistoRef.current || !congelou || !stops.length || antes > 0) return;
+    vistoRef.current = true;
+    trackFora('tutorial_visto', { qual, paradas: total ?? stops.length });
+  }, [congelou]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const st = stops[s];
   alvosRef.current = st ? [...st.a.u, ...(st.b?.u ?? [])] : undefined;
@@ -294,15 +307,19 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
     at(330, () => requestCoachMeasure(chaves));
     at(380, () => setTipOn(true));
   };
-  const close = () => {
+  const close = (motivo: 'concluido' | 'pulado') => {
     if (closing) return;
+    if (qual) {
+      if (motivo === 'pulado') trackFora('tutorial_pulado', { qual, parada: antes + s + 1, paradas: total ?? stops.length });
+      else if (ultimoTrecho) trackFora('tutorial_concluido', { qual, paradas: total ?? stops.length });
+    }
     setClosing(true);
     ovOp.set(withTiming(0, { duration: 350, easing: REasing.ease }));
     at(350, onFinish);
   };
   const next = () => {
     if (closing) return;
-    if (s >= LAST) { if (total == null || antes + s + 1 >= total) haptics.success(); else haptics.tap(); close(); } else { haptics.tap(); go(s + 1); }
+    if (s >= LAST) { if (total == null || antes + s + 1 >= total) haptics.success(); else haptics.tap(); close('concluido'); } else { haptics.tap(); go(s + 1); }
   };
 
   // Android: antes de desenhar, o overlay precisa da própria medida.
@@ -362,7 +379,7 @@ export default function TutorialOverlay({ stops: allStops, onFinish, semPular = 
       {/* Pular */}
       {!semPular && (
         <View pointerEvents="box-none" style={[styles.skipWrap, skipNoTopo && { bottom: undefined, top: insets.top + 8 }]}>
-          <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); close(); }} style={styles.skip} accessibilityRole="button" accessibilityLabel={t('Pular tutorial')}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => { haptics.tap(); close('pulado'); }} style={styles.skip} accessibilityRole="button" accessibilityLabel={t('Pular tutorial')}>
             <Text style={styles.skipText}>{t('Pular')}</Text>
           </TouchableOpacity>
         </View>

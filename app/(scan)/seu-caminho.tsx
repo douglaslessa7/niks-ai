@@ -139,9 +139,16 @@ export default function SeuCaminho() {
     if (!visivel) return;
     let ativa = true;
     const t = setTimeout(() => {
-      decisaoAvaliacao.then((a) => { if (ativa) executarAvaliacaoOnboarding(a); });
+      console.log('[REVIEW] Seu caminho: 2 s depois da entrada, executando a decisão');
+      decisaoAvaliacao.then((a) => {
+        if (ativa) executarAvaliacaoOnboarding(a);
+        else console.log('[REVIEW] cancelado: ela saiu do Seu caminho antes da decisão chegar');
+      });
     }, 2000);
-    return () => { ativa = false; clearTimeout(t); };
+    return () => {
+      if (ativa) console.log('[REVIEW] Seu caminho desmontado/saiu — timer da avaliação cancelado se ainda não disparou');
+      ativa = false; clearTimeout(t);
+    };
   }, [visivel, decisaoAvaliacao]);
 
   // Sem voltar (como a carta): o voltar do Android não faz nada; o gesto está desligado

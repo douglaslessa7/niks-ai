@@ -3,9 +3,7 @@ import { View, Text, AccessibilityInfo } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { haptics } from '../../lib/haptics';
-import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
-import { useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaRadial, BvProgresso, BvEtiqueta, BvBotao, useBvFrame,
 } from '../../components/boasVindas/kit';
@@ -32,14 +30,12 @@ const POP = Easing.bezier(0.23, 1, 0.32, 1);
 
 export default function BvRecompensa() {
   const router = useRouter();
-  const { track } = useMixpanel();
   const { y } = useBvFrame();
   const navigation = useNavigation();
   const [festa, setFesta] = useState(false);   // dispara o confete
   const pop = useSharedValue(0);
   const barraV = useSharedValue(0);
 
-  useOnMount(() => track('boas_vindas_tela', { tela: 6, nome: 'recompensa' }));
 
   // Começa quando a tela TERMINA de entrar (rede de segurança: 700 ms sem o evento).
   useEffect(() => {

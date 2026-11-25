@@ -68,7 +68,7 @@ export default function AnalisandoFoto() {
       const { result, error } = await aguardarAnaliseRapida();
       if (!result || !result.foto_valida) {
         if (timer.current) clearTimeout(timer.current);
-        track('scan_failed', { error: result ? 'foto_invalida' : error });
+        track('scan_failed', { contexto: 'onboarding_rapida', error: result ? 'foto_invalida' : error });
         runningRef.current = false;
         setFailed(true);
         return;
@@ -76,6 +76,7 @@ export default function AnalisandoFoto() {
       useAppStore.getState().setSelectedScan(null);
       const escolhido = escolherProblema(result, useAppStore.getState().onboarding.concerns);
       track('scan_completed', {
+        contexto: 'onboarding_rapida',
         analise: 'rapida',
         idade_pele: result.idade_pele,
         problema: escolhido?.problema ?? null,

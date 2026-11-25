@@ -6,6 +6,7 @@
 // principal e uma folha. Posição e zoom da foto: os do design (`FOTO_NA_MOLDURA`, scale 1.14).
 // `tamanho` é o da MOLDURA inteira; a foto ocupa ~57% do lado, no centro.
 // ─────────────────────────────────────────────────────────────────────────────
+import Sensivel from '../../components/Sensivel';
 import { memo } from 'react';
 import { Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
@@ -67,7 +68,9 @@ function FotoComMoldura({ nivel, foto, nome, tamanho, pequena, vazio = '#F4F4F4'
         {/* expo-image com cache em memória e disco (12/nov/2026): o `Image` do RN baixava a
             foto de novo a cada montagem (o Supabase não manda Cache-Control). A URL da foto
             de perfil é fixa (`users.foto_home_url`, assinada uma vez), então ela é a chave. */}
-        {foto ? <Image source={{ uri: foto }} cachePolicy="memory-disk" allowDownscaling={false} contentFit="cover" style={{ position: 'absolute', width: '114%', height: '114%', left: '-7%', top: '-7%' }} /> : !!inicial && (
+        {foto ? <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+  <Image source={{ uri: foto }} cachePolicy="memory-disk" allowDownscaling={false} contentFit="cover" style={{ position: 'absolute', width: '114%', height: '114%', left: '-7%', top: '-7%' }} />
+</Sensivel> : !!inicial && (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <Text allowFontScaling={false} style={{ fontSize: lado * 0.46, fontWeight: '700', color: '#E0447F' }}>{inicial}</Text>
           </View>

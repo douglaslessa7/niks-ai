@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
 import { getCustomerInfo, ENTITLEMENT_ID } from '../../lib/revenuecat';
-import { useObName, useOnMount } from '../../components/onboarding/kit';
+import { useObName } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaBranca, BolhaRadial, SEMANAS_ROTINA, diaMesCurto, BvEtiqueta, BvTitulo, BvBotao, LOGO_ROSA, useBvFrame,
 } from '../../components/boasVindas/kit';
@@ -34,10 +33,8 @@ function textoPlano(plano: Plano): string {
 
 export default function BvEntrou() {
   const router = useRouter();
-  const { track } = useMixpanel();
   const name = useObName();
   const { y } = useBvFrame();
-  useOnMount(() => track('boas_vindas_tela', { tela: 1, nome: 'entrou' }));
   const [plano, setPlano] = useState<Plano>(null);
   useEffect(() => {
     let vivo = true;

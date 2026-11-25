@@ -13,6 +13,9 @@ import { resetRevenueCatIdentity } from '../lib/subscriptionGate'
 import { useAppStore } from '../store/onboarding'
 import { limparCompraNestaSessao } from '../lib/sinalCompra'
 import { t } from '../lib/i18n'
+import { resetMixpanelFora, trackFora } from '../lib/mixpanel/MixpanelProvider'
+import { esquecerPlano } from '../lib/mixpanel/perfil'
+import { esquecerIdentidadeSuperwall, reaplicarMixpanelNoSuperwall } from '../lib/mixpanel/superwallIdentidade'
 
 // Client ID iOS gerado no Google Cloud Console
 GoogleSignin.configure({
@@ -143,6 +146,12 @@ export function useAuth() {
   // limpá-los faria a próxima conta a logar neste aparelho abrir vendo o score, a
   // rotina e o nome da conta anterior. Sempre limpar os dois no logout.
   const clearLocalData = async () => {
+    // Mixpanel: a próxima pessoa neste aparelho começa com um id anônimo novo (sem isso os
+    // eventos dela iam para o perfil desta conta até o próximo login). Antes do logOut do
+    // RevenueCat, para o plano "free" que ele publica já cair no id novo.
+    resetMixpanelFora()
+    esquecerPlano()
+    esquecerIdentidadeSuperwall() // o Superwall.reset() roda logo abaixo (limparIdentidadeSuperwall)
     resetUserId()
     useAppStore.persist.clearStorage()
     useAppStore.getState().reset()
@@ -161,6 +170,9 @@ export function useAuth() {
     useAppStore.getState().setSubscriptionVerified(false)
     await resetRevenueCatIdentity()
     await limparIdentidadeSuperwall()
+    // O reset do Superwall pode limpar os atributos de integração: devolve o distinct_id do
+    // Mixpanel (o novo anônimo, quando o reset do Mixpanel já tiver terminado).
+    reaplicarMixpanelNoSuperwall()
     await limparCompraNestaSessao()
     definirAcesso(null)
     await clearAllCache()
@@ -169,6 +181,8 @@ export function useAuth() {
   }
 
   const signOut = async () => {
+    // Antes do reset (em clearLocalData): o evento fica no perfil desta conta.
+    trackFora('logout', {})
     // Um erro do Google (ex.: conta que nem entrou pelo Google) NÃO pode impedir o
     // logout do Supabase — antes, ele pulava o signOut e a sessão ficava no aparelho.
     try {
@@ -202,6 +216,7 @@ export function useAuth() {
     // é essencial: sem isso seguíamos para o signOut e a pessoa saía achando que
     // tinha apagado tudo, quando nada foi apagado.
     if (error) throw error
+    trackFora('conta_apagada', {}) // antes do reset: fica no perfil desta conta
 
     try { await GoogleSignin.signOut() } catch {}
     await supabase.auth.signOut({ scope: 'local' })

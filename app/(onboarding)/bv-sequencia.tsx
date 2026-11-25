@@ -6,7 +6,6 @@ import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg'
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t, emIngles } from '../../lib/i18n';
-import { useOnMount } from '../../components/onboarding/kit';
 import { useAppStore } from '../../store/onboarding';
 import { sessionDate } from '../../lib/routineProgress';
 import { boasVindasAtual, setLembreteBoasVindas } from '../../lib/boasVindas';
@@ -36,7 +35,6 @@ export default function BvSequencia() {
   });
   const passos = useAppStore((s) => (s.prefetchedProtocol?.result ?? s.protocolResult)?.morning?.length || PASSOS_PROVISORIO);
   const [lembrar, setLembrar] = useState(boasVindasAtual().lembrete);
-  useOnMount(() => track('boas_vindas_tela', { tela: 7, nome: 'sequencia' }));
 
   const hoje = sessionDate();
   const amanha = new Date(hoje);

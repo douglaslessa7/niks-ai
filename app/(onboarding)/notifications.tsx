@@ -105,7 +105,7 @@ export default function Notifications() {
   // Token em segundo plano (a permissão já foi dada): fica guardado até o cadastro, que
   // o grava em `users.push_token`; com sessão (caso raro), grava direto também.
   const saveTokenInBackground = () => {
-    requestPushPermission()
+    requestPushPermission('onboarding')
       .then(async (token) => {
         if (!token) return;
         setPendingPushToken(token);
@@ -135,7 +135,7 @@ export default function Notifications() {
       granted = status === 'granted';
       if (!asked && !granted && canAskAgain) {
         prompted = true;
-        granted = await askPushPermission();
+        granted = await askPushPermission('onboarding');
       }
     } catch (error) {
       console.error('[Notifications] Erro ao pedir permissão:', error);

@@ -10,6 +10,7 @@ import { ganhouPontos } from '../../lib/pontosAnimacao';
 import { regenerateProtocolInApp } from '../../lib/regenerateProtocolInApp';
 import { idioma, t } from '../../lib/i18n';
 import { ScanLoadingView } from '../../components/scan/ScanLoadingView';
+import { perfilScanConcluido } from '../../lib/mixpanel/perfil';
 
 // Tela de carregamento da ANÁLISE DE PELE feita DENTRO do app (scan de 6 fotos).
 // Visual = tela 50a do Claude Design (`components/scan/ScanLoadingView`, a mesma
@@ -125,7 +126,8 @@ export default function LoadingDentroApp() {
 
         setSelectedScan(null);
         setScanResult(data, skinImageUri ?? '');
-        track('scan_completed', { skin_score: data.skin_score, skin_type: data.skin_type_detected });
+        track('scan_completed', { contexto: 'app', skin_score: data.skin_score, skin_type: data.skin_type_detected });
+        perfilScanConcluido(data.skin_score, data.skin_type_detected);
         setPercentage(100);
 
         // A análise já foi feita: "Tentar de novo" só salva, com a mesma foto e sem chamar a IA.
@@ -203,7 +205,7 @@ export default function LoadingDentroApp() {
           await new Promise(resolve => setTimeout(resolve, 2000));
           await runAnalysis();
         } else {
-          track('scan_failed', { error: (err as any)?.message ?? 'unknown' });
+          track('scan_failed', { contexto: 'app', error: (err as any)?.message ?? 'unknown' });
           if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
           setShowError(true);
         }

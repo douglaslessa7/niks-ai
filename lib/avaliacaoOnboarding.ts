@@ -16,7 +16,8 @@ import { trackFora } from './mixpanel/MixpanelProvider';
 //   · iOS;
 //   · chave `avaliacao_config.avaliacao_onboarding` = 'brasil' (lida pela `grupos`, ação
 //     `convidada_status`; sem resposta em 3 s = não pede — o 'desligado' tem de valer sempre);
-//   · conta da App Store do Brasil (storefront 'BRA', pelo RevenueCat) E região do iPhone 'BR';
+//   · conta da App Store do Brasil (storefront 'BRA', pelo RevenueCat) — a região do iPhone
+//     só vai para o Mixpanel, não decide;
 //   · nunca pedido neste aparelho (marca em AsyncStorage, gravada antes do pedido).
 // A cota da Apple (3×/365 dias) é a MESMA dos 3 momentos de dentro do app; a Apple pode não
 // mostrar, e no TestFlight nunca mostra — o evento do Mixpanel sai mesmo assim.
@@ -56,14 +57,18 @@ export async function decidirAvaliacaoOnboarding(): Promise<Avaliacao> {
   const chave = status?.avaliacao_onboarding ?? null;
   const storefront = loja?.countryCode ?? null;
   const base = { storefront, regiao, chave };
+  const fim = (decisao: DecisaoAvaliacao, motivo: string): Avaliacao => {
+    console.log(`[REVIEW] decisão=${decisao} — ${motivo}`, JSON.stringify({ ja, chave, storefront, regiao, disponivel }));
+    return { decisao, ...base };
+  };
 
-  if (ja) return { decisao: 'ja_pedida', ...base };
-  if (chave == null) return { decisao: 'sem_chave', ...base };
-  if (chave !== 'brasil') return { decisao: 'desligado', ...base };
-  if (!storefront || !regiao) return { decisao: 'sem_pais', ...base };
-  if (storefront.toUpperCase() !== 'BRA' || regiao.toUpperCase() !== 'BR') return { decisao: 'fora_brasil', ...base };
-  if (!disponivel) return { decisao: 'indisponivel', ...base };
-  return { decisao: 'pedida', ...base };
+  if (ja) return fim('ja_pedida', `bloqueado: já pedido neste aparelho em ${ja}`);
+  if (chave == null) return fim('sem_chave', 'bloqueado: servidor não devolveu avaliacao_onboarding (sem resposta em 3 s, tabela ausente ou função grupos antiga)');
+  if (chave !== 'brasil') return fim('desligado', `bloqueado: chave do servidor = '${chave}'`);
+  if (!storefront) return fim('sem_pais', 'bloqueado: storefront indisponível');
+  if (storefront.toUpperCase() !== 'BRA') return fim('fora_brasil', 'bloqueado: conta da App Store fora do Brasil');
+  if (!disponivel) return fim('indisponivel', 'bloqueado: StoreReview.isAvailableAsync() = false');
+  return fim('pedida', 'todas as condições ok');
 }
 
 /**
@@ -75,10 +80,15 @@ export async function executarAvaliacaoOnboarding(a: Avaliacao): Promise<void> {
   if (decisao === 'pedida') {
     try {
       await AsyncStorage.setItem(MARCA, new Date().toISOString());
+      console.log('[REVIEW] chamando requestReview');
       await StoreReview.requestReview();
-    } catch {
+      console.log('[REVIEW] requestReview voltou sem erro (a Apple decide se mostra o pop-up)');
+    } catch (e) {
+      console.log('[REVIEW] requestReview falhou:', String(e));
       decisao = 'indisponivel';
     }
+  } else {
+    console.log(`[REVIEW] requestReview NÃO chamado — decisão=${decisao}`);
   }
   trackFora('avaliacao_onboarding', {
     decisao,

@@ -1,3 +1,5 @@
+import { useAbaVista } from '../../../lib/mixpanel/useScreenTracking';
+import { marcarOrigem } from '../../../lib/mixpanel/origem';
 import { erroDaAba } from '../../../components/ErroAba';
 import { useEhConvidada } from '../../../lib/acesso';
 import { abrirTrava, type FRASES } from '../../../lib/trava';
@@ -288,6 +290,7 @@ function CardPraVoce({ trancado, onPress, children }: { trancado: boolean; onPre
 }
 
 export default function Home() {
+  useAbaVista('/home'); // Mixpanel: Screen Viewed no foco da aba
   const router = useRouter();
   const convidada = useEhConvidada();
   const insets = useSafeAreaInsets();
@@ -652,7 +655,7 @@ export default function Home() {
       return;
     }
     haptics.action();
-    startFaceScan();
+    startFaceScan('home');
   };
 
   // ── Animações (valores do design) ─────────────────────────────────────────
@@ -955,7 +958,7 @@ export default function Home() {
                 </View>
               </CardPraVoce>
             </View>
-            <CardPraVoce trancado={convidada} onPress={() => go('/niks-chat')}>
+            <CardPraVoce trancado={convidada} onPress={() => { marcarOrigem('chat', 'home'); go('/niks-chat'); }}>
               <Text style={styles.forText}>NIKS Chat</Text>
               <View style={[styles.forCircle, styles.forCirclePink]}>
                 <Icon d={['M21 12a8.5 8.5 0 0 1-12.2 7.6L3.5 21l1.3-4.8A8.5 8.5 0 1 1 21 12z', 'M8.5 11h7M8.5 14h4.5']} size={30} color="#fff" sw={1.9} />

@@ -26,6 +26,7 @@ import {
 import { cameraOval } from '../../lib/faceFrame';
 import { shapeFromFrame, shapeFromOval, easeShape, type FaceShape } from '../../lib/faceGrid';
 import { t } from '../../lib/i18n';
+import Sensivel from '../../components/Sensivel';
 
 // Scan do rosto — onboarding E (desde out/2026) dentro do app (`?modo=app`; a
 // `camera-multi`, de 6 fotos com expressões, saiu do fluxo). Visual no molde do scan do
@@ -244,6 +245,7 @@ export default function Camera() {
   geo.current = { oval, width, height };
 
   useOnMount(() => { if (!inApp) track('onboarding_step_viewed', obStep(OB_STEPS.camera, 'Scan - Câmera')); });
+  useOnMount(() => track('camera_aberta', { tipo: 'pele', contexto: inApp ? 'app' : 'onboarding' }));
   useEffect(() => () => { mountedRef.current = false; }, []);
 
   // Vibração dos traços acendendo (sem som).
@@ -698,75 +700,78 @@ export default function Camera() {
       <Stack.Screen options={{ gestureEnabled: false }} />
       <StatusBar style="light" />
 
-      {/* MediaPipe: câmera, malha, fundo desfocado e rastreador, tudo nativo. */}
-      {mp && !isSimulator && permission?.granted && (
-        <FaceMP
-          ref={mpRef}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-          hole={[cx - rx, cy - ry, 2 * rx, 2 * ry]}
-          dim={BG_DIM}
-          onReady={() => setCameraReady(true)}
-          onFace={(e) => { faceRef.current = { ...e.nativeEvent, t: Date.now() }; }}
-        />
-      )}
-      {!mp && !isSimulator && permission?.granted && (
-        <CameraView
-          ref={cameraRef}
-          style={StyleSheet.absoluteFill}
-          facing="front"
-          onCameraReady={() => setCameraReady(true)}
-        />
-      )}
-      {/* Fundo desfocado ao vivo com o furo do oval (nativo; também é o rastreador). */}
-      {tracked && !mp && !isSimulator && permission?.granted && (
-        <FaceTracker
-          ref={trackerRef}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-          hole={[cx - rx, cy - ry, 2 * rx, 2 * ry]}
-          dim={BG_DIM}
-          onFace={(e) => { faceRef.current = { ...e.nativeEvent, t: Date.now() }; }}
-        />
-      )}
-
-      <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Defs>
-          <ClipPath id="camOval">
-            <Ellipse cx={cx} cy={cy} rx={rx} ry={ry} />
-          </ClipPath>
-        </Defs>
-        {/* Plano B: sem desfoque, o fundo só escurece. */}
-        {!tracked && <Path d={veil} fill="rgba(0,0,0,0.62)" fillRule="evenodd" />}
-        <G clipPath="url(#camOval)">{mesh}</G>
-        {ringAlpha > 0 && (
-          <G opacity={ringAlpha}>
-            {TICKS.map((t, i) => {
-              const at = litAt.current[i];
-              const lit = at >= 0 && now >= at;
-              const age = lit ? now - at : 0;
-              const g = lit ? back(Math.min(1, age / GROW_MS)) : 0;
-              const head = lit && age < 900 ? Math.sin(Math.min(1, age / 900) * Math.PI) * 2.5 : 0;
-              // Plano B: o arco da vez pulsa. Com rosto: o leque da direção da cabeça salta.
-              const focus = !lit && !circle && t.arc === activeArc;
-              const popOff = circle ? Math.abs(((TICK_DEG[i] - popRef.current.ang + 540) % 360) - 180) : 180;
-              const pop = popOff < POP_CONE ? popRef.current.s * Math.pow(Math.cos((popOff / POP_CONE) * (Math.PI / 2)), 1.6) : 0;
-              const r1 = TICK_R1 + g * 3 + head + pop * POP_LEN + (focus ? 2 + pulse * 3 : 0);
-              return (
-                <Line
-                  key={i}
-                  x1={cx + (rx + TICK_R0) * t.c} y1={cy + (ry + TICK_R0) * t.s}
-                  x2={cx + (rx + r1) * t.c} y2={cy + (ry + r1) * t.s}
-                  stroke={lit ? PINK : '#FFFFFF'}
-                  strokeOpacity={lit || focus || pop > 0.15 ? 1 : 0.8}
-                  strokeWidth={(lit ? 1.6 + Math.min(1, g) * 0.6 : 1.4) + pop * POP_WIDTH}
-                  strokeLinecap="round"
-                />
-              );
-            })}
-          </G>
+      {/* Session Replay: câmera, fundo desfocado e malha do rosto mascarados (components/Sensivel). */}
+      <Sensivel style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {/* MediaPipe: câmera, malha, fundo desfocado e rastreador, tudo nativo. */}
+        {mp && !isSimulator && permission?.granted && (
+          <FaceMP
+            ref={mpRef}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+            hole={[cx - rx, cy - ry, 2 * rx, 2 * ry]}
+            dim={BG_DIM}
+            onReady={() => setCameraReady(true)}
+            onFace={(e) => { faceRef.current = { ...e.nativeEvent, t: Date.now() }; }}
+          />
         )}
-      </Svg>
+        {!mp && !isSimulator && permission?.granted && (
+          <CameraView
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            facing="front"
+            onCameraReady={() => setCameraReady(true)}
+          />
+        )}
+        {/* Fundo desfocado ao vivo com o furo do oval (nativo; também é o rastreador). */}
+        {tracked && !mp && !isSimulator && permission?.granted && (
+          <FaceTracker
+            ref={trackerRef}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+            hole={[cx - rx, cy - ry, 2 * rx, 2 * ry]}
+            dim={BG_DIM}
+            onFace={(e) => { faceRef.current = { ...e.nativeEvent, t: Date.now() }; }}
+          />
+        )}
+
+        <Svg width={width} height={height} style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Defs>
+            <ClipPath id="camOval">
+              <Ellipse cx={cx} cy={cy} rx={rx} ry={ry} />
+            </ClipPath>
+          </Defs>
+          {/* Plano B: sem desfoque, o fundo só escurece. */}
+          {!tracked && <Path d={veil} fill="rgba(0,0,0,0.62)" fillRule="evenodd" />}
+          <G clipPath="url(#camOval)">{mesh}</G>
+          {ringAlpha > 0 && (
+            <G opacity={ringAlpha}>
+              {TICKS.map((t, i) => {
+                const at = litAt.current[i];
+                const lit = at >= 0 && now >= at;
+                const age = lit ? now - at : 0;
+                const g = lit ? back(Math.min(1, age / GROW_MS)) : 0;
+                const head = lit && age < 900 ? Math.sin(Math.min(1, age / 900) * Math.PI) * 2.5 : 0;
+                // Plano B: o arco da vez pulsa. Com rosto: o leque da direção da cabeça salta.
+                const focus = !lit && !circle && t.arc === activeArc;
+                const popOff = circle ? Math.abs(((TICK_DEG[i] - popRef.current.ang + 540) % 360) - 180) : 180;
+                const pop = popOff < POP_CONE ? popRef.current.s * Math.pow(Math.cos((popOff / POP_CONE) * (Math.PI / 2)), 1.6) : 0;
+                const r1 = TICK_R1 + g * 3 + head + pop * POP_LEN + (focus ? 2 + pulse * 3 : 0);
+                return (
+                  <Line
+                    key={i}
+                    x1={cx + (rx + TICK_R0) * t.c} y1={cy + (ry + TICK_R0) * t.s}
+                    x2={cx + (rx + r1) * t.c} y2={cy + (ry + r1) * t.s}
+                    stroke={lit ? PINK : '#FFFFFF'}
+                    strokeOpacity={lit || focus || pop > 0.15 ? 1 : 0.8}
+                    strokeWidth={(lit ? 1.6 + Math.min(1, g) * 0.6 : 1.4) + pop * POP_WIDTH}
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+            </G>
+          )}
+        </Svg>
+      </Sensivel>
 
       {/* Topo: ajuda, medidor de luz e fechar */}
       <TouchableOpacity onPress={showTips} activeOpacity={0.8} style={[styles.roundBtn, { left: 18, top: topY }]}>

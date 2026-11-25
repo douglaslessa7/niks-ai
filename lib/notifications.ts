@@ -1,4 +1,5 @@
 import * as Notifications from 'expo-notifications';
+import { trackFora } from './mixpanel/MixpanelProvider';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
@@ -45,11 +46,14 @@ Notifications.setNotificationHandler({
  * ao contrário do token, que depende de rede. Se já foi recusada antes, o iOS não
  * mostra o pop-up de novo e responde `false` na hora.
  */
-export async function askPushPermission(): Promise<boolean> {
+export async function askPushPermission(origem?: string): Promise<boolean> {
   await setupAndroidNotificationChannel();
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  const { status: existingStatus, canAskAgain } = await Notifications.getPermissionsAsync();
   if (existingStatus === 'granted') return true;
   const { status } = await Notifications.requestPermissionsAsync();
+  // Mixpanel: só quando houve pedido (já concedida antes não gera evento). `pop_up`: o sistema
+  // ainda mostraria o pop-up — sem ele, a resposta é a decisão antiga dela.
+  trackFora('notif_permissao', { resultado: status === 'granted' ? 'concedida' : 'negada', origem: origem ?? null, pop_up: canAskAgain });
   return status === 'granted';
 }
 
@@ -57,8 +61,8 @@ export async function askPushPermission(): Promise<boolean> {
  * Pede permissão de notificação ao usuário e retorna o Expo Push Token.
  * Retorna null se o usuário recusar.
  */
-export async function requestPushPermission(): Promise<string | null> {
-  if (!(await askPushPermission())) {
+export async function requestPushPermission(origem?: string): Promise<string | null> {
+  if (!(await askPushPermission(origem))) {
     console.log('[notifications] Permissão negada pelo usuário.');
     return null;
   }

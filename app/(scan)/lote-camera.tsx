@@ -8,6 +8,7 @@
 // produtos) levam à revisão; sem produtos, o X sai. Nada é analisado aqui.
 // No simulador (sem câmera), o disparador abre a galeria.
 // ─────────────────────────────────────────────────────────────────────────────
+import Sensivel from '../../components/Sensivel';
 import { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, Alert, ActivityIndicator, Animated, Easing, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -127,7 +128,9 @@ export default function LoteCamera() {
     <View style={{ flex: 1, backgroundColor: '#0F0D0E' }}>
       <StatusBar style="light" />
       {!isSimulator && permission?.granted && (
-        <CameraView ref={cameraRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} facing="back" />
+        <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
+          <CameraView ref={cameraRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} facing="back" />
+        </Sensivel>
       )}
 
       {/* Véu em volta da moldura (tela inteira) */}

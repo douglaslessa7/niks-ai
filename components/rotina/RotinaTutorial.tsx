@@ -20,6 +20,7 @@
 // montadas e só trocam de opacidade, e o "Continuar" dispara o momento 2 de uma vez. Antes
 // a troca dependia de relógios do JS e o card ficava vazio quando o JS estava ocupado.
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Reanimated, {
@@ -141,6 +142,7 @@ type Valores = {
 type Props = { onEscolha: (e: EscolhaIntro) => void };
 
 export default function RotinaTutorial({ onEscolha }: Props) {
+  useEffect(() => { trackFora('tutorial_visto', { qual: 'rotina', paradas: 2 }); }, []);
   const { width: W, height: H } = useWindowDimensions();
   const s = Math.min(W / DW, H / DH);
   const palcoBase = { position: 'absolute' as const, left: (W - DW) / 2, top: (H - DH) / 2, width: DW, height: DH };
@@ -234,7 +236,12 @@ export default function RotinaTutorial({ onEscolha }: Props) {
     actOp.set(D(450, T(1, 350))); actY.set(D(450, T(0, 500, EASE_OUT)));
     setM(2);
   };
-  const escolher = (e: EscolhaIntro) => { haptics.select(); onEscolha(e); };
+  const escolher = (e: EscolhaIntro) => {
+    haptics.select();
+    // 'depois' = deixou para depois (pulou); as outras = concluiu escolhendo um caminho.
+    trackFora(e === 'depois' ? 'tutorial_pulado' : 'tutorial_concluido', { qual: 'rotina', escolha: e, paradas: 2 });
+    onEscolha(e);
+  };
 
   // ── Estilos animados ─────────────────────────────────────────────────────────
   const conteudoSt = useAnimatedStyle(() => ({

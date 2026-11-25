@@ -37,6 +37,22 @@ export default function ProductResult() {
   // sobreviver a um remount). Inofensivo no fluxo da câmera, que não usa retomada.
   useEffect(() => { clearShareResume(); }, []);
   const { productScanResult, productImageBase64, productImageMimeType } = useAppStore();
+  // Mixpanel: 1× por resultado (o scan_id muda a cada scan).
+  const vistoRef = useRef<string | null>(null);
+  useEffect(() => {
+    const rr = productScanResult as any;
+    if (!rr) return;
+    const chave = rr.scan_id ?? 'sem_id';
+    if (vistoRef.current === chave) return;
+    vistoRef.current = chave;
+    trackFora('product_resultado_visto', {
+      status: rr.status ?? null,
+      compatibilidade: typeof rr.compatibilidade === 'number' ? rr.compatibilidade : null,
+      veredito: rr.veredito ?? null,
+      decisao_rotina: rr.decisao_rotina?.tipo ?? null,
+      do_passo: Boolean(useAppStore.getState().rotinaPassoAlvo),
+    });
+  }, [productScanResult]);
 
   const photoUri = productImageBase64
     ? `data:${productImageMimeType ?? 'image/jpeg'};base64,${productImageBase64}`
@@ -93,6 +109,7 @@ export default function ProductResult() {
       }, { pregnancyStatus: u?.pregnancy_status ?? null, tipoPele: u?.tipo_pele ?? null });
       const usar = async () => {
         await definirProdutoDoPasso(alvo.passoId, { origem: 'estante', id: colecaoId }, aviso);
+        trackFora('product_add_rotina', { origem: 'passo_da_rotina', aviso: aviso.nivel });
         invalidateCache(`minharotina:${uid}`);
         haptics.success();
         Alert.alert(t('Adicionado à sua rotina'), t('Entrou no passo "{{passo}}" e na sua estante.', { passo: alvo.nome }), [
@@ -145,6 +162,7 @@ export default function ProductResult() {
         // Sem Minha rotina ainda (nunca abriu a Rotina na build nova): cria a cópia antes.
         await garantirMinhaRotina(uid);
         const res = await adicionarDoScan(uid, r.scan_id, decisao);
+        trackFora('product_add_rotina', { origem: 'resultado_scan', periodo: decisao?.periodo ?? null, tipo_decisao: decisao?.tipo ?? null });
         invalidateCache(`minharotina:${uid}`);
         col.recheck();
         haptics.success();

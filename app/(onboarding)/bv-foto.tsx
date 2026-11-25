@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Sensivel from '../../components/Sensivel';
 import { View, Text, Image, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -9,7 +10,6 @@ import Svg, { Ellipse, Path, Rect } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
-import { useOnMount } from '../../components/onboarding/kit';
 import { registrarFotoPartida } from '../../lib/boasVindas';
 import {
   BV, BvScreen, BvProgresso, BvEtiqueta, BvTitulo, useBvFrame,
@@ -40,7 +40,6 @@ export default function BvFoto() {
   const simulador = !Device.isDevice;
   const cameraOk = !simulador && !!perm?.granted;
 
-  useOnMount(() => track('boas_vindas_tela', { tela: 3, nome: 'foto' }));
   useEffect(() => {
     if (!simulador && perm && !perm.granted && perm.canAskAgain) void pedirPerm();
   }, [perm?.granted]);
@@ -110,7 +109,9 @@ export default function BvFoto() {
           {foto ? (
             <Image source={{ uri: foto }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} resizeMode="cover" />
           ) : cameraOk ? (
-            <CameraView ref={cam} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} facing="front" mirror />
+            <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
+              <CameraView ref={cam} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} facing="front" mirror />
+            </Sensivel>
           ) : (
             <Image source={EXEMPLO} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }} resizeMode="cover" />
           )}

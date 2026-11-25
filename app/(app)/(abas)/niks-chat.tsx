@@ -1,3 +1,7 @@
+import { useAbaVista } from '../../../lib/mixpanel/useScreenTracking';
+import Sensivel from '../../../components/Sensivel';
+import { trackFora } from '../../../lib/mixpanel/MixpanelProvider';
+import { consumirOrigem } from '../../../lib/mixpanel/origem';
 import { erroDaAba } from '../../../components/ErroAba';
 import { avisarSeSemAssinatura } from '../../../lib/respostaIA';
 import {
@@ -433,6 +437,7 @@ function typingMs(text: string): number {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function NiksChat() {
+  useAbaVista('/niks-chat'); // Mixpanel: Screen Viewed no foco da aba
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -675,6 +680,7 @@ export default function NiksChat() {
   const decidirPendente = async (approved: boolean): Promise<{ ok: boolean; action?: string }> => {
     if (!pendente) return { ok: false }
     const res = await approveProtocolChange(pendente.id, approved)
+    trackFora('chat_mudanca_rotina', { decisao: approved ? 'aprovada' : 'recusada', resultado: res.ok ? (res.action ?? 'ok') : (res.action ?? 'falhou'), card: 'fixo' })
     if (res.ok && approved && cachedUserId) {
       invalidateCache(`minharotina:${cachedUserId}`)
       invalidateCache(`protocolo:${cachedUserId}`)
@@ -700,6 +706,7 @@ export default function NiksChat() {
     messageId: string, suggestionId: string, approved: boolean,
   ): Promise<{ ok: boolean; action?: string }> => {
     const res = await approveProtocolChange(suggestionId, approved)
+    trackFora('chat_mudanca_rotina', { decisao: approved ? 'aprovada' : 'recusada', resultado: res.ok ? (res.action ?? 'ok') : (res.action ?? 'falhou'), card: 'mensagem' })
     // Aplicada: a rotina mudou no servidor (Minha rotina, ou a ideal p/ quem não tem) —
     // a aba Rotina e os cards que dependem dela precisam reler.
     if (res.ok && approved && cachedUserId) {
@@ -752,6 +759,22 @@ export default function NiksChat() {
     ])
     setMode('active')
 
+    // Mixpanel: só metadados (tipo, quantidade, tamanho) — nunca o texto nem a foto.
+    msgsNaSessao.current += 1
+    const enviadaEm = Date.now()
+    const nFotos = images?.length ?? 0
+    const metaMsg = {
+      tipo: nFotos > 0 ? 'foto' : 'texto',
+      fotos: nFotos,
+      tamanho: text.trim().length,
+      numero_da_mensagem_na_sessao: msgsNaSessao.current,
+    }
+    // Conversa da espinha → `sos_conversa`; chat comum → `chat_mensagem_enviada`.
+    trackFora(naEspinha ? 'sos_conversa' : 'chat_mensagem_enviada', metaMsg)
+    const conversaTipo = naEspinha ? 'espinha' : 'chat'
+    const resposta = (extra: Record<string, unknown>) =>
+      trackFora('chat_resposta_recebida', { ms: Date.now() - enviadaEm, conversa: conversaTipo, ...extra })
+
     const showSendError = (msg: string) => {
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
@@ -782,6 +805,7 @@ export default function NiksChat() {
     }
 
     if (!accessToken) {
+      resposta({ erro: 'sem_sessao' })
       showSendError(t('Ocorreu um erro. Tente novamente.'))
       return
     }
@@ -807,6 +831,7 @@ export default function NiksChat() {
 
     xhr.onload = () => {
       if (xhr.status !== 200) {
+        resposta({ erro: 'http', status: xhr.status })
         avisarSeSemAssinatura(xhr.status);
         const erro = naEspinha && xhr.status === 429
           ? t('Você já mandou 20 mensagens hoje nesta conversa. Amanhã a gente continua por aqui.')
@@ -821,6 +846,7 @@ export default function NiksChat() {
       // Sempre o responseText inteiro — garante que nada fica truncado.
       const idSugestao = xhr.responseText.match(MARCADOR_SUGESTAO)?.[1] ?? null
       const visivel = semMarcador(xhr.responseText)
+      resposta({ erro: null, proposta_rotina: Boolean(idSugestao), tamanho: visivel.length })
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
           ? { ...m, content: visivel, isStreaming: false }
@@ -838,6 +864,7 @@ export default function NiksChat() {
     }
 
     xhr.onerror = () => {
+      resposta({ erro: 'rede' })
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
           ? { ...m, content: t('Ocorreu um erro. Tente novamente.'), isStreaming: false }
@@ -849,6 +876,7 @@ export default function NiksChat() {
     // 120s com imagens, 90s só texto.
     xhr.timeout = images && images.length > 0 ? 120000 : 90000
     xhr.ontimeout = () => {
+      resposta({ erro: 'timeout' })
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
           ? { ...m, content: t('A resposta demorou muito. Tente novamente.'), isStreaming: false }
@@ -899,6 +927,8 @@ export default function NiksChat() {
       ])
       if (cachedUserId) invalidateCache(`chat:${cachedUserId}`)
 
+      msgsNaSessao.current += 1
+      trackFora('chat_mensagem_enviada', { tipo: 'opcao_pronta', fotos: 0, tamanho: text.length, numero_da_mensagem_na_sessao: msgsNaSessao.current })
       setMessages([
         { id: `user_${Date.now()}`,      role: 'user',      content: text, live: true },
         { id: `assistant_${Date.now()}`, role: 'assistant',  content: predefined, live: true, createdAt: Date.now() },
@@ -1042,6 +1072,12 @@ export default function NiksChat() {
   }, [])
 
   const { conversa: conversaParam, t: conversaToque } = useLocalSearchParams<{ conversa?: string; t?: string }>()
+  // Mixpanel: `chat_aberto` a cada foco; o número das mensagens recomeça a cada abertura.
+  const msgsNaSessao = useRef(0)
+  useFocusEffect(useCallback(() => {
+    msgsNaSessao.current = 0
+    trackFora('chat_aberto', { origem: conversaParam ? 'sos_espinha' : (consumirOrigem('chat') ?? 'outro') })
+  }, [conversaParam]))
   useEffect(() => {
     if (conversaParam) void abrirEspinha(conversaParam)
   }, [conversaParam, conversaToque, abrirEspinha])
@@ -1089,7 +1125,7 @@ export default function NiksChat() {
       const uid = await getUserId();
       if (!uid) return;
       const hoje = await loteDeHoje(uid).catch(() => null);
-      abrirMontarRotina(router, hoje);
+      abrirMontarRotina(router, hoje, 'chat');
     } finally {
       abrindoLote.current = false;
     }
@@ -1375,21 +1411,23 @@ export default function NiksChat() {
         }
       >
         {/* ── Conversa ───────────────────────────────────────────────────── */}
-        <ScrollView
-          ref={scrollRef}
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 21, paddingBottom: 20 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
-        >
-          <Text style={styles.dayLabel}>{dayLabel}</Text>
-          {rows.map((r, i) => (
-            <FadeIn key={r.key} enabled={(introAnimated && !done && (r.key === 'hi' || r.key === 'help' || r.key === 'about')) || ('anim' in r && !!r.anim)}>
-            {renderRow(r, i)}
-            </FadeIn>
-          ))}
-        </ScrollView>
+        <Sensivel style={{ flex: 1 }}>
+          <ScrollView
+            ref={scrollRef}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 21, paddingBottom: 20 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+          >
+            <Text style={styles.dayLabel}>{dayLabel}</Text>
+            {rows.map((r, i) => (
+              <FadeIn key={r.key} enabled={(introAnimated && !done && (r.key === 'hi' || r.key === 'help' || r.key === 'about')) || ('anim' in r && !!r.anim)}>
+              {renderRow(r, i)}
+              </FadeIn>
+            ))}
+          </ScrollView>
+        </Sensivel>
 
         {/* ── 39a: folha com as opções + "Ou escreva sua pergunta" + Enviar ── */}
         {!done && (
@@ -1543,20 +1581,22 @@ export default function NiksChat() {
             <Text style={styles.sendText}>{t('Nova conversa')}</Text>
           </TouchableOpacity>
         </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
-          {historyLoading ? (
-            <Text style={[styles.histGroup, { textAlign: 'center' }]}>{t('Carregando…')}</Text>
-          ) : historyConversations.length === 0 ? (
-            <Text style={[styles.histGroup, { textAlign: 'center' }]}>{t('Nenhuma conversa ainda.')}</Text>
-          ) : (
-            <>
-              {recentConvs.length > 0 && <Text style={styles.histGroup}>{t('Esta semana')}</Text>}
-              {recentConvs.map(renderHistItem)}
-              {olderConvs.length > 0 && <Text style={styles.histGroup}>{t('Anteriores')}</Text>}
-              {olderConvs.map(renderHistItem)}
-            </>
-          )}
-        </ScrollView>
+        <Sensivel style={{ flex: 1 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+            {historyLoading ? (
+              <Text style={[styles.histGroup, { textAlign: 'center' }]}>{t('Carregando…')}</Text>
+            ) : historyConversations.length === 0 ? (
+              <Text style={[styles.histGroup, { textAlign: 'center' }]}>{t('Nenhuma conversa ainda.')}</Text>
+            ) : (
+              <>
+                {recentConvs.length > 0 && <Text style={styles.histGroup}>{t('Esta semana')}</Text>}
+                {recentConvs.map(renderHistItem)}
+                {olderConvs.length > 0 && <Text style={styles.histGroup}>{t('Anteriores')}</Text>}
+                {olderConvs.map(renderHistItem)}
+              </>
+            )}
+          </ScrollView>
+        </Sensivel>
       </Animated.View>
     </View>
     </VoltarPelaBorda>

@@ -310,6 +310,7 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
   });
 
   const entrouNaRotina = (uid: string, texto: string, d: Desfazer) => {
+    trackFora('product_add_rotina', { origem: 'estante', fonte_produto: item.productScanId ? 'scan' : 'catalogo' });
     invalidateCache(`minharotina:${uid}`);
     haptics.success();
     setPassos(null);
@@ -347,6 +348,9 @@ export default function ProdutoEstanteOverlay({ item, origem, onVisivel, onFecho
       return;
     }
     await definirProdutoDoPasso(passo.id, { origem: 'estante', id: item.id }, avisoPasso);
+    if (!(recomendado && (!passo.produto || passo.produto.origem === 'estante'))) {
+      trackFora('product_add_rotina', { origem: 'estante', fonte_produto: item.productScanId ? 'scan' : 'catalogo' });
+    }
     if (recomendado && (!passo.produto || passo.produto.origem === 'estante')) {
       entrouNaRotina(uid, passo.nome?.trim() ? t('Adicionado ao passo {{passo}}', { passo: passo.nome.trim() }) : t('Adicionado ao passo da sua rotina'), {
         criados: [], estanteNova: null,

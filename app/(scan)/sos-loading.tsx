@@ -7,6 +7,7 @@ import { ObPillButton } from '../../components/onboarding/kit';
 import { haptics } from '../../lib/haptics';
 import { analisarEspinha, fotoAtual, lerUltimaAnalise, limparFoto, salvarUltimaAnalise } from '../../lib/sosEspinha';
 import { t } from '../../lib/i18n';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 
 // Carregamento do SOS espinha: a tela única de loading dos scans, com a foto dela e a linha
 // de scan no disco. Os três desfechos sem análise têm texto e botão próprios.
@@ -65,8 +66,21 @@ export default function SosLoading() {
     atualRef.current = 0;
     setPercentual(0);
     andar();
+    const inicio = Date.now();
     const r = await analisarEspinha();
     rodandoRef.current = false;
+    // Mixpanel: só status e contagens (nada da foto nem do texto da análise).
+    const ms = Date.now() - inicio;
+    if (r.status === 'ok') {
+      const a = r as any;
+      trackFora('sos_resultado', {
+        ms,
+        produtos: Array.isArray(a.produtos) ? a.produtos.length : null,
+        cuidados: Array.isArray(a.cuidados) ? a.cuidados.length : null,
+      });
+    } else {
+      trackFora('sos_erro', { ms, motivo: r.status });
+    }
     if (!vivoRef.current) return;
     pararBarra();
 

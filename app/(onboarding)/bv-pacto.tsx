@@ -6,7 +6,7 @@ import Svg, { Defs, RadialGradient, Stop, Circle } from 'react-native-svg';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
-import { useObName, useOnMount } from '../../components/onboarding/kit';
+import { useObName } from '../../components/onboarding/kit';
 import { useAppStore } from '../../store/onboarding';
 import { selarPacto } from '../../lib/boasVindas';
 import {
@@ -48,7 +48,6 @@ export default function BvPacto() {
   const completed = useRef(false);
   const [finished, setFinished] = useState(false);
 
-  useOnMount(() => track('boas_vindas_tela', { tela: 5, nome: 'pacto' }));
 
   const cy = y(CENTRO_Y);
   const farthest = Math.max(Math.hypot(width / 2, cy), Math.hypot(width / 2, height - cy));

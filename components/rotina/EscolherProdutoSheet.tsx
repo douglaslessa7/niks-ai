@@ -18,6 +18,7 @@
 // outro / Usar mesmo assim"; o LEVE só fica gravado no passo (lib/avisoProduto).
 // Casca da folha = a do Alarme (Modal transparente + véu + translateY).
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { irPara } from '../../lib/navegar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -324,6 +325,9 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
   const escolher = (c: Candidato) => {
     if (!atual || !dados || salvando) return;
     const aviso = avaliarProduto(c.avaliavel, dados.pele);
+    const medir = () => trackFora('rotina_produto_escolhido', {
+      origem: c.ref?.origem ?? null, aviso: aviso.nivel, periodo: (atual as { periodo?: string }).periodo ?? null, fonte: 'folha',
+    });
     const salvar = async () => {
       // Na hora (12/nov/2026, pedido do produto): a folha fecha e o passo já mostra o produto
       // (`onEscolhendo`, a Rotina atualiza o passo na tela); a gravação segue por trás. Antes a
@@ -333,6 +337,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
         onEscolhendo(atual, c);
         try {
           await definirProdutoDoPasso(atual.id, c.ref, aviso);
+          medir();
           invalidarEscolherProduto();
           onEscolhido();
         } catch (e) {
@@ -346,6 +351,7 @@ export default function EscolherProdutoSheet({ passo, onClose, onEscolhido, onEs
       setSalvando(true);
       try {
         await definirProdutoDoPasso(atual.id, c.ref, aviso);
+        medir();
         invalidarEscolherProduto();
         haptics.success();
         onEscolhido();

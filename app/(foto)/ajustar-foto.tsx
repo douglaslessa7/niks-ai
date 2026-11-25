@@ -1,4 +1,5 @@
 import { moderarFotoPerfil } from '../../lib/gruposServidor';
+import Sensivel from '../../components/Sensivel';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
@@ -12,6 +13,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import { useAppStore, uploadScanPhoto } from '../../store/onboarding';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { supabase } from '../../lib/supabase';
 import { BG_STOPS, homeTheme, isNightTheme } from '../../lib/homeTheme';
 import { invalidateCache, invalidateCachePrefixo } from '../../lib/cache';
@@ -184,6 +186,7 @@ export default function AjustarFoto() {
         .update({ foto_home_url: url })
         .eq('id', user.id);
       if (error) throw error;
+      trackFora('foto_perfil_alterada', {});
 
       setHomePhotoDraft(null);
       // A home lê de cache agora, então precisa ser avisada que a foto mudou —
@@ -238,19 +241,21 @@ export default function AjustarFoto() {
           >
             <GestureDetector gesture={gesture}>
               <View style={[styles.photoCircle, { width: D, height: D, borderRadius: D / 2 }]}>
-                <Animated.Image
-                  source={{ uri: draft.uri }}
-                  style={[
-                    {
-                      position: 'absolute',
-                      width: dw,
-                      height: dh,
-                      left: (D - dw) / 2,
-                      top: (D - dh) / 2,
-                    },
-                    imgStyle,
-                  ]}
-                />
+                <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+                  <Animated.Image
+                    source={{ uri: draft.uri }}
+                    style={[
+                      {
+                        position: 'absolute',
+                        width: dw,
+                        height: dh,
+                        left: (D - dw) / 2,
+                        top: (D - dh) / 2,
+                      },
+                      imgStyle,
+                    ]}
+                  />
+                </Sensivel>
               </View>
             </GestureDetector>
           </LinearGradient>

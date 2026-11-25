@@ -19,6 +19,7 @@ import { getUserId } from '../../lib/currentUser';
 import { haptics } from '../../lib/haptics';
 import { BUCKET_LOTES, MAX_PRODUTOS_LOTE, enviarLote, useLote } from '../../lib/loteProdutos';
 import { iniciarLote, TetoDoDiaError } from '../../lib/rotinaLotes';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { supabase } from '../../lib/supabase';
 import VoltarPelaBorda from '../../components/VoltarPelaBorda';
 import { t } from '../../lib/i18n';
@@ -73,10 +74,12 @@ export default function LoteRevisao() {
       const { caminhos } = await enviarLote(uid, produtos);
       enviados = caminhos;
       const loteId = await iniciarLote(caminhos, produtos.map((p) => !!p.rotuloUri));
+      trackFora('lote_enviado', { qtd_produtos: produtos.length, com_rotulo: produtos.filter((p) => !!p.rotuloUri).length });
       limpar();
       router.replace({ pathname: '/(scan)/lote-montando', params: { id: loteId } } as any);
     } catch (e) {
       console.warn('[lote-revisao] montar falhou:', e);
+      trackFora('lote_erro', { qtd_produtos: produtos.length, etapa: e instanceof TetoDoDiaError ? 'teto_do_dia' : 'envio' });
       if (e instanceof TetoDoDiaError) {
         // As fotos não vão ser usadas: sai do bucket (com as frentes ao lado).
         const todas = enviados.flatMap((c) => [c, c.replace(/\.jpg$/, '-frente.jpg')]);

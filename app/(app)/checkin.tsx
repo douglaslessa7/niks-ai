@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Sensivel from '../../components/Sensivel';
 import { lembrarFotoLocal } from '../../lib/fotosRapidas';
 import { preaquecerGrupo } from './grupo';
 import { voltar as voltarOu } from '../../lib/navegar';
@@ -403,10 +404,14 @@ export default function Checkin() {
         </TouchableOpacity>
         <Animated.View style={[styles.vf, { top: y(108), opacity: visorO, transform: [{ perspective: 1200 }, { rotateY: rot }] }]}>
           {perm?.granted && (
-            <CameraView ref={cam} style={StyleSheet.absoluteFill} facing={frente ? 'front' : 'back'} mirror={frente} flash={flash ? 'on' : 'off'} />
+            <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
+              <CameraView ref={cam} style={StyleSheet.absoluteFill} facing={frente ? 'front' : 'back'} mirror={frente} flash={flash ? 'on' : 'off'} />
+            </Sensivel>
           )}
           {/* Convite (sem grupo): a foto tirada fica parada no visor, atrás da folha. */}
-          {convite && foto && <Image source={{ uri: foto.uri }} style={StyleSheet.absoluteFill} />}
+          {convite && foto && <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+  <Image source={{ uri: foto.uri }} style={StyleSheet.absoluteFill} />
+</Sensivel>}
         </Animated.View>
         <View style={[styles.camNote, { top: y(652) }]}>
           <Cadeado color="rgba(255,255,255,0.8)" />
@@ -473,7 +478,9 @@ export default function Checkin() {
           </TouchableOpacity>
           <View>
             <Animated.View style={[styles.shot, { opacity: fotoIn.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1, 1] }), transform: [{ scale: fotoIn.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }]}>
-              {foto && <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%' }} />}
+              {foto && <Sensivel style={{ width: '100%', height: '100%' }} pointerEvents="none">
+  <Image source={{ uri: foto.uri }} style={{ width: '100%', height: '100%' }} />
+</Sensivel>}
             </Animated.View>
             <TouchableOpacity activeOpacity={0.7} disabled={publicando} onPress={() => { haptics.tap(); setEtapa('cam'); }} style={styles.lapis} accessibilityLabel={t('Tirar outra foto')}>
               <Icon size={18} color={INK} sw={2} d={['M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z']} />

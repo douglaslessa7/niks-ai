@@ -14,8 +14,10 @@
 // Fonte = SF Pro (sistema), rosa #FF5EA8. Medidas do frame 393×852 (barra de status
 // de 54 pt → `insets.top − 54`).
 // ─────────────────────────────────────────────────────────────────────────────
+import Sensivel from '../../components/Sensivel';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { ehContaTeste } from '../../lib/contaTeste';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, useWindowDimensions,
   NativeSyntheticEvent, NativeScrollEvent,
@@ -102,6 +104,7 @@ function metricOf(scan: ScanRow | undefined, key: 'score' | MetricKey): number |
 }
 
 export default function Progresso() {
+  useEffect(() => { trackFora('progresso_visto', {}); }, []);
   const { data: estadoCartas, refresh: recarregarEstado } = useEstadoCartas();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -234,7 +237,9 @@ export default function Progresso() {
             >
               <View style={styles.photoInner}>
                 {photo
-                  ? <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  ? <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+  <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" />
+</Sensivel>
                   : <InicialAvatar nome={data?.nome} tamanho={90} style={StyleSheet.absoluteFill} />}
               </View>
             </LinearGradient>
@@ -398,7 +403,9 @@ export default function Progresso() {
           {scans.map((s) => (
             <View key={s.created_at} style={[styles.scanCard, { padding: 3 }]}>
               <View style={styles.scanInner}>
-                {s.foto_url ? <Image source={{ uri: s.foto_url }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+                {s.foto_url ? <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+  <Image source={{ uri: s.foto_url }} style={StyleSheet.absoluteFill} contentFit="cover" />
+</Sensivel> : null}
                 <View style={styles.scanBadge}>
                   <Text style={{ fontSize: 14, fontWeight: '700', letterSpacing: -0.3, color: '#FFFFFF' }}>{s.skin_score ?? '—'}</Text>
                 </View>

@@ -686,6 +686,7 @@ export default function AppLayout() {
           antes={etapaGrupos.antes}
           total={etapaGrupos.total}
           onParada={registrarParada}
+          qual="grupos"
           onFinish={() => { void avancarTutorialGrupos(); }}
         />
       )}

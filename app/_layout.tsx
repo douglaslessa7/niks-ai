@@ -21,6 +21,8 @@ import Purchases from 'react-native-purchases';
 import { MixpanelProvider, trackFora, useMixpanel } from '../lib/mixpanel/MixpanelProvider';
 import { registrarErroApp } from '../lib/erroApp';
 import { useScreenTracking } from '../lib/mixpanel/useScreenTracking';
+import { identificarSessao, ligarPlanoMixpanel, registrarFirstOpen } from '../lib/mixpanel/perfil';
+import { SuperwallMixpanelBridge } from '../lib/mixpanel/superwallBridge';
 import { ShareIntentProvider } from 'expo-share-intent';
 import { ShareIntentBridge } from '../components/share/ShareIntentBridge';
 import * as SplashScreen from 'expo-splash-screen';
@@ -28,6 +30,7 @@ import SplashOverlay from '../components/SplashOverlay';
 import PaywallDiagnostico from '../components/debug/PaywallDiagnostico';
 import BarraPontosHost from '../components/cartas/BarraPontosHost';
 import GuiaHost from '../components/coach/GuiaHost';
+import '../lib/devReset'; // só __DEV__: menu "NIKS: zerar aparelho (teste)"
 
 // Segura a splash NATIVA até a cópia JS (SplashOverlay) desenhar o 1º quadro —
 // é ela quem esconde a nativa, sem fade (as duas são idênticas). Precisa rodar no
@@ -222,9 +225,26 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { track } = useMixpanel();
   useScreenTracking();
 
+  // Abertura: `app_opened` com `origem` 'cold' (abriu do zero) ou 'foreground' (voltou do
+  // segundo plano depois de ficar lá 30 s ou mais). `first_open` uma vez por instalação.
+  // Conta o tempo EM SEGUNDO PLANO (`background`), não desde o último `app_opened`: só
+  // `inactive` (central de notificações, folha de compra da Apple, Face ID) não conta.
   useEffect(() => {
-    track('app_opened');
-  }, []);
+    track('app_opened', { origem: 'cold' });
+    void registrarFirstOpen();
+    let foiParaSegundoPlano: number | null = null;
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'background') {
+        if (foiParaSegundoPlano === null) foiParaSegundoPlano = Date.now();
+        return;
+      }
+      if (estado !== 'active' || foiParaSegundoPlano === null) return;
+      const ficou = Date.now() - foiParaSegundoPlano;
+      foiParaSegundoPlano = null;
+      if (ficou >= 30_000) track('app_opened', { origem: 'foreground', segundos_fora: Math.round(ficou / 1000) });
+    });
+    return () => sub.remove();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rede de segurança da "folha com vão em cima" (lib/navegar, 12/nov/2026): se uma 2ª cópia do
   // app for empilhada por cima da carta, conserta na hora e mede quantas vezes isso acontece.
@@ -246,6 +266,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <ShareIntentBridge />
+      <SuperwallMixpanelBridge />
       {children}
     </>
   );
@@ -289,14 +310,20 @@ export default function RootLayout() {
 
   useEffect(() => {
     initRevenueCat();
+    // Mixpanel: plano (free/trial/pago/convidada/expirado) pelo status de assinatura do Superwall.
+    ligarPlanoMixpanel();
 
-    // Associa o usuário Supabase ao RevenueCat para rastrear compras por conta
+    // Associa o usuário Supabase ao RevenueCat para rastrear compras por conta.
+    // Mixpanel: identify com o id da conta sempre que houver sessão — abertura com sessão,
+    // login, cadastro (inclusive da convidada) e onboarding concluído já logada.
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) loginRevenueCat(session.user.id).catch(() => {});
+      identificarSessao(session?.user);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       if (session?.user) loginRevenueCat(session.user.id).catch(() => {});
+      identificarSessao(session?.user);
     });
 
     return () => subscription.unsubscribe();
@@ -392,7 +419,9 @@ export default function RootLayout() {
           // Idioma do paywall (nov/2026): mesma regra do app — português = como sempre (sem
           // `localeIdentifier`, o SDK usa o do aparelho); qualquer outro idioma = inglês dos EUA,
           // para o celular em espanhol/francês também cair no "en" do Localization do Superwall.
-          options={{ manualPurchaseManagement: true, ...(emIngles ? { localeIdentifier: 'en_US' } : {}) }}
+          // passIdentifiersToPlayStore: no Android, o appUserId do Superwall vai para a Play Store na
+          // compra (no iOS o SDK já manda o appUserId-UUID como appAccountToken sozinho).
+          options={{ manualPurchaseManagement: true, passIdentifiersToPlayStore: true, ...(emIngles ? { localeIdentifier: 'en_US' } : {}) }}
         >
           <CustomPurchaseControllerProvider controller={superwallPurchaseController}>
             <GestureHandlerRootView style={{ flex: 1 }}>

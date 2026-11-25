@@ -17,5 +17,5 @@ const STOPS: TutStop[] = [
 ];
 
 export default function ProdutosCoachMarks({ onFinish }: { onFinish: () => void }) {
-  return <TutorialOverlay stops={STOPS} onFinish={onFinish} />;
+  return <TutorialOverlay stops={STOPS} onFinish={onFinish} qual="produtos" />;
 }

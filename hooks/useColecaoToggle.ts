@@ -4,6 +4,7 @@ import { getUserId } from '../lib/currentUser';
 import { addToColecao, findInColecao, removeFromColecao } from '../lib/colecao';
 import { haptics } from '../lib/haptics';
 import { t } from '../lib/i18n';
+import { trackFora } from '../lib/mixpanel/MixpanelProvider';
 
 // Estado do botão "Tenho em casa" (Minha coleção) para UM produto — de um scan
 // (`productScanId` + dados do resultado) ou do catálogo (`produtoId`). `owned` começa
@@ -53,6 +54,7 @@ export function useColecaoToggle(src: Source | null, onChange?: () => void) {
       } else {
         const id = await addToColecao(uid, src);
         setItemId(id); setOwned(true);
+        trackFora('product_add_estante', { origem: src.origem, compatibilidade: (src as { compat?: number | null }).compat ?? null });
         haptics.success();
       }
       onChange?.();

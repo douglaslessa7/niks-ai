@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import {
   View, Text, TouchableOpacity, FlatList, useWindowDimensions,
   type NativeSyntheticEvent, type NativeScrollEvent,
@@ -93,6 +94,7 @@ function ProgressDots({ active }: { active: number }) {
 
 export default function ScanPrepApp() {
   const router = useRouter();
+  useEffect(() => { trackFora('tutorial_visto', { qual: 'scan_app', paradas: TOTAL }); }, []);
   const setScanTutorialSeen = useAppStore((s) => s.setScanTutorialSeen);
   const { width, height } = useWindowDimensions();
 
@@ -118,7 +120,7 @@ export default function ScanPrepApp() {
   const handleBack = () => {
     haptics.tap();
     if (index > 0) goTo(index - 1);
-    else router.back();
+    else { trackFora('tutorial_pulado', { qual: 'scan_app', parada: 1, paradas: TOTAL }); router.back(); }
   };
 
   const handleOpenCamera = () => {
@@ -126,6 +128,7 @@ export default function ScanPrepApp() {
     // Tutorial concluído: marca como visto (persistido) para que os próximos scans
     // pulem esta tela e vão direto à câmera — ver hooks/useFaceScan.
     setScanTutorialSeen(true);
+    trackFora('tutorial_concluido', { qual: 'scan_app', paradas: TOTAL });
     // A câmera do giro em modo app (frente + os dois lados → 3 fotos para a IA). Não é
     // mais a `camera-multi` (6 fotos com expressões), que saiu do fluxo em out/2026.
     router.push('/(scan)/camera?modo=app' as any);

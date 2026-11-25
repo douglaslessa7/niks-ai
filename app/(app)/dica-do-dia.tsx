@@ -9,6 +9,7 @@
 // rolagem e ganha fundo rosa + o título depois de 60pt (como no design).
 // Fonte = SF Pro (sistema), rosa #FF5EA8. Medidas do frame 393×852 (topo 62 = 54 + 8).
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Animated, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,7 +55,11 @@ export default function DicaDoDia() {
   useFocusEffect(useCallback(() => {
     setTabBarVisible(false);
     let vivo = true;
-    getDicaDoDia().then((d) => { if (vivo) setDica(dicaParaTela(d)); });
+    getDicaDoDia().then((d) => {
+      if (!vivo) return;
+      setDica(dicaParaTela(d));
+      trackFora('dica_do_dia_vista', { ordem: (d as { ordem?: number })?.ordem ?? null });
+    });
     return () => { vivo = false; setTabBarVisible(true); };
   }, [setTabBarVisible]));
 

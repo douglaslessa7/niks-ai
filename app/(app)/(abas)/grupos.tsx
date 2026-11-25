@@ -1,3 +1,4 @@
+import { useAbaVista } from '../../../lib/mixpanel/useScreenTracking';
 import { erroDaAba } from '../../../components/ErroAba';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, useWindowDimensions } from 'react-native';
@@ -57,6 +58,7 @@ const FOTO = 84;
 const MOLDURA = FOTO / FOTO_NA_MOLDURA.grande.lado;
 
 export default function Grupos() {
+  useAbaVista('/grupos'); // Mixpanel: Screen Viewed no foco da aba
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: W } = useWindowDimensions();

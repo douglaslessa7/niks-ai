@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../store/onboarding';
+import { trackFora } from '../lib/mixpanel/MixpanelProvider';
 
 /**
  * Inicia o scan de rosto direto, sem passar pelo bottom sheet de escolha de tipo
@@ -14,7 +15,8 @@ export function useFaceScan() {
   const setScanSource = useAppStore((s) => s.setScanSource);
   const scanTutorialSeen = useAppStore((s) => s.scanTutorialSeen);
 
-  const startFaceScan = () => {
+  const startFaceScan = (origem?: string) => {
+    trackFora('scan_started', { contexto: 'app', origem: origem ?? null, tutorial: !scanTutorialSeen });
     setScanSource('app');
     // O tutorial de preparação (scan-prep-app) é mostrado UMA vez só na vida.
     // Depois de visto (flag persistido no store), o botão vai direto para a câmera.

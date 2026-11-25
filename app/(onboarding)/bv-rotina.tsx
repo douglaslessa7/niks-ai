@@ -1,8 +1,6 @@
 import { View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
-import { useOnMount } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaCanto, BvProgresso, BvEtiqueta, BvTitulo, BvBotao, useBvFrame,
   SEMANAS_ROTINA, menosDe, useDorPrincipal,
@@ -13,10 +11,8 @@ import {
 // "Menos <dor>" (sem porcentagem desde 23/nov/2026), e as fases semana 1 / semanas 2–3 / semana 4.
 export default function BvRotina() {
   const router = useRouter();
-  const { track } = useMixpanel();
   const { y } = useBvFrame();
   const dor = useDorPrincipal();
-  useOnMount(() => track('boas_vindas_tela', { tela: 2, nome: 'rotina', dor: dor.problema }));
 
   const fases = [
     { cor: '#FFC2DB', peso: 1, titulo: t('Fase 1 · Adaptação'), texto: t('Semana 1 · sua pele se acostuma aos ativos') },

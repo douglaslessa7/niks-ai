@@ -3,7 +3,7 @@ import { registrarAceiteSeContaNova } from '../../lib/aceiteTermos';
 import { decidirSemAssinatura } from '../../lib/onboardingObrigatorio';
 import { carregarAcesso } from '../../lib/acesso';
 import { convidadaLigada } from '../../lib/gruposServidor';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput,
   LayoutAnimation, UIManager, Platform, Alert, ActivityIndicator,
@@ -35,6 +35,7 @@ export default function Login() {
   const router = useRouter();
   const { signInWithGoogle, signInWithApple, signInWithEmail, loading } = useAuth();
   const { track, identify } = useMixpanel();
+  useEffect(() => { track('login_viewed'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

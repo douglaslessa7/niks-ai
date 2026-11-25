@@ -25,6 +25,7 @@ import { getRoutineHistory, type RoutinePeriod } from './routineProgress';
 import { useCachedQuery, invalidateCache, writeCache, peekCache } from './cache';
 import { getUserId, useUserId } from './currentUser';
 import { trackFora } from './mixpanel/MixpanelProvider';
+import { perfilNivelSequencia } from './mixpanel/perfil';
 import { ajustarMedalhas } from './niveis';
 import { t, emIngles, horaEn, MESES_CURTOS_EN } from './i18n';
 
@@ -263,6 +264,7 @@ async function buscarEstado(): Promise<EstadoCartas> {
   if (!enviado) await AsyncStorage.setItem(HIST_KEY, new Date().toISOString()).catch(() => {});
   if (fila.length) await AsyncStorage.removeItem(FILA_KEY).catch(() => {});
   void medirRecebidas(estado.a_raspar);
+  perfilNivelSequencia(estado.pontos?.nivel, estado.sequencia?.atual);
   // Conta de teste (20261207): libera as travas do app para essa conta.
   definirContaTeste(await getUserId(), estado.conta_teste ?? false);
   return estado;

@@ -3,6 +3,8 @@
 // fundo degradê de lib/homeTheme (dia/noite), botão voltar branco 36pt, campos
 // brancos com contorno rosa no foco, botão pílula rosa #FF5EA8, fonte do sistema.
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
+import { atualizarNomePerfil } from '../../lib/mixpanel/perfil';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Animated, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -101,6 +103,8 @@ export default function SetName() {
       // tela voltava como se tivesse salvado.
       const { error } = await supabase.from('users').update({ nome }).eq('id', user.id);
       if (error) throw error;
+      trackFora('nome_alterado', {});
+      atualizarNomePerfil(nome);
       // O nome é lido de cache em três lugares — o Perfil, a saudação da home e a
       // da NIKS. Sem invalidar, eles continuariam mostrando o nome antigo.
       invalidateCache(`perfil:${user.id}`);

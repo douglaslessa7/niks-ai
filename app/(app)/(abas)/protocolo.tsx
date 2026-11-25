@@ -1,3 +1,4 @@
+import { useAbaVista } from '../../../lib/mixpanel/useScreenTracking';
 // ─────────────────────────────────────────────────────────────────────────────
 // Rotina de Skincare — réplica do design 41d do Claude Design (projeto "NIKS home
 // redesign — rotina skincare", NiksRoutineFlo2.dc.html com v="timeline"): cabeçalho
@@ -14,6 +15,7 @@
 // antes de a Minha rotina existir (store como fallback) e a geração sob demanda para
 // usuária legada — lógica intacta. A ideal nunca é alterada por esta tela.
 // ─────────────────────────────────────────────────────────────────────────────
+import Sensivel from '../../../components/Sensivel';
 import { erroDaAba } from '../../../components/ErroAba';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
@@ -382,6 +384,7 @@ function FlipCard({ label, body, cores }: { label: string; body: string; cores: 
 }
 
 export default function Protocolo() {
+  useAbaVista('/protocolo'); // Mixpanel: Screen Viewed no foco da aba
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -671,7 +674,7 @@ export default function Protocolo() {
       invalidateCache(`rotinaintro:${uid}`);
     }
     // "Escanear meus produtos": a mesma entrada da opção do NIKS Chat (teto de 1 por dia).
-    if (e === 'escanear') abrirMontarRotina(router, loteHoje);
+    if (e === 'escanear') abrirMontarRotina(router, loteHoje, 'tutorial_rotina');
   };
 
 
@@ -867,6 +870,7 @@ export default function Protocolo() {
     haptics.action();
     try { player.seekTo(0); player.play(); } catch {}
     markStepCompleted(period, key);
+    trackFora('rotina_passo_marcado', { periodo: period, posicao: steps.findIndex((st) => st.key === key) + 1, fonte: 'guia' });
     setDoneSteps((d) => ({ ...d, [period]: d[period].includes(key) ? d[period] : [...d[period], key] }));
   };
   // Rotina concluída (pelo checklist ou pelo guia): todos os passos ficam feitos, a
@@ -1057,7 +1061,7 @@ export default function Protocolo() {
     if (guiaEscolher && guia?.periodo && guia.periodo !== period) { setPeriod(guia.periodo); setOpenStep(-1); }
   }, [guiaEscolher, guia?.periodo]); // eslint-disable-line react-hooks/exhaustive-deps
   // Atalho "Escanear vários de uma vez" do balão: o lote (mesma entrada da intro).
-  useEffect(() => onAtalhoGuia(() => abrirMontarRotina(router, loteHoje)), [router, loteHoje]);
+  useEffect(() => onAtalhoGuia(() => abrirMontarRotina(router, loteHoje, 'guia')), [router, loteHoje]);
 
   // ── Modo "Editar rotina" (Fase 3) ────────────────────────────────────────────
   const itensEdicao: ItemEditavel[] = minhaList.map((p) => ({
@@ -1072,6 +1076,7 @@ export default function Protocolo() {
   const reordenar = async (ids: string[]) => {
     try {
       await reordenarPassos(ids);
+      trackFora('rotina_editada', { tipo: 'reordenar', passos: ids.length });
     } catch (e) {
       console.warn('[rotina] reordenar falhou:', e);
       haptics.error();
@@ -1088,6 +1093,7 @@ export default function Protocolo() {
         text: t('Remover'), style: 'destructive', onPress: async () => {
           try {
             await removerPasso(id);
+            trackFora('rotina_editada', { tipo: 'remover_passo' });
             haptics.success();
           } catch (e) {
             console.warn('[rotina] remover falhou:', e);
@@ -1128,6 +1134,7 @@ export default function Protocolo() {
   };
   const toggleLit = (i: number) => {
     haptics.select();
+    if (!lit.includes(i)) trackFora('rotina_passo_marcado', { periodo: period, posicao: i + 1, fonte: 'checklist' });
     setLit((l) => (l.includes(i) ? l.filter((x) => x !== i) : [...l, i]));
   };
 
@@ -1509,7 +1516,7 @@ export default function Protocolo() {
               style={styles.heroBtn}
               onPress={() => {
                 haptics.action();
-                if (loadState !== 'error') { startFaceScan(); return; }
+                if (loadState !== 'error') { startFaceScan('rotina'); return; }
                 // "Tentar de novo": rearma a trava e re-lê da rede. Se ainda não houver
                 // protocolo (usuária legada), o efeito re-dispara a geração — uma vez por
                 // toque, nunca em cadeia automática. Re-ler antes de gerar evita protocolo
@@ -1657,7 +1664,9 @@ export default function Protocolo() {
           <View style={{ flex: 1, backgroundColor: INK }}>
             <StatusBar style="light" />
             {camPermission?.granted && (
-              <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} mirror={facing === 'front'} />
+              <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
+                <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} mirror={facing === 'front'} />
+              </Sensivel>
             )}
             <LinearGradient colors={['rgba(18,18,18,0.62)', 'rgba(18,18,18,0)']} style={styles.camTopShade} pointerEvents="none" />
             <LinearGradient colors={['rgba(18,18,18,0)', 'rgba(18,18,18,0.66)']} style={styles.camBottomShade} pointerEvents="none" />

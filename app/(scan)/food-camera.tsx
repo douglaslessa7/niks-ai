@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, Animated, Easing, useWindowDimensions, Alert } from 'react-native';
+import Sensivel from '../../components/Sensivel';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
 import { useEffect, useRef, useState } from 'react';
@@ -155,13 +156,15 @@ export default function FoodCamera() {
     <View style={{ flex: 1, backgroundColor: '#111111' }}>
       {/* Camera real (dispositivo físico) */}
       {!isSimulator && permission?.granted && (
-        <CameraView
-          ref={cameraRef}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          facing="back"
-          zoom={zoom === 0.5 ? 0 : zoom === 1 ? 0 : 0.5}
-          enableTorch={flash}
-        />
+        <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
+          <CameraView
+            ref={cameraRef}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            facing="back"
+            zoom={zoom === 0.5 ? 0 : zoom === 1 ? 0 : 0.5}
+            enableTorch={flash}
+          />
+        </Sensivel>
       )}
 
       {/* ===== TOP CONTROLS ===== */}

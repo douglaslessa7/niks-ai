@@ -1,3 +1,4 @@
+import { useAbaVista } from '../../../lib/mixpanel/useScreenTracking';
 // ─────────────────────────────────────────────────────────────────────────────
 // Perfil — na identidade da home nova (38e/51a, alarme 44a, progresso 43d):
 // fundo degradê de lib/homeTheme (dia/noite), cabeçalho fixo que ganha fundo ao
@@ -13,6 +14,7 @@
 //   • Sair da conta (pílula) + "Apagar minha conta" (link) + versão.
 // Vermelho #D4183D continua como cor SEMÂNTICA de ação destrutiva.
 // ─────────────────────────────────────────────────────────────────────────────
+import Sensivel from '../../../components/Sensivel';
 import { erroDaAba } from '../../../components/ErroAba';
 import { useEhConvidada } from '../../../lib/acesso';
 import { useUserId } from '../../../lib/currentUser';
@@ -118,6 +120,7 @@ function Row({
 const ICON = { size: 19, color: '#FFFFFF', strokeWidth: 2 } as const;
 
 export default function Perfil() {
+  useAbaVista('/perfil'); // Mixpanel: Screen Viewed no foco da aba
   const convidada = useEhConvidada();
   const userIdC = useUserId();
   const mk = mesKey(sessionDate());
@@ -192,7 +195,7 @@ export default function Perfil() {
     }
 
     // Ainda não tem permissão — pede e salva o token
-    const token = await requestPushPermission();
+    const token = await requestPushPermission('perfil');
 
     if (token) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -329,7 +332,9 @@ export default function Perfil() {
           ) : (
           <View style={styles.avatarShadow}>
             {fotoUrl ? (
-              <ExpoImage source={{ uri: fotoUrl }} cachePolicy="memory-disk" allowDownscaling={false} contentFit="cover" style={styles.avatar} />
+              <Sensivel style={{ width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2 }}>
+                <ExpoImage source={{ uri: fotoUrl }} cachePolicy="memory-disk" allowDownscaling={false} contentFit="cover" style={styles.avatar} />
+              </Sensivel>
             ) : (
               <LinearGradient colors={['#FF8DBD', PINK]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.avatar, styles.avatarCenter]}>
                 <Text style={styles.avatarInitial}>{initial}</Text>
@@ -341,7 +346,9 @@ export default function Perfil() {
           </View>
           )}
 
-          <Text style={styles.name} numberOfLines={1}>{nome || t('Toque para definir')}</Text>
+          <Sensivel>
+            <Text style={styles.name} numberOfLines={1}>{nome || t('Toque para definir')}</Text>
+          </Sensivel>
 
           {convidada ? (
             <>
@@ -381,7 +388,9 @@ export default function Perfil() {
         {/* ── Sua conta ───────────────────────────────────────────────────── */}
         <Text style={styles.sectionTitle}>{t('Sua conta')}</Text>
         <Glass style={styles.card}>
-          <Row icon={<Mail {...ICON} />} label={email ?? ''} sub={t('Seu e-mail')} line />
+          <Sensivel>
+            <Row icon={<Mail {...ICON} />} label={email ?? ''} sub={t('Seu e-mail')} line />
+          </Sensivel>
           <Row
             icon={<Bell {...ICON} />}
             label={t('Notificações')}

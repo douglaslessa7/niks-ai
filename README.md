@@ -2321,6 +2321,8 @@ Era o paywall customizado (planos mensal/anual, trial de 3 dias, integração Re
 
 ### 16. Analytics — Mixpanel
 
+> 📋 **Plano de tracking completo (todos os eventos, propriedades, perfil, identidade, Session Replay e o que fica mascarado em cada tela): [docs/tracking-plan.md](docs/tracking-plan.md).** Mudou um evento no código, mude lá. Parte do que vem abaixo nesta seção (lista de eventos, `onboarding_completed` "não disparado", `purchase_*` em `lib/revenuecat.ts`) ficou desatualizada em 25/nov/2026 — vale o tracking-plan.
+
 **SDK:** `mixpanel-react-native` com `useNative=true` (usa o MixpanelSDK nativo iOS — obrigatório para build Xcode).
 
 **Token:** lido de `process.env.EXPO_PUBLIC_MIXPANEL_TOKEN` (`.env` na raiz do projeto).

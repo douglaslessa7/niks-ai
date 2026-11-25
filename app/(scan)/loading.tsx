@@ -137,7 +137,7 @@ export default function Loading() {
     const runAnalysis = async () => {
       const { result: data, error } = await awaitSkinReport();
       if (!data) {
-        track('scan_failed', { error });
+        track('scan_failed', { contexto: 'onboarding_completa', error });
         if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
         setShowError(true);
         return;
@@ -145,7 +145,7 @@ export default function Loading() {
       try {
         setSelectedScan(null);
         setScanResult(data, skinImageUri ?? '');
-        track('scan_completed', { skin_score: data.skin_score, skin_type: data.skin_type_detected });
+        track('scan_completed', { contexto: 'onboarding_completa', skin_score: data.skin_score, skin_type: data.skin_type_detected });
         await finishProgress();
 
         try {
@@ -190,7 +190,7 @@ export default function Loading() {
         }, 500);
       } catch (err) {
         // As tentativas da chamada já rodaram no módulo; aqui só sobra erro local.
-        track('scan_failed', { error: (err as any)?.message ?? 'unknown' });
+        track('scan_failed', { contexto: 'onboarding_completa', error: (err as any)?.message ?? 'unknown' });
         if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
         setShowError(true);
       }

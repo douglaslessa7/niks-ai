@@ -21,6 +21,7 @@ import {
 } from '../../lib/paywallFlow';
 import { avisarTransferenciaFalhou, confirmPremium, ensureAnonymousRevenueCat } from '../../lib/subscriptionGate';
 import { pwDecisao } from '../../lib/paywallDebug';
+import { forcarPaywallDev } from '../../lib/devReset';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
 import { attributeCouponIfAny } from '../../lib/couponAttribution';
 import { haptics } from '../../lib/haptics';
@@ -64,7 +65,8 @@ export default function PaywallSoft() {
   const grupoConvite = useRef<string | null>(null);
   const placementBase = () => grupoConvite.current !== null ? 'paywall_convidada' : 'paywall_onboarding';
 
-  track('paywall_viewed', { screen: 'soft' });
+  // `paywall_viewed` saiu daqui (disparava a CADA render desta tela): agora sai uma vez por
+  // abertura real do paywall, com placement e paywall_id, em lib/mixpanel/superwallBridge.tsx.
 
   // Pede um placement ao Superwall. Paywallo: atributos de anúncio ANTES de todo
   // registerPlacement (nunca lança, segura no máx. 1,5 s — ver "Paywallo" no README).
@@ -309,7 +311,8 @@ export default function PaywallSoft() {
       grupoConvite.current = convite?.grupo ?? null;
       // Assinatura ativa no Apple ID que não é desta conta, sem compra nem restauração agora:
       // pergunta antes. A convidada nunca é perguntada (entra como convidada).
-      if (PERGUNTA_ASSINATURA_LIGADA && grupoConvite.current === null) {
+      // `forcarPaywallDev()`: SÓ __DEV__ (menu "NIKS: forçar paywall"); em Release é sempre false.
+      if (PERGUNTA_ASSINATURA_LIGADA && grupoConvite.current === null && !forcarPaywallDev()) {
         const a = await assinaturaDoAppleId();
         if (cancelled) return;
         if (deveriaPerguntar({ convite: false, sinal: null, ...a })) {

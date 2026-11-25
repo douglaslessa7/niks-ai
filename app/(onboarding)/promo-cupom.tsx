@@ -12,7 +12,7 @@
 //
 // Visual do kit do onboarding (out/2026), textos e lógica da versão B intactos.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import Purchases from 'react-native-purchases';
@@ -44,6 +44,7 @@ function mensagemPorMotivo(motivo?: string): string {
 export default function PromoCupom() {
   const router = useRouter();
   const { track } = useMixpanel();
+  useEffect(() => { track('coupon_viewed'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const setAppliedCoupon = useAppStore((s) => s.setAppliedCoupon);
 
   const [valor, setValor] = useState('');

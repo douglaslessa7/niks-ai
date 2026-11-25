@@ -1,3 +1,5 @@
+import { useAbaVista } from '../../../lib/mixpanel/useScreenTracking';
+import { trackFora } from '../../../lib/mixpanel/MixpanelProvider';
 import { erroDaAba } from '../../../components/ErroAba';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -222,6 +224,7 @@ function montarRec({ passos, prods }: { passos: any[]; prods: any[] }): { am: It
 }
 
 export default function RecomendacaoProdutos() {
+  useAbaVista('/recomendacao-produtos'); // Mixpanel: Screen Viewed no foco da aba
   const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -847,6 +850,7 @@ export default function RecomendacaoProdutos() {
       const aviso = await avisoDoProduto(uid, ref);
       const salvar = async () => {
         await definirProdutoDoPasso(alvo.passoId, ref, aviso);
+        trackFora('rotina_produto_escolhido', { origem: ref.origem, aviso: aviso.nivel, periodo: alvo.periodo ?? null, fonte: 'ver_todos' });
         invalidateCache(`minharotina:${uid}`);
         haptics.success();
         voltarParaRotina();

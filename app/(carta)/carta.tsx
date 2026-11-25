@@ -366,6 +366,18 @@ export default function CartaScreen() {
   const [srvId, setSrvId] = useState<string | null>(params.id ?? null);
   const srvMode = srvId != null;
   const [srv, setSrv] = useState<{ carta: CartaGanha; antes: number } | null>(null);
+  // Mixpanel: `carta_do_dia_vista` 1× por carta do servidor aberta nesta tela.
+  const cartaVistaRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!srv || cartaVistaRef.current === srv.carta.id) return;
+    cartaVistaRef.current = srv.carta.id;
+    trackFora('carta_do_dia_vista', {
+      origem: srv.carta.origem,
+      familia: srv.carta.carta?.familia ?? null,
+      ja_raspada: Boolean(srv.carta.raspada_em),
+      com_destino: Boolean(depois),
+    });
+  }, [srv]); // eslint-disable-line react-hooks/exhaustive-deps
   const [poderEst, setPoderEst] = useState<EstadoPoder | null>(null);
   const [revelada, setRevelada] = useState(false);
   // NIKS Points da carta (sorteados no servidor ao raspar; a rara já vem ×3).

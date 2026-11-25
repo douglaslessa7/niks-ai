@@ -15,8 +15,9 @@ import { useLote } from './loteProdutos';
 import type { Lote } from './rotinaLotes';
 import { ehContaTeste } from './contaTeste';
 import { t } from './i18n';
+import { trackFora } from './mixpanel/MixpanelProvider';
 
-export function abrirMontarRotina(router: ReturnType<typeof useRouter>, loteHoje: Lote | null | undefined): void {
+export function abrirMontarRotina(router: ReturnType<typeof useRouter>, loteHoje: Lote | null | undefined, origem?: string): void {
   if (loteHoje?.status === 'processando') {
     router.push({ pathname: '/(scan)/lote-montando', params: { id: loteHoje.id } } as any);
   } else if (loteHoje?.status === 'pronto' && !loteHoje.visto_em) {
@@ -25,6 +26,7 @@ export function abrirMontarRotina(router: ReturnType<typeof useRouter>, loteHoje
     Alert.alert(t('Você já montou uma rotina hoje'), t('Dá para montar uma por dia. Tente de novo amanhã.'));
   } else {
     useLote.getState().limpar();
+    trackFora('lote_iniciado', { origem: origem ?? null });
     router.push('/(scan)/lote-camera' as any);
   }
 }

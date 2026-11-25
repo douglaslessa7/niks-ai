@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Sensivel from '../../components/Sensivel';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, Alert, Animated, useWindowDimensions,
 } from 'react-native';
@@ -142,6 +143,11 @@ export default function ResultadoScan() {
   useOnMount(() => { if (!inApp) track('onboarding_step_viewed', obStep(OB_STEPS.resultadoScan, 'Resultado do Scan')); });
 
   const findings = useMemo(() => buildFindings(scanResult), [scanResult]);
+  useOnMount(() => track('resultado_visto', {
+    contexto: inApp ? 'app' : 'onboarding',
+    skin_score: typeof scanResult?.skin_score === 'number' ? scanResult.skin_score : null,
+    achados: findings.length,
+  }));
   const chips = useMemo(() => findingChips(findings), [findings]);
   const shown = filter === 'Todos' ? findings : findings.filter((f) => f.category === filter);
 
@@ -210,7 +216,7 @@ export default function ResultadoScan() {
 
   /** Recorte da foto centrado em `p` (px do quadro), ampliado `zoom` vezes. */
   const crop = (p: Pt2 | undefined, size: number, zoom: number, radius: number) => (
-    <View style={{ width: size, height: size, borderRadius: radius, overflow: 'hidden', backgroundColor: R.sheet }}>
+    <Sensivel style={{ width: size, height: size, borderRadius: radius, overflow: 'hidden', backgroundColor: R.sheet }}>
       {photoUri && fit && p && (
         <Image
           source={{ uri: photoUri }}
@@ -220,7 +226,7 @@ export default function ResultadoScan() {
           }}
         />
       )}
-    </View>
+    </Sensivel>
   );
 
   const sectionTitle = { fontSize: 20, fontWeight: '600' as const, lineHeight: 24, letterSpacing: -0.5, color: OB.ink };
@@ -231,7 +237,7 @@ export default function ResultadoScan() {
       <StatusBar style="dark" />
 
       {/* Foto + máscara + pontinhos */}
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: boxTop, width, height: boxH, overflow: 'hidden' }}>
+      <Sensivel pointerEvents="none" style={{ position: 'absolute', left: 0, top: boxTop, width, height: boxH, overflow: 'hidden' }}>
         {photoUri && fit && (
           <Image source={{ uri: photoUri }} style={{ position: 'absolute', left: fit.left, top: fit.top, width: fit.w, height: fit.h }} />
         )}
@@ -239,7 +245,7 @@ export default function ResultadoScan() {
           <Image source={{ uri: photoUri }} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
         )}
         {/* Sem pontinhos nem máscara sobre a foto (13/out/2026, pedido do produto). */}
-      </View>
+      </Sensivel>
 
       {/* Folha */}
       <Animated.ScrollView

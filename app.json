@@ -157,7 +157,8 @@
         }
       ],
       "./plugins/withSplashLogoFix",
-      "expo-iap"
+      "expo-iap",
+      ["expo-secure-store", { "faceIDPermission": false }]
     ],
     "fonts": [
       "./assets/fonts/PlayfairDisplay-Regular.ttf",

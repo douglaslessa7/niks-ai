@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import Sensivel from '../../components/Sensivel';
 import {
   View, Text, Image, TouchableOpacity, useWindowDimensions, Alert, StyleSheet,
 } from 'react-native';
@@ -13,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Device from 'expo-device';
 import { useAppStore } from '../../store/onboarding';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import GridIcon from '../../components/share/GridIcon';
 import CameraMirror, { cameraMirrorAvailable } from '../../modules/niks-camera-mirror';
@@ -78,6 +80,7 @@ async function downscale(uri: string, w?: number, h?: number): Promise<string> {
 }
 
 export default function ShareCapture() {
+  useEffect(() => { trackFora('share_story_aberto', {}); }, []);
   const [fontsLoaded] = useFonts({ Nunito_700Bold });
   const f7 = fontsLoaded ? 'Nunito_700Bold' : undefined;
 
@@ -327,7 +330,7 @@ export default function ShareCapture() {
             cheias (fotos) são desenhadas POR CIMA, então o borrão só aparece nas
             vazias — exatamente como no Instagram. `dim` calibra o escurecimento
             direto daqui, sem build nativo novo. */}
-        {mirrorOn && <CameraMirror style={StyleSheet.absoluteFill} dim={0.22} />}
+        {mirrorOn && <Sensivel style={StyleSheet.absoluteFill} pointerEvents="none"><CameraMirror style={StyleSheet.absoluteFill} dim={0.22} /></Sensivel>}
 
         {/* Células VAZIAS — só quando NÃO há o fundo ao vivo (Android, ou binário
             ainda sem o módulo nativo): placeholder escuro com ícone. */}
@@ -367,14 +370,16 @@ export default function ShareCapture() {
               opacity: activeIndex !== -1 ? 1 : 0, // grade cheia → some, sem desmontar
             }}
           >
-            <CameraView
-              ref={cameraRef}
-              style={{ flex: 1 }}
-              facing={facing}
-              mirror={facing === 'front'}
-              active={activeIndex !== -1}
-              onCameraReady={() => setPreviewReady(true)}
-            />
+            <Sensivel style={{ flex: 1 }} pointerEvents="box-none">
+              <CameraView
+                ref={cameraRef}
+                style={{ flex: 1 }}
+                facing={facing}
+                mirror={facing === 'front'}
+                active={activeIndex !== -1}
+                onCameraReady={() => setPreviewReady(true)}
+              />
+            </Sensivel>
           </View>
         )}
 

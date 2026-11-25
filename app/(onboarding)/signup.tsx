@@ -29,7 +29,8 @@ import { PULAR_PAYWALL } from '../../lib/devPaywall';
 // Metro e reiniciava o app logo depois do login — o cadastro não terminava (sem perfil, scan e rotina).
 import Purchases from 'react-native-purchases';
 import { haptics } from '../../lib/haptics';
-import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, obStep } from '../../components/onboarding/kit';
+import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, OB_STEP_TOTAL, obStep } from '../../components/onboarding/kit';
+import { atualizarNomePerfil, perfilOnboardingConcluido } from '../../lib/mixpanel/perfil';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -119,6 +120,9 @@ export default function Signup() {
       });
       if (!ok && grupoDaConvidada.current) {
         track('convidada_conta_criada', { grupo_id: grupoDaConvidada.current });
+        // Fim do onboarding (fecha o `timeEvent` aberto no `(onboarding)/_layout` → $duration).
+        track('onboarding_completed', { onboarding_version: '2.0', passos_total: OB_STEP_TOTAL, caminho: 'convidada' });
+        perfilOnboardingConcluido();
         router.replace({ pathname: '/(app)/grupo', params: { id: grupoDaConvidada.current } } as any);
         return;
       }
@@ -134,6 +138,9 @@ export default function Signup() {
       setSubscriptionVerified(true);
     }
     track('onboarding_step_completed', obStep(OB_STEPS.criarConta, 'Criar Conta'));
+    // Fim do onboarding (fecha o `timeEvent` aberto no `(onboarding)/_layout` → $duration).
+    track('onboarding_completed', { onboarding_version: '2.0', passos_total: OB_STEP_TOTAL, caminho: 'cadastro' });
+    perfilOnboardingConcluido();
     armHomeTutorial();
     // 06/nov/2026: a conta vai para a TELA DE ESPERA, que aguarda a análise completa (disparada
     // na compra), grava o scan e a rotina e só então abre a home. `replace`: não volta ao cadastro.
@@ -217,6 +224,7 @@ export default function Signup() {
       });
       if (error) { Alert.alert(t('Erro ao criar conta'), error.message ?? t('Tente novamente.')); return; }
       if (!error && data.user && !data.session) {
+        track('signup_completed', { method: 'email', confirmacao_pendente: true });
         setEmailSent(email);
         setWaitingConfirmation(true);
       } else if (!error && data.session) {
@@ -231,6 +239,8 @@ export default function Signup() {
             console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
           }
           identify(data.session.user.id);
+          track('signup_completed', { method: 'email' });
+          atualizarNomePerfil(useAppStore.getState().pendingName);
           await salvarConta(data.session.user.id);
           await finishOnboarding();
         }
@@ -272,6 +282,8 @@ export default function Signup() {
           console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
         }
         identify(data.user.id);
+        track('signup_completed', { method: 'apple' });
+        atualizarNomePerfil(useAppStore.getState().pendingName);
         await salvarConta(data.user.id);
         // Só com conta criada (antes ia para a home mesmo sem `user.id`).
         await finishOnboarding();
@@ -293,6 +305,8 @@ export default function Signup() {
           console.warn('[RevenueCat] logIn/restore failed after signup:', rcErr);
         }
         identify(session.user.id);
+        track('signup_completed', { method: 'google' });
+        atualizarNomePerfil(useAppStore.getState().pendingName);
         await salvarConta(session.user.id);
         // Só com conta criada (antes ia para a home mesmo sem sessão).
         await finishOnboarding();

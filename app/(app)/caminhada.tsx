@@ -1,4 +1,5 @@
 import { useAcesso } from '../../lib/acesso';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { paywallDaMedalha } from '../../lib/trava';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTelaFocada } from '../../hooks/useTelaFocada';
@@ -176,6 +177,7 @@ export default function Caminhada() {
   const [chipW, setChipW] = useState(140);
   const busy = useRef(false);
   const { de } = useLocalSearchParams<{ de?: string }>();
+  useEffect(() => { trackFora('caminhada_visto', { de: de ?? null }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const touring = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const afterCel = useRef<(() => void) | null>(null);

@@ -84,12 +84,35 @@ function useTravaPagamento() {
   }, []);
 }
 
+// Rota → [número da tela, nome, manda a dor?] (os mesmos valores do antigo `boas_vindas_tela`).
+const BV_TELAS: Record<string, [number, string, boolean]> = {
+  'bv-entrou': [1, 'entrou', false],
+  'bv-rotina': [2, 'rotina', true],
+  'bv-foto': [3, 'foto', false],
+  'bv-projecao': [4, 'projecao', true],
+  'bv-pacto': [5, 'pacto', false],
+  'bv-recompensa': [6, 'recompensa', false],
+  'bv-sequencia': [7, 'sequencia', false],
+  'bv-nivel': [8, 'nivel', false],
+};
+
 export function BvScreen({ children }: { children: React.ReactNode }) {
   useTravaPagamento();
   // Depois do pagamento: fora do funil numerado (Paywallo), só no Mixpanel.
+  // ÚNICO evento de visualização das boas-vindas (o `boas_vindas_tela` de cada `bv-*` saiu em
+  // 25/nov/2026 — duplicava a contagem). `numero`/`nome` levam o que ele mandava.
   const { track } = useMixpanel();
   const tela = usePathname();
-  useEffect(() => { track('bv_tela_vista', { tela }); }, [tela]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dor = useDorPrincipal();
+  useEffect(() => {
+    const info = BV_TELAS[tela.replace(/^.*\//, '')];
+    track('bv_tela_vista', {
+      tela,
+      numero: info?.[0] ?? null,
+      nome: info?.[1] ?? null,
+      dor: info?.[2] ? dor.problema : null,
+    });
+  }, [tela]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const s = BackHandler.addEventListener('hardwareBackPress', () => true);
     return () => s.remove();

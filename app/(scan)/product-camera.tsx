@@ -1,6 +1,8 @@
 import { View, Text, TouchableOpacity, Animated, Easing, useWindowDimensions, Alert } from 'react-native';
+import Sensivel from '../../components/Sensivel';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '../../store/onboarding';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { useEffect, useRef, useState } from 'react';
 import { X, Zap, ZapOff, Image as ImageIcon } from 'lucide-react-native';
 import Svg, { Rect, Path } from 'react-native-svg';
@@ -53,6 +55,10 @@ export default function ProductCamera() {
 
   // Verdadeiro apenas no simulador (sem câmera real)
   const isSimulator = !Device.isDevice;
+
+  useEffect(() => {
+    trackFora('product_camera_aberta', { do_passo: Boolean(useAppStore.getState().rotinaPassoAlvo) });
+  }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -167,13 +173,15 @@ export default function ProductCamera() {
     <View style={{ flex: 1, backgroundColor: '#111111' }}>
       {/* Camera real (dispositivo físico) */}
       {!isSimulator && permission?.granted && (
-        <CameraView
-          ref={cameraRef}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          facing="back"
-          zoom={zoom === 0.5 ? 0 : zoom === 1 ? 0 : 0.5}
-          enableTorch={flash}
-        />
+        <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="box-none">
+          <CameraView
+            ref={cameraRef}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            facing="back"
+            zoom={zoom === 0.5 ? 0 : zoom === 1 ? 0 : 0.5}
+            enableTorch={flash}
+          />
+        </Sensivel>
       )}
 
       {/* ===== TOP CONTROLS ===== */}

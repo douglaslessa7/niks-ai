@@ -1,4 +1,5 @@
 import { preaquecerSubtelasGrupo } from '../../lib/preaquecerSubtelasGrupo';
+import Sensivel from '../../components/Sensivel';
 import { saiuSemGrupo } from '../../lib/acesso';
 import ConvidarAposCheckin from '../../components/grupos/ConvidarAposCheckin';
 import { ehContaTeste } from '../../lib/contaTeste';
@@ -164,7 +165,9 @@ const BannerTopo = memo(function BannerTopo({ g, w, h }: { g: GrupoResumo | unde
   const rosa = g?.banner !== 'niks-1';
   return (
     <View style={{ height: h, overflow: 'hidden', experimental_backgroundImage: rosa ? BANNERS_GRUPO[1].bg : BANNERS_GRUPO[0].bg }}>
-      {g?.banner === 'foto' && g.banner_url ? <ExpoImage source={fonteEstavel(g.banner_url)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" /> : (
+      {g?.banner === 'foto' && g.banner_url ? <Sensivel style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} pointerEvents="none">
+  <ExpoImage source={fonteEstavel(g.banner_url)} cachePolicy="memory-disk" style={StyleSheet.absoluteFill} contentFit="cover" />
+</Sensivel> : (
         <>
           <Image source={LADRILHO} style={{ position: 'absolute', left: 0, top: 0, width: 480, height: 320, opacity: 0.16 }} />
           <Image source={LOGO} style={{ position: 'absolute', right: -34, top: 40, width: 190, height: 192, tintColor: '#fff', opacity: 0.32 }} />
@@ -507,7 +510,9 @@ export default function Grupo() {
                     <View ref={(r) => { if (r) fotosMural.current.set(it.id, r); else fotosMural.current.delete(it.id); }} style={[styles.itemFoto, est && styles.itemFotoEst]}>
                       {/* A foto que ela acabou de publicar sai do arquivo local; as outras, do cache pela
                           chave estável (o link assinado muda a cada leitura) — lib/fotosRapidas. */}
-                      {it.foto_url ? <ExpoImage source={it.tipo === 'checkin' ? fonteDoCheckin(it.checkin_id, it.foto_url) : fonteEstavel(it.foto_url)} cachePolicy="memory-disk" contentFit="cover" transition={0} style={{ width: '100%', height: '100%' }} /> : null}
+                      {it.foto_url ? <Sensivel style={{ width: '100%', height: '100%' }} pointerEvents="none">
+  <ExpoImage source={it.tipo === 'checkin' ? fonteDoCheckin(it.checkin_id, it.foto_url) : fonteEstavel(it.foto_url)} cachePolicy="memory-disk" contentFit="cover" transition={0} style={{ width: '100%', height: '100%' }} />
+</Sensivel> : null}
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

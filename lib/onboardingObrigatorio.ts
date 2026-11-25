@@ -26,7 +26,9 @@ import { Alert } from 'react-native';
 import type { Router } from 'expo-router';
 import { supabase } from './supabase';
 import { useAppStore } from '../store/onboarding';
-import { trackFora } from './mixpanel/MixpanelProvider';
+import { identifyFora, trackFora } from './mixpanel/MixpanelProvider';
+import { perfilOnboardingConcluido } from './mixpanel/perfil';
+import { OB_STEP_TOTAL } from '../components/onboarding/kit';
 import { lerCompraNestaSessao, limparCompraNestaSessao } from './sinalCompra';
 import { transferirNoCadastro } from './regraCompra';
 import { enviarComprovantes } from './assinaturaServidor';
@@ -94,6 +96,7 @@ export async function decidirSemAssinatura(
  */
 export async function concluirComContaLogada(uid: string): Promise<void> {
   const st = useAppStore.getState();
+  identifyFora(uid); // a sessão já identifica na abertura; aqui garante (o mesmo id não repete)
   try {
     // A tela de login mostra a frase dos Termos: grava o aceite (1.64), como o cadastro.
     await st.saveToSupabase(uid, { scan: false, termos: true });
@@ -114,5 +117,7 @@ export async function concluirComContaLogada(uid: string): Promise<void> {
   }
   void limparCompraNestaSessao();
   trackFora('onboarding_refeito_concluido');
+  trackFora('onboarding_completed', { onboarding_version: '2.0', passos_total: OB_STEP_TOTAL, caminho: 'conta_logada' });
+  perfilOnboardingConcluido();
   st.armHomeTutorial();
 }

@@ -10,6 +10,7 @@
 // Casca = a das outras folhas (Modal transparente + véu + translateY), com
 // KeyboardAvoidingView para o teclado não cobrir o nome.
 // ─────────────────────────────────────────────────────────────────────────────
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Modal, Animated, Easing, StyleSheet, KeyboardAvoidingView, Platform, Alert,
@@ -81,11 +82,14 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
     try {
       if (editando) {
         await atualizarPasso(editando.id, { nome, dias });
+        trackFora('rotina_editada', { tipo: 'editar_passo', com_nome: Boolean(nome.trim()), dias: dias.length || 7 });
         return { ...editando, nome: nome.trim() || null, dias: dias.length ? dias : null };
       }
       const uid = await getUserId();
       if (!uid) return null;
-      return await criarPasso(uid, (atual as { periodo: Periodo }).periodo, nome, dias);
+      const novo = await criarPasso(uid, (atual as { periodo: Periodo }).periodo, nome, dias);
+      trackFora('rotina_editada', { tipo: 'criar_passo', periodo: (atual as { periodo: Periodo }).periodo, com_nome: Boolean(nome.trim()), dias: dias.length || 7 });
+      return novo;
     } catch (e) {
       console.warn('[passo] salvar falhou:', e);
       haptics.error();
@@ -108,6 +112,7 @@ export default function PassoSheet({ modo, onClose, onSalvo, onEscolherProduto }
     if (!p) return;
     try {
       await definirProdutoDoPasso(p.id, null, { nivel: 'nenhum', texto: null });
+      trackFora('rotina_editada', { tipo: 'remover_produto' });
       haptics.success();
       onSalvo();
       onClose();

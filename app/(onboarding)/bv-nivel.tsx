@@ -9,7 +9,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTimi
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { t } from '../../lib/i18n';
-import { useObName, useOnMount } from '../../components/onboarding/kit';
+import { useObName } from '../../components/onboarding/kit';
 import {
   BV, BvScreen, BolhaRadial, BvEtiqueta, BvTitulo, BvBotao, LOGO_ROSA, useBvFrame,
 } from '../../components/boasVindas/kit';
@@ -48,7 +48,6 @@ export default function BvNivel() {
   const pop = useSharedValue(0);
   const aqui = medalhaDoNivel(NIVEL_AQUI);
   const proxima = medalhaDoNivel(NIVEL_AQUI + 1);
-  useOnMount(() => track('boas_vindas_tela', { tela: 8, nome: 'nivel' }));
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then((reduzir) => {
@@ -119,7 +118,7 @@ export default function BvNivel() {
           // Ex-convidada: já tem conta. Vai direto ao scan novo; a rotina sai dele.
           useAcesso.setState({ boasVindasEx: false });
           router.replace('/(app)/home' as any);
-          setTimeout(startFaceScan, 400);
+          setTimeout(() => startFaceScan('boas_vindas'), 400);
           return;
         }
         // 1.64: já logada (fez o onboarding pela conta do "Entrar"): sem cadastro — a compra,

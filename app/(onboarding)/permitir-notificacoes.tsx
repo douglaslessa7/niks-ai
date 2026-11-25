@@ -40,7 +40,7 @@ export default function PermitirNotificacoes() {
       let token: string | null = null;
       try {
         token = await Promise.race([
-          requestPushPermission(),
+          requestPushPermission('onboarding_antigo'),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), TIMEOUT_MS)),
         ]);
       } catch (e) {

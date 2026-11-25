@@ -18,6 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { getUserId } from '../../lib/currentUser';
 import { invalidateCache } from '../../lib/cache';
 import { syncRoutineReminders } from '../../lib/routineReminders';
+import { trackFora } from '../../lib/mixpanel/MixpanelProvider';
 import { haptics } from '../../lib/haptics';
 import { emIngles, horaEn, t } from '../../lib/i18n';
 
@@ -153,6 +154,7 @@ export default function HorariosRotina({ onHorarios }: { onHorarios?: (am: numbe
           invalidateCache(`rotina:${uid}`);
           // O lembrete diário passa a tocar no horário novo.
           syncRoutineReminders(uid);
+          trackFora('horario_rotina_alterado', { periodo: k, horario: `${pad(Math.floor(value / 60))}:${pad(value % 60)}` });
           haptics.success();
         } else {
           haptics.error();
