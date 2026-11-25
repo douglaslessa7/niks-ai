@@ -92,6 +92,15 @@ function alternarForcarPaywall(): void {
   } catch {}
 }
 
+// ── Ficar no onboarding com conta (SÓ __DEV__) ───────────────────────────────────────
+// Flag em arquivo (`Documents/niks-dev-ficar-onboarding`): com ela, o `(onboarding)/_layout` não
+// manda a assinante logada para a home — dá para abrir as telas pós-compra (ex.: `bv-entrou`)
+// sem sair da conta. Em Release é sempre false.
+export function ficarNoOnboardingDev(): boolean {
+  if (!__DEV__) return false;
+  try { return new File(Paths.document, 'niks-dev-ficar-onboarding').exists; } catch { return false; }
+}
+
 if (__DEV__) {
   (globalThis as any).__niksZerarAparelho = zerarAparelhoDev;
   try { DevSettings.addMenuItem('NIKS: forçar paywall (liga/desliga)', alternarForcarPaywall); } catch {}

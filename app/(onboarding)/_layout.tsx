@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { confirmPremium } from '../../lib/subscriptionGate';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
+import { ficarNoOnboardingDev } from '../../lib/devReset';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { OB_STEP_TOTAL } from '../../components/onboarding/kit';
 import { useAppStore } from '../../store/onboarding';
@@ -34,7 +35,8 @@ export default function OnboardingLayout() {
       const naEspera = segments[segments.length - 1] === 'loading-rotina';
 
       // Ex-convidada que acabou de assinar: as boas-vindas ficam no onboarding.
-      if (session && !onNameStep && !naEspera && !useAcesso.getState().boasVindasEx) {
+      // `ficarNoOnboardingDev()`: SÓ __DEV__ (lib/devReset.ts); em Release é sempre false.
+      if (session && !onNameStep && !naEspera && !useAcesso.getState().boasVindasEx && !ficarNoOnboardingDev()) {
         // 1.64 (2): assinante pelo aparelho entra, com ou sem onboarding. A compra de OUTRA
         // conta já é barrada dentro do `confirmPremium` (prova da Apple → `outraConta`).
         if (await confirmPremium({ label: 'onboarding:layout' })) {
