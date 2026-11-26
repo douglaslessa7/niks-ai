@@ -1,5 +1,5 @@
 import { PRIVACY_URL, TERMOS_URL } from '../../lib/linksLegais';
-import { enviarComprovantes } from '../../lib/assinaturaServidor';
+import { compraRecenteNoServidor, enviarComprovantes } from '../../lib/assinaturaServidor';
 import { aberturaDoCadastro, transferirNoCadastro, type OrigemCompra } from '../../lib/regraCompra';
 import { lerCompraNestaSessao, limparCompraNestaSessao } from '../../lib/sinalCompra';
 import { useState, useRef, useEffect } from 'react';
@@ -116,12 +116,23 @@ export default function Signup() {
   const finishOnboarding = async () => {
     if (!PULAR_PAYWALL) {
       let transferenciaFalhou = false;
-      const ok = await confirmPremium({
+      let ok = await confirmPremium({
         attempts: 2,
         label: 'cadastro:conta_criada',
         transferir: transferirNoCadastro(compraNestaSessao.current),
         onTransferenciaFalhou: () => { transferenciaFalhou = true; },
       });
+      // 2b (26/nov/2026): comprou nesta sessão, mas o aparelho não confirma (o paywall pode ter
+      // liberado pela confirmação do servidor). O servidor liga a compra feita com o id deste
+      // aparelho à conta nova (`confirmar-compra`) e diz se ela é assinante.
+      if (!ok && compraNestaSessao.current && !transferenciaFalhou) {
+        const srv = await compraRecenteNoServidor(transferirNoCadastro(compraNestaSessao.current));
+        ok = srv?.assinante === true;
+        track(ok ? 'compra_confirmada' : 'compra_sem_confirmacao', {
+          tipo: 'cadastro', fonte: ok ? 'servidor' : null, com_sessao: true,
+          servidor: srv?.assinante ?? null, servidor_compra: srv?.confirmado ?? null, servidor_ligada: srv?.ligada ?? null,
+        });
+      }
       if (!ok && grupoDaConvidada.current) {
         track('convidada_conta_criada', { grupo_id: grupoDaConvidada.current });
         // Fim do onboarding (fecha o `timeEvent` aberto no `(onboarding)/_layout` → $duration).

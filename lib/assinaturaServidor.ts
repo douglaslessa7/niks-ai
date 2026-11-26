@@ -17,6 +17,7 @@ import { getCustomerInfo, isPremium } from './revenuecat';
 
 const FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/assinatura`;
 const FN_COMPROVANTE = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/comprovar-assinatura`;
+const FN_CONFIRMAR_COMPRA = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/confirmar-compra`;
 const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const PREFIXO_SUPERWALL = '$SuperwallAlias:';
 const ESPERA_SUPERWALL_MS = 10000;
@@ -231,5 +232,58 @@ export async function registrarDiscordanciaRc(c: ConferenciaPortao, rc: boolean 
     }));
   } catch {
     // é só medição
+  }
+}
+
+// ── Compra que o aparelho não confirma (correção 2b, 26/nov/2026) ───────────────────────────
+// O Superwall disse "comprou", mas o status no aparelho não ficou ativo (assinatura sandbox
+// travada do TestFlight; em produção, atraso da loja). O webhook da loja chega ao servidor em
+// ~10 s com o id anônimo deste aparelho: a função `confirmar-compra` (migration 20261230120000)
+// diz se a compra saiu DESTE aparelho há pouco. Sem conta, só lê; com conta, também liga a
+// compra à conta (e, com `transferir`, traz de outra conta: ela comprou aqui nesta sessão).
+
+/** Id anônimo do Superwall deste aparelho (`$SuperwallAlias:<uuid>`). Não identifica a conta. */
+export async function aliasSuperwallDoAparelho(): Promise<string | null> {
+  try {
+    if (!(await superwallPronto(ESPERA_PORTAO_MS))) return null;
+    const attrs = await useSuperwallStore.getState().getUserAttributes();
+    const alias = typeof attrs?.aliasId === 'string' ? attrs.aliasId : '';
+    if (!alias) return null;
+    return alias.startsWith(PREFIXO_SUPERWALL) ? alias : `${PREFIXO_SUPERWALL}${alias}`;
+  } catch {
+    return null;
+  }
+}
+
+export type CompraNoServidor = {
+  confirmado: boolean;
+  produto: string | null;
+  /** Só com conta: a compra ficou ligada a ela e ela é assinante segundo o servidor. */
+  ligada?: boolean;
+  assinante?: boolean;
+};
+
+/** `null` = sem id do Superwall, sem rede ou erro. Nunca lança. */
+export async function compraRecenteNoServidor(transferir?: OrigemTransferencia): Promise<CompraNoServidor | null> {
+  try {
+    const alias = await aliasSuperwallDoAparelho();
+    if (!alias) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    const resp = await comTeto(fetch(FN_CONFIRMAR_COMPRA, {
+      method: 'POST',
+      headers: cabecalhos(session?.access_token ?? ANON_KEY),
+      body: JSON.stringify({ superwall_id: alias, transferir: session ? transferir : undefined }),
+    }));
+    if (!resp?.ok) return null;
+    const r = await comTeto(resp.json());
+    if (typeof r?.confirmado !== 'boolean') return null;
+    return {
+      confirmado: r.confirmado,
+      produto: typeof r.produto === 'string' ? r.produto : null,
+      ...(typeof r.ligada === 'boolean' ? { ligada: r.ligada } : {}),
+      ...(typeof r.assinante === 'boolean' ? { assinante: r.assinante } : {}),
+    };
+  } catch {
+    return null;
   }
 }

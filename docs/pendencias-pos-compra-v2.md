@@ -22,3 +22,12 @@ Design: `design-handoff/pos-compra-v2/` (fora do git).
 - [ ] **Publicar a migration `20261229120000_cortesia_aviso`** (funções do card) antes da próxima build. Só com OK.
 - [ ] **Publicar a `send-notifications`** com o tipo `boas_vindas_cortesia` e disparar o push (só com OK). Nas builds da loja o toque abre o app (home); a partir da próxima build, a Caminhada.
 - [ ] Mixpanel: `cortesia_aviso_visto`, `cortesia_aberta` (origem aviso/push), `cortesia_dispensada` no tracking-plan.
+
+## Compra que o aparelho não confirma (26/nov/2026)
+- [ ] **Ativar o controlador do RevenueCat (correção 2a: inverter `CustomPurchaseControllerProvider` e `SuperwallProvider` em `app/_layout.tsx`)** — DEPOIS. Exige antes:
+  - auditoria no RevenueCat: TODO produto usado nos paywalls do Superwall numa oferta e no entitlement `premium` — em especial o `br.com.niksai.app.anual.149` (downsell, vende hoje e NÃO está no RevenueCat: com o controlador ativo, a compra dele passaria a falhar) e o `com.niksai.anual129` (principal; o entitlement `premium` nunca foi conferido);
+  - o app informar o status ao Superwall (`setSubscriptionStatus` a partir do RevenueCat) — sem isso as regras de público dos paywalls, o portão sem conta e o diagnóstico quebram;
+  - teste em build Release com Sandbox Tester novo: cada produto, cancelar na folha da Apple (downsell 1×), restaurar com e sem assinatura, internet ruim.
+- [x] **Correção 2b** (espera de 30 s + servidor): migration `20261230120000` e função `confirmar-compra` no ar (26/nov/2026); app na newdesign3 para a próxima build.
+- [ ] Teste real da 2b com a assinatura sandbox travada no TestFlight, quando a próxima build existir.
+- Monitor do loop "pagou e voltou ao paywall": `scripts/monitor/compra-paywall-volta.sql` (Superwall, `superwall query --file …`).

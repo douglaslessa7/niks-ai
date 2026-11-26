@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ActivityIndicator, InteractionManager } from 'react-native';
+import { View, Text, ActivityIndicator, InteractionManager, TouchableOpacity } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { usePlacement, useSuperwallEvents } from 'expo-superwall';
 import type { PaywallResult } from 'expo-superwall';
@@ -19,7 +19,7 @@ import {
   requestDownsell,
   subscribeDownsellRequest,
 } from '../../lib/paywallFlow';
-import { avisarTransferenciaFalhou, confirmPremium, ensureAnonymousRevenueCat } from '../../lib/subscriptionGate';
+import { avisarTransferenciaFalhou, confirmarPremiumDetalhado, ensureAnonymousRevenueCat, type ResultadoPortao } from '../../lib/subscriptionGate';
 import { pwDecisao } from '../../lib/paywallDebug';
 import { forcarPaywallDev } from '../../lib/devReset';
 import { PULAR_PAYWALL } from '../../lib/devPaywall';
@@ -30,7 +30,7 @@ import { OB, ObPillButton } from '../../components/onboarding/kit';
 import { iniciarAnaliseCompleta } from '../../lib/onboardingPrefetch';
 import { atualizarCompraPendente, registrarCompraPendente } from '../../lib/compraPendente';
 import { lerCodigoGrupo } from '../../lib/convidada';
-import { assinaturaDoAppleId } from '../../lib/assinaturaServidor';
+import { assinaturaDoAppleId, compraRecenteNoServidor, conferirPortao } from '../../lib/assinaturaServidor';
 import { deveriaPerguntar } from '../../lib/regraCompra';
 import { marcarCompraNestaSessao } from '../../lib/sinalCompra';
 import { registrarAceiteNaCompra } from '../../lib/aceiteTermos';
@@ -53,6 +53,35 @@ async function liberarAnaliseCompleta(): Promise<boolean> {
   return true;
 }
 
+// Compra que o aparelho não confirma (correção 2b, 26/nov/2026): o Superwall disse "comprou",
+// mas nem ele nem o RevenueCat confirmam no aparelho. Em vez de voltar ao paywall na hora, a tela
+// "Estamos confirmando seu pagamento" pergunta ao servidor (o webhook da loja chega em ~10 s,
+// função `confirmar-compra`) a cada 3 s, por até 30 s. Não confirmou → "Restaurar compra" e
+// "Voltar aos planos". Eventos: `compra_sem_confirmacao` (o portão não confirmou na hora) e
+// `compra_confirmada` (de onde veio a confirmação).
+const ESPERA_CONFIRMACAO_MS = 30000;
+const INTERVALO_CONFIRMACAO_MS = 3000;
+type Confirmando = null | 'esperando' | 'falhou';
+type DadosDaCompra = { paywall: string | null; produto: string | null };
+
+/** Propriedades dos eventos de compra a partir do resultado do portão. */
+function propsDoPortao(r: ResultadoPortao) {
+  const ult = r.tentativas[r.tentativas.length - 1];
+  return {
+    com_sessao: r.com_sessao,
+    tentativas: r.tentativas.length,
+    ms_total: r.ms_total,
+    ms_por_tentativa: r.tentativas.map((x) => x.ms),
+    superwall_status: r.tentativas.map((x) => x.superwall ?? 'sem_resposta'),
+    servidor: ult?.servidor ?? null,
+    rc_assinante: ult?.rc_assinante ?? null,
+    rc_ambiente: ult?.rc_ambiente ?? null,
+    rc_produto: ult?.rc_produto ?? null,
+    outra_conta: r.tentativas.some((x) => x.outra_conta),
+    transferencia_falhou: r.tentativas.some((x) => x.transferencia_falhou),
+  };
+}
+
 // Paywall sem resposta (onSkip / onError / register que lança) seguidas vezes:
 // depois disso para de pedir em ciclo e mostra "Tentar de novo". Nunca o cadastro.
 const MAX_FALHAS_SEGUIDAS = 3;
@@ -69,6 +98,11 @@ export default function PaywallSoft() {
   // Convite válido no onboarding, ainda sem conta: paywall da convidada, com X e sem downsell.
   const grupoConvite = useRef<string | null>(null);
   const placementBase = () => grupoConvite.current !== null ? 'paywall_convidada' : 'paywall_onboarding';
+  // Último placement pedido (vai nos eventos de compra).
+  const ultimoPlacement = useRef<string | null>(null);
+  const [confirmando, setConfirmando] = useState<Confirmando>(null);
+  const telaViva = useRef(true);
+  useEffect(() => () => { telaViva.current = false; }, []);
 
   // `paywall_viewed` saiu daqui (disparava a CADA render desta tela): agora sai uma vez por
   // abertura real do paywall, com placement e paywall_id, em lib/mixpanel/superwallBridge.tsx.
@@ -81,6 +115,7 @@ export default function PaywallSoft() {
     if (isCancelled?.()) return;
     try {
       if (placement === 'paywall_convidada') track('convidada_paywall_aberto', { origem: 'onboarding' });
+      ultimoPlacement.current = placement;
       await registerPlacement({ placement });
     } catch (e) {
       void paywallNaoApareceu(placementBase(), `registerPlacement(${placement}) lançou`);
@@ -108,19 +143,39 @@ export default function PaywallSoft() {
   // Compra ou restauração dentro do paywall: SÓ aqui o RevenueCat é consultado
   // para liberar. Confirmou o `premium` → cadastro (nova usuária) ou home (já tem
   // conta). Não confirmou → paywall de novo (ela pode tocar em "Restaurar compra").
-  const confirmarESeguir = async (tipo: 'purchased' | 'restored') => {
+  const confirmarESeguir = async (tipo: 'purchased' | 'restored', compra: DadosDaCompra = { paywall: null, produto: null }) => {
     // Comprou ou restaurou neste aparelho: a compra que estiver em outra conta vem para esta.
     let transferenciaFalhou = false;
     const transferencia = {
       transferir: tipo === 'restored' ? 'restaurar' as const : 'compra' as const,
       onTransferenciaFalhou: () => { transferenciaFalhou = true; },
     };
-    let ok = await confirmPremium({ source: 'sync', attempts: 3, label: `paywall:${tipo}`, ...transferencia });
+    const dadosEvento = { tipo, paywall: compra.paywall, placement: ultimoPlacement.current, produto: compra.produto };
+    let r = await confirmarPremiumDetalhado({ source: 'sync', attempts: 3, label: `paywall:${tipo}`, ...transferencia });
     // "Restaurar compra" que o sync não resolveu: aí sim o restore do RevenueCat
     // (foi ela quem pediu para restaurar).
-    if (!ok && tipo === 'restored' && !transferenciaFalhou) {
-      ok = await confirmPremium({ source: 'restore', label: 'paywall:restored', ...transferencia });
+    if (!r.ok && tipo === 'restored' && !transferenciaFalhou) {
+      r = await confirmarPremiumDetalhado({ source: 'restore', label: 'paywall:restored', ...transferencia });
     }
+    let ok = r.ok;
+    let fonte: string | null = r.fonte;
+    if (!ok) track('compra_sem_confirmacao', { ...dadosEvento, ...propsDoPortao(r) });
+    // 2b: comprou, o aparelho não confirmou e a compra não é de outra conta → espera o servidor.
+    if (!ok && tipo === 'purchased' && !transferenciaFalhou && !r.tentativas.some((x) => x.outra_conta)) {
+      const espera = await esperarConfirmacaoDoServidor();
+      if (espera.ok) {
+        ok = true;
+        fonte = espera.fonte;
+      } else {
+        if (!telaViva.current) return;
+        track('compra_confirmacao_esgotada', { ...dadosEvento, ms_espera: espera.ms, consultas: espera.consultas, servidor_respondeu: espera.servidorRespondeu });
+        await pwDecisao(`onDismiss(${tipo})`, 'CONFIRMANDO — sem confirmação em 30 s', 'parado',
+          'O Superwall disse "comprou", mas nem o aparelho nem o servidor confirmaram. Mostra "Restaurar compra" e "Voltar aos planos".');
+        setConfirmando('falhou');
+        return;
+      }
+    }
+    if (ok) track('compra_confirmada', { ...dadosEvento, fonte, tentativas: r.tentativas.length, ms_total: r.ms_total });
     if (!ok) {
       await pwDecisao(`onDismiss(${tipo})`, 'PAYWALL de novo (paywall_onboarding)', 'paywall',
         'O Superwall disse que houve compra/restauração, mas o RevenueCat não confirmou o premium.');
@@ -128,6 +183,7 @@ export default function PaywallSoft() {
       void present(placementBase(), `${tipo}_sem_premium`);
       return;
     }
+    setConfirmando(null);
     // Sinal explícito para o cadastro e as boas-vindas: SÓ aqui (purchased/restored confirmado).
     await marcarCompraNestaSessao(tipo === 'restored' ? 'restaurar' : 'compra');
     // 1.64: o paywall mostra a frase dos Termos — compra com conta logada registra o aceite.
@@ -164,6 +220,47 @@ export default function PaywallSoft() {
     }
   };
 
+  // 2b: "Estamos confirmando seu pagamento". A cada 3 s, por até 30 s: o servidor (webhook da
+  // loja com o id deste aparelho; com conta, ele também liga a compra) e o portão de sempre
+  // (o Superwall pode ficar ativo nesse meio-tempo). Nunca libera por tempo: só por confirmação.
+  const esperarConfirmacaoDoServidor = async (): Promise<{ ok: boolean; fonte: string | null; ms: number; consultas: number; servidorRespondeu: boolean }> => {
+    setConfirmando('esperando');
+    const inicio = Date.now();
+    let consultas = 0;
+    let servidorRespondeu = false;
+    while (Date.now() - inicio < ESPERA_CONFIRMACAO_MS && telaViva.current) {
+      consultas++;
+      const [srv, portao] = await Promise.all([compraRecenteNoServidor('compra'), conferirPortao()]);
+      if (srv) servidorRespondeu = true;
+      if (portao.confirmado) return { ok: true, fonte: 'portao_na_espera', ms: Date.now() - inicio, consultas, servidorRespondeu };
+      // Sem conta: a compra saiu deste aparelho há pouco. Com conta: ela já é assinante.
+      if (srv?.confirmado && (srv.assinante === undefined || srv.assinante)) {
+        return { ok: true, fonte: 'servidor', ms: Date.now() - inicio, consultas, servidorRespondeu };
+      }
+      const resta = ESPERA_CONFIRMACAO_MS - (Date.now() - inicio);
+      if (resta <= 0) break;
+      await new Promise((res) => setTimeout(res, Math.min(INTERVALO_CONFIRMACAO_MS, resta)));
+    }
+    return { ok: false, fonte: null, ms: Date.now() - inicio, consultas, servidorRespondeu };
+  };
+
+  // Depois dos 30 s sem confirmação.
+  const restaurarDepoisDaEspera = () => {
+    haptics.action();
+    track('compra_confirmacao_restaurar');
+    setConfirmando('esperando');
+    void confirmarESeguir('restored').finally(() => {
+      // `restored` sem confirmação volta ao paywall (o caminho de sempre).
+      if (telaViva.current) setConfirmando((c) => (c === 'esperando' ? null : c));
+    });
+  };
+  const voltarAosPlanos = () => {
+    haptics.tap();
+    track('compra_confirmacao_voltou');
+    setConfirmando(null);
+    void present(placementBase(), 'confirmacao_voltou');
+  };
+
   const { registerPlacement } = usePlacement({
     onPresent: () => {
       falhasRef.current = 0;
@@ -176,7 +273,10 @@ export default function PaywallSoft() {
         return;
       }
       if (result?.type === 'purchased' || result?.type === 'restored') {
-        await confirmarESeguir(result.type);
+        await confirmarESeguir(result.type, {
+          paywall: info?.identifier ?? null,
+          produto: result.type === 'purchased' ? result.productId ?? null : null,
+        });
         return;
       }
       // Convidada fechou no X: cria a conta e entra só no grupo. Sem downsell.
@@ -355,7 +455,30 @@ export default function PaywallSoft() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-      {pergunta ? (
+      {confirmando === 'esperando' ? (
+        <>
+          <ActivityIndicator color={OB.pink} />
+          <Text style={{ marginTop: 24, fontSize: 20, lineHeight: 26, fontWeight: '700', color: OB.ink, textAlign: 'center' }}>
+            {t('Estamos confirmando seu pagamento')}
+          </Text>
+          <Text style={{ marginTop: 8, fontSize: 16, lineHeight: 22, color: OB.sub, textAlign: 'center' }}>
+            {t('Isso costuma levar alguns segundos.')}
+          </Text>
+        </>
+      ) : confirmando === 'falhou' ? (
+        <>
+          <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '700', color: OB.ink, textAlign: 'center' }}>
+            {t('Ainda não recebemos a confirmação da Apple')}
+          </Text>
+          <Text style={{ marginTop: 8, marginBottom: 28, fontSize: 16, lineHeight: 22, color: OB.sub, textAlign: 'center' }}>
+            {t('Se o valor já foi cobrado, toque em "Restaurar compra". Você não paga de novo.')}
+          </Text>
+          <ObPillButton label={t('Restaurar compra')} onPress={restaurarDepoisDaEspera} />
+          <TouchableOpacity onPress={voltarAosPlanos} activeOpacity={0.7} style={{ marginTop: 18, paddingVertical: 8, paddingHorizontal: 16 }}>
+            <Text style={{ fontSize: 16, lineHeight: 22, fontWeight: '600', color: OB.sub, textAlign: 'center' }}>{t('Voltar aos planos')}</Text>
+          </TouchableOpacity>
+        </>
+      ) : pergunta ? (
         <PerguntaAssinatura onUsar={() => { void usarAssinatura(); }} onAgoraNao={recusarAssinatura} />
       ) : semPaywall ? (
         <>

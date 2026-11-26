@@ -1891,5 +1891,11 @@
   "Seus {{n}} NIKS Points chegaram ✨": "Your {{n}} NIKS Points are here ✨",
   "Seu presente de boas-vindas já está na sua conta.": "Your welcome gift is in your account.",
   "do que {{n}}% das usuárias": "than {{n}}% of users",
-  "Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.\n\nApagar a conta não cancela a sua assinatura da Apple. Para parar a cobrança, cancele em Ajustes do iPhone › seu nome › Assinaturas › NIKS.": "Are you sure you want to delete your account? This can't be undone.\n\nDeleting your account doesn't cancel your Apple subscription. To stop being charged, cancel it in iPhone Settings › your name › Subscriptions › NIKS."
+  "Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.\n\nApagar a conta não cancela a sua assinatura da Apple. Para parar a cobrança, cancele em Ajustes do iPhone › seu nome › Assinaturas › NIKS.": "Are you sure you want to delete your account? This can't be undone.\n\nDeleting your account doesn't cancel your Apple subscription. To stop being charged, cancel it in iPhone Settings › your name › Subscriptions › NIKS.",
+  "Estamos confirmando seu pagamento": "We're confirming your payment",
+  "Isso costuma levar alguns segundos.": "This usually takes a few seconds.",
+  "Ainda não recebemos a confirmação da Apple": "We haven't received Apple's confirmation yet",
+  "Se o valor já foi cobrado, toque em \"Restaurar compra\". Você não paga de novo.": "If you've already been charged, tap \"Restore purchase\". You won't be charged again.",
+  "Restaurar compra": "Restore purchase",
+  "Voltar aos planos": "Back to plans"
 }

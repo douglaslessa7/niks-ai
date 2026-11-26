@@ -58,11 +58,48 @@ async function readCustomerInfo(source: Source): Promise<CustomerInfo | null> {
   return withTimeout(Purchases.getCustomerInfo(), RC_TIMEOUT_MS);
 }
 
+/** Uma tentativa do portão, para os eventos `compra_confirmada` / `compra_sem_confirmacao`. */
+export type TentativaPortao = {
+  superwall: 'ACTIVE' | 'INACTIVE' | null;
+  servidor: boolean | null;
+  outra_conta: boolean;
+  transferencia_falhou: boolean;
+  /** `null` = o RevenueCat não foi consultado nesta tentativa ou não respondeu. */
+  rc_assinante: boolean | null;
+  rc_ambiente: 'SANDBOX' | 'PRODUCTION' | null;
+  rc_produto: string | null;
+  ms: number;
+};
+
+export type ResultadoPortao = {
+  ok: boolean;
+  /** Quem confirmou: o Superwall/servidor (`conferirPortao`) ou o RevenueCat (reserva). */
+  fonte: 'portao' | 'revenuecat' | null;
+  com_sessao: boolean;
+  tentativas: TentativaPortao[];
+  ms_total: number;
+};
+
+function resumoRc(info: CustomerInfo | null): Pick<TentativaPortao, 'rc_assinante' | 'rc_ambiente' | 'rc_produto'> {
+  if (!info) return { rc_assinante: null, rc_ambiente: null, rc_produto: null };
+  const ativo = Object.values(info.entitlements?.active ?? {})[0];
+  return {
+    rc_assinante: isSubscribed(info),
+    rc_ambiente: ativo ? (ativo.isSandbox ? 'SANDBOX' : 'PRODUCTION') : null,
+    rc_produto: ativo?.productIdentifier ?? null,
+  };
+}
+
 /**
  * `true` SÓ com assinatura confirmada: Superwall → servidor → RevenueCat (reserva).
  * Nenhuma confirmação → `false`. Nunca lança.
  */
-export async function confirmPremium({
+export async function confirmPremium(opcoes: Parameters<typeof confirmarPremiumDetalhado>[0]): Promise<boolean> {
+  return (await confirmarPremiumDetalhado(opcoes)).ok;
+}
+
+/** O mesmo `confirmPremium`, com o detalhe de cada tentativa (para medir a compra). Nunca lança. */
+export async function confirmarPremiumDetalhado({
   source = 'cache',
   attempts = 1,
   label,
@@ -75,27 +112,39 @@ export async function confirmPremium({
   /** Só quando ela comprou ou restaurou neste aparelho: traz a compra de outra conta para esta. */
   transferir?: OrigemTransferencia;
   onTransferenciaFalhou?: () => void;
-}): Promise<boolean> {
+}): Promise<ResultadoPortao> {
+  const inicio = Date.now();
+  const r: ResultadoPortao = { ok: false, fonte: null, com_sessao: false, tentativas: [], ms_total: 0 };
+  const fim = (ok: boolean, fonte: ResultadoPortao['fonte']) => ({ ...r, ok, fonte, ms_total: Date.now() - inicio });
   for (let i = 1; i <= attempts; i++) {
+    const t0 = Date.now();
     const c = await conferirPortao(transferir);
+    r.com_sessao = !!c.token;
+    const tentativa: TentativaPortao = {
+      superwall: c.superwall, servidor: c.servidor, outra_conta: c.outraConta, transferencia_falhou: c.transferenciaFalhou,
+      rc_assinante: null, rc_ambiente: null, rc_produto: null, ms: 0,
+    };
+    r.tentativas.push(tentativa);
     if (c.transferenciaFalhou) onTransferenciaFalhou?.();
-    if (c.outraConta) return false;
+    if (c.outraConta) { tentativa.ms = Date.now() - t0; return fim(false, null); }
     if (c.confirmado) {
+      tentativa.ms = Date.now() - t0;
       // Não atrasa a entrada: só compara. Também mantém o RevenueCat a par da compra.
       void readCustomerInfo(source).then((info) => {
         if (info == null || !isSubscribed(info)) void registrarDiscordanciaRc(c, info == null ? null : false);
       });
-      return true;
+      return fim(true, 'portao');
     }
     const info = await readCustomerInfo(source);
-    const rcOk = info != null && isSubscribed(info);
-    if (rcOk) {
+    Object.assign(tentativa, resumoRc(info));
+    tentativa.ms = Date.now() - t0;
+    if (info != null && isSubscribed(info)) {
       void registrarDiscordanciaRc(c, true);
-      return true;
+      return fim(true, 'revenuecat');
     }
-    if (i < attempts) await new Promise((r) => setTimeout(r, 1500));
+    if (i < attempts) await new Promise((res) => setTimeout(res, 1500));
   }
-  return false;
+  return fim(false, null);
 }
 
 const AVISO_TRANSFERENCIA = {

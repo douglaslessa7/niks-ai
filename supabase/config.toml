@@ -110,6 +110,14 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/comprovar-assinatura/index.ts"
 
+[functions.confirmar-compra]
+enabled = true
+# Compra que o aparelho não confirma (2b, migration 20261230120000): o app pergunta se o webhook
+# da loja já chegou com o id anônimo deste aparelho. Funciona SEM conta (chave anon, só lê) e
+# com conta (JWT verificado localmente; liga a compra).
+verify_jwt = false
+entrypoint = "./functions/confirmar-compra/index.ts"
+
 [functions.grupos]
 enabled = true
 # Grupos (fase 3): o banco não tem política para o app; tudo passa por aqui. Mesmo padrão
