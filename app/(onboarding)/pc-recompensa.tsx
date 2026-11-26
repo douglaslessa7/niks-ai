@@ -35,6 +35,12 @@ import { TABELA_NIVEIS, fracaoNivel, nivelDe } from '../../lib/niveis';
 // Tudo é creditado no servidor depois do cadastro, num evento só: os +100 do pacto (`selarPacto`)
 // e os +20 por produto (`registrarProdutosBoasVindas`) — `cartas` → `boas_vindas`.
 const MEDALHA = 132;
+/** Espaçamento entre as letras do número grande ("+140"). */
+const LETRAS_NUMERO = -2;
+/** Deslocamento que centraliza a TINTA do número na tela, medido no simulador (26/nov/2026):
+ *  o espaçamento negativo depois do último algarismo (1 pt) + a diferença entre as margens
+ *  internas do "+" e do "0" da fonte. Com ele, "+100" e "+140" ficam a menos de 1 pixel do centro. */
+const AJUSTE_CENTRO = -4 / 3; // = 4 px físicos num iPhone de tela 3x
 const CONTA_MS = 1400;
 const BARRA_MS = 1200;
 const T_MEDALHA = 250;
@@ -176,13 +182,20 @@ export default function PcRecompensa() {
   return (
     <BvScreen fundo={<View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#FFFFFF' }} />}>
       <View style={{ flex: 1, paddingTop: top, paddingBottom: bottom, paddingHorizontal: 20, alignItems: 'center' }}>
+        {/* Centralizado de verdade (26/nov/2026, pedido do produto): o espaçamento negativo (−2)
+            também entra depois do último algarismo e empurrava o número 1 pt para a direita —
+            o `translateX` (AJUSTE_CENTRO) compensa isso e a margem interna do "+"; e algarismos
+            proporcionais (sem `tabular-nums`) tiram o vão largo entre o "+" e o "1".
+            Medido no simulador: desvio de 1,3 pt → ≤ 0,2 pt. */}
         <Animated.View style={[{ marginTop: 40, alignSelf: 'stretch' }, stNumero]}>
+          <View style={{ alignSelf: 'stretch', transform: [{ translateX: AJUSTE_CENTRO }] }}>
           <Odometro
             valor={conta}
             alvo={total}
             prefixo="+"
-            style={{ fontSize: 76, lineHeight: 84, fontWeight: '700', letterSpacing: -2, color: PC.pink, fontVariant: ['tabular-nums'] }}
+            style={{ fontSize: 76, lineHeight: 84, fontWeight: '700', letterSpacing: LETRAS_NUMERO, color: PC.pink }}
           />
+          </View>
         </Animated.View>
         <Animated.Text style={[{ fontSize: 14, fontWeight: '600', color: PC.ink }, stLegenda]}>{t('NIKS Points')}</Animated.Text>
 
