@@ -3,7 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { t } from '../../lib/i18n';
+import { t, emIngles } from '../../lib/i18n';
 import { haptics } from '../../lib/haptics';
 import { useMixpanel } from '../../lib/mixpanel/MixpanelProvider';
 import { useAppStore } from '../../store/onboarding';
@@ -24,10 +24,13 @@ import { PC, PcBotao, PcCheck, usePcFrame } from '../../components/posCompra/pcK
 const MANHA_PROVISORIO = 4;
 const NOITE_PROVISORIO = 3;
 
+/** "Gel de limpeza suave, hidratante leve e protetor solar" — os nomes vêm da IA em Título
+ *  ("Hidratante Leve"): a frase fica em minúsculas, só a 1ª letra maiúscula. */
 function listaNatural(nomes: string[]): string {
-  const n = nomes.map((s, i) => (i === 0 ? s : s.charAt(0).toLocaleLowerCase('pt-BR') + s.slice(1)));
-  if (n.length <= 1) return n[0] ?? '';
-  return `${n.slice(0, -1).join(', ')} ${t('e')} ${n[n.length - 1]}`;
+  const n = nomes.map((s) => s.trim().toLocaleLowerCase(emIngles ? 'en-US' : 'pt-BR')).filter(Boolean);
+  if (!n.length) return '';
+  const frase = n.length === 1 ? n[0] : `${n.slice(0, -1).join(', ')} ${t('e')} ${n[n.length - 1]}`;
+  return frase.charAt(0).toLocaleUpperCase(emIngles ? 'en-US' : 'pt-BR') + frase.slice(1);
 }
 
 function Caixa({ marcada, texto, onPress }: { marcada: boolean; texto: string; onPress: () => void }) {
