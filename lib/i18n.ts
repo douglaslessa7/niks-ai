@@ -25,7 +25,7 @@ import onboarding from '../locales/en/onboarding.json';
 // `localeIdentifier`. Para ligar o inglês numa build futura: trocar para `true`.
 // Teste no Metro sem mudar o código: `EXPO_PUBLIC_INGLES=1 npx expo start --dev-client --clear`
 // (só vale em desenvolvimento; em Release/TestFlight manda só esta constante).
-export const INGLES_LIGADO = false;
+export const INGLES_LIGADO = true;
 const inglesNoTeste = __DEV__ && process.env.EXPO_PUBLIC_INGLES === '1';
 
 function idiomaDoCelular(): 'pt' | 'en' {

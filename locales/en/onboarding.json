@@ -1889,5 +1889,7 @@
   "Olheiras marcadas": "Noticeable dark circles",
   "NIKS IA": "NIKS AI",
   "Seus {{n}} NIKS Points chegaram ✨": "Your {{n}} NIKS Points are here ✨",
-  "Seu presente de boas-vindas já está na sua conta.": "Your welcome gift is in your account."
+  "Seu presente de boas-vindas já está na sua conta.": "Your welcome gift is in your account.",
+  "do que {{n}}% das usuárias": "than {{n}}% of users",
+  "Você tem certeza que deseja apagar a sua conta? Essa ação é irreversível.\n\nApagar a conta não cancela a sua assinatura da Apple. Para parar a cobrança, cancele em Ajustes do iPhone › seu nome › Assinaturas › NIKS.": "Are you sure you want to delete your account? This can't be undone.\n\nDeleting your account doesn't cancel your Apple subscription. To stop being charged, cancel it in iPhone Settings › your name › Subscriptions › NIKS."
 }
