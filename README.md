@@ -2072,6 +2072,20 @@ As últimas 40 decisões ficam salvas no aparelho.
 - **Quem manda `transferir` hoje:** só o `paywall-soft` e o `AvisoCadeado` (com purchased/restored) e o `signup` (com o sinal). O servidor só troca a dona em `comprovar_compra` com `transferir` (o webhook mantém a dona; `vincular_rc` só liga compra sem dona).
 - Teste da regra (Deno, fora do projeto): cenários A–E (conta nova compra; Apple ID de outra conta sem comprar; convidada no X; reinstalar e restaurar; Apple ID nova) — 5/5. Compras reais: testar no iPhone com Sandbox Tester.
 
+#### Compra que o aparelho não confirma — "Estamos confirmando seu pagamento" (26/nov/2026, próxima build depois da 1.66 (2) — migration `20261230120000_compra_recente_superwall.sql`, função `confirmar-compra`)
+> ✅ **Servidor no ar (26/nov/2026):** migration aplicada e registrada; `confirmar-compra` publicada do repositório (função nova, `verify_jwt = false`, leva no pacote dela o `_shared/jwt.ts` e o `_shared/assinatura.ts` do repo; as outras funções não mudam). Conferido: OPTIONS 200, sem conta responde só `{confirmado, produto}`, id inválido → 400. O app que usa isso ainda não saiu (a 1.66 (2) não tem).
+
+O Superwall às vezes devolve "comprou" e nem ele nem o RevenueCat confirmam no aparelho (assinatura sandbox travada do TestFlight; em produção, atraso da loja). Antes ela voltava ao paywall depois de pagar. Agora (`app/(onboarding)/paywall-soft.tsx`):
+- **"Estamos confirmando seu pagamento"**: a cada 3 s, por até 30 s, pergunta ao servidor e confere o portão de novo. Só libera com confirmação, nunca por tempo.
+- O servidor (`compra_recente_superwall`, só service role) confirma quando chegou pelo webhook uma compra/renovação/troca de plano/reativação feita **com o id anônimo deste aparelho** (`$superwallalias:<uuid>` no `app_user_id` ou `original_app_user_id` do evento; a lista `aliases` NÃO conta, porque junta os aparelhos do mesmo Apple ID) e a assinatura está ativa. Janela: 15 min sem conta, 60 min com conta.
+- Sem confirmação em 30 s: **"Restaurar compra"** (o caminho `restored` de sempre) e **"Voltar aos planos"**.
+- **Cadastro** (`signup.tsx`): se o portão não confirmar a conta nova e ela comprou nesta sessão, `confirmar-compra` com o JWT liga a compra à conta (`comprovar_compra`, origem `superwall_compra`; de outra conta, só com `transferir`) e responde se ela é assinante.
+- **Retomada** (`app/index.tsx`): o app fechado no pós-compra e reaberto usa o mesmo caminho do servidor.
+- **Eventos (Mixpanel):** `compra_sem_confirmacao` (o portão não confirmou na hora: tipo, paywall, placement, produto, status do Superwall por tentativa, RevenueCat, servidor, tempos), `compra_confirmada` (`fonte`: portao, revenuecat, servidor, portao_na_espera), `compra_confirmacao_esgotada`, `compra_confirmacao_restaurar`, `compra_confirmacao_voltou`.
+- **Funil do pós-compra no Mixpanel:** todo evento leva a super property `superwall_alias` (`$superwallalias:<uuid>`, minúsculas; `lib/mixpanel/superwallIdentidade.ts`), o mesmo id da compra em `loja_eventos.app_user_id` e no ClickHouse do Superwall. As telas pc-* têm nome no `Screen Viewed` ("Pós-compra 101 · Boas-vindas" … "112 · Exclusivos", inclusive a câmera e o "gerando", que não mandam `bv_tela_vista`).
+- **Risco aceito:** quem tivesse o id anônimo de OUTRO aparelho poderia, nos 60 min seguintes a uma compra feita nele, trazê-la para a própria conta. O id só existe no aparelho e no Superwall; toda troca fica em `assinatura_transferencias`.
+- Teste no PGlite (28 casos) antes de publicar. Falta o teste real com a assinatura travada no TestFlight, na próxima build.
+
 #### Transferência de compra entre contas (09/nov/2026, 1.0.60 (2) — migration `20261130120000_transferir_compra.sql`)
 > ✅ **Servidor no ar:** migration aplicada e `comprovar-assinatura` publicada (o `index.ts` do ar é igual ao do repositório; conferido em 09/nov/2026). O `_shared/assinatura.ts` do ar continua diferente do repositório (as travas da Fase 8): ao publicar outra função, partir da versão no ar.
 

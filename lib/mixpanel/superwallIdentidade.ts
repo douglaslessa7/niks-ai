@@ -11,6 +11,7 @@
 // Compra ANTES do cadastro (o caminho normal do onboarding) vai com o id anônimo do Superwall,
 // que o servidor liga à conta depois (lib/assinaturaServidor.ts).
 import { useSuperwallStore } from 'expo-superwall';
+import { mixpanel } from './mixpanelClient';
 
 const ESPERA_MS = 10_000;
 
@@ -63,6 +64,7 @@ function aplicarMixpanelNoSuperwall(): void {
         const id = idMixpanel;
         if (!id || !(await superwallPronto())) break;
         await useSuperwallStore.getState().setIntegrationAttributes({ mixpanelDistinctId: id });
+        await registrarAliasNoMixpanel();
       } while (pendente);
     } catch {
       // sem o atributo, os `sw_*` caem só pelo appUserId; tenta de novo na próxima mudança
@@ -70,6 +72,24 @@ function aplicarMixpanelNoSuperwall(): void {
       aplicando = false;
     }
   })();
+}
+
+// ── Super property `superwall_alias` (26/nov/2026) ───────────────────────────────────────
+// O id anônimo do Superwall deste aparelho, em minúsculas (`$superwallalias:<uuid>`), em todo
+// evento do Mixpanel. É o mesmo id que chega na compra (webhook → `loja_eventos.app_user_id`,
+// ClickHouse do Superwall): liga quem pagou às telas que viu depois (funil do pós-compra).
+// Reaplicada junto com o atributo acima: no início, depois do identify e depois dos resets
+// (o do Mixpanel apaga as super properties; o do Superwall troca o id).
+async function registrarAliasNoMixpanel(): Promise<void> {
+  try {
+    const attrs = await useSuperwallStore.getState().getUserAttributes();
+    const bruto = typeof attrs?.aliasId === 'string' ? attrs.aliasId.trim() : '';
+    if (!bruto) return;
+    const alias = (bruto.toLowerCase().startsWith('$superwallalias:') ? bruto : `$SuperwallAlias:${bruto}`).toLowerCase();
+    mixpanel.registerSuperProperties({ superwall_alias: alias });
+  } catch {
+    // sem o alias, os eventos seguem sem ele
+  }
 }
 
 /** Novo distinct_id do Mixpanel (início, identify, reset): manda ao Superwall. Nunca lança. */

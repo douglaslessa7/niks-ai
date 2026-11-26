@@ -50,6 +50,19 @@ const SCREEN_NAMES: Record<string, string> = {
   '/bv-recompensa': 'Boas-vindas 6 · Recompensa',
   '/bv-sequencia': 'Boas-vindas 7 · Sequência',
   '/bv-nivel': 'Boas-vindas 8 · Nível',
+  // Pós-compra v2 (26/nov/2026; números do `bv_tela_vista`, components/boasVindas/kit.tsx).
+  // Câmera e "gerando" não usam a BvScreen: só aparecem aqui, no `Screen Viewed`.
+  '/pc-boas-vindas': 'Pós-compra 101 · Boas-vindas',
+  '/pc-criar-rotina': 'Pós-compra 102 · Criar rotina',
+  '/pc-camera': 'Pós-compra 103 · Câmera dos produtos',
+  '/pc-gerando': 'Pós-compra 104 · Gerando',
+  '/pc-rotina-pronta': 'Pós-compra 105 · Rotina pronta',
+  '/pc-foto': 'Pós-compra 106 · Foto',
+  '/pc-projecao': 'Pós-compra 107 · Projeção',
+  '/pc-recompensa': 'Pós-compra 109 · Recompensa',
+  '/pc-sequencia': 'Pós-compra 110 · Sequência',
+  '/pc-tudo-pronto': 'Pós-compra 111 · Tudo pronto',
+  '/pc-exclusivos': 'Pós-compra 112 · Exclusivos',
 
   // Onboarding — telas fora do caminho (arquivos no repo)
   '/ola': 'Olá',
