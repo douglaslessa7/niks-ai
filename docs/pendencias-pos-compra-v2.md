@@ -16,3 +16,9 @@ Design: `design-handoff/pos-compra-v2/` (fora do git).
 - [ ] **Caixas da tela 5** ("Sua rotina está pronta"): "Me avisar na hora de escanear a pele" e "Receber dicas pra minha pele" só ficam na tela e no Mixpanel; não há preferência guardada. Só "Me lembrar da rotina" grava (`setLembreteBoasVindas`).
 - [ ] **Limpeza das telas antigas**: `bv-entrou`, `bv-rotina`, `bv-foto`, `bv-projecao`, `bv-recompensa`, `bv-sequencia`, `bv-nivel` ficaram sem uso (mantidas nesta build para voltar atrás fácil). A `bv-pacto` continua em uso. Junto: os ramos `usePosCompraV2.ativo` dentro delas e as listas `SEM_GESTO`/`TELAS_SEM_GESTO`.
 - [ ] **Ex-convidada e os pontos**: a função `boas_vindas` só credita conta NOVA (`conta_antiga`); a ex-convidada vê a recompensa, mas não recebe os pontos (igual ao fluxo antigo). Decidir se a tela muda para ela.
+
+## Cortesia de boas-vindas (26/nov/2026)
+- [x] Crédito de +100 às 633 contas (migration `20261228120000`, `scripts/boas-vindas-cortesia/creditar.sql`).
+- [ ] **Publicar a migration `20261229120000_cortesia_aviso`** (funções do card) antes da próxima build. Só com OK.
+- [ ] **Publicar a `send-notifications`** com o tipo `boas_vindas_cortesia` e disparar o push (só com OK). Nas builds da loja o toque abre o app (home); a partir da próxima build, a Caminhada.
+- [ ] Mixpanel: `cortesia_aviso_visto`, `cortesia_aberta` (origem aviso/push), `cortesia_dispensada` no tracking-plan.

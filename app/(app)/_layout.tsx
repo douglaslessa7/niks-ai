@@ -37,6 +37,7 @@ import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
 import { finishProdutosTutorial, marcarProdutosTutorialVisto, useProdutosTutorialPending } from '../../lib/produtosTutorial';
 import AvisoLote from '../../components/rotina/AvisoLote';
+import AvisoCortesia from '../../components/AvisoCortesia';
 import { carregarFila, tentarEnviarFila } from '../../lib/filaProdutosCasa';
 import ConvitePendente from '../../components/grupos/ConvitePendente';
 import ToquePush from '../../components/ToquePush';
@@ -705,6 +706,8 @@ export default function AppLayout() {
       {/* Aviso "Sua rotina está pronta" do lote "Montar minha rotina" (Fase 6) + toque
           no push dele. Irmão da navbar pelo mesmo motivo: fica por cima de qualquer aba. */}
       {!showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <AvisoLote />}
+      {/* Cortesia de boas-vindas (26/nov/2026): "Seus 100 NIKS Points chegaram" — components/AvisoCortesia.tsx */}
+      {!showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <AvisoCortesia />}
       {/* Convite de grupo aberto pelo link (lib/convitePendente.ts): só depois do guard. */}
       {!showCoachMarks && !showProdutosCoachMarks && !guiaAtiva && !tutorialGruposAtivo && <ConvitePendente />}
       {/* Toque em qualquer push (inclusive o que abriu o app) → lib/pushToque.ts. Fora do

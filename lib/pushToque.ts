@@ -9,6 +9,7 @@
 //   · 'grupo_checkin' / 'grupo_falta' (avisos do grupo, servidor) → ToquePush abre o grupo
 //   · 'espinha_retorno' (push de 24 h do acompanhamento) → ToquePush abre a conversa da espinha
 //   · 'denuncia' (nova denúncia, só moderadoras) → ToquePush abre a tela de revisão
+//   · 'boas_vindas_cortesia' (+100 de cortesia, 26/nov/2026) → components/AvisoCortesia.tsx abre a Caminhada
 //   · 'routine_reminder' → só a medição (abre o app, como sempre).
 // Um toque de um tipo sem ninguém registrado ainda (ex.: o aviso do lote não monta
 // durante o tutorial) fica guardado e é entregue quando o tipo se registrar.
@@ -20,7 +21,7 @@ import { trackFora } from './mixpanel/MixpanelProvider';
 export type DadosPush = { type?: string; [k: string]: unknown };
 type Tratador = (dados: DadosPush) => void | Promise<void>;
 
-const COM_TELA = new Set(['rotina_lote', 'carta_misteriosa', 'grupo_checkin', 'grupo_falta', 'espinha_retorno', 'denuncia']);
+const COM_TELA = new Set(['rotina_lote', 'carta_misteriosa', 'grupo_checkin', 'grupo_falta', 'espinha_retorno', 'denuncia', 'boas_vindas_cortesia']);
 const tratadores = new Map<string, Tratador>();
 const pendentes = new Map<string, DadosPush>();
 const tratados = new Set<string>();

@@ -7,7 +7,10 @@ type NotificationType =
   | 'morning_routine'
   | 'night_routine'
   | 'scan_available'
-  | 'food_reminder';
+  | 'food_reminder'
+  // Cortesia de boas-vindas (26/nov/2026): SÓ as contas creditadas de
+  // `boas_vindas_cortesia_lote` (ramo próprio abaixo; nunca a base inteira).
+  | 'boas_vindas_cortesia';
 
 const MESSAGES: Record<NotificationType, { title: string; body: string }> = {
   morning_routine: {
@@ -25,6 +28,10 @@ const MESSAGES: Record<NotificationType, { title: string; body: string }> = {
   food_reminder: {
     title: '🥗 Registre sua refeição',
     body: 'Como está sua alimentação hoje? Analise agora.',
+  },
+  boas_vindas_cortesia: {
+    title: 'Seus 100 NIKS Points chegaram ✨',
+    body: 'Seu presente de boas-vindas já está na sua conta. Abre o app e veja seu nível novo.',
   },
 };
 
@@ -46,6 +53,10 @@ const MESSAGES_EN: Record<NotificationType, { title: string; body: string }> = {
   food_reminder: {
     title: '🥗 Log your meal',
     body: "How's your eating going today? Check it now.",
+  },
+  boas_vindas_cortesia: {
+    title: 'Your 100 NIKS Points are here ✨',
+    body: 'Your welcome gift is in your account. Open the app to see your new level.',
   },
 };
 
@@ -163,6 +174,37 @@ Deno.serve(async (req) => {
           }
           users.push(...(data ?? []));
         }
+      }
+    } else if (type === 'boas_vindas_cortesia') {
+      // Só quem recebeu a cortesia (migration 20261228120000). `user_ids`, se vier, só RESTRINGE
+      // dentro dessa lista (para testar com uma conta) — nunca amplia.
+      const lote: string[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('boas_vindas_cortesia_lote')
+          .select('user_id')
+          .not('creditada_em', 'is', null)
+          .order('user_id', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
+        lote.push(...(data ?? []).map((r: { user_id: string }) => r.user_id));
+        if (!data || data.length < PAGE) break;
+      }
+      const alvo = user_ids && user_ids.length > 0 ? lote.filter((id) => user_ids.includes(id)) : lote;
+      console.log(`[boas_vindas_cortesia] ${alvo.length} contas no alvo`);
+      for (const ids of chunkArray(alvo, 100)) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, push_token')
+          .in('id', ids)
+          .not('push_token', 'is', null)
+          .neq('push_token', 'simulator-token');
+        if (error) {
+          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+        }
+        users.push(...(data ?? []));
       }
     } else {
       // morning_routine, night_routine, food_reminder: envia para todos
