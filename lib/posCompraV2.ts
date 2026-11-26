@@ -21,7 +21,7 @@
 //
 // NIKS Points: +20 por foto tirada, no máximo 10 fotos pontuadas (+200). A barra mostra na
 // hora; o servidor credita depois do cadastro, junto com os +100 do pacto (`cartas` →
-// `boas_vindas`, migration 20261114120000) — a recompensa mostra o que ela vai ter na conta.
+// `boas_vindas`, migration 20261225120000_boas_vindas_produtos) — a recompensa mostra o que ela vai ter na conta.
 // ─────────────────────────────────────────────────────────────────────────────
 import { create } from 'zustand';
 import type { ProdutoLote } from './loteProdutos';

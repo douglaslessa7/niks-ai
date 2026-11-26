@@ -8,10 +8,6 @@
 -- função `cartas` com `{ acao: 'boas_vindas' }`, que roda isto aqui:
 --   • +100 NIKS Points (evento `boas_vindas` em `pontos_eventos`) → o nível vai a 2
 --     (Hidratadinha começa em 90);
---   • pós-compra v2 (26/nov/2026): + 20 por produto de casa fotografado antes do cadastro
---     (`p_produtos`, mandado pelo app; no máximo 10 → +200). No MESMO evento (uma linha:
---     `pontos` = pacto + produtos; o detalhe em `decisao`). Builds antigas não mandam
---     `p_produtos` → 0, como antes;
 --   • `nivel_visto` = o nível novo: as telas já celebraram, a home não celebra de novo;
 --   • sequência de 1 dia HOJE (só se estava em 0). NÃO grava `rotinas_concluidas`: o
 --     1º skincare de verdade de hoje continua dando a carta do dia (o `registrar_rotina`
@@ -23,18 +19,16 @@
 -- Só o service role executa.
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- A ação 'boas_vindas' já está na lista de `pontos_eventos_acao` desde a 20261113 (missões) e
--- continua na 20261204 (pontos diretos, que acrescentou 'skincare_dia' e 'missoes'). Esta
--- migration NÃO recria a lista (26/nov/2026): aplicada depois da 20261204, a versão antiga
--- apagaria 'skincare_dia' e 'missoes' e o banco passaria a recusar esses pontos.
+alter table public.pontos_eventos drop constraint if exists pontos_eventos_acao;
+alter table public.pontos_eventos add constraint pontos_eventos_acao check (acao in (
+  'rotina:am', 'rotina:pm', 'checkin_grupo', 'scan_rosto', 'produto_grupo', 'dobro', 'boas_vindas',
+  'desafio:1', 'desafio:2', 'desafio:3', 'desafio:4'
+));
 
 alter table public.cartas_config add column if not exists boas_vindas jsonb not null default
-  '{"ativa": true, "pontos": 100, "sequencia": 1, "pontos_produto": 20, "produtos_max": 10}'::jsonb;
+  '{"ativa": true, "pontos": 100, "sequencia": 1}'::jsonb;
 
--- Versão anterior desta migration (sem produtos), se tiver sido criada em algum banco de teste.
-drop function if exists public.boas_vindas(uuid, timestamptz);
-
-create or replace function public.boas_vindas(p_uid uuid, p_produtos integer default 0, p_agora timestamptz default now())
+create or replace function public.boas_vindas(p_uid uuid, p_agora timestamptz default now())
 returns jsonb
 language plpgsql
 security definer
@@ -44,8 +38,6 @@ declare
   cfg jsonb;
   hoje date := public.dia_sessao(p_agora);
   pts integer;
-  pts_pacto integer;
-  n_prod integer;
   novo uuid;
   soma jsonb;
   s public.sequencias%rowtype;
@@ -62,12 +54,9 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'conta_antiga');
   end if;
 
-  pts_pacto := greatest(coalesce((cfg ->> 'pontos')::int, 100), 0);
-  n_prod := least(greatest(coalesce(p_produtos, 0), 0), greatest(coalesce((cfg ->> 'produtos_max')::int, 10), 0));
-  pts := pts_pacto + n_prod * greatest(coalesce((cfg ->> 'pontos_produto')::int, 20), 0);
+  pts := greatest(coalesce((cfg ->> 'pontos')::int, 100), 0);
   insert into public.pontos_eventos (user_id, dia, acao, pontos, base, decisao)
-  values (p_uid, hoje, 'boas_vindas', pts, pts,
-          jsonb_build_object('origem', 'boas_vindas', 'pacto', pts_pacto, 'produtos', n_prod))
+  values (p_uid, hoje, 'boas_vindas', pts, pts, jsonb_build_object('origem', 'boas_vindas'))
   on conflict (user_id, dia, acao) do nothing
   returning id into novo;
   if novo is null then
@@ -87,10 +76,9 @@ begin
     returning * into s;
   end if;
 
-  return jsonb_build_object('ok', true, 'pontos', pts, 'pacto', pts_pacto, 'produtos', n_prod,
-                            'sequencia', coalesce(s.atual, 1)) || soma;
+  return jsonb_build_object('ok', true, 'pontos', pts, 'sequencia', coalesce(s.atual, 1)) || soma;
 end;
 $$;
 
-revoke all on function public.boas_vindas(uuid, integer, timestamptz) from public, anon, authenticated;
-grant execute on function public.boas_vindas(uuid, integer, timestamptz) to service_role;
+revoke all on function public.boas_vindas(uuid, timestamptz) from public, anon, authenticated;
+grant execute on function public.boas_vindas(uuid, timestamptz) to service_role;

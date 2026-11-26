@@ -222,7 +222,7 @@ serve(async (req) => {
     // cadastro, +100 NIKS Points (Nível 2), sequência de 1 dia. Uma vez por conta, só conta
     // nova; repetir não faz nada (`{ ok: false, motivo }`).
     // Pós-compra v2 (26/nov/2026): `produtos` = quantos produtos de casa ela fotografou antes
-    // do cadastro (+20 cada; o banco limita a 10). Build antiga não manda → 0.
+    // do cadastro (+20 cada; o banco limita a 10 — migration 20261225120000). Build antiga não manda → 0.
     if (acao === 'boas_vindas') {
       if (!v2) return json({ error: 'regras inválidas' }, 400)
       await marcarV2(supabase, userId, appPontos)

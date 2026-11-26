@@ -9,7 +9,7 @@
 //     apagado junto com a foto do scan;
 //   • quando ela SELOU O PACTO (tela 5);
 //   • pós-compra v2: quantos PRODUTOS DE CASA ela fotografou (+20 cada, até 10 — o servidor
-//     credita junto com o pacto; ver migration 20261114120000).
+//     credita junto com o pacto; ver migration 20261225120000_boas_vindas_produtos).
 // Depois do cadastro, a tela de espera chama `concluirBoasVindas`: a foto vira a Foto do
 // dia 1 (bucket `routine-photos`) e a foto de perfil (`users.foto_home_url`, se ainda não
 // houver uma), e o servidor credita os +100 NIKS
