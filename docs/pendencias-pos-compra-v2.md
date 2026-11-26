@@ -12,7 +12,7 @@ Design: `design-handoff/pos-compra-v2/` (fora do git).
 
 ## Depois
 
-- [ ] **Mixpanel**: nomes das telas `pc-*` em `lib/mixpanel/useScreenTracking.ts`; eventos novos no `docs/tracking-plan.md` — `bv_exclusivo_vista`, `boas_vindas_aviso_scan`, `boas_vindas_dicas`, `boas_vindas_sequencia`, `produtos_casa_descartados`, e `lote_enviado` / `lote_erro` com `origem: 'pos_compra_v2'`.
+- [ ] **Mixpanel**: nomes das telas `pc-*` em `lib/mixpanel/useScreenTracking.ts`; eventos novos no `docs/tracking-plan.md` — `bv_exclusivo_vista`, `boas_vindas_aviso_scan`, `boas_vindas_dicas`, `boas_vindas_sequencia`, `produtos_casa_descartados`, e `lote_enviado` / `lote_erro` com `origem: 'pos_compra_v2'`, `boas_vindas_recusada` (motivo) e `boas_vindas_creditada`.
 - [ ] **Caixas da tela 5** ("Sua rotina está pronta"): "Me avisar na hora de escanear a pele" e "Receber dicas pra minha pele" só ficam na tela e no Mixpanel; não há preferência guardada. Só "Me lembrar da rotina" grava (`setLembreteBoasVindas`).
 - [ ] **Limpeza das telas antigas**: `bv-entrou`, `bv-rotina`, `bv-foto`, `bv-projecao`, `bv-recompensa`, `bv-sequencia`, `bv-nivel` ficaram sem uso (mantidas nesta build para voltar atrás fácil). A `bv-pacto` continua em uso. Junto: os ramos `usePosCompraV2.ativo` dentro delas e as listas `SEM_GESTO`/`TELAS_SEM_GESTO`.
 - [ ] **Ex-convidada e os pontos**: a função `boas_vindas` só credita conta NOVA (`conta_antiga`); a ex-convidada vê a recompensa, mas não recebe os pontos (igual ao fluxo antigo). Decidir se a tela muda para ela.

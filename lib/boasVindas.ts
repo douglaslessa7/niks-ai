@@ -24,6 +24,7 @@ import { saveRoutinePhoto } from './routinePhotos';
 import { supabase } from './supabase';
 import { invalidateCache } from './cache';
 import { uploadScanPhoto } from '../store/onboarding';
+import { trackFora } from './mixpanel/MixpanelProvider';
 
 type Estado = { fotoUri: string | null; pactoEm: string | null; produtos?: number };
 const estado: Estado = { fotoUri: null, pactoEm: null, produtos: 0 };
@@ -38,6 +39,21 @@ export function boasVindasAtual(): Estado & { lembrete: boolean } {
 
 export function setLembreteBoasVindas(v: boolean) {
   lembrete = v;
+}
+
+/** O que a função `cartas` (ação `boas_vindas`) devolve. */
+export type RespostaBoasVindas = { ok?: boolean; motivo?: string; pontos?: number } | null | undefined;
+
+/** Recusa não passa em silêncio (26/nov/2026): de 12 a 26/nov a regra de "conta nova" recusava
+ *  quase toda conta e ninguém viu. Manda ao Mixpanel o resultado; o servidor também loga o motivo
+ *  (`raise log` na função `boas_vindas`, migration 20261226120000). */
+export function registrarRespostaBoasVindas(r: RespostaBoasVindas, produtos: number, origem: 'tela_espera' | 'nova_tentativa') {
+  if (r && r.ok === false) {
+    console.warn('[boasVindas] recusada:', r.motivo);
+    trackFora('boas_vindas_recusada', { motivo: r.motivo ?? 'desconhecido', produtos, origem });
+  } else if (r && r.ok) {
+    trackFora('boas_vindas_creditada', { pontos: r.pontos ?? null, produtos, origem });
+  }
 }
 
 /** Pós-compra v2: quantos produtos de casa ela fotografou (0 = "Não tenho produtos agora"). */
@@ -110,7 +126,8 @@ export async function concluirBoasVindas(uid: string, reg: CompraPendente | null
   const produtos = Math.max(0, Math.min(PRODUTOS_MAX, bv.produtos ?? 0));
   for (let i = 0; i < 2; i++) {
     try {
-      await chamarCartas({ acao: 'boas_vindas', produtos });
+      const r = await chamarCartas<RespostaBoasVindas>({ acao: 'boas_vindas', produtos });
+      registrarRespostaBoasVindas(r, produtos, 'tela_espera');
       await AsyncStorage.removeItem(BOAS_VINDAS_PENDENTE).catch(() => {});
       await invalidarCartas();
       return;

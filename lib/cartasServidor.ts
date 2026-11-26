@@ -256,7 +256,9 @@ async function buscarEstado(): Promise<EstadoCartas> {
   }
   if (bv && bv.uid === (await getUserId())) {
     try {
-      await chamar({ acao: 'boas_vindas', produtos: bv.produtos });
+      const r = await chamar<{ ok?: boolean; motivo?: string; pontos?: number }>({ acao: 'boas_vindas', produtos: bv.produtos });
+      const { registrarRespostaBoasVindas } = await import('./boasVindas');
+      registrarRespostaBoasVindas(r, bv.produtos, 'nova_tentativa');
       await AsyncStorage.removeItem(BOAS_VINDAS_PENDENTE).catch(() => {});
     } catch { /* tenta de novo no próximo estado */ }
   }
