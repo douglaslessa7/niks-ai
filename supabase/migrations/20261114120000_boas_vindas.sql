@@ -23,11 +23,10 @@
 -- Só o service role executa.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-alter table public.pontos_eventos drop constraint if exists pontos_eventos_acao;
-alter table public.pontos_eventos add constraint pontos_eventos_acao check (acao in (
-  'rotina:am', 'rotina:pm', 'checkin_grupo', 'scan_rosto', 'produto_grupo', 'dobro', 'boas_vindas',
-  'desafio:1', 'desafio:2', 'desafio:3', 'desafio:4'
-));
+-- A ação 'boas_vindas' já está na lista de `pontos_eventos_acao` desde a 20261113 (missões) e
+-- continua na 20261204 (pontos diretos, que acrescentou 'skincare_dia' e 'missoes'). Esta
+-- migration NÃO recria a lista (26/nov/2026): aplicada depois da 20261204, a versão antiga
+-- apagaria 'skincare_dia' e 'missoes' e o banco passaria a recusar esses pontos.
 
 alter table public.cartas_config add column if not exists boas_vindas jsonb not null default
   '{"ativa": true, "pontos": 100, "sequencia": 1, "pontos_produto": 20, "produtos_max": 10}'::jsonb;
