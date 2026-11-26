@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Átomos das telas do pós-compra v2 (lib/posCompraV2.ts — EM TESTE, só no desenvolvimento).
+// Átomos das telas do pós-compra v2 (lib/posCompraV2.ts).
 // Design: `design-handoff/pos-compra-v2/` (exportado do canvas "NIKS · Fluxo pós-compra v2",
 // 26/nov/2026). Frame de 390 × 844 pt: 59 pt de status bar em cima (aqui o `insets.top`) e 34 pt
 // de home indicator embaixo (aqui o `insets.bottom`). Os X são os do design (margens fixas).

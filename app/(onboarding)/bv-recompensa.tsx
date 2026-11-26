@@ -34,7 +34,7 @@ export default function BvRecompensa() {
   const router = useRouter();
   const { y } = useBvFrame();
   const navigation = useNavigation();
-  // Pós-compra v2 (lib/posCompraV2.ts, EM TESTE): o total é o que ela fez — os 100 desta tela +
+  // Pós-compra v2 (lib/posCompraV2.ts): o total é o que ela fez — os 100 desta tela +
   // 20 por produto fotografado (até 10) — e a barra vai do nível atingido ao próximo, pela curva
   // de verdade (lib/niveis.ts). Fora do v2, tudo como antes (100, Bronze 1 → Bronze 2).
   const [v2] = useState(() => usePosCompraV2.getState().ativo);

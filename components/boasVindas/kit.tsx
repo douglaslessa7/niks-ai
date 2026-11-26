@@ -94,7 +94,7 @@ const BV_TELAS: Record<string, [number, string, boolean]> = {
   'bv-recompensa': [6, 'recompensa', false],
   'bv-sequencia': [7, 'sequencia', false],
   'bv-nivel': [8, 'nivel', false],
-  // Pós-compra v2 (lib/posCompraV2.ts, EM TESTE): números próprios, fora da sequência de cima.
+  // Pós-compra v2 (lib/posCompraV2.ts): números próprios, fora da sequência de cima.
   'pc-boas-vindas': [101, 'v2_boas_vindas', false],
   'pc-criar-rotina': [102, 'v2_criar_rotina', false],
   'pc-rotina-pronta': [105, 'v2_rotina_pronta', true],

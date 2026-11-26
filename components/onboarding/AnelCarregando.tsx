@@ -24,7 +24,7 @@ export function linhaDoProgresso(linhas: string[], p: number): { texto: string; 
   return { texto: linhas[idx], opacity: Math.max(0, Math.min(1, local * 6, idx === n - 1 ? 1 : (1 - local) * 8)) };
 }
 
-export default function AnelCarregando({ p, titulo, linha, linhaOpacity, carregando = true }: {
+export default function AnelCarregando({ p, titulo, linha, linhaOpacity, carregando = true, rotulo = true }: {
   /** Progresso de 0 a 1. */
   p: number;
   titulo: string;
@@ -32,6 +32,8 @@ export default function AnelCarregando({ p, titulo, linha, linhaOpacity, carrega
   linhaOpacity: number;
   /** false = esconde a frase e os tracinhos (ex.: falhou). */
   carregando?: boolean;
+  /** false = sem o "SUA ROTINA" do alto (pós-compra v2, tela 4 do design). */
+  rotulo?: boolean;
 }) {
   const { y } = useObFrame();
   const dots = useRef(new Animated.Value(0)).current;
@@ -46,12 +48,14 @@ export default function AnelCarregando({ p, titulo, linha, linhaOpacity, carrega
 
   return (
     <>
-      <Text style={{
-        position: 'absolute', left: 0, right: 0, top: y(74), textAlign: 'center',
-        fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 1.4, color: OB.sub,
-      }}>
-        SUA ROTINA
-      </Text>
+      {rotulo && (
+        <Text style={{
+          position: 'absolute', left: 0, right: 0, top: y(74), textAlign: 'center',
+          fontSize: 11, lineHeight: 14, fontWeight: '600', letterSpacing: 1.4, color: OB.sub,
+        }}>
+          SUA ROTINA
+        </Text>
+      )}
 
       {/* Disco translúcido Ø300 atrás do anel */}
       <View style={{

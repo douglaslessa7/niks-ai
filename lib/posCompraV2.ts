@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Fluxo pós-compra v2 (25–26/nov/2026, branch feature/fluxo-pos-compra-v2) — EM TESTE, só no
-// desenvolvimento. Design: design-handoff/pos-compra-v2/. Ela monta a rotina com os produtos
+// Fluxo pós-compra v2 (25–26/nov/2026). É O fluxo depois da compra confirmada (paywall-soft) e
+// depois da ex-convidada assinar (components/trava/AvisoCadeado). Design: design-handoff/pos-compra-v2/. Ela monta a rotina com os produtos
 // que já tem em casa e ganha NIKS Points por cada ação real.
 //
 //   pc-boas-vindas → pc-criar-rotina → (scan)/pc-camera → pc-gerando → pc-rotina-pronta →
@@ -8,8 +8,8 @@
 //   pc-tudo-pronto → pc-exclusivos → cadastro
 //   ("Não tenho produtos agora" pula a câmera; as telas de rotina mostram a rotina BASE.)
 //
-// Quem liga: `posCompraV2Dev()` (lib/devReset.ts, SÓ __DEV__). Em Release é sempre false e o
-// fluxo de sempre (bv-entrou … bv-nivel) não muda.
+// As telas antigas (bv-entrou … bv-nivel, menos a bv-pacto) ficam no app nesta build, sem uso,
+// para voltar atrás fácil; saem depois (docs/pendencias-pos-compra-v2.md).
 //
 // Regras (decisão do produto, 26/nov/2026):
 //   1. A rotina BASE (da análise da pele) sempre existe, como sempre foi.
@@ -24,7 +24,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { create } from 'zustand';
 import type { ProdutoLote } from './loteProdutos';
-import { posCompraV2Dev } from './devReset';
 import { descartarFila, guardarNaFila } from './filaProdutosCasa';
 
 export const PONTOS_POR_FOTO = 20;
@@ -44,11 +43,6 @@ type Estado = {
 };
 
 export const usePosCompraV2 = create<Estado>(() => ({ ativo: false, fotos: 0, semProdutos: false, qtdProdutos: 0 }));
-
-/** Só no desenvolvimento, com a chave ligada. */
-export function posCompraV2Ligado(): boolean {
-  return posCompraV2Dev();
-}
 
 /** 1ª tela do fluxo novo: começa do zero. */
 export function comecarPosCompraV2() {

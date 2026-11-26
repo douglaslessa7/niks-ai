@@ -125,7 +125,7 @@ function Chat({ largura }: { largura: number }) {
         alignSelf: 'flex-start', maxWidth: 280, backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomRightRadius: 20, borderBottomLeftRadius: 6,
         paddingVertical: 12, paddingHorizontal: 14, gap: 6, ...sombraLeve,
       }}>
-        <Text style={{ fontSize: 11, fontWeight: '700', color: PC.pink }}>NIKS IA</Text>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: PC.pink }}>{t('NIKS IA')}</Text>
         <Text style={{ fontSize: 14, lineHeight: 20, color: PC.ink }}>
           {t('Pra sua pele, melhor separar: vitamina C de manhã e o ácido à noite. Assim você evita irritação.')}
         </Text>

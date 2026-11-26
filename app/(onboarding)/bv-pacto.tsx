@@ -79,7 +79,7 @@ export default function BvPacto() {
     track('boas_vindas_pacto', { selado_em: new Date().toISOString() });
     void selarPacto();
     Animated.timing(done, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-    // Pós-compra v2 (lib/posCompraV2.ts, só em dev): o pacto é esta mesma tela (pedido do produto,
+    // Pós-compra v2 (lib/posCompraV2.ts): o pacto é esta mesma tela (pedido do produto,
     // 26/nov/2026); depois dele, a recompensa do fluxo novo.
     const proxima = usePosCompraV2.getState().ativo ? 'pc-recompensa' : 'bv-recompensa';
     setTimeout(() => router.replace(`/(onboarding)/${proxima}` as any), 300 + 300);
@@ -125,7 +125,7 @@ export default function BvPacto() {
 
       <View style={{ position: 'absolute', left: 0, right: 0, top: y(104), paddingHorizontal: 20 }}>
         <BvEtiqueta>{t('AGORA É COM VOCÊ')}</BvEtiqueta>
-        {/* No pós-compra v2 (só em dev) o título segue a tipografia do onboarding (peso 700),
+        {/* No pós-compra v2 o título segue a tipografia do onboarding (peso 700),
             como as outras telas do fluxo novo. Fora dele, nada muda. */}
         <BvTitulo style={[{ marginTop: 10 }, usePosCompraV2.getState().ativo && { fontWeight: '700', letterSpacing: -0.4 }]}>
           {name ? t('Eu, {{name}}, vou cuidar da minha pele 2× por dia.', { name }) : t('Eu vou cuidar da minha pele 2× por dia.')}

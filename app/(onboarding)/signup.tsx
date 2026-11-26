@@ -61,7 +61,7 @@ export default function Signup() {
   // `lib/subscriptionGate.ts` e "Guard de assinatura" no README.
   // Com o atalho de dev (`lib/devPaywall.ts`) o paywall é pulado de propósito — a trava também.
   const [liberado, setLiberado] = useState(PULAR_PAYWALL);
-  // Pós-compra v2 (lib/posCompraV2.ts — só em dev, com a chave ligada): o título do design
+  // Pós-compra v2 (lib/posCompraV2.ts): o título do design
   // (design-handoff/pos-compra-v2/15-criar-conta.html), com os pontos que ela juntou.
   const [v2] = useState(() => usePosCompraV2.getState());
   // Comprou ou restaurou NESTA sessão (sinal do paywall, `lib/sinalCompra.ts`). Só com ele a

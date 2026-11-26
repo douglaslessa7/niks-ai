@@ -107,7 +107,7 @@ async function executar(): Promise<FimDaCompra> {
     }
 
     if (abandonada()) return interrompida;
-    // 3a. Pós-compra v2 (só em teste, lib/posCompraV2.ts): os produtos de casa que ela
+    // 3a. Pós-compra v2 (lib/posCompraV2.ts): os produtos de casa que ela
     // fotografou (fila no aparelho, lib/filaProdutosCasa.ts) ficam ligados a esta conta e vão
     // para o lote "Montar minha rotina", agora que há conta e rotina base. Sem fila, não faz
     // nada. Falhou → a fila fica e o app tenta de novo depois. Nunca lança.

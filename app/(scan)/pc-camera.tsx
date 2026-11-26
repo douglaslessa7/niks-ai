@@ -1,6 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Pós-compra v2 · passo 3 — câmera dos produtos de casa (lib/posCompraV2.ts, EM TESTE, só no
-// desenvolvimento). Visual: design-handoff/pos-compra-v2/03-camera-de-produtos.html (26/nov/2026):
+// Pós-compra v2 · passo 3 — câmera dos produtos de casa (lib/posCompraV2.ts). Visual: design-handoff/pos-compra-v2/03-camera-de-produtos.html (26/nov/2026):
 // fundo preto, X no alto, visor com moldura de 180 × 260, pílula com as miniaturas do que já foi
 // fotografado ("2 produtos escaneados") e os controles Flash · disparador · Concluir (com o
 // número de produtos no selo).

@@ -35,12 +35,10 @@ import { deveriaPerguntar } from '../../lib/regraCompra';
 import { marcarCompraNestaSessao } from '../../lib/sinalCompra';
 import { registrarAceiteNaCompra } from '../../lib/aceiteTermos';
 import PerguntaAssinatura, { PERGUNTA_ASSINATURA_LIGADA } from '../../components/assinatura/PerguntaAssinatura';
-import { posCompraV2Ligado } from '../../lib/posCompraV2';
 
-// 1ª tela depois da compra confirmada. Pós-compra v2 (lib/posCompraV2.ts) SÓ com a chave de
-// desenvolvimento ligada (`posCompraV2Dev`, sempre false em Release): o fluxo de sempre não muda.
+// 1ª tela depois da compra confirmada: o pós-compra v2 (lib/posCompraV2.ts, 26/nov/2026).
 function inicioDasBoasVindas(): string {
-  return posCompraV2Ligado() ? '/(onboarding)/pc-boas-vindas' : '/(onboarding)/bv-entrou';
+  return '/(onboarding)/pc-boas-vindas';
 }
 
 // Compra confirmada (06/nov/2026): a análise completa e a rotina só rodam a partir daqui.

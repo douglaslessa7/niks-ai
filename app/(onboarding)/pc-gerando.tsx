@@ -6,7 +6,7 @@ import { ObScreen, useObName } from '../../components/onboarding/kit';
 import AnelCarregando, { linhaDoProgresso } from '../../components/onboarding/AnelCarregando';
 import { aguardarAnaliseCompleta, awaitRoutine } from '../../lib/onboardingPrefetch';
 
-// Pós-compra v2 · passo 4 "Criando uma rotina só sua, <nome>" (lib/posCompraV2.ts — EM TESTE).
+// Pós-compra v2 · passo 4 "Criando uma rotina só sua, <nome>" (lib/posCompraV2.ts).
 // O visual é o da tela de espera depois do cadastro (components/onboarding/AnelCarregando), em
 // fundo branco (design-handoff/pos-compra-v2/04-criando-sua-rotina.html).
 //
@@ -71,6 +71,7 @@ export default function PcGerando() {
     <ObScreen variant="white">
       <Stack.Screen options={{ gestureEnabled: false }} />
       <AnelCarregando
+        rotulo={false}
         p={p}
         titulo={name ? t('Criando uma rotina só sua, {{name}}', { name }) : t('Criando uma rotina só sua')}
         linha={linha.texto}

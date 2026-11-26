@@ -63,7 +63,8 @@ export default function AvisoCadeado() {
         setSubscriptionVerified(true);
         trackFora('convidada_assinou', { origem: origem.current });
         useAcesso.setState({ boasVindasEx: true });
-        router.replace('/(onboarding)/bv-entrou' as any);
+        // Pós-compra v2 (lib/posCompraV2.ts): o mesmo fluxo de quem comprou no onboarding.
+        router.replace('/(onboarding)/pc-boas-vindas' as any);
       }
     },
   });
