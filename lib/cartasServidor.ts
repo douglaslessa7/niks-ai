@@ -231,7 +231,7 @@ async function historicoLocal() {
 }
 
 /** Boas-vindas pós-pagamento que não chegaram ao servidor (sem rede na tela de espera):
- *  guarda o uid; `estadoCartas` tenta de novo. Ver `lib/boasVindas.ts`. */
+ *  guarda `{ uid, produtos }` (antes: só o uid); `estadoCartas` tenta de novo. Ver `lib/boasVindas.ts`. */
 export const BOAS_VINDAS_PENDENTE = 'boas_vindas_pendente';
 
 /** Estado das cartas e da sequência. Sobe o histórico (1ª vez) e a fila offline. */
@@ -246,9 +246,17 @@ export function estadoCartas(): Promise<EstadoCartas> {
 
 async function buscarEstado(): Promise<EstadoCartas> {
   const pendenteBv = await AsyncStorage.getItem(BOAS_VINDAS_PENDENTE).catch(() => null);
-  if (pendenteBv && pendenteBv === (await getUserId())) {
+  // `{ uid, produtos }` (pós-compra v2); registro antigo = só o uid.
+  let bv: { uid: string; produtos: number } | null = null;
+  if (pendenteBv) {
     try {
-      await chamar({ acao: 'boas_vindas' });
+      const j = pendenteBv.startsWith('{') ? JSON.parse(pendenteBv) : { uid: pendenteBv, produtos: 0 };
+      bv = { uid: String(j.uid), produtos: Number(j.produtos) || 0 };
+    } catch { bv = null; }
+  }
+  if (bv && bv.uid === (await getUserId())) {
+    try {
+      await chamar({ acao: 'boas_vindas', produtos: bv.produtos });
       await AsyncStorage.removeItem(BOAS_VINDAS_PENDENTE).catch(() => {});
     } catch { /* tenta de novo no próximo estado */ }
   }

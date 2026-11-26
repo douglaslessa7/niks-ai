@@ -5,8 +5,8 @@ Design: `design-handoff/pos-compra-v2/` (fora do git).
 
 ## Antes da build (decididos em 26/nov/2026)
 
-- [ ] **Pontos dos produtos no servidor.** A recompensa mostra 100 do pacto + 20 por produto (até 10). Hoje só os 100 são creditados (função `boas_vindas`, migration `20261114120000_boas_vindas`); os +20 ficam só no aparelho. Mudança de backend planejada junto com a migration, **só vai para produção com OK**.
-- [ ] **Migration `20261114120000_boas_vindas`** aplicada em produção (grava os +100 do pacto e a sequência de 1 dia). Só com OK.
+- [x] **Pontos dos produtos no servidor** (26/nov/2026): migration `20261114120000_boas_vindas` (`p_produtos`, +20 cada, até 10, no mesmo evento do pacto), função `cartas` (`produtos` no corpo) e app (`registrarProdutosBoasVindas`). **Falta publicar** (migration, depois a função) — só com OK.
+- [ ] **Publicar a migration `20261114120000_boas_vindas` e depois a função `cartas`** (grava os +100 do pacto, os +20 por produto e a sequência de 1 dia). Só com OK, antes da próxima build.
 - [ ] **Teste de ponta a ponta com conta real**: envio dos produtos dá certo; envio falha e volta na próxima abertura (gatilho de dev `Documents/niks-dev-falhar-envio-produtos`); ex-convidada que assina.
 - [ ] **Versão da build**: a 1.66 (1) já foi enviada; a próxima precisa de outro número.
 

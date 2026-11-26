@@ -221,10 +221,13 @@ serve(async (req) => {
     // Boas-vindas pós-pagamento (07/nov/2026, migration 20261114120000): depois do
     // cadastro, +100 NIKS Points (Nível 2), sequência de 1 dia. Uma vez por conta, só conta
     // nova; repetir não faz nada (`{ ok: false, motivo }`).
+    // Pós-compra v2 (26/nov/2026): `produtos` = quantos produtos de casa ela fotografou antes
+    // do cadastro (+20 cada; o banco limita a 10). Build antiga não manda → 0.
     if (acao === 'boas_vindas') {
       if (!v2) return json({ error: 'regras inválidas' }, 400)
       await marcarV2(supabase, userId, appPontos)
-      const { data, error } = await supabase.rpc('boas_vindas', { p_uid: userId })
+      const produtos = Math.max(0, Math.min(10, Math.trunc(Number(body?.produtos) || 0)))
+      const { data, error } = await supabase.rpc('boas_vindas', { p_uid: userId, p_produtos: produtos })
       if (error) throw error
       return json(data)
     }

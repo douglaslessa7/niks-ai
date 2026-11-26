@@ -19,12 +19,14 @@
 //   3. "Não tenho produtos agora" → fica só com a rotina base; a aba Rotina pergunta de novo
 //      (escanear / não tenho / depois), como sempre.
 //
-// NIKS Points: SÓ no aparelho por enquanto (decisão do produto). +20 por foto tirada, no
-// máximo 10 fotos pontuadas (+200). Nada disso vai para o banco.
+// NIKS Points: +20 por foto tirada, no máximo 10 fotos pontuadas (+200). A barra mostra na
+// hora; o servidor credita depois do cadastro, junto com os +100 do pacto (`cartas` →
+// `boas_vindas`, migration 20261114120000) — a recompensa mostra o que ela vai ter na conta.
 // ─────────────────────────────────────────────────────────────────────────────
 import { create } from 'zustand';
 import type { ProdutoLote } from './loteProdutos';
 import { descartarFila, guardarNaFila } from './filaProdutosCasa';
+import { registrarProdutosBoasVindas } from './boasVindas';
 
 export const PONTOS_POR_FOTO = 20;
 export const FOTOS_PONTUADAS_MAX = 10;
@@ -47,6 +49,7 @@ export const usePosCompraV2 = create<Estado>(() => ({ ativo: false, fotos: 0, se
 /** 1ª tela do fluxo novo: começa do zero. */
 export function comecarPosCompraV2() {
   usePosCompraV2.setState({ ativo: true, fotos: 0, semProdutos: false, qtdProdutos: 0 });
+  void registrarProdutosBoasVindas(0);
 }
 
 /** Fluxo de sempre (bv-entrou): garante que nada do v2 vale. */
@@ -78,6 +81,7 @@ export function registrarFotoPosCompra() {
 export function escolherSemProdutos() {
   usePosCompraV2.setState({ semProdutos: true, fotos: 0, qtdProdutos: 0 });
   void descartarFila();
+  void registrarProdutosBoasVindas(0);
 }
 
 /** "Concluir" na câmera: as imagens vão para a fila do aparelho (lib/filaProdutosCasa.ts), que
@@ -86,6 +90,8 @@ export async function guardarProdutosDeCasa(lote: ProdutoLote[]): Promise<void> 
   const qtd = await guardarNaFila(lote);
   if (!qtd && lote.length) throw new Error('não guardou nenhum produto');
   usePosCompraV2.setState({ qtdProdutos: qtd, semProdutos: false });
+  // Os pontos que a barra mostrou (fotos tiradas, até 10) vão para o servidor com o pacto.
+  await registrarProdutosBoasVindas(Math.min(usePosCompraV2.getState().fotos, FOTOS_PONTUADAS_MAX));
 }
 
 /** Conta salva: zera o que é desta compra (a fila segue até o envio dar certo). */

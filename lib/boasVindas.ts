@@ -7,7 +7,9 @@
 // o registro da compra pendente, que sobrevive a fechar o app):
 //   • a FOTO DE PARTIDA (tela 3) — arquivo no cache do app com o prefixo `scan-compra-`,
 //     apagado junto com a foto do scan;
-//   • quando ela SELOU O PACTO (tela 5).
+//   • quando ela SELOU O PACTO (tela 5);
+//   • pós-compra v2: quantos PRODUTOS DE CASA ela fotografou (+20 cada, até 10 — o servidor
+//     credita junto com o pacto; ver migration 20261114120000).
 // Depois do cadastro, a tela de espera chama `concluirBoasVindas`: a foto vira a Foto do
 // dia 1 (bucket `routine-photos`) e a foto de perfil (`users.foto_home_url`, se ainda não
 // houver uma), e o servidor credita os +100 NIKS
@@ -23,8 +25,10 @@ import { supabase } from './supabase';
 import { invalidateCache } from './cache';
 import { uploadScanPhoto } from '../store/onboarding';
 
-type Estado = { fotoUri: string | null; pactoEm: string | null };
-const estado: Estado = { fotoUri: null, pactoEm: null };
+type Estado = { fotoUri: string | null; pactoEm: string | null; produtos?: number };
+const estado: Estado = { fotoUri: null, pactoEm: null, produtos: 0 };
+/** Limite de produtos pontuados (o mesmo do servidor, `cartas_config.boas_vindas.produtos_max`). */
+const PRODUTOS_MAX = 10;
 /** Lembrete do 1º skincare (tela 7). Por enquanto só visual — ver o README. */
 let lembrete = true;
 
@@ -34,6 +38,12 @@ export function boasVindasAtual(): Estado & { lembrete: boolean } {
 
 export function setLembreteBoasVindas(v: boolean) {
   lembrete = v;
+}
+
+/** Pós-compra v2: quantos produtos de casa ela fotografou (0 = "Não tenho produtos agora"). */
+export async function registrarProdutosBoasVindas(n: number) {
+  estado.produtos = Math.max(0, Math.min(PRODUTOS_MAX, Math.trunc(n) || 0));
+  await atualizarCompraPendente({ boasVindas: { ...estado } });
 }
 
 /** Tela 3: guarda a foto de partida (JPEG em base64, já reduzida). */
@@ -97,9 +107,10 @@ export async function concluirBoasVindas(uid: string, reg: CompraPendente | null
     }
   }
 
+  const produtos = Math.max(0, Math.min(PRODUTOS_MAX, bv.produtos ?? 0));
   for (let i = 0; i < 2; i++) {
     try {
-      await chamarCartas({ acao: 'boas_vindas' });
+      await chamarCartas({ acao: 'boas_vindas', produtos });
       await AsyncStorage.removeItem(BOAS_VINDAS_PENDENTE).catch(() => {});
       await invalidarCartas();
       return;
@@ -108,5 +119,5 @@ export async function concluirBoasVindas(uid: string, reg: CompraPendente | null
     }
   }
   // Sem rede agora: o próximo estado das cartas tenta de novo (ver `estadoCartas`).
-  await AsyncStorage.setItem(BOAS_VINDAS_PENDENTE, uid).catch(() => {});
+  await AsyncStorage.setItem(BOAS_VINDAS_PENDENTE, JSON.stringify({ uid, produtos })).catch(() => {});
 }

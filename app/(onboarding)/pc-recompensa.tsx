@@ -32,8 +32,8 @@ import { TABELA_NIVEIS, fracaoNivel, nivelDe } from '../../lib/niveis';
 //   1300  barra: enche até o nível em 1,2 s (o "140 / 250" conta junto), e uma faixa de luz
 //         passa por ela no fim; vibração leve ao completar.
 // Tudo no thread de UI (Reanimated). "Reduzir movimento": tudo pronto, sem confete nem loops.
-// Os +100 do pacto são creditados no servidor depois do cadastro (`selarPacto`); os pontos dos
-// produtos ficam só no aparelho por enquanto (decisão do produto, lib/posCompraV2.ts).
+// Tudo é creditado no servidor depois do cadastro, num evento só: os +100 do pacto (`selarPacto`)
+// e os +20 por produto (`registrarProdutosBoasVindas`) — `cartas` → `boas_vindas`.
 const MEDALHA = 132;
 const CONTA_MS = 1400;
 const BARRA_MS = 1200;

@@ -45,8 +45,9 @@ export type CompraPendente = {
   /** A rotina já foi gravada em `protocolos` (16/nov/2026): a retomada não grava uma 2ª vez. */
   rotinaSalva?: boolean;
   /** Boas-vindas pós-pagamento (`lib/boasVindas.ts`): foto de partida (cache do app, prefixo
-   *  `scan-compra-`, apagada junto) e quando ela selou o pacto. */
-  boasVindas?: { fotoUri: string | null; pactoEm: string | null } | null;
+   *  `scan-compra-`, apagada junto), quando ela selou o pacto e quantos produtos de casa ela
+   *  fotografou no pós-compra v2 (pontos creditados junto com o pacto). */
+  boasVindas?: { fotoUri: string | null; pactoEm: string | null; produtos?: number } | null;
   /** Quantas vezes terminar a conta falhou (`lib/concluirCompra.ts`). */
   falhas?: number;
   /** Ela entrou no app sem terminar: a abertura não volta à tela de espera. */

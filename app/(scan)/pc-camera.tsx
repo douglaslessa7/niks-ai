@@ -8,8 +8,8 @@
 // (lib/loteProdutos) monta a imagem que vai para a IA e a frente da estante, no store do lote.
 // Uma atrás da outra, sem sair da câmera. Até 7 (o limite do lote no servidor).
 // NIKS Points: a cada foto (até 10 pontuadas), a barra de nível do app desce no topo e enche
-// (`ganhouPontos` → components/cartas/BarraPontosHost), como nos pontos ganhos sem carta. Só no
-// aparelho: nada vai para o banco.
+// (`ganhouPontos` → components/cartas/BarraPontosHost), como nos pontos ganhos sem carta. O servidor
+// credita depois do cadastro, junto com o pacto (lib/posCompraV2.ts).
 // "Concluir" (a partir do 1º produto) guarda as imagens e segue para o loading; o lote real
 // só é enviado depois do cadastro. No simulador (sem câmera), o disparador abre a galeria.
 // ─────────────────────────────────────────────────────────────────────────────
