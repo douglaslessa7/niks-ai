@@ -1,6 +1,4 @@
-import { useAcesso } from '../../lib/acesso';
-import { supabase } from '../../lib/supabase';
-import { concluirComContaLogada } from '../../lib/onboardingObrigatorio';
+import { sairDasBoasVindas } from '../../components/boasVindas/sairDasBoasVindas';
 import { useFaceScan } from '../../hooks/useFaceScan';
 import { useEffect, useRef } from 'react';
 import { View, Text, AccessibilityInfo } from 'react-native';
@@ -114,26 +112,11 @@ export default function BvNivel() {
 
       <BvBotao label={t('Entrar no app')} onPress={() => {
         track('boas_vindas_concluidas');
-        if (useAcesso.getState().boasVindasEx) {
-          // Ex-convidada: já tem conta. Vai direto ao scan novo; a rotina sai dele.
-          useAcesso.setState({ boasVindasEx: false });
-          router.replace('/(app)/home' as any);
-          setTimeout(() => startFaceScan('boas_vindas'), 400);
-          return;
-        }
-        // 1.64: já logada (fez o onboarding pela conta do "Entrar"): sem cadastro — a compra,
-        // o perfil, o scan e a rotina vão para a conta da sessão (`lib/onboardingObrigatorio.ts`).
+        // Ex-convidada → home + scan; já logada → tela de espera; sem conta → cadastro
+        // (components/boasVindas/sairDasBoasVindas.ts, também usado pelo pós-compra v2).
         if (saindo.current) return;
         saindo.current = true;
-        void (async () => {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            await concluirComContaLogada(session.user.id);
-            router.replace('/(onboarding)/loading-rotina' as any);
-            return;
-          }
-          router.replace('/(onboarding)/signup');
-        })();
+        void sairDasBoasVindas(router, startFaceScan);
       }} />
     </BvScreen>
   );

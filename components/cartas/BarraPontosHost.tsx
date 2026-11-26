@@ -9,7 +9,7 @@ import { chaveEstado, estadoCartas, type EstadoCartas, type NivelTabela } from '
 import { peekCache } from '../../lib/cache';
 import { peekUserId } from '../../lib/currentUser';
 import { router } from 'expo-router';
-import { nivelDe } from '../../lib/niveis';
+import { nivelDe, TABELA_NIVEIS } from '../../lib/niveis';
 import { acimaDoApp } from '../../lib/navegar';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,6 +26,9 @@ type Atual = GanhoBarra & Tabela & { k: number };
 
 async function tabelaDeNiveis(): Promise<Tabela | null> {
   const uid = peekUserId();
+  // Sem conta (pós-compra v2, lib/posCompraV2.ts): não há estado das cartas no servidor — usa a
+  // curva do app, a mesma do servidor (lib/niveis.ts). Com conta, nada muda.
+  if (!uid) return { niveis: TABELA_NIVEIS, icone: { passo: 0, incremento: 0 } };
   const cache = uid ? peekCache<EstadoCartas>(chaveEstado(uid))?.data : null;
   const e = cache?.niveis?.length && cache.icone ? cache : await estadoCartas().catch(() => null);
   return e?.niveis?.length && e.icone ? { niveis: e.niveis, icone: e.icone } : null;
@@ -63,7 +66,7 @@ export default function BarraPontosHost() {
     const g = atual;
     const subiu = g ? nivelDe(g.para, g.niveis, g.icone).nivel > nivelDe(g.de, g.niveis, g.icone).nivel : false;
     setAtual(null);
-    if (subiu && acimaDoApp() === 0 && !fila.current.length) {
+    if (subiu && !g?.semCelebrar && acimaDoApp() === 0 && !fila.current.length) {
       router.push('/(app)/caminhada?celebrar=1&de=home' as any);
     }
     void proximo();

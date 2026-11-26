@@ -35,6 +35,13 @@ import { deveriaPerguntar } from '../../lib/regraCompra';
 import { marcarCompraNestaSessao } from '../../lib/sinalCompra';
 import { registrarAceiteNaCompra } from '../../lib/aceiteTermos';
 import PerguntaAssinatura, { PERGUNTA_ASSINATURA_LIGADA } from '../../components/assinatura/PerguntaAssinatura';
+import { posCompraV2Ligado } from '../../lib/posCompraV2';
+
+// 1ª tela depois da compra confirmada. Pós-compra v2 (lib/posCompraV2.ts) SÓ com a chave de
+// desenvolvimento ligada (`posCompraV2Dev`, sempre false em Release): o fluxo de sempre não muda.
+function inicioDasBoasVindas(): string {
+  return posCompraV2Ligado() ? '/(onboarding)/pc-boas-vindas' : '/(onboarding)/bv-entrou';
+}
 
 // Compra confirmada (06/nov/2026): a análise completa e a rotina só rodam a partir daqui.
 // Se há um scan do onboarding na memória, guarda a foto e o estado no aparelho (para o app
@@ -146,7 +153,7 @@ export default function PaywallSoft() {
         // O registro da compra já leva o user_id: se o app fechar nas boas-vindas, a retomada
         // (app/index.tsx) reconhece a compra desta conta (criada ANTES da compra).
         await atualizarCompraPendente({ userId: session.user.id });
-        router.replace('/(onboarding)/bv-entrou' as any);
+        router.replace(inicioDasBoasVindas() as any);
         return;
       }
       router.replace('/(app)/home');
@@ -155,7 +162,7 @@ export default function PaywallSoft() {
       // muda no cadastro (Purchases.logIn), e é o signup que confere de novo e marca.
       // 07/nov/2026: antes do cadastro, as boas-vindas pós-pagamento (`bv-*`, telas 1–8 do
       // design NiksBoasVindas); a última leva ao cadastro (que confere o premium de novo).
-      router.replace('/(onboarding)/bv-entrou' as any);
+      router.replace(inicioDasBoasVindas() as any);
     }
   };
 
@@ -291,7 +298,7 @@ export default function PaywallSoft() {
       // Release/TestFlight/App Store é sempre false e este bloco não roda.
       liberarAnaliseCompleta().then((comOnboarding) => supabase.auth.getSession().then(({ data: { session } }) => {
         setSubscriptionVerified(true);
-        router.replace(session?.user ? (comOnboarding ? '/(onboarding)/loading-rotina' as any : '/(app)/home') : '/(onboarding)/bv-entrou' as any);
+        router.replace(session?.user ? (comOnboarding ? '/(onboarding)/loading-rotina' as any : '/(app)/home') : inicioDasBoasVindas() as any);
       }));
       return;
     }

@@ -31,6 +31,7 @@ import Purchases from 'react-native-purchases';
 import { haptics } from '../../lib/haptics';
 import { OB, ObScreen, ObPillButton, useObFrame, OB_STEPS, OB_STEP_TOTAL, obStep } from '../../components/onboarding/kit';
 import { atualizarNomePerfil, perfilOnboardingConcluido } from '../../lib/mixpanel/perfil';
+import { pontosDoPacto, usePosCompraV2 } from '../../lib/posCompraV2';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -60,6 +61,9 @@ export default function Signup() {
   // `lib/subscriptionGate.ts` e "Guard de assinatura" no README.
   // Com o atalho de dev (`lib/devPaywall.ts`) o paywall é pulado de propósito — a trava também.
   const [liberado, setLiberado] = useState(PULAR_PAYWALL);
+  // Pós-compra v2 (lib/posCompraV2.ts — só em dev, com a chave ligada): o título do design
+  // (design-handoff/pos-compra-v2/15-criar-conta.html), com os pontos que ela juntou.
+  const [v2] = useState(() => usePosCompraV2.getState());
   // Comprou ou restaurou NESTA sessão (sinal do paywall, `lib/sinalCompra.ts`). Só com ele a
   // compra pode vir de outra conta. A abertura nunca conta "Superwall ACTIVE" como pagamento:
   // qualquer assinatura do Apple ID do aparelho passaria (caso da convidada na 1.0.60 (2)).
@@ -378,6 +382,20 @@ export default function Signup() {
           showsVerticalScrollIndicator={false}
         >
           {/* Título (versão B, sem a etiqueta "sua conta" e sem destaque colorido) */}
+          {v2.ativo ? (
+            <View style={{ paddingHorizontal: 20, marginTop: 32 }}>
+              <Text style={{ fontSize: 26, lineHeight: 31, fontWeight: '700', letterSpacing: -0.4, color: OB.ink }}>
+                {t('Crie sua conta pra guardar sua rotina')}
+              </Text>
+              <Text style={{ marginTop: 10, fontSize: 15, lineHeight: 21, color: '#6B6B6B' }}>
+                {t('Seus ')}
+                <Text style={{ fontWeight: '700', color: OB.pink }}>{t('{{n}} NIKS Points', { n: pontosDoPacto() })}</Text>
+                {v2.qtdProdutos > 0
+                  ? t(', seus produtos e a foto do seu dia 1 ficam salvos no seu perfil.')
+                  : t(' e a foto do seu dia 1 ficam salvos no seu perfil.')}
+              </Text>
+            </View>
+          ) : (
           <View style={{ paddingHorizontal: 24 }}>
             <Text style={{ fontSize: 28, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: OB.ink }}>
               {t('Bem-vinda! Vamos começar personalizando a sua jornada.')}
@@ -388,6 +406,7 @@ export default function Signup() {
               {t(' para começar a sua jornada.')}
             </Text>
           </View>
+          )}
 
           <View style={{ flex: 1, minHeight: 32 }} />
 

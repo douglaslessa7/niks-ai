@@ -37,6 +37,7 @@ import HomeCoachMarks from '../../components/coach/HomeCoachMarks';
 import ProdutosCoachMarks from '../../components/coach/ProdutosCoachMarks';
 import { finishProdutosTutorial, marcarProdutosTutorialVisto, useProdutosTutorialPending } from '../../lib/produtosTutorial';
 import AvisoLote from '../../components/rotina/AvisoLote';
+import { carregarFila, tentarEnviarFila } from '../../lib/filaProdutosCasa';
 import ConvitePendente from '../../components/grupos/ConvitePendente';
 import ToquePush from '../../components/ToquePush';
 import { markHomeTutorialSeenOnServer } from '../../lib/homeTutorial';
@@ -442,6 +443,16 @@ export default function AppLayout() {
   }, [ready]);
 
   // Convite de retorno da espinha (12 h / 24 h): o servidor decide, ao abrir o app.
+  // Pós-compra v2 (lib/filaProdutosCasa.ts): produtos de casa ainda não enviados (o envio da tela
+  // de espera falhou, ou a ex-convidada esperava a rotina base) — tenta a cada abertura e cada
+  // volta ao app. Sem fila, não faz nada.
+  useEffect(() => {
+    if (!ready) return;
+    void carregarFila().then(() => tentarEnviarFila());
+    const sub = AppState.addEventListener('change', (e) => { if (e === 'active') void tentarEnviarFila(); });
+    return () => sub.remove();
+  }, [ready]);
+
   useEffect(() => {
     if (!ready || needsName || useAcesso.getState().estado === 'convidada') return;
     void buscarConvite();

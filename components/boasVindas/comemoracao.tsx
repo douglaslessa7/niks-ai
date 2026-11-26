@@ -73,8 +73,9 @@ function sortear(W: number, H: number): Papel[] {
   return l;
 }
 
-/** Confete por cima da tela inteira. Começa quando `disparar` vira true. */
-export function Confete({ disparar }: { disparar: boolean }) {
+/** Confete por cima da tela inteira. Começa quando `disparar` vira true. `umaVez`: a chuva cai
+ *  uma vez só (cada papel some ao passar do fim da tela, sem voltar lá em cima) — o pós-compra v2. */
+export function Confete({ disparar, umaVez = false }: { disparar: boolean; umaVez?: boolean }) {
   const { width: W, height: H } = useWindowDimensions();
   const papeis = useMemo(() => sortear(W, H), [W, H]);
   const t = useSharedValue(-1);        // segundos desde o disparo (−1 = ainda não)
@@ -117,8 +118,10 @@ export function Confete({ disparar }: { disparar: boolean }) {
           if (s > fim) op = 1 - (s - fim) / 0.6;
         } else {
           s = s0;
-          const yy = p.y0 + p.vy * s;
+          // `umaVez`: a chuva sai mais perto do topo e cai um pouco mais rápido (acaba em ~6–10 s).
+          const yy = umaVez ? p.y0 * 0.4 + p.vy * 1.4 * s : p.y0 + p.vy * s;
           if (yy < -20) continue;                       // ainda acima da tela
+          if (umaVez && yy > H + 20) continue;          // uma vez só: passou do fim, acabou
           y = ((yy + 20) % ALT) - 20;                   // passou do fim → volta lá em cima
           x = p.x0 + Math.sin(s * 1.7 + p.fase) * p.balanco;
         }

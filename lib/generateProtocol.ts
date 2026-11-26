@@ -106,6 +106,9 @@ export async function saveProtocol({
   });
   if (erroRotina) throw erroRotina;
   try { await aoGravar?.(); } catch (e) { console.warn('[generateProtocol] aoGravar falhou:', e); }
+  // Pós-compra v2 (lib/filaProdutosCasa.ts): com a rotina base gravada, os produtos de casa que
+  // esperavam por ela (ex-convidada que assinou) vão para o lote agora. Sem fila, não faz nada.
+  void import('./filaProdutosCasa').then((m) => m.tentarEnviarFila(userId)).catch(() => {});
 
   // Encadeia a recomendação de produtos reais. A função é auto-guardada
   // (gera só no primeiro scan), então é seguro chamar sempre. Roda aqui —

@@ -11,7 +11,9 @@
 // Estado só em memória: um segurado com mais de 15 min é descartado.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type GanhoBarra = { de: number; para: number };
+/** `semCelebrar`: subir de nível neste ganho NÃO abre a "Sua caminhada" (ex.: pós-compra v2,
+ *  ainda sem conta — lib/posCompraV2.ts). */
+export type GanhoBarra = { de: number; para: number; semCelebrar?: boolean };
 type Pontos = { total_antes: number; total: number };
 
 let ouvinte: ((g: GanhoBarra) => void) | null = null;
@@ -43,7 +45,7 @@ function vigente() {
  * Ganhou pontos sem carta. `segurar`: há carta para raspar neste mesmo fluxo — a barra
  * espera a carta. Aceita um evento ou uma lista (ex.: o check-in devolve skincare + check-in).
  */
-export function ganhouPontos(p: Pontos | Pontos[] | null | undefined, opts: { segurar?: boolean } = {}) {
+export function ganhouPontos(p: Pontos | Pontos[] | null | undefined, opts: { segurar?: boolean; semCelebrar?: boolean } = {}) {
   const lista = (Array.isArray(p) ? p : p ? [p] : []).filter(
     (x) => x && typeof x.total_antes === 'number' && typeof x.total === 'number' && x.total > x.total_antes,
   );
@@ -55,7 +57,7 @@ export function ganhouPontos(p: Pontos | Pontos[] | null | undefined, opts: { se
     segurado = { de: Math.min(s?.de ?? de, de), para: Math.max(s?.para ?? para, para), em: Date.now() };
     return;
   }
-  emitir({ de, para });
+  emitir(opts.semCelebrar ? { de, para, semCelebrar: true } : { de, para });
 }
 
 /** Saiu do fluxo sem raspar: a barra mostra o que estava segurado. */

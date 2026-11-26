@@ -9,6 +9,8 @@ import {
 } from '../../components/boasVindas/kit';
 import { Confete, Odometro } from '../../components/boasVindas/comemoracao';
 import Medalha from '../../components/medalhas/Medalha';
+import { usePosCompraV2, pontosDoPacto } from '../../lib/posCompraV2';
+import { TABELA_NIVEIS, fracaoNivel, nivelDe } from '../../lib/niveis';
 
 // Boas-vindas · tela 6 "Recompensa" (frame "06"). É uma COMEMORAÇÃO (08/nov/2026, pedido do
 // produto): ao terminar de entrar, CONFETE sai dos dois cantos de baixo (`Confete`, no lugar
@@ -32,6 +34,17 @@ export default function BvRecompensa() {
   const router = useRouter();
   const { y } = useBvFrame();
   const navigation = useNavigation();
+  // Pós-compra v2 (lib/posCompraV2.ts, EM TESTE): o total é o que ela fez — os 100 desta tela +
+  // 20 por produto fotografado (até 10) — e a barra vai do nível atingido ao próximo, pela curva
+  // de verdade (lib/niveis.ts). Fora do v2, tudo como antes (100, Bronze 1 → Bronze 2).
+  const [v2] = useState(() => usePosCompraV2.getState().ativo);
+  const total = v2 ? pontosDoPacto() : PONTOS;
+  const nivel = v2 ? nivelDe(total, TABELA_NIVEIS) : null;
+  const fracao = nivel ? fracaoNivel(total, nivel.piso, nivel.teto) : 1;
+  const rotuloNivel = nivel
+    ? (nivel.tituloProximo ? `${t(nivel.titulo)} → ${t(nivel.tituloProximo)}` : t(nivel.titulo))
+    : t('Bronze 1 → Bronze 2');
+  const tetoBarra = nivel ? (nivel.tituloProximo ? nivel.teto : total) : PONTOS;
   const [festa, setFesta] = useState(false);   // dispara o confete
   const pop = useSharedValue(0);
   const barraV = useSharedValue(0);
@@ -59,7 +72,7 @@ export default function BvRecompensa() {
   }, []);
 
   // Escala (não `width`): mudar a largura refaz o layout a cada quadro.
-  const barra = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.max(0.0001, barraV.value) }] }));
+  const barra = useAnimatedStyle(() => ({ transform: [{ scaleX: Math.max(0.0001, barraV.value * fracao) }] }));
 
   const selo = useAnimatedStyle(() => ({
     opacity: Math.min(1, pop.value * 2),
@@ -81,7 +94,7 @@ export default function BvRecompensa() {
         <View style={{ marginTop: 6, alignSelf: 'stretch' }}>
           <Odometro
             valor={barraV}
-            alvo={PONTOS}
+            alvo={total}
             prefixo="+"
             style={{
               fontSize: 96, lineHeight: 108, fontWeight: '800', letterSpacing: -4, color: BV.pink,
@@ -98,7 +111,7 @@ export default function BvRecompensa() {
           marginTop: 24, width: 176, height: 176, alignItems: 'center', justifyContent: 'center',
           shadowColor: BV.pink, shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.28, shadowRadius: 18,
         }, selo]}>
-          <Medalha nivel={2} tamanho={176} />
+          <Medalha nivel={nivel?.nivel ?? 2} tamanho={176} />
         </Animated.View>
 
         <Text style={{ marginTop: 26, fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: BV.sub }}>{t('CONQUISTA DESBLOQUEADA')}</Text>
@@ -107,11 +120,11 @@ export default function BvRecompensa() {
         <View style={{ marginTop: 22, width: '100%' }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Medalha nivel={1} tamanho={22} />
-              <Text style={{ fontSize: 13, fontWeight: '600', color: BV.body }}>{t('Bronze 1 → Bronze 2')}</Text>
+              <Medalha nivel={nivel?.nivel ?? 1} tamanho={22} />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: BV.body }}>{rotuloNivel}</Text>
             </View>
             <View style={{ width: 90 }}>
-            <Odometro valor={barraV} alvo={PONTOS} sufixo={` / ${PONTOS}`} alinhar="right" style={{ fontSize: 13, lineHeight: 18, fontWeight: '600', color: BV.body, fontVariant: ['tabular-nums'] }} />
+            <Odometro valor={barraV} alvo={total} sufixo={` / ${tetoBarra}`} alinhar="right" style={{ fontSize: 13, lineHeight: 18, fontWeight: '600', color: BV.body, fontVariant: ['tabular-nums'] }} />
             </View>
           </View>
           <View style={{ marginTop: 8, height: 10, borderRadius: 5, backgroundColor: BV.track, overflow: 'hidden' }}>

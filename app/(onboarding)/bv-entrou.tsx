@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { t } from '../../lib/i18n';
 import { getCustomerInfo, ENTITLEMENT_ID } from '../../lib/revenuecat';
 import { useObName } from '../../components/onboarding/kit';
+import { sairDoPosCompraV2 } from '../../lib/posCompraV2';
 import {
   BV, BvScreen, BolhaBranca, BolhaRadial, SEMANAS_ROTINA, diaMesCurto, BvEtiqueta, BvTitulo, BvBotao, LOGO_ROSA, useBvFrame,
 } from '../../components/boasVindas/kit';
@@ -36,6 +37,8 @@ export default function BvEntrou() {
   const name = useObName();
   const { y } = useBvFrame();
   const [plano, setPlano] = useState<Plano>(null);
+  // Fluxo de sempre: nada do pós-compra v2 (lib/posCompraV2.ts) vale daqui em diante.
+  useEffect(() => { sairDoPosCompraV2(); }, []);
   useEffect(() => {
     let vivo = true;
     const teto = new Promise<null>((r) => setTimeout(() => r(null), 3000));

@@ -94,9 +94,23 @@ const BV_TELAS: Record<string, [number, string, boolean]> = {
   'bv-recompensa': [6, 'recompensa', false],
   'bv-sequencia': [7, 'sequencia', false],
   'bv-nivel': [8, 'nivel', false],
+  // Pós-compra v2 (lib/posCompraV2.ts, EM TESTE): números próprios, fora da sequência de cima.
+  'pc-boas-vindas': [101, 'v2_boas_vindas', false],
+  'pc-criar-rotina': [102, 'v2_criar_rotina', false],
+  'pc-rotina-pronta': [105, 'v2_rotina_pronta', true],
+  'pc-foto': [106, 'v2_foto', false],
+  'pc-projecao': [107, 'v2_projecao', true],
+  'pc-recompensa': [109, 'v2_recompensa', false],
+  'pc-sequencia': [110, 'v2_sequencia', false],
+  'pc-tudo-pronto': [111, 'v2_tudo_pronto', false],
+  'pc-exclusivos': [112, 'v2_exclusivos', false],
 };
 
-export function BvScreen({ children }: { children: React.ReactNode }) {
+/** `fundo`: troca o rosa da home por outro fundo (as telas do pós-compra v2 — lib/posCompraV2.ts —
+ *  são brancas ou têm gradiente próprio). A trava de pagamento e o `bv_tela_vista` continuam. */
+export function BvScreen({ children, fundo, statusBar = 'dark' }: {
+  children: React.ReactNode; fundo?: React.ReactNode; statusBar?: 'dark' | 'light';
+}) {
   useTravaPagamento();
   // Depois do pagamento: fora do funil numerado (Paywallo), só no Mixpanel.
   // ÚNICO evento de visualização das boas-vindas (o `boas_vindas_tela` de cada `bv-*` saiu em
@@ -118,10 +132,10 @@ export function BvScreen({ children }: { children: React.ReactNode }) {
     return () => s.remove();
   }, []);
   return (
-    <View style={{ flex: 1, backgroundColor: BV.bg[0] }}>
+    <View style={{ flex: 1, backgroundColor: fundo ? '#FFFFFF' : BV.bg[0] }}>
       <Stack.Screen options={{ gestureEnabled: false }} />
-      <StatusBar style="dark" />
-      <LinearGradient colors={[...BV.bg]} locations={[...BV.bgStops]} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+      <StatusBar style={statusBar} />
+      {fundo ?? <LinearGradient colors={[...BV.bg]} locations={[...BV.bgStops]} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />}
       {children}
     </View>
   );
@@ -201,15 +215,16 @@ export function BvTitulo({ children, center, cor = BV.ink, style }: { children: 
   );
 }
 
-/** Botão pílula rosa de 50 pt, 18 pt das laterais, a 34 pt da base. */
-export function BvBotao({ label, onPress, seta }: { label: string; onPress: () => void; seta?: boolean }) {
+/** Botão pílula rosa de 50 pt, 18 pt das laterais, a 34 pt da base (`acima`: sobe tantos pt,
+ *  para caber um link embaixo). */
+export function BvBotao({ label, onPress, seta, acima = 0 }: { label: string; onPress: () => void; seta?: boolean; acima?: number }) {
   const { b } = useBvFrame();
   return (
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={() => { haptics.action(); onPress(); }}
       style={{
-        position: 'absolute', left: 18, right: 18, bottom: b(34), height: 50, borderRadius: 25,
+        position: 'absolute', left: 18, right: 18, bottom: b(34) + acima, height: 50, borderRadius: 25,
         backgroundColor: BV.pink, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
         shadowColor: BV.pink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 8,
       }}

@@ -101,8 +101,32 @@ export function ficarNoOnboardingDev(): boolean {
   try { return new File(Paths.document, 'niks-dev-ficar-onboarding').exists; } catch { return false; }
 }
 
+// ── Fluxo pós-compra v2 (SÓ __DEV__, branch feature/fluxo-pos-compra-v2) ────────────
+// Flag em arquivo (`Documents/niks-dev-pos-compra-v2`), como as de cima. Ligada, a compra
+// confirmada no paywall (e o atalho de dev que pula o paywall) abre `pc-boas-vindas` em vez de
+// `bv-entrou` — ver lib/posCompraV2.ts. "Abrir pós-compra v2" abre a 1ª tela direto, sem
+// passar pelo onboarding (sem foto do scan: a rotina não é pré-gerada). Em Release é sempre false.
+const POS_COMPRA_V2 = 'niks-dev-pos-compra-v2';
+
+export function posCompraV2Dev(): boolean {
+  if (!__DEV__) return false;
+  try { return new File(Paths.document, POS_COMPRA_V2).exists; } catch { return false; }
+}
+
+function alternarPosCompraV2(): void {
+  try {
+    const f = new File(Paths.document, POS_COMPRA_V2);
+    if (f.exists) f.delete(); else f.create({ overwrite: true });
+    const ligado = f.exists;
+    console.log('[DEV-POS-COMPRA-V2]', ligado ? 'LIGADO' : 'desligado');
+    Alert.alert('NIKS (dev)', `Pós-compra v2: ${ligado ? 'LIGADO' : 'desligado'}`);
+  } catch {}
+}
+
 if (__DEV__) {
   (globalThis as any).__niksZerarAparelho = zerarAparelhoDev;
+  try { DevSettings.addMenuItem('NIKS: pós-compra v2 (liga/desliga)', alternarPosCompraV2); } catch {}
+  try { DevSettings.addMenuItem('NIKS: abrir pós-compra v2', () => { router.push('/(onboarding)/pc-boas-vindas' as any); }); } catch {}
   try { DevSettings.addMenuItem('NIKS: forçar paywall (liga/desliga)', alternarForcarPaywall); } catch {}
   try { DevSettings.addMenuItem('NIKS: zerar aparelho (teste)', () => { void zerarAparelhoDev(); }); } catch {}
   try {

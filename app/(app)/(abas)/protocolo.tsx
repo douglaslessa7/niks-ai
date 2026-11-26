@@ -57,6 +57,8 @@ import EscolherProdutoSheet, { preaquecerEscolherProduto } from '../../../compon
 import StepIcon from '../../../components/rotina/StepIcon';
 import RotinaIdealSheet from '../../../components/rotina/RotinaIdealSheet';
 import RotinaTutorial, { type EscolhaIntro } from '../../../components/rotina/RotinaTutorial';
+import MontandoComProdutos from '../../../components/rotina/MontandoComProdutos';
+import { tentarEnviarFila, useFilaCasa } from '../../../lib/filaProdutosCasa';
 import { TagStatusProduto } from '../../../components/rotina/TagStatusProduto';
 import { tipoDoPasso, focoDoPeriodo, ROTULO_TIPO } from '../../../lib/tipoPasso';
 import { emIngles, horaEn, t } from '../../../lib/i18n';
@@ -787,9 +789,23 @@ export default function Protocolo() {
   // esperava e levava ~3 s, com a Rotina aparecendo por trás). O status vem do cache, que a
   // home já preenche (`rotinaintro:<uid>`); sem cache, um véu cobre a Rotina até a resposta.
   const guia = useGuia();
+  // Pós-compra v2 (lib/filaProdutosCasa.ts): ela já escaneou os produtos de casa e eles ainda
+  // estão na fila do aparelho. A Rotina não pede o scan de novo (sem tutorial) e mostra
+  // "Estamos montando sua rotina com os seus produtos" até o envio dar certo.
+  const filaCasa = useFilaCasa();
+  const montandoCasa = filaCasa.pendente && !!userId && filaCasa.userId === userId;
+  useFocusEffect(useCallback(() => {
+    if (montandoCasa) void tentarEnviarFila(userId);
+  }, [montandoCasa, userId]));
+  const montandoAntes = useRef(montandoCasa);
+  useEffect(() => {
+    // Enviou: a conta agora está marcada ("já escaneou") e o lote existe — recarrega os dois.
+    if (montandoAntes.current && !montandoCasa) { void refreshIntro(); void refreshLote(); }
+    montandoAntes.current = montandoCasa;
+  }, [montandoCasa]);
   const introConhecido = introEscolhida !== null || introState !== 'loading';
   const tutorialVisivel = introEscolhida === null && introDb != null && introDb.status === null
-    && !editando && !guia;
+    && !editando && !guia && !montandoCasa;
   const [introVenceu, setIntroVenceu] = useState(false);
   useEffect(() => {
     if (introConhecido) return;
@@ -1770,6 +1786,7 @@ export default function Protocolo() {
           Rotina não aparecer antes dele. */}
       {cobrirRotina && <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FBEEF3' }]} />}
       {tutorialVisivel && <RotinaTutorial onEscolha={escolherIntro} />}
+      {montandoCasa && <MontandoComProdutos miniaturas={filaCasa.miniaturas} topo={insets.top} />}
       <RotinaIdealSheet
         aberta={idealAberta}
         periodoInicial={period}

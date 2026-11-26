@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useFaceScan } from '../../hooks/useFaceScan';
+import { usePosCompraV2 } from '../../lib/posCompraV2';
+import { sairDasBoasVindas } from '../../components/boasVindas/sairDasBoasVindas';
 import { View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -28,6 +31,8 @@ const MOLA = Easing.bezier(0.23, 1, 0.32, 1);
 export default function BvSequencia() {
   const router = useRouter();
   const { track } = useMixpanel();
+  const { startFaceScan } = useFaceScan();
+  const saindo = useRef(false);
   const { y } = useBvFrame();
   const manha = useAppStore((s) => {
     const v = s.onboarding.rotina_manha_horario;
@@ -136,7 +141,18 @@ export default function BvSequencia() {
         </View>
       </View>
 
-      <BvBotao label={t('Proteger minha sequência')} onPress={() => router.push('/(onboarding)/bv-nivel' as any)} />
+      <BvBotao label={t('Proteger minha sequência')} onPress={() => {
+        // Pós-compra v2 (lib/posCompraV2.ts): sem a tela do nível — direto ao cadastro (ou à
+        // tela de espera, se já logada), pela mesma saída da bv-nivel.
+        if (usePosCompraV2.getState().ativo) {
+          if (saindo.current) return;
+          saindo.current = true;
+          track('boas_vindas_concluidas', { fluxo: 'pos_compra_v2' });
+          void sairDasBoasVindas(router, startFaceScan);
+          return;
+        }
+        router.push('/(onboarding)/bv-nivel' as any);
+      }} />
     </BvScreen>
   );
 }

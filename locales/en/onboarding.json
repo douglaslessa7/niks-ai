@@ -1786,5 +1786,18 @@
   "Hoje você já começou a sua sequência.": "You've already started your streak today.",
   "Vale NIKS Points": "Earns NIKS Points",
   "Mensal · Rotina de {{semanas}} semanas": "Monthly · {{semanas}}-week routine",
-  "Rotina de {{semanas}} semanas": "{{semanas}}-week routine"
+  "Rotina de {{semanas}} semanas": "{{semanas}}-week routine",
+  "PARABÉNS, {{name}}": "CONGRATS, {{name}}",
+  "Agora sua pele tem um plano. Falta só montar sua rotina com o que você tem em casa.": "Your skin has a plan now. All that's left is building your routine with what you have at home.",
+  "SUA ROTINA": "YOUR ROUTINE",
+  "Hora de criar sua rotina.": "Time to build your routine.",
+  "O NIKS vai montar sua rotina agora. Para isso, precisa ver os produtos que você já tem em casa.": "NIKS will build your routine now. To do that, it needs to see the products you already have at home.",
+  "por cada produto que você escanear": "for each product you scan",
+  "Fotografe a frente de cada produto, um atrás do outro.": "Photograph the front of each product, one after another.",
+  "O NIKS usa o que você já tem e mostra o que falta.": "NIKS uses what you already have and shows what's missing.",
+  "Não tenho produtos agora": "I don't have products right now",
+  "Preparando sua rotina…": "Preparing your routine…",
+  "Separando os passos da manhã e da noite…": "Sorting your morning and night steps…",
+  "Não deu para guardar seus produtos": "Couldn't save your products",
+  "Terminar": "Finish"
 }

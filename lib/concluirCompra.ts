@@ -13,6 +13,8 @@ import {
   aguardarAnaliseCompleta, iniciarAnaliseCompleta, saveOnboardingProtocol, usarAnaliseRapidaRestaurada, usarRotinaRestaurada,
 } from './onboardingPrefetch';
 import { concluirBoasVindas } from './boasVindas';
+import { limparPosCompraV2 } from './posCompraV2';
+import { ligarFilaAConta, tentarEnviarFila } from './filaProdutosCasa';
 import { comprovantesApple, dataDaCompraMaisRecente } from './comprovanteApple';
 import {
   apagarCompraPendente, atualizarCompraPendente, lerCompraPendente, restaurarCompraPendente, type CompraPendente,
@@ -105,6 +107,14 @@ async function executar(): Promise<FimDaCompra> {
     }
 
     if (abandonada()) return interrompida;
+    // 3a. Pós-compra v2 (só em teste, lib/posCompraV2.ts): os produtos de casa que ela
+    // fotografou (fila no aparelho, lib/filaProdutosCasa.ts) ficam ligados a esta conta e vão
+    // para o lote "Montar minha rotina", agora que há conta e rotina base. Sem fila, não faz
+    // nada. Falhou → a fila fica e o app tenta de novo depois. Nunca lança.
+    await ligarFilaAConta(uid);
+    await tentarEnviarFila(uid);
+
+    if (abandonada()) return interrompida;
     // 3b. Boas-vindas pós-pagamento (se ela selou o pacto). Nunca segura a tela.
     await concluirBoasVindas(uid, await lerCompraPendente());
 
@@ -114,6 +124,7 @@ async function executar(): Promise<FimDaCompra> {
     scanSalvoMem = null;
     rotinaSalvaMem = false;
     falhasMem = 0;
+    limparPosCompraV2();
     return { status: 'ok', falhas: 0 };
   } catch (e) {
     console.warn('[concluirCompra] não terminou:', e);
